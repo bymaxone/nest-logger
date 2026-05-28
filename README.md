@@ -742,6 +742,10 @@ This library is part of the `@bymax-one` monorepo. Development follows the Bymax
 - All log keys in `MODULE_ACTION_RESULT` format
 
 ```bash
+# Clone the repository
+git clone https://github.com/bymaxone/nest-logger.git
+cd nest-logger
+
 # Install dependencies
 pnpm install
 
