@@ -742,14 +742,37 @@ This library is part of the `@bymax-one` monorepo. Development follows the Bymax
 - All log keys in `MODULE_ACTION_RESULT` format
 
 ```bash
+# Clone the repository
 git clone https://github.com/bymaxone/nest-logger.git
 cd nest-logger
+
+# Install dependencies
 pnpm install
+
+# Run tests
 pnpm test
+
+# Build
+pnpm build
+
+# Type check
+pnpm typecheck
 ```
 
 ---
 
-## License
+## 🔒 Security Policy
 
-[MIT](LICENSE) © [Bymax One](https://bymax.one)
+If you discover a security vulnerability, please **do not** open a public issue. Instead, email us at **support@bymax.one** with details. We take security seriously and will respond promptly.
+
+---
+
+## 📄 License
+
+[MIT](./LICENSE) © [Bymax One](https://github.com/bymaxone)
+
+---
+
+<p align="center">
+  <sub>Built with ❤️ by <a href="https://github.com/bymaxone">Bymax One</a></sub>
+</p>
