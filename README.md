@@ -306,10 +306,10 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
 ### `otel` options
 
-| Option                        | Type                          | Default       | Description                                                              |
-| ----------------------------- | ----------------------------- | ------------- | ------------------------------------------------------------------------ |
-| `otel.autoInjectTraceContext` | `boolean`                     | `true`        | Detect `@opentelemetry/api` and inject `traceId`/`spanId` via Pino mixin |
-| `otel.fieldFormat`            | `'camelCase' \| 'snake_case'` | `'camelCase'` | Field names in log entries: `traceId`/`spanId` vs `trace_id`/`span_id`   |
+| Option                              | Type                          | Default       | Description                                                              |
+| ----------------------------------- | ----------------------------- | ------------- | ------------------------------------------------------------------------ |
+| `otel.shouldAutoInjectTraceContext` | `boolean`                     | `true`        | Detect `@opentelemetry/api` and inject `traceId`/`spanId` via Pino mixin |
+| `otel.fieldFormat`                  | `'camelCase' \| 'snake_case'` | `'camelCase'` | Field names in log entries: `traceId`/`spanId` vs `trace_id`/`span_id`   |
 
 ---
 
@@ -645,16 +645,16 @@ interface ILogDestination {
 
 ## Error Code Catalog
 
-| Code                              | Severity          | When                                                     | Action                                                          |
-| --------------------------------- | ----------------- | -------------------------------------------------------- | --------------------------------------------------------------- |
-| `LOGGER_INVALID_OPTIONS`          | Throws at init    | `service.name` or `service.version` missing              | Add the required fields                                         |
-| `LOGGER_INVALID_LEVEL`            | Throws at init    | `level` is not a valid Pino value                        | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`        |
-| `LOGGER_PRETTY_UNAVAILABLE`       | Warn on bootstrap | `isPretty: true` but `pino-pretty` not installed         | Install `pino-pretty` or set `isPretty: false`                  |
-| `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap | OTel mixin active but `@opentelemetry/api` not installed | Install the package or set `otel.autoInjectTraceContext: false` |
-| `LOGGER_DESTINATION_INIT_FAILED`  | Error (logged)    | `destination.onInit()` rejects                           | Destination is removed; other destinations continue             |
-| `LOGGER_DESTINATION_WRITE_FAILED` | Warn (logged)     | `destination.write()` throws                             | Entry skipped for that destination; others continue             |
-| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Throws            | `LogContextService.set()` called outside `run()`         | Wrap in `logContext.run({ ... }, () => ...)`                    |
-| `LOGGER_ENTRY_TRUNCATED`          | Warn (meta-log)   | Entry exceeds `maxEntrySizeBytes`                        | Reduce metadata or raise the limit                              |
+| Code                              | Severity          | When                                                     | Action                                                                |
+| --------------------------------- | ----------------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
+| `LOGGER_INVALID_OPTIONS`          | Throws at init    | `service.name` or `service.version` missing              | Add the required fields                                               |
+| `LOGGER_INVALID_LEVEL`            | Throws at init    | `level` is not a valid Pino value                        | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`              |
+| `LOGGER_PRETTY_UNAVAILABLE`       | Warn on bootstrap | `isPretty: true` but `pino-pretty` not installed         | Install `pino-pretty` or set `isPretty: false`                        |
+| `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap | OTel mixin active but `@opentelemetry/api` not installed | Install the package or set `otel.shouldAutoInjectTraceContext: false` |
+| `LOGGER_DESTINATION_INIT_FAILED`  | Error (logged)    | `destination.onInit()` rejects                           | Destination is removed; other destinations continue                   |
+| `LOGGER_DESTINATION_WRITE_FAILED` | Warn (logged)     | `destination.write()` throws                             | Entry skipped for that destination; others continue                   |
+| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Throws            | `LogContextService.set()` called outside `run()`         | Wrap in `logContext.run({ ... }, () => ...)`                          |
+| `LOGGER_ENTRY_TRUNCATED`          | Warn (meta-log)   | Entry exceeds `maxEntrySizeBytes`                        | Reduce metadata or raise the limit                                    |
 
 ---
 

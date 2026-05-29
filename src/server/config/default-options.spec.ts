@@ -26,7 +26,7 @@ describe('applyDefaults', () => {
     const result = applyDefaults(baseOptions)
     expect(result.level).toBe('debug')
     expect(result.isGlobal).toBe(true)
-    expect(result.useAsNestLogger).toBe(true)
+    expect(result.shouldUseAsNestLogger).toBe(true)
     expect(result.redactPaths).toEqual([])
     expect(result.redactCensor).toBe('[REDACTED]')
     expect(result.shouldDisableDefaultRedact).toBe(false)
@@ -58,7 +58,7 @@ describe('applyDefaults', () => {
       ...baseOptions,
       level: 'warn',
       isGlobal: false,
-      useAsNestLogger: false,
+      shouldUseAsNestLogger: false,
       redactPaths: ['*.foo'],
       redactCensor: '[X]',
       shouldDisableDefaultRedact: true,
@@ -67,7 +67,7 @@ describe('applyDefaults', () => {
     })
     expect(result.level).toBe('warn')
     expect(result.isGlobal).toBe(false)
-    expect(result.useAsNestLogger).toBe(false)
+    expect(result.shouldUseAsNestLogger).toBe(false)
     expect(result.redactPaths).toEqual(['*.foo'])
     expect(result.redactCensor).toBe('[X]')
     expect(result.shouldDisableDefaultRedact).toBe(true)
@@ -84,13 +84,13 @@ describe('applyDefaults', () => {
     const result = applyDefaults({
       ...baseOptions,
       http: { isEnabled: true },
-      otel: { autoInjectTraceContext: false }
+      otel: { shouldAutoInjectTraceContext: false }
     })
     expect(result.http.isEnabled).toBe(true)
-    expect(result.http.captureExceptions).toBe(true)
-    expect(result.http.generateRequestId).toBe(true)
+    expect(result.http.shouldCaptureExceptions).toBe(true)
+    expect(result.http.shouldGenerateRequestId).toBe(true)
     expect(result.http.tenantIdHeader).toBe('x-tenant-id')
-    expect(result.otel.autoInjectTraceContext).toBe(false)
+    expect(result.otel.shouldAutoInjectTraceContext).toBe(false)
     expect(result.otel.traceIdField).toBe('traceId')
   })
 
@@ -136,12 +136,15 @@ describe('applyDefaults', () => {
   })
 
   it(/*
-   * The returned object must be (shallow) frozen so accidental mutation by
-   * consumer code is loud — protects per-request handlers from corrupting
-   * the global options snapshot.
+   * The returned snapshot must be frozen at the top level AND across its nested
+   * `service` / `serializers` bags, so accidental mutation by consumer code (or
+   * a per-request handler) is loud rather than silently corrupting the shared
+   * global options snapshot.
    */
-  'should return a frozen object', () => {
-    const result = applyDefaults(baseOptions)
+  'should return a snapshot frozen at the top level, service, and serializers', () => {
+    const result = applyDefaults({ ...baseOptions, serializers: { foo: (x: unknown) => x } })
     expect(Object.isFrozen(result)).toBe(true)
+    expect(Object.isFrozen(result.service)).toBe(true)
+    expect(Object.isFrozen(result.serializers)).toBe(true)
   })
 })

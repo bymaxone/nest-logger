@@ -135,13 +135,13 @@ The community lib [`nestjs-pino`](https://github.com/iamolegga/nestjs-pino) (Iam
 | `RedactPathsRegistry`      | Compiled list of PII paths for redaction                                                              |
 | `TraceContextMixin`        | Pino mixin that injects `traceId`/`spanId` when OTel is active                                        |
 
-#### HTTP (opt-in via `http.enabled: true`)
+#### HTTP (opt-in via `http.isEnabled: true`)
 
-| Component                | Activation                          | Responsibility                                                        |
-| ------------------------ | ----------------------------------- | --------------------------------------------------------------------- |
-| `HttpLoggingInterceptor` | `http: { enabled: true }`           | Logs request/response with normalized URL and duration                |
-| `HttpExceptionFilter`    | `http: { captureExceptions: true }` | Logs HTTP exceptions with the appropriate status code                 |
-| `RequestIdMiddleware`    | `http: { generateRequestId: true }` | Reads/generates the `x-request-id` header and injects it into context |
+| Component                | Activation                                | Responsibility                                                        |
+| ------------------------ | ----------------------------------------- | --------------------------------------------------------------------- |
+| `HttpLoggingInterceptor` | `http: { isEnabled: true }`               | Logs request/response with normalized URL and duration                |
+| `HttpExceptionFilter`    | `http: { shouldCaptureExceptions: true }` | Logs HTTP exceptions with the appropriate status code                 |
+| `RequestIdMiddleware`    | `http: { shouldGenerateRequestId: true }` | Reads/generates the `x-request-id` header and injects it into context |
 
 #### Decorators (always available)
 
@@ -172,7 +172,7 @@ BymaxLoggerModule.forRoot({
   service: { name: 'my-app', version: '1.0.0' },
   level: 'info',
   redactPaths: ['*.password', '*.token'],
-  http: { enabled: true }
+  http: { isEnabled: true }
 })
 
 // Async (with injection)
@@ -186,7 +186,7 @@ BymaxLoggerModule.forRootAsync({
     },
     level: config.get('LOG_LEVEL'),
     redactPaths: config.get('LOG_REDACT_PATHS', '').split(',').filter(Boolean),
-    http: { enabled: true },
+    http: { isEnabled: true },
     destinations: [new LokiDestination({ url: config.get('LOKI_URL') })]
   })
 })
@@ -273,11 +273,11 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
    - base { service: { name, version } } from options →
 5. The root Pino is created with multi-stream transport:
    - stdout JSON (always, unless overridden)
-   - pretty stream (if NODE_ENV !== 'production' or option.pretty) →
+   - pretty stream (if NODE_ENV !== 'production' or option.isPretty) →
 6. Custom destinations (ILogDestination[]) become additional Pino transports →
 7. PinoLoggerService is instantiated with a reference to the root Pino →
 8. LogContextService initializes AsyncLocalStorage<LogContext> →
-9. If http.enabled, HttpLoggingInterceptor + HttpExceptionFilter are registered as global →
+9. If http.isEnabled, HttpLoggingInterceptor + HttpExceptionFilter are registered as global →
 10. The lib emits its initial log: { logKey: 'LOGGER_BOOTSTRAP_OK', level, destinations: [...] } →
 11. On onApplicationShutdown(signal): the lib flushes all destinations
     (`await Promise.allSettled(destinations.map(d => d.onShutdown?.()))`)
@@ -537,7 +537,7 @@ export interface BymaxLoggerModuleOptions {
    * When true, all internal NestJS logs (`Bootstrap`, `RoutesResolver`, etc.) flow through Pino.
    * @default true
    */
-  useAsNestLogger?: boolean
+  shouldUseAsNestLogger?: boolean
 
   /**
    * PII paths to redact. Merged with `DEFAULT_REDACT_PATHS`.
@@ -556,7 +556,7 @@ export interface BymaxLoggerModuleOptions {
    * Disable default redact paths. Use with extreme caution.
    * @default false
    */
-  disableDefaultRedact?: boolean
+  shouldDisableDefaultRedact?: boolean
 
   /**
    * Custom destinations beyond the default stdout JSON.
@@ -568,18 +568,18 @@ export interface BymaxLoggerModuleOptions {
    * Force pretty-print output (overrides NODE_ENV auto-detection).
    * @default undefined — pretty enabled when NODE_ENV !== 'production'
    */
-  pretty?: boolean
+  isPretty?: boolean
 
   /**
    * HTTP module configuration.
    */
   http?: {
     /** Register HttpLoggingInterceptor and HttpExceptionFilter as global. @default false */
-    enabled?: boolean
+    isEnabled?: boolean
     /** Capture exceptions in filter (in addition to interceptor). @default true if enabled */
-    captureExceptions?: boolean
+    shouldCaptureExceptions?: boolean
     /** Auto-generate x-request-id header if missing. @default true if enabled */
-    generateRequestId?: boolean
+    shouldGenerateRequestId?: boolean
     /** URL paths to exclude from HTTP logging (regex array). @default [/^\/health$/, /^\/metrics$/] */
     excludePaths?: RegExp[]
     /** Header name where tenantId is read for context propagation. @default 'x-tenant-id' */
@@ -599,7 +599,7 @@ export interface BymaxLoggerModuleOptions {
    */
   otel?: {
     /** Inject traceId/spanId from active OTel span into every log. @default true if @opentelemetry/api is installed */
-    autoInjectTraceContext?: boolean
+    shouldAutoInjectTraceContext?: boolean
     /** Name of the field for traceId. @default 'traceId' (camelCase). Set to 'trace_id' to align with OTel Logs Data Model wire format. */
     traceIdField?: string
     /** Name of the field for spanId. @default 'spanId'. Set to 'span_id' for OTel alignment. */
@@ -636,32 +636,31 @@ export interface BymaxLoggerModuleOptions {
 
 ### 4.2 Options table and defaults
 
-| Option                        | Type                                    | Default                                                      | Notes                                                                                                                |
-| ----------------------------- | --------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `service.name`                | `string`                                | **required**                                                 | E.g., `'bymax-finance-backend'`                                                                                      |
-| `service.version`             | `string`                                | **required**                                                 | Typically `process.env.RELEASE_SHA ?? 'dev'`                                                                         |
-| `level`                       | `LogLevel`                              | `'info'` prod, `'debug'` other                               | Values: `'fatal' \| 'error' \| 'warn' \| 'info' \| 'debug' \| 'trace'`                                               |
-| `isGlobal`                    | `boolean`                               | `true`                                                       | `@Global()` for LoggerModule — mapped to Nest's `DynamicModule.global` internally                                    |
-| `useAsNestLogger`             | `boolean`                               | `true`                                                       | Replaces NestJS internal logger                                                                                      |
-| `redactPaths`                 | `string[]`                              | `[]` (merged with `DEFAULT_REDACT_PATHS`)                    | `fast-redact` syntax — wildcard `*` matches **a single level** (not recursive). List explicit depths if you need to. |
-| `redactCensor`                | `string`                                | `'[REDACTED]'`                                               | String that replaces sensitive values                                                                                |
-| `disableDefaultRedact`        | `boolean`                               | `false`                                                      | ⚠️ Do not use in prod without a strong reason                                                                        |
-| `destinations`                | `ILogDestination[]`                     | `[DefaultStdoutDestination]`                                 | + `PrettyDevDestination` auto in dev                                                                                 |
-| `pretty`                      | `boolean`                               | `NODE_ENV !== 'production'`                                  | Manual override                                                                                                      |
-| `http.enabled`                | `boolean`                               | `false`                                                      | Enables HTTP interceptor + filter                                                                                    |
-| `http.captureExceptions`      | `boolean`                               | `true` (if `enabled`)                                        | Enables the exception filter                                                                                         |
-| `http.generateRequestId`      | `boolean`                               | `true` (if `enabled`)                                        | Auto-generates `x-request-id`                                                                                        |
-| `http.excludePaths`           | `RegExp[]`                              | `[/^\/health$/, /^\/metrics$/]`                              | Do not log healthchecks                                                                                              |
-| `http.tenantIdHeader`         | `string`                                | `'x-tenant-id'`                                              | Header for multi-tenant context                                                                                      |
-| `http.userIdResolver`         | `(req: unknown) => string \| undefined` | `(req) => req.user?.id`                                      | Override how the user id is extracted from the request                                                               |
-| `otel.autoInjectTraceContext` | `boolean`                               | `true` (if OTel is available)                                | Injects `traceId`/`spanId`/`traceFlags`                                                                              |
-| `otel.traceIdField`           | `string`                                | `'traceId'` (or `'trace_id'` if `fieldFormat: 'snake_case'`) | Field name in the log                                                                                                |
-| `otel.spanIdField`            | `string`                                | `'spanId'` (or `'span_id'`)                                  | Field name in the log                                                                                                |
-| `otel.traceFlagsField`        | `string`                                | `'traceFlags'` (or `'trace_flags'`)                          | Field name in the log                                                                                                |
-| `otel.fieldFormat`            | `'camelCase' \| 'snake_case'`           | `'camelCase'`                                                | Shortcut to align with OTel Logs Data Model (`snake_case`) or Pino-native (`camelCase`)                              |
-| `maxEntrySizeBytes`           | `number`                                | `65536` (64KB)                                               | Truncates oversized entries                                                                                          |
-| `serializers`                 | `Record<string, fn>`                    | `{}` (merged with defaults)                                  | Defaults: `err`, `req`, `res`                                                                                        |
-| `timestamp`                   | `() => string`                          | `() => new Date().toISOString()`                             | Custom override                                                                                                      |
+| Option                              | Type                          | Default                                                      | Notes                                                                                                                |
+| ----------------------------------- | ----------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `service.name`                      | `string`                      | **required**                                                 | E.g., `'bymax-finance-backend'`                                                                                      |
+| `service.version`                   | `string`                      | **required**                                                 | Typically `process.env.RELEASE_SHA ?? 'dev'`                                                                         |
+| `level`                             | `LogLevel`                    | `'info'` prod, `'debug'` other                               | Values: `'fatal' \| 'error' \| 'warn' \| 'info' \| 'debug' \| 'trace'`                                               |
+| `isGlobal`                          | `boolean`                     | `true`                                                       | `@Global()` for LoggerModule — mapped to Nest's `DynamicModule.global` internally                                    |
+| `shouldUseAsNestLogger`             | `boolean`                     | `true`                                                       | Replaces NestJS internal logger                                                                                      |
+| `redactPaths`                       | `string[]`                    | `[]` (merged with `DEFAULT_REDACT_PATHS`)                    | `fast-redact` syntax — wildcard `*` matches **a single level** (not recursive). List explicit depths if you need to. |
+| `redactCensor`                      | `string`                      | `'[REDACTED]'`                                               | String that replaces sensitive values                                                                                |
+| `shouldDisableDefaultRedact`        | `boolean`                     | `false`                                                      | ⚠️ Do not use in prod without a strong reason                                                                        |
+| `destinations`                      | `ILogDestination[]`           | `[DefaultStdoutDestination]`                                 | + `PrettyDevDestination` auto in dev                                                                                 |
+| `isPretty`                          | `boolean`                     | `NODE_ENV !== 'production'`                                  | Manual override                                                                                                      |
+| `http.isEnabled`                    | `boolean`                     | `false`                                                      | Enables HTTP interceptor + filter                                                                                    |
+| `http.shouldCaptureExceptions`      | `boolean`                     | `true` (if `enabled`)                                        | Enables the exception filter                                                                                         |
+| `http.shouldGenerateRequestId`      | `boolean`                     | `true` (if `enabled`)                                        | Auto-generates `x-request-id`                                                                                        |
+| `http.excludePaths`                 | `RegExp[]`                    | `[/^\/health$/, /^\/metrics$/]`                              | Do not log healthchecks                                                                                              |
+| `http.tenantIdHeader`               | `string`                      | `'x-tenant-id'`                                              | Header for multi-tenant context                                                                                      |
+| `otel.shouldAutoInjectTraceContext` | `boolean`                     | `true` (if OTel is available)                                | Injects `traceId`/`spanId`/`traceFlags`                                                                              |
+| `otel.traceIdField`                 | `string`                      | `'traceId'` (or `'trace_id'` if `fieldFormat: 'snake_case'`) | Field name in the log                                                                                                |
+| `otel.spanIdField`                  | `string`                      | `'spanId'` (or `'span_id'`)                                  | Field name in the log                                                                                                |
+| `otel.traceFlagsField`              | `string`                      | `'traceFlags'` (or `'trace_flags'`)                          | Field name in the log                                                                                                |
+| `otel.fieldFormat`                  | `'camelCase' \| 'snake_case'` | `'camelCase'`                                                | Shortcut to align with OTel Logs Data Model (`snake_case`) or Pino-native (`camelCase`)                              |
+| `maxEntrySizeBytes`                 | `number`                      | `65536` (64KB)                                               | Truncates oversized entries                                                                                          |
+| `serializers`                       | `Record<string, fn>`          | `{}` (merged with defaults)                                  | Defaults: `err`, `req`, `res`                                                                                        |
+| `timestamp`                         | `() => string`                | `() => new Date().toISOString()`                             | Custom override                                                                                                      |
 
 ### 4.3 `applyDefaults()` — how `otel.fieldFormat` becomes individual field names
 
@@ -704,7 +703,7 @@ import { BymaxLoggerModule } from '@bymax-one/nest-logger'
       level: 'info',
       redactPaths: ['*.cardNumber', '*.cvv', 'body.creditCard.*'],
       http: {
-        enabled: true,
+        isEnabled: true,
         excludePaths: [/^\/health$/, /^\/metrics$/, /^\/favicon\.ico$/]
       }
     })
@@ -735,7 +734,7 @@ import { LokiDestination } from './observability/loki.destination'
         level: config.get('LOG_LEVEL') ?? 'info',
         redactPaths: (config.get('LOG_EXTRA_REDACT_PATHS') ?? '').split(',').filter(Boolean),
         http: {
-          enabled: true,
+          isEnabled: true,
           tenantIdHeader: config.get('TENANT_ID_HEADER') ?? 'x-tenant-id'
         },
         destinations:
@@ -1353,7 +1352,7 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
 
 ### 6.4 `BymaxLoggerModule.useNestLogger(app)` — wiring the lib as NestJS's logger
 
-The `useAsNestLogger?: boolean` option (default `true`) signals **intent**: the consumer wants this lib to replace NestJS's default internal logger (`Bootstrap`, `RoutesResolver`, `NestApplication`). However, because the lib lives inside a module and cannot reach the `INestApplication` instance, the **runtime wiring** must happen in `main.ts`. The lib exposes a static helper for it:
+The `shouldUseAsNestLogger?: boolean` option (default `true`) signals **intent**: the consumer wants this lib to replace NestJS's default internal logger (`Bootstrap`, `RoutesResolver`, `NestApplication`). However, because the lib lives inside a module and cannot reach the `INestApplication` instance, the **runtime wiring** must happen in `main.ts`. The lib exposes a static helper for it:
 
 ```typescript
 import type { INestApplication } from '@nestjs/common'
@@ -1387,7 +1386,7 @@ BymaxLoggerModule.useNestLogger(app) // replaces NestJS internal logger + flushe
 await app.listen(3000)
 ```
 
-> **Why the option exists if wiring is manual?** `useAsNestLogger: true` is purely a convention hint — the lib emits a bootstrap log that informs the consumer whether the helper is expected to be called. Calling `useNestLogger(app)` when `useAsNestLogger: false` is a no-op contract violation that surfaces as a warning. The lib **cannot** auto-wire `app.useLogger()` because modules don't see the `INestApplication`.
+> **Why the option exists if wiring is manual?** `shouldUseAsNestLogger: true` is purely a convention hint — the lib emits a bootstrap log that informs the consumer whether the helper is expected to be called. Calling `useNestLogger(app)` when `shouldUseAsNestLogger: false` is a no-op contract violation that surfaces as a warning. The lib **cannot** auto-wire `app.useLogger()` because modules don't see the `INestApplication`.
 
 ---
 
@@ -1525,7 +1524,7 @@ export function normalizeUrl(url: string): string {
 
 ### 7.3 Registration as a global interceptor
 
-When `http.enabled: true`, the lib automatically registers via `APP_INTERCEPTOR`:
+When `http.isEnabled: true`, the lib automatically registers via `APP_INTERCEPTOR`:
 
 ```typescript
 // Internally in logger.module.ts:
@@ -1810,12 +1809,12 @@ The lib **merges** with `DEFAULT_REDACT_PATHS` (does not replace). To fully repl
 ```typescript
 BymaxLoggerModule.forRoot({
   service: { name: 'my-app', version: '1.0.0' },
-  disableDefaultRedact: true, // discards defaults
+  shouldDisableDefaultRedact: true, // discards defaults
   redactPaths: ['*.password'] // only these
 })
 ```
 
-⚠️ `disableDefaultRedact: true` is recorded as a warning in the bootstrap log for security-review auditing.
+⚠️ `shouldDisableDefaultRedact: true` is recorded as a warning in the bootstrap log for security-review auditing.
 
 ### 10.3 Performance — builtin `fast-redact`
 
@@ -2144,16 +2143,16 @@ export const RESERVED_LOG_KEYS = {
 
 Errors the lib may throw (or record as a warning):
 
-| Code                              | Severity                     | When it occurs                                                             | Recommended action                                        |
-| --------------------------------- | ---------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `LOGGER_INVALID_OPTIONS`          | Throws at initialization     | `service.name` or `service.version` missing                                | Add the required fields                                   |
-| `LOGGER_INVALID_LEVEL`            | Throws                       | `level` is not a valid Pino value                                          | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`  |
-| `LOGGER_PRETTY_UNAVAILABLE`       | Warn at initialization       | `pretty: true` but `pino-pretty` not installed                             | Install `pino-pretty` or disable `pretty`                 |
-| `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap            | `otel.autoInjectTraceContext: true` but `@opentelemetry/api` not installed | Install or disable `autoInjectTraceContext`               |
-| `LOGGER_DESTINATION_INIT_FAILED`  | Error log emitted by the lib | `destination.onInit()` rejects                                             | Destination is removed from the registry; others continue |
-| `LOGGER_DESTINATION_WRITE_FAILED` | Warn                         | `destination.write()` throws                                               | Entry skipped for that destination; others continue       |
-| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Throws                       | `LogContextService.set()` called outside `run()`                           | Wrap in `logContext.run({ ... }, () => ...)`              |
-| `LOGGER_ENTRY_TRUNCATED`          | Warn (logged as a meta-log)  | Entry exceeds `maxEntrySizeBytes`                                          | Reduce metadata or raise the limit                        |
+| Code                              | Severity                     | When it occurs                                                                   | Recommended action                                        |
+| --------------------------------- | ---------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `LOGGER_INVALID_OPTIONS`          | Throws at initialization     | `service.name` or `service.version` missing                                      | Add the required fields                                   |
+| `LOGGER_INVALID_LEVEL`            | Throws                       | `level` is not a valid Pino value                                                | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`  |
+| `LOGGER_PRETTY_UNAVAILABLE`       | Warn at initialization       | `isPretty: true` but `pino-pretty` not installed                                 | Install `pino-pretty` or disable `isPretty`               |
+| `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap            | `otel.shouldAutoInjectTraceContext: true` but `@opentelemetry/api` not installed | Install or disable `shouldAutoInjectTraceContext`         |
+| `LOGGER_DESTINATION_INIT_FAILED`  | Error log emitted by the lib | `destination.onInit()` rejects                                                   | Destination is removed from the registry; others continue |
+| `LOGGER_DESTINATION_WRITE_FAILED` | Warn                         | `destination.write()` throws                                                     | Entry skipped for that destination; others continue       |
+| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Throws                       | `LogContextService.set()` called outside `run()`                                 | Wrap in `logContext.run({ ... }, () => ...)`              |
+| `LOGGER_ENTRY_TRUNCATED`          | Warn (logged as a meta-log)  | Entry exceeds `maxEntrySizeBytes`                                                | Reduce metadata or raise the limit                        |
 
 ---
 
@@ -2324,7 +2323,7 @@ Deliverables:
 - [ ] `HttpLoggingInterceptor`
 - [ ] `HttpExceptionFilter`
 - [ ] `@InjectLogger`, `@LogContext`, `@LogPerformance`
-- [ ] Conditional registration as global via `APP_INTERCEPTOR`/`APP_FILTER` when `http.enabled`
+- [ ] Conditional registration as global via `APP_INTERCEPTOR`/`APP_FILTER` when `http.isEnabled`
 - [ ] E2E tests with `supertest` in a Nest fixture app
 - [ ] 100% coverage on normalize-url (high blast radius)
 
@@ -2418,8 +2417,8 @@ import { BymaxLoggerModule } from '@bymax-one/nest-logger'
     BymaxLoggerModule.forRoot({
       service: { name: 'my-app-dev', version: 'dev' },
       level: 'debug',
-      http: { enabled: true }
-      // pretty: true is the default in NODE_ENV !== 'production'
+      http: { isEnabled: true }
+      // isPretty: true is the default in NODE_ENV !== 'production'
     })
   ]
 })
@@ -2506,7 +2505,7 @@ import { LokiDestination } from './observability/loki.destination'
           version: cfg.getOrThrow('RELEASE_SHA')
         },
         level: cfg.get('LOG_LEVEL') ?? 'info',
-        http: { enabled: true },
+        http: { isEnabled: true },
         destinations: [
           new LokiDestination({
             url: cfg.getOrThrow('LOKI_URL'),
@@ -2625,7 +2624,7 @@ The structured API of `PinoLoggerService.info(logKey, msg, userId, metadata)` is
 +     BymaxLoggerModule.forRoot({
 +       service: { name: 'fitness-backend', version: process.env.RELEASE_SHA ?? 'dev' },
 +       level: process.env.LOG_LEVEL as LogLevel ?? 'info',
-+       http: { enabled: true },
++       http: { isEnabled: true },
 +     }),
 +   ],
   })

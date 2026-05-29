@@ -26,9 +26,9 @@ export interface HttpOptions {
   /** Mount the HTTP interceptor + filter. Default: false. */
   isEnabled?: boolean
   /** Capture unhandled HTTP exceptions and emit `HTTP_EXCEPTION_UNHANDLED`. Default: true. */
-  captureExceptions?: boolean
+  shouldCaptureExceptions?: boolean
   /** Generate `requestId` when the request header is absent. Default: true. */
-  generateRequestId?: boolean
+  shouldGenerateRequestId?: boolean
   /** Paths that bypass HTTP logging (health checks, metrics). Defaults: `/health`, `/metrics`. */
   excludePaths?: readonly RegExp[]
   /** Header name carrying the tenant identifier. Default: `x-tenant-id`. */
@@ -41,7 +41,7 @@ export interface HttpOptions {
  */
 export interface OtelOptions {
   /** Inject the active span's trace/span IDs into every log entry. Default: true. */
-  autoInjectTraceContext?: boolean
+  shouldAutoInjectTraceContext?: boolean
   /**
    * Shortcut that derives sensible defaults for `traceIdField` / `spanIdField` /
    * `traceFlagsField` based on a target casing.
@@ -74,7 +74,7 @@ export interface BymaxLoggerModuleOptions {
   /** Register the module as `@Global()`. Default: true. */
   isGlobal?: boolean
   /** Replace the NestJS internal logger via `app.useLogger()`. Default: true. */
-  useAsNestLogger?: boolean
+  shouldUseAsNestLogger?: boolean
   /** Additional Pino redact paths — merged with `DEFAULT_REDACT_PATHS`. */
   redactPaths?: readonly string[]
   /** Censor string written in place of redacted values. Default: `[REDACTED]`. */
@@ -96,6 +96,22 @@ export interface BymaxLoggerModuleOptions {
   /** Custom timestamp function. Default: `() => new Date().toISOString()`. */
   timestamp?: () => string
 }
+
+/**
+ * Fully-resolved options after `applyDefaults` runs.
+ *
+ * Every optional field is filled, and the nested `http` / `otel` bags are
+ * deep-required because `applyDefaults` populates each of their fields. This is
+ * the precise shape every runtime layer (pino factory, services, middleware)
+ * consumes — distinct from the loosely-typed `BymaxLoggerModuleOptions` the
+ * consumer supplies.
+ */
+export type ResolvedBymaxLoggerModuleOptions = Readonly<
+  Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel'>> & {
+    http: Required<HttpOptions>
+    otel: Required<OtelOptions>
+  }
+>
 
 /**
  * Factory interface used by `useExisting` / `useClass` async wiring.
