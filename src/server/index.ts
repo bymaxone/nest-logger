@@ -18,10 +18,24 @@ export { LogContextService } from './services/log-context.service'
 // Destinations
 export { DefaultStdoutDestination } from './destinations/default-stdout.destination'
 
+// HTTP integration (interceptor, filter, middleware)
+export { HttpExceptionFilter } from './filters/http-exception.filter'
+export { HttpLoggingInterceptor } from './interceptors/http-logging.interceptor'
+export { applyRequestIdMiddleware } from './middlewares/apply-request-id-middleware'
+export { RequestIdMiddleware } from './middlewares/request-id.middleware'
+
+// Decorators
+export { InjectLogger } from './decorators/inject-logger.decorator'
+export { LogContext, LOG_CONTEXT_METADATA_KEY } from './decorators/log-context.decorator'
+export { LogPerformance } from './decorators/log-performance.decorator'
+
 // Interfaces and contracts
+// Note: the per-request `LogContext` bag interface is intentionally NOT
+// re-exported here — the public `LogContext` name belongs to the class-level
+// decorator above (see technical_specification §6). The bag type stays an
+// internal contract consumed via `LogContextService`.
 export type {
   ILogDestination,
-  LogContext,
   BymaxLoggerModuleOptions,
   BymaxLoggerModuleAsyncOptions,
   BymaxLoggerModuleOptionsFactory,

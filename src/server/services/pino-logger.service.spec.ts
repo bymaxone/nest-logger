@@ -164,6 +164,17 @@ describe('PinoLoggerService', () => {
     })
 
     it(/*
+     * A non-string, non-Error message on the variadic error() path must be
+     * coerced via String() — covers the message-coercion fallback branch that the
+     * log()/warn() path does not exercise.
+     */
+    'error() coerces a non-string message', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      service.error(42)
+      expect(spy).toHaveBeenCalledWith({ context: undefined }, '42')
+    })
+
+    it(/*
      * error(message, stack) with no explicit context must keep the stack at
      * index 0 and fall back to the INSTANCE context — the trailing stack must
      * not be misread as the context (the positional-contract regression guard).

@@ -1,7 +1,7 @@
 # Development Tasks — @bymax-one/nest-logger
 
 > **Version:** 2.1.0
-> **Last updated:** 2026-05-28
+> **Last updated:** 2026-05-29
 > **Status:** Draft for execution
 > **Based on:** [`development_plan.md`](./development_plan.md) + [`technical_specification.md`](./technical_specification.md)
 > **Total tasks:** 73 (post-audit: +9 — LOG-003b, LOG-013b, LOG-021b, LOG-024 split into LOG-024a + LOG-024b, LOG-034b, LOG-040b, LOG-049b, LOG-053b, LOG-062b)
@@ -37,13 +37,13 @@
 
 > **Status legend:** 🔴 Not Started · 🟡 In Progress · 🟢 Done · ⚪ Blocked · 🔵 In Review
 
-> **Overall progress:** 🟡 34 / 73 tasks done (47%)
+> **Overall progress:** 🟡 48 / 73 tasks done (66%)
 
 | #   | Phase                                  | Done / Total | %    | Status |
 | --- | -------------------------------------- | ------------ | ---- | ------ |
 | 1   | Foundation + Pino Integration          | 20 / 20      | 100% | 🟢     |
 | 2   | Context Propagation + OpenTelemetry    | 14 / 14      | 100% | 🟢     |
-| 3   | HTTP Interceptor + Filter + Decorators | 0 / 14       | 0%   | 🔴     |
+| 3   | HTTP Interceptor + Filter + Decorators | 14 / 14      | 100% | 🟢     |
 | 4   | Pretty + Destinations + E2E + Mutation | 0 / 14       | 0%   | 🔴     |
 | 5   | Release v0.1.0                         | 0 / 11       | 0%   | 🔴     |
 
@@ -2363,7 +2363,7 @@ node /tmp/smoke-phase2.mjs
 ### LOG-031: normalizeUrl utility (pure function)
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-006
 - **Agent:** typescript-reviewer
@@ -2390,10 +2390,10 @@ node /tmp/smoke-phase2.mjs
 
 **Acceptance criteria:**
 
-- [ ] Function exported
-- [ ] 4 ID types replaced
-- [ ] Query string removed
-- [ ] Pure (no side effects)
+- [x] Function exported
+- [x] 4 ID types replaced
+- [x] Query string removed
+- [x] Pure (no side effects)
 
 **Validation commands:**
 
@@ -2408,7 +2408,7 @@ pnpm typecheck
 ### LOG-032: RequestIdMiddleware
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-019
 - **Agent:** code-reviewer
@@ -2450,11 +2450,11 @@ pnpm typecheck
 
 **Acceptance criteria:**
 
-- [ ] `x-request-id` read if present, UUID v4 generated if absent
-- [ ] `x-request-id` response header always set
-- [ ] `logContext.run` starts BEFORE `next()`
-- [ ] Express-only (Fastify adapter is roadmap v0.2 — out of scope here)
-- [ ] `pnpm typecheck` passes
+- [x] `x-request-id` read if present, UUID v4 generated if absent
+- [x] `x-request-id` response header always set
+- [x] `logContext.run` starts BEFORE `next()`
+- [x] Express-only (Fastify adapter is roadmap v0.2 — out of scope here)
+- [x] `pnpm typecheck` passes
 
 **Validation commands:** `pnpm typecheck`
 
@@ -2465,7 +2465,7 @@ pnpm typecheck
 ### LOG-033: HttpLoggingInterceptor
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-022, LOG-031
 - **Agent:** code-reviewer
@@ -2493,10 +2493,10 @@ pnpm typecheck
 
 **Acceptance criteria:**
 
-- [ ] Implements `NestInterceptor`
-- [ ] 5 paths covered (start/success/redirect/4xx/5xx)
-- [ ] Exception propagated
-- [ ] `pnpm typecheck` passes
+- [x] Implements `NestInterceptor`
+- [x] 5 paths covered (start/success/redirect/4xx/5xx)
+- [x] Exception propagated
+- [x] `pnpm typecheck` passes
 
 **Validation commands:** `pnpm typecheck`
 
@@ -2507,7 +2507,7 @@ pnpm typecheck
 ### LOG-034: HttpExceptionFilter
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-022, LOG-034b (the `sanitizeError` util the filter consumes)
 - **Agent:** code-reviewer
@@ -2532,11 +2532,11 @@ pnpm typecheck
 
 **Acceptance criteria:**
 
-- [ ] Filter implements `ExceptionFilter` with `@Catch()`
-- [ ] 5xx vs 4xx separated with correct levels
-- [ ] JSON response generated
-- [ ] Consumes `sanitizeError` from LOG-034b (do NOT create a parallel copy)
-- [ ] `pnpm typecheck` passes
+- [x] Filter implements `ExceptionFilter` with `@Catch()`
+- [x] 5xx vs 4xx separated with correct levels
+- [x] JSON response generated
+- [x] Consumes `sanitizeError` from LOG-034b (do NOT create a parallel copy)
+- [x] `pnpm typecheck` passes
 
 **Validation commands:** `pnpm typecheck`
 
@@ -2547,7 +2547,7 @@ pnpm typecheck
 ### LOG-034b: Create sanitize-error.util.ts with circular/cause/AggregateError handling
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** Medium
 - **Dependencies:** LOG-006 (utils/ folder)
 - **Agent:** typescript-reviewer
@@ -2623,19 +2623,19 @@ pnpm typecheck
 >
 > 1. Verification passes; 100% coverage on the util
 > 2. Update LOG-034's `sanitizeError` reference to consume this util (do NOT create a parallel copy)
-> 3. `Status: ⬜ TODO` → `Status: ✅ DONE`
+> 3. `Status: ✅ DONE` → `Status: ✅ DONE`
 > 4. Update Progress Dashboard for Phase 3 + TOTAL
 > 5. Commit: `feat(logger): add sanitizeError util with cause/AggregateError/circular handling (LOG-034b)`
 
 **Acceptance criteria:**
 
-- [ ] Serializes `Error`, `TypeError`, `RangeError`, `SyntaxError`, and other native errors
-- [ ] Handles `cause` chain with max depth 3 (configurable, default 3) to prevent runaway chains
-- [ ] Handles `AggregateError.errors[]` (recursive sanitization)
-- [ ] Circular refs become `'[Circular]'` sentinel (tracked via WeakSet)
-- [ ] NEVER throws — every failure returns a `SanitizedError` shape
-- [ ] `node_modules/` paths scrubbed from `stack`
-- [ ] 100% coverage on the util and its spec
+- [x] Serializes `Error`, `TypeError`, `RangeError`, `SyntaxError`, and other native errors
+- [x] Handles `cause` chain with max depth 3 (configurable, default 3) to prevent runaway chains
+- [x] Handles `AggregateError.errors[]` (recursive sanitization)
+- [x] Circular refs become `'[Circular]'` sentinel (tracked via WeakSet)
+- [x] NEVER throws — every failure returns a `SanitizedError` shape
+- [x] `node_modules/` paths scrubbed from `stack`
+- [x] 100% coverage on the util and its spec
 
 **Validation commands:**
 
@@ -2656,7 +2656,7 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 ### LOG-035: @InjectLogger decorator
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** Medium
 - **Dependencies:** LOG-022
 - **Agent:** typescript-reviewer
@@ -2694,10 +2694,10 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 
 **Acceptance criteria:**
 
-- [ ] Decorator exported
-- [ ] Applies `@Inject(PinoLoggerService)`
-- [ ] Saves metadata when `context` is provided
-- [ ] `pnpm typecheck` passes
+- [x] Decorator exported
+- [x] Applies `@Inject(PinoLoggerService)`
+- [x] Saves metadata when `context` is provided
+- [x] `pnpm typecheck` passes
 
 **Validation commands:** `pnpm typecheck`
 
@@ -2708,7 +2708,7 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 ### LOG-036: @LogContext + @LogPerformance decorators
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** Medium
 - **Dependencies:** LOG-022
 - **Agent:** typescript-reviewer
@@ -2733,11 +2733,11 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 
 **Acceptance criteria:**
 
-- [ ] 2 decorators created
-- [ ] `@LogContext('Foo')` applies metadata
-- [ ] `@LogPerformance(50)` async — method > 50ms → warn `METHOD_SLOW_EXECUTION`
-- [ ] `@LogPerformance` propagates return value and exceptions
-- [ ] `pnpm typecheck` passes
+- [x] 2 decorators created
+- [x] `@LogContext('Foo')` applies metadata
+- [x] `@LogPerformance(50)` async — method > 50ms → warn `METHOD_SLOW_EXECUTION`
+- [x] `@LogPerformance` propagates return value and exceptions
+- [x] `pnpm typecheck` passes
 
 **Validation commands:** `pnpm typecheck`
 
@@ -2748,7 +2748,7 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 ### LOG-037: applyRequestIdMiddleware helper
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** Medium
 - **Dependencies:** LOG-032
 - **Agent:** architect
@@ -2779,9 +2779,9 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 
 **Acceptance criteria:**
 
-- [ ] Helper exported
-- [ ] Accepts optional `routes` (default `'*'`)
-- [ ] `pnpm typecheck` passes
+- [x] Helper exported
+- [x] Accepts optional `routes` (default `'*'`)
+- [x] `pnpm typecheck` passes
 
 **Validation commands:** `pnpm typecheck`
 
@@ -2792,7 +2792,7 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 ### LOG-038: BymaxLoggerModule HTTP integration (conditional registration)
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-024b, LOG-033, LOG-034
 - **Agent:** architect
@@ -2833,11 +2833,11 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 
 **Acceptance criteria:**
 
-- [ ] When `http.isEnabled: false` (default), interceptor/filter are NOT registered
-- [ ] When `http.isEnabled: true`, both are registered
-- [ ] When `http.shouldCaptureExceptions: false`, only the interceptor is registered
-- [ ] Barrel updated
-- [ ] `pnpm typecheck` + `pnpm build` pass
+- [x] When `http.isEnabled: false` (default), interceptor/filter are NOT registered
+- [x] When `http.isEnabled: true`, both are registered
+- [x] When `http.shouldCaptureExceptions: false`, only the interceptor is registered
+- [x] Barrel updated
+- [x] `pnpm typecheck` + `pnpm build` pass
 
 **Validation commands:** `pnpm typecheck && pnpm build`
 
@@ -2848,7 +2848,7 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 ### LOG-039: Tests — normalizeUrl (mutation 100%)
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-031
 - **Agent:** tester
@@ -2883,9 +2883,9 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 
 **Acceptance criteria:**
 
-- [ ] 15+ cases
-- [ ] 100% coverage
-- [ ] 100% mutation score on this function (critical path — a failure corrupts log queries)
+- [x] 15+ cases
+- [x] 100% coverage
+- [x] 100% mutation score on this function (critical path — a failure corrupts log queries)
 
 **Validation commands:**
 
@@ -2901,7 +2901,7 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 ### LOG-040: Tests — HttpLoggingInterceptor (with supertest fixture)
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-033
 - **Agent:** tester
@@ -2931,9 +2931,9 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 
 **Acceptance criteria:**
 
-- [ ] 8+ cases
-- [ ] 100% coverage
-- [ ] Exception propagation verified
+- [x] 8+ cases
+- [x] 100% coverage
+- [x] Exception propagation verified
 
 **Validation commands:** `pnpm test src/server/interceptors/`
 
@@ -2944,7 +2944,7 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 ### LOG-041: Tests — HttpExceptionFilter
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** Medium
 - **Dependencies:** LOG-034
 - **Agent:** tester
@@ -2978,7 +2978,7 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 ### LOG-042: Tests — decorators (InjectLogger, LogContext, LogPerformance)
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** Medium
 - **Dependencies:** LOG-035, LOG-036
 - **Agent:** tester
@@ -3006,7 +3006,7 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 ### LOG-043: Phase 3 validation
 
 - **Phase:** 3
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-031 through LOG-042
 - **Agent:** code-reviewer
@@ -3035,9 +3035,9 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 
 **Acceptance criteria:**
 
-- [ ] Commands pass
-- [ ] Smoke test 2 scenarios OK
-- [ ] `/bymax-quality:code-review` run
+- [x] Commands pass
+- [x] Smoke test 2 scenarios OK
+- [x] `/bymax-quality:code-review` run
 
 **Validation commands:** `pnpm typecheck && pnpm lint && pnpm test:cov && pnpm build`
 
