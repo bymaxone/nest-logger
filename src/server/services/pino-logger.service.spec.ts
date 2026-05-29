@@ -56,6 +56,41 @@ describe('PinoLoggerService', () => {
         err: { name: 'Error', message: 'boom' }
       })
     })
+
+    it(/*
+     * Reserved structured fields must win over caller metadata — a metadata key
+     * like `logKey` must NOT clobber the value passed as the logKey argument
+     * (log-integrity guard against metadata-first spread regressions).
+     */
+    'does not let metadata override reserved info fields', () => {
+      const spy = jest.spyOn(rawLogger, 'info')
+      service.setContext('Real')
+      service.info('REAL_KEY', 'msg', 'u_1', {
+        logKey: 'EVIL',
+        userId: 'EVIL',
+        context: 'EVIL',
+        extra: 1
+      })
+      expect(spy).toHaveBeenCalledWith(
+        { logKey: 'REAL_KEY', userId: 'u_1', context: 'Real', extra: 1 },
+        'msg'
+      )
+    })
+
+    it(/*
+     * The same guard must hold for errorStructured: metadata must not clobber
+     * logKey / userId / context / err.
+     */
+    'does not let metadata override reserved error fields', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      service.errorStructured('REAL_ERR', new Error('boom'), 'u_1', { logKey: 'EVIL', err: 'EVIL' })
+      const [payload] = spy.mock.calls[0] ?? []
+      expect(payload).toMatchObject({
+        logKey: 'REAL_ERR',
+        userId: 'u_1',
+        err: { name: 'Error', message: 'boom' }
+      })
+    })
   })
 
   describe('NestJS variadic API', () => {

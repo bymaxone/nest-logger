@@ -21,6 +21,12 @@ const FORBIDDEN_CONTEXT_KEYS = new Set(['__proto__', 'constructor', 'prototype']
  * A single instance is shared per module (NestJS singleton scope) so the
  * code that opens a scope and the mixin that reads it operate on the same
  * storage.
+ *
+ * @example
+ *   logContext.run({ requestId: 'r_1' }, async () => {
+ *     logContext.set('userId', 'u_1')
+ *     await handler() // every log inside carries requestId + userId
+ *   })
  */
 @Injectable()
 export class LogContextService {
@@ -40,7 +46,7 @@ export class LogContextService {
    *   })
    */
   run<T>(context: LogContext, callback: () => T): T {
-    return this.als.run(context, callback)
+    return this.als.run(this.sanitizeContext(context), callback)
   }
 
   /**
@@ -85,5 +91,27 @@ export class LogContextService {
       return undefined
     }
     return Reflect.get(store, key) as T | undefined
+  }
+
+  /**
+   * Strip prototype-polluting keys from a caller-supplied context so an own
+   * `__proto__` / `constructor` / `prototype` key (e.g. from `JSON.parse` of an
+   * untrusted payload) can never reach the store — and, via the trace mixin's
+   * `Object.assign`, the emitted log entry. Mirrors the guard `set()` enforces,
+   * but drops the key rather than throwing: a logging concern must never crash
+   * the request that produced it.
+   *
+   * @param context - The raw context bag passed to `run()`.
+   * @returns A shallow copy with any forbidden keys removed.
+   */
+  private sanitizeContext(context: LogContext): LogContext {
+    const safe: LogContext = {}
+    for (const key of Object.keys(context)) {
+      if (!FORBIDDEN_CONTEXT_KEYS.has(key)) {
+        // `Reflect` keeps the dynamic read/write off the object-injection sink list.
+        Reflect.set(safe, key, Reflect.get(context, key))
+      }
+    }
+    return safe
   }
 }

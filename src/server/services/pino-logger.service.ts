@@ -25,6 +25,18 @@ import { LOGGER_PINO_INSTANCE_TOKEN } from '../constants/injection-tokens.consta
 /** Pino level methods the NestJS-style variadic path dispatches to (error is handled separately). */
 type PinoLevelMethod = 'info' | 'warn' | 'debug' | 'trace' | 'fatal'
 
+/**
+ * Pino-backed implementation of the NestJS `LoggerService` contract plus the
+ * structured `MODULE_ACTION_RESULT` API. Inject it directly (or hand it to
+ * `app.useLogger()`); call `setContext()` once to label every subsequent entry.
+ *
+ * @example
+ *   constructor(private readonly logger: PinoLoggerService) {
+ *     this.logger.setContext(UserService.name)
+ *   }
+ *   // ...
+ *   this.logger.info('USER_CREATED', 'New user registered', userId, { plan: 'pro' })
+ */
 @Injectable()
 export class PinoLoggerService implements NestLoggerService, OnApplicationShutdown {
   private context?: string
@@ -162,8 +174,10 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     userId?: string,
     metadata?: Record<string, unknown>
   ): void {
+    // Reserved fields are written AFTER metadata so a caller-supplied `metadata`
+    // key cannot clobber logKey / userId / context / err.
     this.pino.error(
-      { logKey, userId, context: this.context, err: this.serializeError(error), ...metadata },
+      { ...metadata, logKey, userId, context: this.context, err: this.serializeError(error) },
       error.message
     )
   }
@@ -234,11 +248,13 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     userId?: string,
     metadata?: Record<string, unknown>
   ): void {
+    // Reserved fields are spread AFTER metadata so a caller-supplied key in
+    // `metadata` (e.g. `logKey`) can never clobber the structured contract.
     const payload: Record<string, unknown> = {
+      ...metadata,
       logKey,
       userId,
-      context: this.context,
-      ...metadata
+      context: this.context
     }
     if (level === 'info') {
       this.pino.info(payload, message)

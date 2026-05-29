@@ -180,6 +180,26 @@ describe('createTraceContextMixin', () => {
   })
 
   it(/*
+   * traceFlags larger than a byte must be masked to the low 8 bits so the
+   * emitted value is always 2 hex digits (e.g. 511 -> "ff"), never longer than
+   * the W3C one-byte format — guards against a malformed span.
+   */
+  'masks out-of-range traceFlags to a single byte', () => {
+    mockedDetect.mockReturnValue(
+      apiWith({ traceId: VALID_TRACE_ID, spanId: SPAN_ID, traceFlags: 511 })
+    )
+    const mixin = createTraceContextMixin(logContext, {
+      ...defaultFields,
+      shouldAutoInjectTraceContext: true
+    })
+    expect(mixin({}, 30, logger)).toEqual({
+      traceId: VALID_TRACE_ID,
+      spanId: SPAN_ID,
+      traceFlags: 'ff'
+    })
+  })
+
+  it(/*
    * When the API is present but no span is active, the mixin must contribute
    * nothing.
    */

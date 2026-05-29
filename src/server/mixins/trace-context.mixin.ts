@@ -77,8 +77,10 @@ export function createTraceContextMixin(
           // Defensive: a malformed span may omit traceFlags. Guarding keeps the
           // logger from throwing on the hot path.
           if (typeof ctx.traceFlags === 'number') {
-            // 2 lowercase hex digits per W3C Trace Context.
-            Reflect.set(merged, opts.traceFlagsField, ctx.traceFlags.toString(16).padStart(2, '0'))
+            // W3C trace-flags is a single byte; mask to it so a malformed span
+            // can never emit more than 2 lowercase hex digits (e.g. 256 -> "00").
+            const flagsByte = ctx.traceFlags & 0xff
+            Reflect.set(merged, opts.traceFlagsField, flagsByte.toString(16).padStart(2, '0'))
           }
         }
       }

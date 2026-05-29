@@ -1,3 +1,5 @@
+import type { LogContext } from '../interfaces/log-context.interface'
+
 import { LogContextService } from './log-context.service'
 
 describe('LogContextService', () => {
@@ -84,6 +86,20 @@ describe('LogContextService', () => {
     service.run({ requestId: 'r_1' }, () => {
       expect(() => service.set('__proto__', { polluted: true })).toThrow(/unsafe context key/i)
       expect(() => service.set('constructor', {})).toThrow(/unsafe context key/i)
+    })
+  })
+
+  it(/*
+   * run() must strip prototype-polluting keys from a caller-supplied context
+   * (e.g. an own `__proto__` from JSON.parse of an untrusted payload) so they
+   * never reach the store — defense in depth matching the set() guard.
+   */
+  'strips prototype-polluting keys from the run() context', () => {
+    const polluted = JSON.parse(
+      '{"requestId":"r_1","__proto__":{"x":1},"constructor":"c"}'
+    ) as LogContext
+    service.run(polluted, () => {
+      expect(service.getStore()).toEqual({ requestId: 'r_1' })
     })
   })
 
