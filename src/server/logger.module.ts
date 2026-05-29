@@ -8,6 +8,7 @@
  */
 import { Module } from '@nestjs/common'
 import type { DynamicModule, Provider } from '@nestjs/common'
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core'
 
 import { applyDefaults } from './config/default-options'
 import { validateOptions } from './config/validate-options'
@@ -18,6 +19,8 @@ import {
   LOGGER_PINO_INSTANCE_TOKEN
 } from './constants/injection-tokens.constants'
 import { DefaultStdoutDestination } from './destinations/default-stdout.destination'
+import { HttpExceptionFilter } from './filters/http-exception.filter'
+import { HttpLoggingInterceptor } from './interceptors/http-logging.interceptor'
 import type { ILogDestination } from './interfaces/log-destination.interface'
 import type {
   BymaxLoggerModuleOptions,
@@ -139,6 +142,16 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
       { provide: LOGGER_OPTIONS_TOKEN, useValue: resolved },
       ...buildCommonProviders()
     ]
+    // The HTTP interceptor/filter are opt-in: registered globally only when the
+    // consumer enables `http`. The filter is further gated on
+    // `shouldCaptureExceptions` so consumers can keep the access log without the
+    // catch-all exception handler.
+    if (resolved.http.isEnabled) {
+      providers.push({ provide: APP_INTERCEPTOR, useClass: HttpLoggingInterceptor })
+      if (resolved.http.shouldCaptureExceptions) {
+        providers.push({ provide: APP_FILTER, useClass: HttpExceptionFilter })
+      }
+    }
     return augmentLoggerModule(super.forRoot(options), providers)
   }
 
@@ -152,6 +165,12 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
    * deferred to Phase 4 (LOG-045), where the `DestinationRegistry` is implemented.
    * Phase 2 ships the destinations array under `LOGGER_DESTINATIONS_TOKEN`; no
    * Phase 2 destination defines an `onInit` hook, so nothing is lost.
+   *
+   * Note: the HTTP interceptor/filter are wired only by {@link forRoot}, where
+   * `http.isEnabled` is known at module-definition time. Async options resolve at
+   * runtime, after the providers array is built, so conditional global
+   * registration is not possible here — consumers needing HTTP logging with async
+   * config should use `forRoot`. A runtime-gated registration path is roadmap v0.2.
    *
    * @param options - Async options (factory + inject + imports, or class).
    * @returns The configured `DynamicModule`.
