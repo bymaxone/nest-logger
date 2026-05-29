@@ -37,12 +37,12 @@
 
 > **Status legend:** 🔴 Not Started · 🟡 In Progress · 🟢 Done · ⚪ Blocked · 🔵 In Review
 
-> **Overall progress:** 🟡 20 / 73 tasks done (27%)
+> **Overall progress:** 🟡 34 / 73 tasks done (47%)
 
 | #   | Phase                                  | Done / Total | %    | Status |
 | --- | -------------------------------------- | ------------ | ---- | ------ |
 | 1   | Foundation + Pino Integration          | 20 / 20      | 100% | 🟢     |
-| 2   | Context Propagation + OpenTelemetry    | 0 / 14       | 0%   | 🔴     |
+| 2   | Context Propagation + OpenTelemetry    | 14 / 14      | 100% | 🟢     |
 | 3   | HTTP Interceptor + Filter + Decorators | 0 / 14       | 0%   | 🔴     |
 | 4   | Pretty + Destinations + E2E + Mutation | 0 / 14       | 0%   | 🔴     |
 | 5   | Release v0.1.0                         | 0 / 11       | 0%   | 🔴     |
@@ -796,7 +796,7 @@ pnpm test:cov -- --testPathPattern=src/shared
 >
 > 1. `log-destination.interface.ts` — `ILogDestination` with `readonly name`, `readonly minLevel?: LogLevel`, `write(payload: string): void | Promise<void>`, `onInit?()`, `onShutdown?()`. Full JSDoc with `@example` for a simple FileDestination.
 > 2. `log-context.interface.ts` — `LogContext` interface with `requestId?: string`, `tenantId?: string`, `userId?: string`, `traceId?: string`, `spanId?: string`, `[key: string]: unknown` for extension.
-> 3. `logger-module-options.interface.ts` — `BymaxLoggerModuleOptions` with EVERY field from spec §4.1: `service: ServiceMetadata`, `level?`, `isGlobal?` (canonical name — **not** `global`), `useAsNestLogger?`, `redactPaths?: readonly string[]`, `redactCensor?`, `disableDefaultRedact?`, `destinations?: readonly ILogDestination[]`, `pretty?`, `http?: HttpOptions`, `otel?: OtelOptions`, `maxEntrySizeBytes?`, `serializers?`, `timestamp?`. Separate `HttpOptions` and `OtelOptions` sub-interfaces. `BymaxLoggerModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'>` sub-interface with `useFactory`, `inject`, `useExisting`, `useClass`. `BymaxLoggerModuleOptionsFactory` sub-interface with `createLoggerOptions()`.
+> 3. `logger-module-options.interface.ts` — `BymaxLoggerModuleOptions` with EVERY field from spec §4.1: `service: ServiceMetadata`, `level?`, `isGlobal?` (canonical name — **not** `global`), `shouldUseAsNestLogger?`, `redactPaths?: readonly string[]`, `redactCensor?`, `shouldDisableDefaultRedact?`, `destinations?: readonly ILogDestination[]`, `isPretty?`, `http?: HttpOptions`, `otel?: OtelOptions`, `maxEntrySizeBytes?`, `serializers?`, `timestamp?`. Separate `HttpOptions` and `OtelOptions` sub-interfaces. `BymaxLoggerModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'>` sub-interface with `useFactory`, `inject`, `useExisting`, `useClass`. `BymaxLoggerModuleOptionsFactory` sub-interface with `createLoggerOptions()`.
 >
 > Create `src/server/interfaces/index.ts` exporting the 6 types via `export type { ... }`.
 >
@@ -1182,8 +1182,8 @@ grep -n "from '" src/server/config/validate-options.ts  # only project types
 > Create 2 files:
 >
 > 1. `src/server/config/default-options.ts` — `applyDefaults(options: BymaxLoggerModuleOptions): Readonly<Required<BymaxLoggerModuleOptions>>`. Hard-coded defaults:
->    - `DEFAULT_HTTP: Required<HttpOptions>` — `enabled: false`, `captureExceptions: true`, `generateRequestId: true`, `excludePaths: [/^\/health$/, /^\/metrics$/]`, `tenantIdHeader: 'x-tenant-id'`
->    - `DEFAULT_OTEL: Required<OtelOptions>` — `autoInjectTraceContext: true`, `traceIdField: 'traceId'`, `spanIdField: 'spanId'`
+>    - `DEFAULT_HTTP: Required<HttpOptions>` — `isEnabled: false`, `shouldCaptureExceptions: true`, `shouldGenerateRequestId: true`, `excludePaths: [/^\/health$/, /^\/metrics$/]`, `tenantIdHeader: 'x-tenant-id'`
+>    - `DEFAULT_OTEL: Required<OtelOptions>` — `shouldAutoInjectTraceContext: true`, `traceIdField: 'traceId'`, `spanIdField: 'spanId'`
 >    - Detects `isProduction = process.env['NODE_ENV'] === 'production'` for the default `level`
 >    - Spread merge `{ ...DEFAULT_HTTP, ...options.http }` for sub-objects
 >    - Return `Object.freeze(merged)` (shallow freeze — document the limitation)
@@ -1399,7 +1399,7 @@ pnpm typecheck && pnpm lint && pnpm test:cov && pnpm build && pnpm size
 ### LOG-019: LogContextService (AsyncLocalStorage manager)
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-010
 - **Agent:** typescript-reviewer
@@ -1448,7 +1448,7 @@ pnpm typecheck
 ### LOG-020: OTel detector utility (ESM/CJS compatible)
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-006
 - **Agent:** typescript-reviewer
@@ -1518,7 +1518,7 @@ pnpm typecheck
 ### LOG-021: TraceContextMixin (Pino formatter)
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-019, LOG-020
 - **Agent:** typescript-reviewer
@@ -1545,7 +1545,7 @@ pnpm typecheck
 
 - [ ] Function exported with signature **(mergeObject, level, logger) => object**
 - [ ] Does not throw when `traceApi` is undefined
-- [ ] Does not inject trace fields when `autoInjectTraceContext: false`
+- [ ] Does not inject trace fields when `shouldAutoInjectTraceContext: false`
 - [ ] Returns `traceFlags` as 2-hex-digit lowercase (W3C Trace Context)
 - [ ] `pnpm typecheck` passes
 
@@ -1567,7 +1567,7 @@ pnpm typecheck
 ### LOG-021b: Implement otel.fieldFormat ('camelCase' | 'snake_case') shortcut
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** Medium
 - **Dependencies:** LOG-015 (applyDefaults base — the shortcut is implemented inside `applyDefaults`)
 - **Agent:** typescript-reviewer
@@ -1671,7 +1671,7 @@ pnpm test src/server/config/default-options.spec.ts
 ### LOG-022: PinoLoggerService base
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-011
 - **Agent:** code-reviewer
@@ -1747,7 +1747,7 @@ pnpm typecheck
 ### LOG-023: pino-factory.ts (buildPinoInstance with mixin)
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-021, LOG-022
 - **Agent:** architect
@@ -1763,7 +1763,7 @@ pnpm typecheck
 > Create `src/server/pino-factory.ts` exporting `buildPinoInstance(options, logContext)`. Configures Pino with:
 >
 > - `level: options.level`
-> - `redact: { paths: compileRedactPaths(options.redactPaths, options.disableDefaultRedact), censor: options.redactCensor }`
+> - `redact: { paths: compileRedactPaths(options.redactPaths, options.shouldDisableDefaultRedact), censor: options.redactCensor }`
 > - `base: { service: options.service }`
 > - `timestamp: () => `,"time":"${options.timestamp()}"``(Pino format requires a string with prefix`,"time":"`)
 > - `formatters: { level: (label) => ({ level: label }) }` — emits the level as a string instead of numeric (easier for log aggregators). **DO NOT** use `formatters.log` to inject traceId/spanId — that hook does not see ambient context (see spec §11; trace context comes via mixin).
@@ -1799,7 +1799,7 @@ pnpm typecheck
 ### LOG-024a: ConfigurableModuleBuilder skeleton + sync forRoot()
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-008, LOG-009, LOG-010, LOG-011, LOG-012, LOG-013, LOG-013b, LOG-014, LOG-015, LOG-016, LOG-019, LOG-023
 - **Agent:** architect
@@ -1905,7 +1905,7 @@ pnpm test src/server/logger.module.spec.ts
 ### LOG-024b: forRootAsync() + onModuleInit destination registry hook
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE (destination-registry onModuleInit hook deferred to LOG-045 — registry not implemented until Phase 4)
 - **Priority:** High
 - **Dependencies:** LOG-024a, LOG-017 (the compile-redact-paths util + its spec — `src/server/utils/compile-redact-paths.util.ts` — must be in place before the async factory wires it up)
 - **Agent:** architect
@@ -2011,7 +2011,7 @@ pnpm test:cov -- --testPathPattern=logger.module
 ### LOG-025: src/server/index.ts barrel — partial public exports
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** Medium
 - **Dependencies:** LOG-024b
 - **Agent:** architect
@@ -2092,7 +2092,7 @@ node -e "import('./dist/server/index.mjs').then(m => console.log(Object.keys(m).
 ### LOG-026: Tests — LogContextService (AsyncLocalStorage isolation)
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-019
 - **Agent:** tester
@@ -2142,7 +2142,7 @@ pnpm test:cov -- --testPathPattern=log-context.service
 ### LOG-027: Tests — OTel detector (with/without @opentelemetry/api)
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-020
 - **Agent:** tester
@@ -2191,7 +2191,7 @@ pnpm test src/server/utils/otel-detector.spec.ts
 ### LOG-028: Tests — TraceContextMixin
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-021, LOG-026, LOG-027
 - **Agent:** tester
@@ -2210,7 +2210,7 @@ pnpm test src/server/utils/otel-detector.spec.ts
 > 2. Mixin returns `{ requestId, tenantId, userId }` when inside `logContext.run({...}, ...)`
 > 3. Mixin injects `traceId`/`spanId` with OTel mocked + active span + valid traceId
 > 4. Mixin does **NOT** inject when OTel returns a span with a zero traceId
-> 5. Mixin does **NOT** inject when `autoInjectTraceContext: false`
+> 5. Mixin does **NOT** inject when `shouldAutoInjectTraceContext: false`
 > 6. Custom field names: `traceIdField: 'myTrace'`, `spanIdField: 'mySpan'` applied
 > 7. `traceFlags` field name (override or default) is present in log when a span is active, even when `traceFlags === 0` (unsampled but recorded — MUST NOT be skipped just because the value is zero)
 >
@@ -2240,7 +2240,7 @@ pnpm test src/server/mixins/trace-context.mixin.spec.ts
 ### LOG-029: Tests — PinoLoggerService
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-022
 - **Agent:** tester
@@ -2292,7 +2292,7 @@ pnpm test:cov -- --testPathPattern=pino-logger.service
 ### LOG-030: Phase 2 validation
 
 - **Phase:** 2
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-019 through LOG-029
 - **Agent:** code-reviewer
@@ -2797,7 +2797,7 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 - **Dependencies:** LOG-024b, LOG-033, LOG-034
 - **Agent:** architect
 
-**Description:** When `http.enabled: true`, conditionally register `APP_INTERCEPTOR` + `APP_FILTER`.
+**Description:** When `http.isEnabled: true`, conditionally register `APP_INTERCEPTOR` + `APP_FILTER`.
 
 **Required reading:**
 
@@ -2811,9 +2811,9 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 > import { APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core'
 >
 > // ...inside forRoot, after initial providers...
-> if (resolved.http.enabled) {
+> if (resolved.http.isEnabled) {
 >   providers.push({ provide: APP_INTERCEPTOR, useClass: HttpLoggingInterceptor })
->   if (resolved.http.captureExceptions) {
+>   if (resolved.http.shouldCaptureExceptions) {
 >     providers.push({ provide: APP_FILTER, useClass: HttpExceptionFilter })
 >   }
 > }
@@ -2833,9 +2833,9 @@ pnpm test tests/server/utils/sanitize-error.util.spec.ts
 
 **Acceptance criteria:**
 
-- [ ] When `http.enabled: false` (default), interceptor/filter are NOT registered
-- [ ] When `http.enabled: true`, both are registered
-- [ ] When `http.captureExceptions: false`, only the interceptor is registered
+- [ ] When `http.isEnabled: false` (default), interceptor/filter are NOT registered
+- [ ] When `http.isEnabled: true`, both are registered
+- [ ] When `http.shouldCaptureExceptions: false`, only the interceptor is registered
 - [ ] Barrel updated
 - [ ] `pnpm typecheck` + `pnpm build` pass
 
@@ -3025,7 +3025,7 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 > pnpm typecheck && pnpm lint && pnpm test:cov && pnpm build
 > ```
 >
-> Smoke test: create a fixture NestJS app in `/tmp/smoke-phase3/` with `BymaxLoggerModule.forRoot({ service:..., http: { enabled: true } })` and a `@Get('users/:id')` controller that logs via `@InjectLogger`. Start via `supertest`, GET `/users/abc-uuid-xyz`. Validate in the logs:
+> Smoke test: create a fixture NestJS app in `/tmp/smoke-phase3/` with `BymaxLoggerModule.forRoot({ service:..., http: { isEnabled: true } })` and a `@Get('users/:id')` controller that logs via `@InjectLogger`. Start via `supertest`, GET `/users/abc-uuid-xyz`. Validate in the logs:
 >
 > - `HTTP_REQUEST_START` with `url: /users/:id`
 > - `USER_FETCH` (application log)
@@ -3268,7 +3268,7 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 >    - `useFactory + inject` (most common)
 >    - `useClass` (LoggerOptionsFactory class implementing `createLoggerOptions()`)
 >    - `useExisting` (reuse provider from another module)
-> 3. **Ensure** the conditional HTTP interceptor/filter works when `http.enabled: true` arrives via the async factory.
+> 3. **Ensure** the conditional HTTP interceptor/filter works when `http.isEnabled: true` arrives via the async factory.
 > 4. **Bootstrap log** must be emitted AFTER options resolve on the async path (inside the `useFactory` that creates the Pino instance).
 
 **Acceptance criteria:**
@@ -3569,7 +3569,7 @@ pnpm test:e2e -- --testPathPattern=use-nest-logger
 
 > Create:
 >
-> 1. `test/e2e/fixtures/test-app.module.ts` — module that imports `BymaxLoggerModule.forRoot({ service, http: { enabled: true } })` + `TestController` + a `configure(consumer: MiddlewareConsumer)` that calls **`applyRequestIdMiddleware(consumer)`** (the helper from LOG-037 — matches the README pattern; do NOT use `consumer.apply(RequestIdMiddleware).forRoutes(...)` directly)
+> 1. `test/e2e/fixtures/test-app.module.ts` — module that imports `BymaxLoggerModule.forRoot({ service, http: { isEnabled: true } })` + `TestController` + a `configure(consumer: MiddlewareConsumer)` that calls **`applyRequestIdMiddleware(consumer)`** (the helper from LOG-037 — matches the README pattern; do NOT use `consumer.apply(RequestIdMiddleware).forRoutes(...)` directly)
 > 2. `test/e2e/fixtures/test.controller.ts` — endpoints:
 >    - `GET /hello` → returns { ok: true }
 >    - `GET /users/:id` → logs via @InjectLogger, returns { id }
@@ -3858,7 +3858,7 @@ pnpm bench
 > - `## 🔥 Features` — bullet points of the main features
 > - `## 📦 Subpath Exports` — table with 2 subpaths (`.` and `./shared`)
 > - `## 🚀 Quick Start` — 3 complete copy-pasteable scenarios:
->   1. Dev setup (basic forRoot with http.enabled)
+>   1. Dev setup (basic forRoot with http.isEnabled)
 >   2. Prod setup with OTLP→Loki (forRootAsync with ConfigService + LokiDestination)
 >   3. Custom Postgres destination (legacy use case)
 > - `## 🧩 Configuration` — link to spec §4

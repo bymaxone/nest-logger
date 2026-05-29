@@ -244,7 +244,7 @@ The `@bymax-one/nest-logger` lib injects trace context via its own mixin. It is 
 
 Valid coexistence scenario: you have `@bymax-one/nest-logger` in the main NestJS app **and** a standalone CLI script that uses Pino directly. For the CLI script, install `@opentelemetry/instrumentation-pino` and configure `logKeys: { traceId: 'traceId', spanId: 'spanId' }` to keep the **same field format**.
 
-> ⚠️ If you enable BOTH on the same Pino logger, `traceId`/`spanId` fields will be duplicated in some logs (once via this lib's mixin, once via the instrumentation). Disable one of them: `BymaxLoggerModule.forRoot({ otel: { autoInjectTraceContext: false } })` to leave only `PinoInstrumentation`.
+> ⚠️ If you enable BOTH on the same Pino logger, `traceId`/`spanId` fields will be duplicated in some logs (once via this lib's mixin, once via the instrumentation). Disable one of them: `BymaxLoggerModule.forRoot({ otel: { shouldAutoInjectTraceContext: false } })` to leave only `PinoInstrumentation`.
 
 ---
 
@@ -285,7 +285,7 @@ Logs with `level: 'error'` automatically become Sentry issues **if** the consume
 - [ ] No-op span (zeroed traceId) is **not** injected
 - [ ] `otel.fieldFormat: 'snake_case'` produces `trace_id` instead of `traceId`
 - [ ] **Per-field override wins over `fieldFormat`**: when `fieldFormat: 'snake_case'` AND `traceIdField: 'traceId'`, the log uses `traceId` (camelCase) for that one field; others (`span_id`, `trace_flags`) stay snake_case.
-- [ ] `otel.autoInjectTraceContext: false` disables the mixin
+- [ ] `otel.shouldAutoInjectTraceContext: false` disables the mixin
 - [ ] The mixin has signature `(mergeObject, level) => ...` (Pino 10 contract; legacy 3rd `logger` arg is optional)
 - [ ] `traceFlags` is serialized as 2-hex lowercase (W3C compliance)
 
@@ -299,7 +299,7 @@ Checklist:
 
 1. Was `sdk.start()` called **before** `NestFactory.create()`?
 2. Is the operation inside a span? `trace.getActiveSpan()` returns `undefined` in code outside auto-instrumentation
-3. Is `options.otel.autoInjectTraceContext` set to `true` (default)?
+3. Is `options.otel.shouldAutoInjectTraceContext` set to `true` (default)?
 4. Is the traceId not the "no-op" (32 zeros)?
 
 ### "Duplicate traceId in logs"

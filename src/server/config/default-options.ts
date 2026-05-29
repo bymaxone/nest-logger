@@ -4,31 +4,35 @@
  * Layer: server/config — produces the frozen options snapshot that every
  * other runtime layer reads. Spread-merges consumer overrides with
  * `DEFAULT_HTTP` and `DEFAULT_OTEL`, applies the `otel.fieldFormat`
- * snake_case shortcut, and deep-freezes the result (top-level plus `http`,
- * `otel`, `excludePaths`, `redactPaths`, `destinations`) so per-request
- * handlers cannot corrupt the shared runtime snapshot.
+ * snake_case shortcut, and deep-freezes the result (top-level plus `service`,
+ * `serializers`, `http`, `otel`, `excludePaths`, `redactPaths`, `destinations`)
+ * so per-request handlers cannot corrupt the shared runtime snapshot.
  */
 import type {
   BymaxLoggerModuleOptions,
   HttpOptions,
-  OtelOptions
+  OtelOptions,
+  ResolvedBymaxLoggerModuleOptions
 } from '../interfaces/logger-module-options.interface'
 
 const DEFAULT_HTTP: Required<HttpOptions> = {
   isEnabled: false,
-  captureExceptions: true,
-  generateRequestId: true,
+  shouldCaptureExceptions: true,
+  shouldGenerateRequestId: true,
   excludePaths: [/^\/health$/, /^\/metrics$/],
   tenantIdHeader: 'x-tenant-id'
 }
 
 const DEFAULT_OTEL: Required<OtelOptions> = {
-  autoInjectTraceContext: true,
+  shouldAutoInjectTraceContext: true,
   fieldFormat: 'camelCase',
   traceIdField: 'traceId',
   spanIdField: 'spanId',
   traceFlagsField: 'traceFlags'
 }
+
+/** Default per-entry byte ceiling (64 KiB) before the truncation gate trips. */
+const DEFAULT_MAX_ENTRY_SIZE_BYTES = 65_536
 
 /**
  * Apply the `fieldFormat` shortcut on top of the merged OTel options.
@@ -56,15 +60,14 @@ function applyOtelFieldFormat(
  * Merge consumer options with library defaults.
  *
  * Returns a deep-frozen view of the options bag — the top-level object plus
- * `http`, `otel`, `excludePaths`, `redactPaths`, and `destinations` are all
- * frozen so per-request handlers cannot corrupt the shared runtime snapshot.
+ * `service`, `serializers`, `http`, `otel`, `excludePaths`, `redactPaths`, and
+ * `destinations` are all frozen so per-request handlers cannot corrupt the
+ * shared runtime snapshot.
  *
  * @param options — Raw options as supplied to `BymaxLoggerModule.forRoot()`.
  * @returns Frozen, fully-defaulted options ready for runtime consumption.
  */
-export function applyDefaults(
-  options: BymaxLoggerModuleOptions
-): Readonly<Required<BymaxLoggerModuleOptions>> {
+export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxLoggerModuleOptions {
   const isProduction = process.env['NODE_ENV'] === 'production'
 
   const http: Required<HttpOptions> = { ...DEFAULT_HTTP, ...(options.http ?? {}) }
@@ -73,11 +76,14 @@ export function applyDefaults(
     options.otel
   )
 
-  const merged: Required<BymaxLoggerModuleOptions> = {
-    service: options.service,
+  const merged: Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel'>> & {
+    http: Required<HttpOptions>
+    otel: Required<OtelOptions>
+  } = {
+    service: Object.freeze({ ...options.service }),
     level: options.level ?? (isProduction ? 'info' : 'debug'),
     isGlobal: options.isGlobal ?? true,
-    useAsNestLogger: options.useAsNestLogger ?? true,
+    shouldUseAsNestLogger: options.shouldUseAsNestLogger ?? true,
     redactPaths: Object.freeze([...(options.redactPaths ?? [])]),
     redactCensor: options.redactCensor ?? '[REDACTED]',
     shouldDisableDefaultRedact: options.shouldDisableDefaultRedact ?? false,
@@ -88,8 +94,8 @@ export function applyDefaults(
       excludePaths: Object.freeze([...http.excludePaths])
     }),
     otel: Object.freeze(otel),
-    maxEntrySizeBytes: options.maxEntrySizeBytes ?? 65_536,
-    serializers: options.serializers ?? {},
+    maxEntrySizeBytes: options.maxEntrySizeBytes ?? DEFAULT_MAX_ENTRY_SIZE_BYTES,
+    serializers: Object.freeze({ ...(options.serializers ?? {}) }),
     timestamp: options.timestamp ?? ((): string => new Date().toISOString())
   }
   return Object.freeze(merged)

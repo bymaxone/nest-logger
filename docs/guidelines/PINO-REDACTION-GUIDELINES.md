@@ -140,7 +140,7 @@ See the canonical file: [`src/server/constants/default-redact-paths.constants.ts
 
 ## 5. How to extend safely
 
-> The merge + dedupe logic lives in `compileRedactPaths` at `src/server/utils/compile-redact-paths.util.ts` (note: `utils/`, not `config/`). It accepts the consumer's `redactPaths` array and the `disableDefaultRedact` flag, merges with `DEFAULT_REDACT_PATHS`, dedupes via `Array.from(new Set(...))`, and returns the compiled path list passed to `pino.redact`.
+> The merge + dedupe logic lives in `compileRedactPaths` at `src/server/utils/compile-redact-paths.util.ts` (note: `utils/`, not `config/`). It accepts the consumer's `redactPaths` array and the `shouldDisableDefaultRedact` flag, merges with `DEFAULT_REDACT_PATHS`, dedupes via `Array.from(new Set(...))`, and returns the compiled path list passed to `pino.redact`.
 
 ```typescript
 BymaxLoggerModule.forRoot({
@@ -160,12 +160,12 @@ The lib **merges** with `DEFAULT_REDACT_PATHS` (does not replace). To fully repl
 ```typescript
 BymaxLoggerModule.forRoot({
   service: { name: 'finance-api', version: '1.2.3' },
-  disableDefaultRedact: true,
+  shouldDisableDefaultRedact: true,
   redactPaths: ['*.password']
 })
 ```
 
-> ⚠️ `disableDefaultRedact: true` emits a bootstrap warning (`LOGGER_BOOTSTRAP_WARNING`). The `compileRedactPaths` util's hot-path dedup MAY look like dead code to Stryker — but it's load-bearing. Add a JSDoc comment explaining the dedup intent so Stryker mutations leave the dedup logic intact, and keep mutation coverage on the function as a whole.
+> ⚠️ `shouldDisableDefaultRedact: true` emits a bootstrap warning (`LOGGER_BOOTSTRAP_WARNING`). The `compileRedactPaths` util's hot-path dedup MAY look like dead code to Stryker — but it's load-bearing. Add a JSDoc comment explaining the dedup intent so Stryker mutations leave the dedup logic intact, and keep mutation coverage on the function as a whole.
 
 ### Custom censor
 
@@ -221,7 +221,7 @@ export class LogAuditService {
 
   /** Returns the effective list of redact paths (default + custom). */
   listActiveRedactPaths(): readonly string[] {
-    if (this.opts.disableDefaultRedact) return this.opts.redactPaths ?? []
+    if (this.opts.shouldDisableDefaultRedact) return this.opts.redactPaths ?? []
     return Array.from(new Set([...DEFAULT_REDACT_PATHS, ...(this.opts.redactPaths ?? [])]))
   }
 
@@ -273,7 +273,7 @@ Every deployment must have tests ensuring:
 - [ ] A log with `{ user: { password: 'x' } }` produces `"password":"[REDACTED]"` (depth 2)
 - [ ] A log with `{ a: { b: { c: { d: { password: 'x' } } } } }` (depth 5) does **not** redact (expected — outside the 4-level budget) — document in the test
 - [ ] `redactCensor: '***'` replaces the value with `***`
-- [ ] `disableDefaultRedact: true` emits a bootstrap warning
+- [ ] `shouldDisableDefaultRedact: true` emits a bootstrap warning
 
 ---
 

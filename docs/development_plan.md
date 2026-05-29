@@ -749,7 +749,7 @@ export interface BymaxLoggerModuleOptions {
   isGlobal?: boolean
 
   /** Replace NestJS internal logger via `app.useLogger()`. Default: true. */
-  useAsNestLogger?: boolean
+  shouldUseAsNestLogger?: boolean
 
   /** Additional Pino redact paths — merged with `DEFAULT_REDACT_PATHS`. */
   redactPaths?: readonly string[]
@@ -758,13 +758,13 @@ export interface BymaxLoggerModuleOptions {
   redactCensor?: string
 
   /** Disable default redact paths (use with caution). Default: false. */
-  disableDefaultRedact?: boolean
+  shouldDisableDefaultRedact?: boolean
 
   /** Custom destinations beyond `DefaultStdoutDestination`. */
   destinations?: readonly ILogDestination[]
 
   /** Force pretty-print output. Default: NODE_ENV !== 'production'. */
-  pretty?: boolean
+  isPretty?: boolean
 
   /** HTTP module configuration. */
   http?: HttpOptions
@@ -783,15 +783,15 @@ export interface BymaxLoggerModuleOptions {
 }
 
 export interface HttpOptions {
-  enabled?: boolean
-  captureExceptions?: boolean
-  generateRequestId?: boolean
+  isEnabled?: boolean
+  shouldCaptureExceptions?: boolean
+  shouldGenerateRequestId?: boolean
   excludePaths?: readonly RegExp[]
   tenantIdHeader?: string
 }
 
 export interface OtelOptions {
-  autoInjectTraceContext?: boolean
+  shouldAutoInjectTraceContext?: boolean
   /**
    * Shortcut that derives sensible defaults for `traceIdField`/`spanIdField`/
    * `traceFlagsField` based on a target casing.
@@ -905,7 +905,7 @@ export const LOG_CONTEXT_TOKEN = Symbol('BYMAX_LOGGER_LOG_CONTEXT')
  *
  * These paths cover commonly-leaked PII and credentials. Consumers can:
  *   - Add more via `redactPaths` option (merged)
- *   - Disable all via `disableDefaultRedact: true` (NOT recommended)
+ *   - Disable all via `shouldDisableDefaultRedact: true` (NOT recommended)
  *
  * Path syntax follows `fast-redact` conventions (engine behind `pino.redact`):
  *   - Wildcard `*` matches **one level only** (NOT recursive).
@@ -1095,15 +1095,15 @@ import type {
  * Hard-coded defaults applied when consumer does not override.
  */
 const DEFAULT_HTTP: Required<HttpOptions> = {
-  enabled: false,
-  captureExceptions: true,
-  generateRequestId: true,
+  isEnabled: false,
+  shouldCaptureExceptions: true,
+  shouldGenerateRequestId: true,
   excludePaths: [/^\/health$/, /^\/metrics$/],
   tenantIdHeader: 'x-tenant-id'
 }
 
 const DEFAULT_OTEL: Required<OtelOptions> = {
-  autoInjectTraceContext: true,
+  shouldAutoInjectTraceContext: true,
   fieldFormat: 'camelCase',
   traceIdField: 'traceId',
   spanIdField: 'spanId',
@@ -1142,12 +1142,12 @@ export function applyDefaults(
     service: options.service,
     level: options.level ?? (isProduction ? 'info' : 'debug'),
     isGlobal: options.isGlobal ?? true,
-    useAsNestLogger: options.useAsNestLogger ?? true,
+    shouldUseAsNestLogger: options.shouldUseAsNestLogger ?? true,
     redactPaths: options.redactPaths ?? [],
     redactCensor: options.redactCensor ?? '[REDACTED]',
-    disableDefaultRedact: options.disableDefaultRedact ?? false,
+    shouldDisableDefaultRedact: options.shouldDisableDefaultRedact ?? false,
     destinations: options.destinations ?? [],
-    pretty: options.pretty ?? !isProduction,
+    isPretty: options.isPretty ?? !isProduction,
     http: { ...DEFAULT_HTTP, ...(options.http ?? {}) },
     otel: applyOtelFieldFormat({ ...DEFAULT_OTEL, ...(options.otel ?? {}) }, options.otel),
     maxEntrySizeBytes: options.maxEntrySizeBytes ?? 65_536,
@@ -1488,7 +1488,7 @@ export function buildPinoInstance(options: Required<BymaxLoggerModuleOptions>): 
   const pinoOpts: LoggerOptions = {
     level: options.level,
     redact: {
-      paths: compileRedactPaths(options.redactPaths, options.disableDefaultRedact),
+      paths: compileRedactPaths(options.redactPaths, options.shouldDisableDefaultRedact),
       censor: options.redactCensor
     },
     base: { service: options.service },
@@ -1504,7 +1504,7 @@ export function buildPinoInstance(options: Required<BymaxLoggerModuleOptions>): 
       err: pino.stdSerializers.err,
       // `req` and `res` are NOT default Pino serializers — they're opt-in.
       // Phase 3 HTTP interceptor adds them via `pino.stdSerializers.req/res` when
-      // `http.enabled: true`. Until then, leave out to avoid false impression.
+      // `http.isEnabled: true`. Until then, leave out to avoid false impression.
       ...options.serializers
     }
   }
@@ -2311,14 +2311,14 @@ export function createTraceContextMixin(
     traceIdField: string
     spanIdField: string
     traceFlagsField: string
-    autoInjectTraceContext: boolean
+    shouldAutoInjectTraceContext: boolean
   }
 ): (
   mergeObject: Record<string, unknown>,
   level: number,
   logger: PinoLogger
 ) => Record<string, unknown> {
-  const traceApi: OtelTraceApi | undefined = opts.autoInjectTraceContext
+  const traceApi: OtelTraceApi | undefined = opts.shouldAutoInjectTraceContext
     ? detectOtelTraceApi()
     : undefined
 
@@ -2362,7 +2362,7 @@ export function createTraceContextMixin(
 - [ ] Mixin returns `{ requestId, tenantId, userId }` when there is a LogContext
 - [ ] Mixin returns `{ traceId, spanId }` when there is an active OTel span
 - [ ] Mixin does **not** throw when `traceApi` is `undefined`
-- [ ] Mixin does **not** inject trace fields when `autoInjectTraceContext: false`
+- [ ] Mixin does **not** inject trace fields when `shouldAutoInjectTraceContext: false`
 - [ ] 100% coverage
 
 **Validation commands:**
@@ -2597,7 +2597,7 @@ describe('createTraceContextMixin', () => {
       traceIdField: 'traceId',
       spanIdField: 'spanId',
       traceFlagsField: 'traceFlags',
-      autoInjectTraceContext: false
+      shouldAutoInjectTraceContext: false
     })
     expect(mixin({}, 30, fakeLogger)).toEqual({})
   })
@@ -2607,7 +2607,7 @@ describe('createTraceContextMixin', () => {
       traceIdField: 'traceId',
       spanIdField: 'spanId',
       traceFlagsField: 'traceFlags',
-      autoInjectTraceContext: false
+      shouldAutoInjectTraceContext: false
     })
     logContext.run({ requestId: 'r_1', tenantId: 't_1' }, () => {
       expect(mixin({}, 30, fakeLogger)).toMatchObject({ requestId: 'r_1', tenantId: 't_1' })
@@ -3106,7 +3106,7 @@ pnpm test src/server/decorators/
 
 ### 4.5 Interceptor + Filter integration in the module
 
-**Goal:** When `http.enabled: true`, register the interceptor and filter as global via `APP_INTERCEPTOR` and `APP_FILTER`.
+**Goal:** When `http.isEnabled: true`, register the interceptor and filter as global via `APP_INTERCEPTOR` and `APP_FILTER`.
 
 **Files to modify:**
 
@@ -3122,9 +3122,9 @@ import { HttpLoggingInterceptor } from './interceptors/http-logging.interceptor'
 import { HttpExceptionFilter } from './filters/http-exception.filter'
 
 // Inside the forRoot method:
-if (resolved.http.enabled) {
+if (resolved.http.isEnabled) {
   providers.push({ provide: APP_INTERCEPTOR, useClass: HttpLoggingInterceptor })
-  if (resolved.http.captureExceptions) {
+  if (resolved.http.shouldCaptureExceptions) {
     providers.push({ provide: APP_FILTER, useClass: HttpExceptionFilter })
   }
 }
@@ -3157,9 +3157,9 @@ export function applyRequestIdMiddleware(consumer: MiddlewareConsumer, routes: s
 
 **Acceptance criteria:**
 
-- [ ] `http.enabled: false` (default) does **not** register the interceptor or filter
-- [ ] `http.enabled: true` registers `HttpLoggingInterceptor` as APP_INTERCEPTOR
-- [ ] `http.captureExceptions: false` (even with `enabled: true`) does not register the filter
+- [ ] `http.isEnabled: false` (default) does **not** register the interceptor or filter
+- [ ] `http.isEnabled: true` registers `HttpLoggingInterceptor` as APP_INTERCEPTOR
+- [ ] `http.shouldCaptureExceptions: false` (even with `isEnabled: true`) does not register the filter
 - [ ] `applyRequestIdMiddleware` helps the consumer configure the middleware
 
 ### 4.6 Update `src/server/index.ts`
@@ -3272,7 +3272,7 @@ export class PrettyDevDestination implements ILogDestination {
       pretty = (await import('pino-pretty')).default
     } catch {
       throw new Error(
-        '[PrettyDevDestination] pino-pretty is not installed. Install it as a peer dep or disable `pretty` option.'
+        '[PrettyDevDestination] pino-pretty is not installed. Install it as a peer dep or disable `isPretty` option.'
       )
     }
     this.stream = pretty({
@@ -3813,7 +3813,7 @@ describe('Logger E2E — HTTP', () => {
       imports: [
         BymaxLoggerModule.forRoot({
           service: { name: 'e2e', version: '0.0.0' },
-          http: { enabled: true }
+          http: { isEnabled: true }
         })
       ],
       controllers: [TestController]
@@ -4047,8 +4047,8 @@ pnpm mutation
      useFactory: (cfg: ConfigService) => ({
        service: { name: cfg.get('SERVICE_NAME'), version: cfg.get('GIT_SHA') },
        level: cfg.get('LOG_LEVEL') ?? 'info',
-       http: { enabled: true, captureExceptions: true },
-       otel: { autoInjectTraceContext: true }
+       http: { isEnabled: true, shouldCaptureExceptions: true },
+       otel: { shouldAutoInjectTraceContext: true }
      })
    })
    ```
