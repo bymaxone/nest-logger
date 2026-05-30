@@ -19,13 +19,16 @@
  *   pnpm build && node scripts/dogfood-smoke-test.mjs
  */
 
-import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { resolve, dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { execSync, spawnSync } from 'node:child_process'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const CONSUMER_DIR = '/tmp/dogfood-consumer'
+// Unique, unpredictable temp dir (mkdtemp appends random chars) — avoids the
+// symlink/race hazards of writing to a fixed, world-known path under /tmp.
+const CONSUMER_DIR = mkdtempSync(join(tmpdir(), 'dogfood-consumer-'))
 
 const EXPECTED_DIST_FILES = [
   'dist/server/index.mjs',
@@ -184,10 +187,7 @@ try {
 
 section('6. Consumer file: link smoke (minimal resolution check)')
 try {
-  // Scaffold a minimal consumer
-  rmSync(CONSUMER_DIR, { recursive: true, force: true })
-  mkdirSync(CONSUMER_DIR, { recursive: true })
-
+  // Scaffold a minimal consumer (CONSUMER_DIR already exists via mkdtempSync)
   const consumerPkgJson = {
     name: 'dogfood-consumer',
     version: '0.0.1',
