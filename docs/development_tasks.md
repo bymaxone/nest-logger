@@ -37,7 +37,7 @@
 
 > **Status legend:** 🔴 Not Started · 🟡 In Progress · 🟢 Done · ⚪ Blocked · 🔵 In Review
 
-> **Overall progress:** 🟡 62 / 73 tasks done (85%)
+> **Overall progress:** 🟢 72 / 73 tasks done (99%) — LOG-064 (tag + publish) pending user approval
 
 | #   | Phase                                  | Done / Total | %    | Status |
 | --- | -------------------------------------- | ------------ | ---- | ------ |
@@ -45,7 +45,7 @@
 | 2   | Context Propagation + OpenTelemetry    | 14 / 14      | 100% | 🟢     |
 | 3   | HTTP Interceptor + Filter + Decorators | 14 / 14      | 100% | 🟢     |
 | 4   | Pretty + Destinations + E2E + Mutation | 14 / 14      | 100% | 🟢     |
-| 5   | Release v0.1.0                         | 0 / 11       | 0%   | 🔴     |
+| 5   | Release v0.1.0                         | 10 / 11      | 91%  | 🟡     |
 
 ---
 
@@ -3852,7 +3852,7 @@ pnpm bench
 ### LOG-055: README.md with badges + quick start + 3 scenarios
 
 - **Phase:** 5
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-054
 - **Agent:** general-purpose
@@ -3905,7 +3905,7 @@ npx markdownlint-cli README.md --no-config || true
 ### LOG-056: CHANGELOG.md + SECURITY.md
 
 - **Phase:** 5
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-001
 - **Agent:** general-purpose
@@ -3961,7 +3961,7 @@ npx markdownlint-cli README.md --no-config || true
 ### LOG-057: CLAUDE.md + AGENTS.md
 
 - **Phase:** 5
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** Medium
 - **Dependencies:** LOG-001
 - **Agent:** general-purpose
@@ -3999,7 +3999,7 @@ npx markdownlint-cli README.md --no-config || true
 ### LOG-058: CI workflow — ci.yml
 
 - **Phase:** 5
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-001
 - **Agent:** general-purpose
@@ -4043,7 +4043,7 @@ yamllint .github/workflows/
 ### LOG-059: CI workflows — codeql.yml + scorecard.yml + release.yml
 
 - **Phase:** 5
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-058
 - **Agent:** general-purpose
@@ -4080,7 +4080,7 @@ yamllint .github/workflows/
 ### LOG-060: docs/mutation_testing_plan.md + results
 
 - **Phase:** 5
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** Medium
 - **Dependencies:** LOG-053
 - **Agent:** general-purpose
@@ -4131,7 +4131,7 @@ yamllint .github/workflows/
 ### LOG-061: LICENSE (MIT) + .npmignore
 
 - **Phase:** 5
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-001
 - **Agent:** general-purpose
@@ -4163,7 +4163,7 @@ pnpm pack --dry-run
 ### LOG-062: Final bundle size budgets
 
 - **Phase:** 5
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** Medium
 - **Dependencies:** LOG-054
 - **Agent:** general-purpose
@@ -4199,7 +4199,7 @@ pnpm pack --dry-run
 ### LOG-062b: Dogfood lib in a sample bymax consumer via file: link
 
 - **Phase:** 5
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** All Phase 4 tasks complete (LOG-044..LOG-054), plus LOG-062 (size budgets calibrated)
 - **Agent:** code-reviewer
@@ -4314,7 +4314,7 @@ pnpm pack --dry-run
 ### LOG-063: Final pre-publish gate
 
 - **Phase:** 5
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-055 through LOG-062
 - **Agent:** code-reviewer
@@ -4421,6 +4421,21 @@ npm view @bymax-one/nest-logger version  # → 0.1.0
 ```
 
 **Completion protocol:** Status ✅ DONE; Dashboard Phase 5 1→0, DONE 63→64, Progress 100% ✅; TOTAL 1→0, 63→64, 100% ✅. Commit: `chore(logger): release v0.1.0 (LOG-064)`.
+
+---
+
+### Phase 5 Completion Log
+
+- LOG-055 ✅ 2026-05-30 — README created (796 lines, all required sections)
+- LOG-056 ✅ 2026-05-30 — CHANGELOG.md updated with [0.1.0] entry + SECURITY.md created
+- LOG-057 ✅ 2026-05-30 — CLAUDE.md and AGENTS.md created (adapted from nest-auth)
+- LOG-058 ✅ 2026-05-30 — ci.yml workflow verified (typecheck + lint + coverage + build + size)
+- LOG-059 ✅ 2026-05-30 — codeql.yml + scorecard.yml + release.yml verified
+- LOG-060 ✅ 2026-05-30 — docs/mutation_testing_plan.md created
+- LOG-061 ✅ 2026-05-30 — LICENSE (MIT) and .npmignore created; tarball validated (12 files)
+- LOG-062 ✅ 2026-05-30 — Bundle sizes: server 12.11 kB brotli (budget 12.50 kB), shared 0.34 kB (budget 1.00 kB)
+- LOG-062b ✅ 2026-05-30 — scripts/dogfood-smoke-test.mjs created; all 6 sections green
+- LOG-063 ✅ 2026-05-30 — pnpm prepublishOnly green; 302 tests, 100% coverage; version bumped to 0.1.0
 
 ---
 
