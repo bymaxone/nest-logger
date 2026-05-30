@@ -38,6 +38,18 @@ class FixtureController {
     return { ok: true }
   }
 
+  @Get('moved')
+  @HttpCode(300)
+  moved(): { ok: boolean } {
+    return { ok: true }
+  }
+
+  @Get('noncontent400')
+  @HttpCode(400)
+  nonThrowing400(): { ok: boolean } {
+    return { ok: true }
+  }
+
   @Get('bad')
   bad(): never {
     throw new BadRequestException('bad input')
@@ -61,6 +73,11 @@ class FixtureController {
 
   @Get('me')
   me(): { ok: boolean } {
+    return { ok: true }
+  }
+
+  @Get('health')
+  health(): { ok: boolean } {
     return { ok: true }
   }
 }
@@ -145,7 +162,7 @@ describe('HttpLoggingInterceptor (integration)', () => {
 
     expect(infoSpy).toHaveBeenCalledWith(
       'HTTP_REQUEST_REDIRECT',
-      expect.any(String),
+      expect.stringContaining('→ 302'),
       undefined,
       expect.objectContaining({ statusCode: 302 })
     )
@@ -178,7 +195,7 @@ describe('HttpLoggingInterceptor (integration)', () => {
 
     expect(warnSpy).toHaveBeenCalledWith(
       'HTTP_REQUEST_CLIENT_ERROR',
-      expect.any(String),
+      expect.stringContaining('→ 400'),
       undefined,
       expect.objectContaining({ statusCode: 400, errorMessage: 'bad input' })
     )
@@ -258,5 +275,75 @@ describe('HttpLoggingInterceptor (integration)', () => {
       undefined,
       expect.objectContaining({ userAgent: 'unknown' })
     )
+  })
+
+  it(/*
+   * A path matching the default excludePaths (`/health`) must bypass logging
+   * entirely — no START and no terminal entry — so monitoring probes never flood
+   * the logs. Covers the isExcluded() true branch.
+   */
+  'skips logging for an excluded path', async () => {
+    await request(app.getHttpServer()).get('/health').expect(200)
+
+    const loggedKeys = infoSpy.mock.calls.map((call) => call[0])
+    expect(loggedKeys).not.toContain('HTTP_REQUEST_START')
+    expect(loggedKeys).not.toContain('HTTP_REQUEST_SUCCESS')
+  })
+
+  it(/*
+   * The START and SUCCESS entries must carry human-readable messages (not empty
+   * strings) and a sane, non-negative duration. Pins the message templates and
+   * the `Date.now() - start` duration arithmetic (a `+` would yield an
+   * epoch-sized number).
+   */
+  'emits readable START/SUCCESS messages and a sane duration', async () => {
+    await request(app.getHttpServer()).get('/ok/4bf92f35-77b3-4da6-a3ce-929d0e0e4736').expect(200)
+
+    const start = infoSpy.mock.calls.find((call) => call[0] === 'HTTP_REQUEST_START')
+    const success = infoSpy.mock.calls.find((call) => call[0] === 'HTTP_REQUEST_SUCCESS')
+    expect(start?.[1]).toContain('GET /ok/:id')
+    expect(success?.[1]).toContain('→ 200')
+    const duration = (success?.[3] as { duration: number }).duration
+    expect(duration).toBeGreaterThanOrEqual(0)
+    expect(duration).toBeLessThan(60_000)
+  })
+
+  it(/*
+   * Exactly 300 is the REDIRECT lower boundary: it must log REDIRECT, never
+   * SUCCESS. Pins `statusCode < HTTP_REDIRECT_MIN` (success upper bound) and
+   * `statusCode >= HTTP_REDIRECT_MIN` (redirect lower bound).
+   */
+  'logs REDIRECT (not SUCCESS) at the 300 boundary', async () => {
+    await request(app.getHttpServer()).get('/moved').expect(300)
+
+    const keys = infoSpy.mock.calls.map((call) => call[0])
+    expect(keys).toContain('HTTP_REQUEST_REDIRECT')
+    expect(keys).not.toContain('HTTP_REQUEST_SUCCESS')
+  })
+
+  it(/*
+   * A non-throwing 400 is the REDIRECT upper boundary: it must log only START
+   * (neither REDIRECT nor SUCCESS). Pins `statusCode < HTTP_CLIENT_ERROR_MIN`.
+   */
+  'logs only START for a non-throwing 400', async () => {
+    await request(app.getHttpServer()).get('/noncontent400').expect(400)
+
+    const keys = infoSpy.mock.calls.map((call) => call[0])
+    expect(keys).toContain('HTTP_REQUEST_START')
+    expect(keys).not.toContain('HTTP_REQUEST_REDIRECT')
+    expect(keys).not.toContain('HTTP_REQUEST_SUCCESS')
+  })
+
+  it(/*
+   * The error path must also report a sane, non-negative duration — pins the
+   * `Date.now() - start` arithmetic in the catchError branch.
+   */
+  'reports a sane duration on the error path', async () => {
+    await request(app.getHttpServer()).get('/boom').expect(500)
+
+    const errorCall = errorSpy.mock.calls.find((call) => call[0] === 'HTTP_REQUEST_SERVER_ERROR')
+    const duration = (errorCall?.[3] as { duration: number }).duration
+    expect(duration).toBeGreaterThanOrEqual(0)
+    expect(duration).toBeLessThan(60_000)
   })
 })

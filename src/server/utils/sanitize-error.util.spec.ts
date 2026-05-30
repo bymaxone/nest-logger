@@ -10,6 +10,10 @@ describe('sanitizeError', () => {
     expect(result.name).toBe('Error')
     expect(result.message).toBe('boom')
     expect(typeof result.stack).toBe('string')
+    // A cause-less error must NOT gain a spurious `cause` field — pins the
+    // `if (value.cause !== undefined)` guard against being forced true.
+    expect(result).not.toHaveProperty('cause')
+    expect(result).not.toHaveProperty('errors')
   })
 
   it(/*
@@ -84,6 +88,23 @@ describe('sanitizeError', () => {
     expect(sanitizeError(error, { maxCauseDepth: 0 }).errors).toEqual([
       { _truncated: true, _reason: 'cause-depth-exceeded' }
     ])
+  })
+
+  it(/*
+   * The depth budget must keep counting THROUGH an aggregate member into its own
+   * cause chain (aggregate descent increments depth, like cause descent does). A
+   * member whose cause chain runs past the budget must truncate — pins the
+   * `depth + 1` increment on the aggregate branch.
+   */
+  'should apply the depth budget to a cause chain inside an aggregate member', () => {
+    const member = new Error('a', {
+      cause: new Error('b', { cause: new Error('c', { cause: new Error('d') }) })
+    })
+    const result = sanitizeError(new AggregateError([member], 'agg'))
+    expect(result.errors?.[0]).toMatchObject({
+      message: 'a',
+      cause: { message: 'b', cause: { message: 'c', cause: { _truncated: true } } }
+    })
   })
 
   it(/*
@@ -167,6 +188,10 @@ describe('sanitizeError', () => {
     const result = sanitizeError(error)
     expect(result.stack).not.toContain('node_modules')
     expect(result.stack).toContain('/app/src/foo.ts')
+    // The surviving app frames must stay newline-separated (not concatenated) —
+    // pins the `.join('\n')` separator. Two app frames remain after scrubbing.
+    expect(result.stack).toContain('\n')
+    expect(result.stack?.split('\n')).toHaveLength(2)
   })
 
   it(/*

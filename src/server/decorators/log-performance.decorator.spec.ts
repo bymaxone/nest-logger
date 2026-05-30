@@ -56,8 +56,11 @@ describe('LogPerformance', () => {
 
     expect(warnSpy).toHaveBeenCalledTimes(1)
     expect(infoSpy).not.toHaveBeenCalled()
-    const [logKey, , userId, metadata] = warnSpy.mock.calls[0]
+    const [logKey, message, userId, metadata] = warnSpy.mock.calls[0]
     expect(logKey).toBe('METHOD_SLOW_EXECUTION')
+    // Pin the message content (not just any string) so a regression in the
+    // human-readable slow-log text is caught.
+    expect(message).toMatch(/ReportService\.slow took \d+ms \(threshold 5ms\)/)
     expect(userId).toBeUndefined()
     expect(metadata).toMatchObject({ method: 'ReportService.slow', thresholdMs: 5 })
     expect(metadata.duration).toBeGreaterThan(5)
@@ -72,9 +75,23 @@ describe('LogPerformance', () => {
 
     expect(infoSpy).toHaveBeenCalledTimes(1)
     expect(warnSpy).not.toHaveBeenCalled()
-    const [logKey, , , metadata] = infoSpy.mock.calls[0]
+    const [logKey, message, , metadata] = infoSpy.mock.calls[0]
     expect(logKey).toBe('METHOD_EXECUTION')
+    expect(message).toBe('ReportService.fast completed')
     expect(metadata).toMatchObject({ method: 'ReportService.fast' })
+  })
+
+  it(/*
+   * A duration EXACTLY at the threshold must count as not-slow (the comparison is
+   * strictly `>`, not `>=`). Date.now is mocked to force duration === threshold,
+   * pinning the boundary against an off-by-one regression.
+   */
+  'treats a duration exactly at the threshold as not slow', async () => {
+    jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(100_000)
+    await new ReportService(logger).fast() // @LogPerformance(100_000); mocked duration = 100_000
+
+    expect(infoSpy).toHaveBeenCalledTimes(1)
+    expect(warnSpy).not.toHaveBeenCalled()
   })
 
   it(/*

@@ -127,4 +127,20 @@ describe('RequestIdMiddleware (integration via applyRequestIdMiddleware)', () =>
 
     expect(res.body.tenantId).toBeUndefined()
   })
+
+  it(/*
+   * An x-request-id at EXACTLY the 256-char bound must be honored (the check is
+   * `length <= 256`, inclusive) — pins the boundary so an off-by-one (`<`) that
+   * would reject a max-length id is caught.
+   */
+  'honors an x-request-id at exactly the 256-char limit', async () => {
+    const atLimit = 'a'.repeat(256)
+    const res = await request(app.getHttpServer())
+      .get('/ctx')
+      .set('x-request-id', atLimit)
+      .expect(200)
+
+    expect(res.headers['x-request-id']).toBe(atLimit)
+    expect(res.body.requestId).toBe(atLimit)
+  })
 })

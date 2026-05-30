@@ -136,6 +136,33 @@ describe('applyDefaults', () => {
   })
 
   it(/*
+   * The OTel defaults (auto-inject ON, camelCase field names) must be pinned —
+   * downstream trace correlation depends on these exact field names.
+   */
+  'should default otel auto-inject + camelCase field names', () => {
+    const otel = applyDefaults(baseOptions).otel
+    expect(otel.shouldAutoInjectTraceContext).toBe(true)
+    expect(otel.spanIdField).toBe('spanId')
+    expect(otel.traceFlagsField).toBe('traceFlags')
+  })
+
+  it(/*
+   * The default excludePaths must be ANCHORED to exactly `/health` and
+   * `/metrics` — not a substring/prefix match. Testing near-miss paths pins both
+   * the `^` and `$` anchors so a regression that drops either is caught.
+   */
+  'should default excludePaths to anchored /health and /metrics', () => {
+    const paths = applyDefaults(baseOptions).http.excludePaths
+    expect(paths).toHaveLength(2)
+    expect(paths[0]?.test('/health')).toBe(true)
+    expect(paths[0]?.test('/healthy')).toBe(false) // pins the `$` anchor
+    expect(paths[0]?.test('/api/health')).toBe(false) // pins the `^` anchor
+    expect(paths[1]?.test('/metrics')).toBe(true)
+    expect(paths[1]?.test('/metrics/v2')).toBe(false) // pins the `$` anchor
+    expect(paths[1]?.test('/v1/metrics')).toBe(false) // pins the `^` anchor
+  })
+
+  it(/*
    * The returned snapshot must be frozen at the top level AND across its nested
    * `service` / `serializers` bags, so accidental mutation by consumer code (or
    * a per-request handler) is loud rather than silently corrupting the shared

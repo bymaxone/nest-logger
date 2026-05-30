@@ -17,6 +17,7 @@ export { LogContextService } from './services/log-context.service'
 
 // Destinations
 export { DefaultStdoutDestination } from './destinations/default-stdout.destination'
+export { PrettyDevDestination } from './destinations/pretty-dev.destination'
 
 // HTTP integration (interceptor, filter, middleware)
 export { HttpExceptionFilter } from './filters/http-exception.filter'

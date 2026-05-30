@@ -15,7 +15,7 @@
     "prioritizePerformanceOverAccuracy": true
   },
   "disableTypeChecks": "src/**/*.ts",
-  "ignoreStatic": false,
+  "ignoreStatic": true,
   "mutate": [
     "src/**/*.ts",
     "!src/**/*.spec.ts",
@@ -33,7 +33,7 @@
   "timeoutMS": 30000,
   "incremental": false,
   "incrementalFile": "reports/stryker-incremental.json",
-  "reporters": ["progress", "clear-text", "html"],
+  "reporters": ["progress", "clear-text", "html", "json"],
   "htmlReporter": {
     "fileName": "reports/mutation/mutation.html"
   },

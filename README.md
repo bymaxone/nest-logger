@@ -1,21 +1,37 @@
-<div align="center">
+<p align="center">
+  <img src="https://img.shields.io/badge/%40bymax--one-nest--logger-000000?style=for-the-badge&logo=nestjs&logoColor=E0234E" alt="@bymax-one/nest-logger" />
+</p>
 
-<h1>@bymax-one/nest-logger</h1>
+<h1 align="center">@bymax-one/nest-logger</h1>
 
-<p>Structured JSON logging for NestJS — built on <strong>Pino 10</strong> with optional OpenTelemetry correlation, automatic PII redaction, and pluggable destinations.</p>
+<p align="center">
+  <strong>Structured JSON logging for NestJS</strong><br />
+  <sub>Pino 10 · OpenTelemetry · PII Redaction · Multi-Destination · Multi-Tenant · Zero Runtime Dependencies</sub>
+</p>
 
-[![npm version](https://img.shields.io/npm/v/@bymax-one/nest-logger?style=flat-square&color=0ea5e9)](https://www.npmjs.com/package/@bymax-one/nest-logger)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D24-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
-[![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?style=flat-square&logo=nestjs&logoColor=white)](https://nestjs.com)
-[![Pino](https://img.shields.io/badge/Pino-10-green?style=flat-square)](https://getpino.io)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+<p align="center">
+  <a href="https://www.npmjs.com/package/@bymax-one/nest-logger"><img src="https://img.shields.io/npm/v/@bymax-one/nest-logger?style=flat-square&colorA=000000&colorB=000000" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@bymax-one/nest-logger"><img src="https://img.shields.io/npm/dm/@bymax-one/nest-logger?style=flat-square&colorA=000000&colorB=000000" alt="npm downloads" /></a>
+  <a href="https://github.com/bymaxone/nest-logger/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/bymaxone/nest-logger/ci.yml?branch=main&style=flat-square&colorA=000000&label=CI" alt="CI status" /></a>
+  <a href="https://github.com/bymaxone/nest-logger/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square&colorA=000000" alt="coverage" /></a>
+  <a href="https://github.com/bymaxone/nest-logger/blob/main/docs/mutation_testing_results.md"><img src="https://img.shields.io/badge/mutation-95.93%25-brightgreen?style=flat-square&colorA=000000" alt="mutation score" /></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/bymaxone/nest-logger"><img src="https://api.scorecard.dev/projects/github.com/bymaxone/nest-logger/badge?style=flat-square" alt="OpenSSF Scorecard" /></a>
+  <a href="https://github.com/bymaxone/nest-logger/blob/main/LICENSE"><img src="https://img.shields.io/github/license/bymaxone/nest-logger?style=flat-square&colorA=000000&colorB=000000" alt="license" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-24%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js" /></a>
+</p>
 
-</div>
+<p align="center">
+  <a href="https://github.com/bymaxone/nest-logger">GitHub</a> ·
+  <a href="https://github.com/bymaxone/nest-logger/issues">Issues</a> ·
+  <a href="#-quick-start">Quick Start</a> ·
+  <a href="#-api-reference">API Reference</a> ·
+  <a href="https://github.com/bymaxone/nest-logger-example">Example App</a>
+</p>
 
 ---
 
-## Overview
+## ✨ Overview
 
 `@bymax-one/nest-logger` replaces ad-hoc `console.log` and legacy Winston setups with a production-grade structured logging pipeline. Every log entry is a JSON object carrying a `logKey` (`MODULE_ACTION_RESULT` convention), `requestId`, `tenantId`, and — when OpenTelemetry is active — the correlated `traceId`/`spanId`.
 
@@ -25,7 +41,7 @@ The library has **zero direct dependencies** — all packages arrive as peer dep
 
 ---
 
-## Features
+## 🔥 Features
 
 - **Structured JSON** — every entry has `level`, `time`, `service`, `logKey`, `msg`, and arbitrary metadata fields
 - **PII redaction by default** — 97 paths covering passwords, tokens, PCI DSS card data, MFA secrets, CPF/CNPJ/RG (LGPD), and common HTTP headers — powered by `fast-redact`
@@ -42,7 +58,7 @@ The library has **zero direct dependencies** — all packages arrive as peer dep
 
 ---
 
-## Subpath Exports
+## 📦 Subpath Exports
 
 The package ships two entry points:
 
@@ -55,7 +71,7 @@ The `/shared` subpath is safe to import in isomorphic code, test helpers, CLI sc
 
 ---
 
-## Installation
+## 📥 Installation
 
 ```bash
 # Install the library
@@ -73,7 +89,7 @@ pnpm add @opentelemetry/api @opentelemetry/sdk-node
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Step 1 — Register the module
 
@@ -278,7 +294,7 @@ Any log emitted inside the `run()` scope — regardless of nesting depth — aut
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
 Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
@@ -298,11 +314,13 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
 ### `http` options
 
-| Option                 | Type       | Default | Description                                                               |
-| ---------------------- | ---------- | ------- | ------------------------------------------------------------------------- |
-| `http.isEnabled`       | `boolean`  | `false` | Register `HttpLoggingInterceptor` and `HttpExceptionFilter` globally      |
-| `http.excludePaths`    | `string[]` | `[]`    | URL prefixes excluded from HTTP logging (e.g., `['/health', '/metrics']`) |
-| `http.slowThresholdMs` | `number`   | `1000`  | Requests exceeding this duration emit an additional slow-request field    |
+| Option                         | Type       | Default                         | Description                                                                           |
+| ------------------------------ | ---------- | ------------------------------- | ------------------------------------------------------------------------------------- |
+| `http.isEnabled`               | `boolean`  | `false`                         | Register `HttpLoggingInterceptor` (and, on `forRoot`, `HttpExceptionFilter`) globally |
+| `http.shouldCaptureExceptions` | `boolean`  | `true`                          | Capture unhandled HTTP exceptions and emit `HTTP_EXCEPTION_UNHANDLED`                 |
+| `http.shouldGenerateRequestId` | `boolean`  | `true`                          | Generate a `requestId` when the inbound request header is absent                      |
+| `http.excludePaths`            | `RegExp[]` | `[/^\/health$/, /^\/metrics$/]` | Paths that bypass HTTP logging. Use anchored, linear-time regexes (ReDoS-safe)        |
+| `http.tenantIdHeader`          | `string`   | `'x-tenant-id'`                 | Request header carrying the tenant identifier                                         |
 
 ### `otel` options
 
@@ -313,7 +331,7 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
 ---
 
-## PII Redaction
+## 🔐 PII Redaction
 
 ### Default paths
 
@@ -360,7 +378,7 @@ A `LOGGER_BOOTSTRAP_WARNING` entry is emitted on startup so security reviews can
 
 ---
 
-## Log Key Convention
+## 🔑 Log Key Convention
 
 All structured log calls must use the `MODULE_ACTION_RESULT` format:
 
@@ -392,7 +410,7 @@ All reserved keys are exported as the `RESERVED_LOG_KEYS` constant from `@bymax-
 
 ---
 
-## Custom Destinations
+## 🧩 Custom Destinations
 
 Implement `ILogDestination` to ship logs to any sink:
 
@@ -533,7 +551,7 @@ export class RollingFileDestination implements ILogDestination {
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```
 HTTP Request
@@ -577,7 +595,7 @@ Application Service
 
 ---
 
-## API Reference
+## 📖 API Reference
 
 ### `PinoLoggerService`
 
@@ -643,7 +661,7 @@ interface ILogDestination {
 
 ---
 
-## Error Code Catalog
+## 🚨 Error Code Catalog
 
 | Code                              | Severity          | When                                                     | Action                                                                |
 | --------------------------------- | ----------------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
@@ -658,7 +676,7 @@ interface ILogDestination {
 
 ---
 
-## Level Mapping
+## 🪜 Level Mapping
 
 | Pino | Pino string | NestJS    | Typical use                               |
 | ---- | ----------- | --------- | ----------------------------------------- |
@@ -671,23 +689,23 @@ interface ILogDestination {
 
 ---
 
-## Testing & Quality
+## 🧪 Testing & Quality
 
 ```bash
 pnpm test              # unit tests (Jest)
 pnpm test:cov          # coverage report
 pnpm test:e2e          # end-to-end tests (supertest)
 pnpm test:cov:all      # full coverage gate (100% statements/branches/functions/lines)
-pnpm mutation          # Stryker mutation testing (≥99% score required)
+pnpm mutation          # Stryker mutation testing (95% break gate)
 pnpm typecheck         # tsc strict check (all tsconfig variants)
 pnpm lint              # ESLint
 ```
 
-Coverage gate: **100%** on statements, branches, functions, and lines — identical to the `nest-auth` gate. The mutation score threshold is **99%** (Stryker `thresholds.break: 95`).
+Coverage gate: **100%** on statements, branches, functions, and lines — identical to the `nest-auth` gate. Mutation: **95.93%** current vs the **95%** break gate (Stryker `thresholds.break: 95`); 99% is the aspirational target — see [mutation_testing_results.md](docs/mutation_testing_results.md).
 
 ---
 
-## Tech Stack
+## 🧱 Tech Stack
 
 [![Pino](https://img.shields.io/badge/Pino-10-green?style=flat-square)](https://getpino.io)
 [![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?style=flat-square&logo=nestjs)](https://nestjs.com)
@@ -700,7 +718,7 @@ Coverage gate: **100%** on statements, branches, functions, and lines — identi
 
 ---
 
-## Performance
+## ⚡ Performance
 
 Pino official benchmarks (Node 24, 100k logs):
 
@@ -715,7 +733,7 @@ At high throughput (~100k req/s), Pino consumes 3× less CPU and ~2× less RSS t
 
 ---
 
-## What This Library Does NOT Do
+## 🚫 What This Library Does NOT Do
 
 By design, the following are out of scope:
 
@@ -730,7 +748,7 @@ By design, the following are out of scope:
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 This library is part of the `@bymax-one` monorepo. Development follows the Bymax coding standards:
 

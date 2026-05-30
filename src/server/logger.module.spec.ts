@@ -176,3 +176,46 @@ describe('BymaxLoggerModule.forRoot', () => {
     })
   })
 })
+
+describe('BymaxLoggerModule.useNestLogger', () => {
+  beforeEach(() => {
+    // Silence the bootstrap log emitted when the module compiles.
+    jest.spyOn(PinoLoggerService.prototype, 'info').mockImplementation(() => undefined)
+  })
+
+  it(/*
+   * The helper must fetch PinoLoggerService from the container, install it as the
+   * Nest application logger, and flush buffered bootstrap logs — the one-liner
+   * main.ts wiring contract.
+   */
+  'wires PinoLoggerService as the Nest application logger', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [BymaxLoggerModule.forRoot({ service })]
+    }).compile()
+    const app = moduleRef.createNestApplication({ bufferLogs: true })
+    const useLoggerSpy = jest.spyOn(app, 'useLogger')
+    const flushLogsSpy = jest.spyOn(app, 'flushLogs')
+
+    BymaxLoggerModule.useNestLogger(app)
+
+    expect(useLoggerSpy).toHaveBeenCalledWith(expect.any(PinoLoggerService))
+    expect(flushLogsSpy).toHaveBeenCalledTimes(1)
+    await app.close()
+  })
+
+  it(/*
+   * When BymaxLoggerModule was never imported the helper must throw a clear,
+   * actionable error instead of leaking a cryptic Nest DI exception.
+   */
+  'throws a clear error when the module was not imported', async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [{ provide: 'NOOP', useValue: true }]
+    }).compile()
+    const app = moduleRef.createNestApplication()
+
+    expect(() => BymaxLoggerModule.useNestLogger(app)).toThrow(
+      '[BymaxLoggerModule] useNestLogger(app) called but BymaxLoggerModule was not imported'
+    )
+    await app.close()
+  })
+})

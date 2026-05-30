@@ -1,15 +1,17 @@
 import { applyDefaults } from './config/default-options'
+import type { ILogDestination } from './interfaces/log-destination.interface'
 import { buildPinoInstance } from './pino-factory'
 import { LogContextService } from './services/log-context.service'
 
 /** In-memory destination capturing each emitted NDJSON line as a parsed entry. */
-function createCapture(): {
-  stream: { write(line: string): void }
+function createCapture(name = 'capture'): {
+  destination: ILogDestination
   entries(): Record<string, unknown>[]
 } {
   const lines: string[] = []
   return {
-    stream: {
+    destination: {
+      name,
       write(line: string): void {
         lines.push(line)
       }
@@ -30,17 +32,20 @@ describe('buildPinoInstance', () => {
   'applies the configured level', () => {
     const logger = buildPinoInstance(
       applyDefaults({ ...baseOptions, level: 'warn' }),
-      new LogContextService()
+      new LogContextService(),
+      [createCapture().destination]
     )
     expect(logger.level).toBe('warn')
   })
 
   it(/*
-   * The no-stream path must still produce a usable logger — this is the branch
-   * the module uses at runtime (default stdout sink).
+   * The factory must always return a usable logger wired to the supplied
+   * destinations — the branch the module uses at runtime.
    */
-  'returns a usable logger without an explicit stream', () => {
-    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService())
+  'returns a usable logger wired to destinations', () => {
+    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
+      createCapture().destination
+    ])
     expect(typeof logger.info).toBe('function')
     expect(typeof logger.child).toBe('function')
   })
@@ -52,11 +57,9 @@ describe('buildPinoInstance', () => {
    */
   'emits string level, service base, and timestamp', () => {
     const capture = createCapture()
-    const logger = buildPinoInstance(
-      applyDefaults(baseOptions),
-      new LogContextService(),
-      capture.stream
-    )
+    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
+      capture.destination
+    ])
     logger.info({ logKey: 'PROBE_OK' }, 'hello')
     const [entry] = capture.entries()
     expect(entry?.['level']).toBe('info')
@@ -72,7 +75,7 @@ describe('buildPinoInstance', () => {
   'merges request context via the trace mixin', () => {
     const capture = createCapture()
     const logContext = new LogContextService()
-    const logger = buildPinoInstance(applyDefaults(baseOptions), logContext, capture.stream)
+    const logger = buildPinoInstance(applyDefaults(baseOptions), logContext, [capture.destination])
     logContext.run({ requestId: 'r_1', tenantId: 't_1' }, () => logger.info('inside'))
     const [entry] = capture.entries()
     expect(entry?.['requestId']).toBe('r_1')
@@ -85,11 +88,9 @@ describe('buildPinoInstance', () => {
    */
   'redacts default PII paths', () => {
     const capture = createCapture()
-    const logger = buildPinoInstance(
-      applyDefaults(baseOptions),
-      new LogContextService(),
-      capture.stream
-    )
+    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
+      capture.destination
+    ])
     logger.info({ user: { password: 'secret' } }, 'x')
     const [entry] = capture.entries()
     expect((entry?.['user'] as Record<string, unknown>)['password']).toBe('[REDACTED]')
@@ -101,11 +102,9 @@ describe('buildPinoInstance', () => {
    */
   'serializes errors via the default err serializer', () => {
     const capture = createCapture()
-    const logger = buildPinoInstance(
-      applyDefaults(baseOptions),
-      new LogContextService(),
-      capture.stream
-    )
+    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
+      capture.destination
+    ])
     logger.error({ err: new Error('boom') }, 'failed')
     const [entry] = capture.entries()
     const err = entry?.['err'] as Record<string, unknown>
@@ -123,10 +122,66 @@ describe('buildPinoInstance', () => {
     const logger = buildPinoInstance(
       applyDefaults({ ...baseOptions, redactCensor: '***' }),
       new LogContextService(),
-      capture.stream
+      [capture.destination]
     )
     logger.info({ user: { password: 'secret' } }, 'x')
     const [entry] = capture.entries()
     expect((entry?.['user'] as Record<string, unknown>)['password']).toBe('***')
+  })
+
+  it(/*
+   * Multi-stream must fan every entry out to ALL registered destinations — the
+   * core contract of the destination system.
+   */
+  'fans every entry out to every destination', () => {
+    const first = createCapture('first')
+    const second = createCapture('second')
+    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
+      first.destination,
+      second.destination
+    ])
+    logger.info({ logKey: 'FAN_OUT' }, 'broadcast')
+    expect(first.entries()[0]?.['msg']).toBe('broadcast')
+    expect(second.entries()[0]?.['msg']).toBe('broadcast')
+  })
+
+  it(/*
+   * A destination minLevel ABOVE the global level must gate that destination
+   * independently: it receives only entries at/above its own threshold, while a
+   * default destination still receives everything.
+   */
+  'honors a per-destination minLevel above the global level', () => {
+    const errorsOnly = createCapture('errors-only')
+    const all = createCapture('all')
+    const logger = buildPinoInstance(
+      applyDefaults({ ...baseOptions, level: 'info' }),
+      new LogContextService(),
+      [{ ...errorsOnly.destination, minLevel: 'error' }, all.destination]
+    )
+    logger.info({ logKey: 'INFO_EVT' }, 'info-msg')
+    logger.error({ logKey: 'ERR_EVT' }, 'error-msg')
+    expect(errorsOnly.entries().map((entry) => entry['msg'])).toEqual(['error-msg'])
+    expect(all.entries().map((entry) => entry['msg'])).toEqual(['info-msg', 'error-msg'])
+  })
+
+  it(/*
+   * Both the default and consumer-supplied serializers must be size-bounded:
+   * an oversized custom-serialized field is replaced by the truncation envelope
+   * rather than flooding the sink (verifies the LOG-047 wiring in the factory).
+   */
+  'size-bounds serializers and truncates oversized fields', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(
+      applyDefaults({
+        ...baseOptions,
+        maxEntrySizeBytes: 50,
+        serializers: { blob: (value: unknown): unknown => value }
+      }),
+      new LogContextService(),
+      [capture.destination]
+    )
+    logger.info({ blob: 'x'.repeat(500) }, 'oversized')
+    const [entry] = capture.entries()
+    expect((entry?.['blob'] as Record<string, unknown>)['_truncated']).toBe(true)
   })
 })
