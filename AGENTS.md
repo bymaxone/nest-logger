@@ -182,7 +182,7 @@ target. Mutation testing (Stryker `break: 95`) is the deeper gate against weak t
 
 ### Mutation Testing (Stryker)
 
-Line coverage proves code _executes_; mutation testing proves the tests would _fail_ if the code regressed. Run `pnpm mutation` (Node 24) before tagging a release. Survivors are either real gaps (add a test) or equivalent mutants (mark `// Stryker disable next-line <Mutator>: <reason>`). See [docs/mutation_testing_plan.md](./docs/mutation_testing_plan.md).
+Line coverage proves code _executes_; mutation testing proves the tests would _fail_ if the code regressed. Run `pnpm mutation` (Node 24) before tagging a release. Survivors are either real gaps (add a test) or equivalent mutants — document the latter in `docs/mutation_testing_results.md` (§Residual survivors), **not** with inline `// Stryker disable` comments, which ship in the unminified `.mjs` bundle and push the server subpath past its size budget. See [docs/mutation_testing_plan.md](./docs/mutation_testing_plan.md).
 
 ---
 
@@ -196,7 +196,7 @@ pnpm typecheck    # tsc --noEmit
 pnpm lint         # eslint src
 pnpm test:cov     # jest --coverage (100% gate)
 pnpm build        # tsup
-pnpm size         # check brotli budgets (server <12KB, shared <3.5KB)
+pnpm size         # check brotli budgets (server <12.5KB, shared <1KB)
 pnpm release      # pnpm publish --provenance
 ```
 

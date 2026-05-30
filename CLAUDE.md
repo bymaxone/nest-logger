@@ -79,8 +79,10 @@ pnpm mutation             # full run (~10-20 min); writes reports/mutation/mutat
 pnpm mutation:incremental # faster re-run using reports/stryker-incremental.json
 ```
 
-Equivalent mutants are documented inline with `// Stryker disable next-line <Mutator>: <reason>`.
-Full setup, config rationale, and the iteration workflow live in
+Equivalent mutants are documented in `docs/mutation_testing_results.md`
+(§Residual survivors) — **not** with inline `// Stryker disable` comments, which
+ship in the unminified `.mjs` bundle and push the server subpath past its size
+budget. Full setup, config rationale, and the iteration workflow live in
 [docs/mutation_testing_plan.md](./docs/mutation_testing_plan.md). Do **not** add
 mutation testing to `prepublishOnly` or the per-PR CI — it is a manual/release gate.
 
