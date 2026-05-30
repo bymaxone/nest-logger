@@ -85,6 +85,23 @@ export default [
       'no-new-func': 'error',
       'no-implied-eval': 'error',
 
+      // Security — ban bare 'crypto' and external crypto/id packages (node:crypto only).
+      // This is a Bymax-wide guard-rail: even libs that do not currently use crypto
+      // must reach for node: builtins, never a third-party dependency, if they ever do.
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'crypto', message: "Use 'node:crypto' with the node: prefix instead." },
+            { name: 'bcrypt', message: 'Use node:crypto scrypt instead.' },
+            { name: 'argon2', message: 'Use node:crypto scrypt instead.' },
+            { name: 'uuid', message: 'Use crypto.randomUUID() from node:crypto instead.' },
+            { name: 'nanoid', message: 'Use crypto.randomBytes() from node:crypto instead.' },
+            { name: 'crypto-js', message: 'Use node:crypto instead.' }
+          ]
+        }
+      ],
+
       // Security plugin rules
       'security/detect-object-injection': 'warn',
       'security/detect-non-literal-regexp': 'warn',
@@ -157,6 +174,19 @@ export default [
     rules: {
       'no-eval': 'error',
       'no-new-func': 'error',
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'crypto', message: "Use 'node:crypto' with the node: prefix instead." },
+            { name: 'bcrypt', message: 'Use node:crypto scrypt instead.' },
+            { name: 'argon2', message: 'Use node:crypto scrypt instead.' },
+            { name: 'uuid', message: 'Use crypto.randomUUID() from node:crypto instead.' },
+            { name: 'nanoid', message: 'Use crypto.randomBytes() from node:crypto instead.' },
+            { name: 'crypto-js', message: 'Use node:crypto instead.' }
+          ]
+        }
+      ],
       'security/detect-object-injection': 'warn'
     }
   },
