@@ -1,7 +1,8 @@
 # Throughput & allocation benchmark
 
-`pnpm bench` measures the logger's hot path and **fails the process (exit 1) on
-a budget regression**, so a PR cannot silently degrade logging performance.
+`pnpm bench` measures the logger's hot path and **fails the process (exit 1) on a
+throughput regression**, so a PR cannot silently degrade logging performance.
+(Allocation is reported as an advisory signal only — see Budgets.)
 
 ## Scenarios
 
@@ -20,12 +21,13 @@ Budgets are **relative** (scenario-vs-scenario), so they hold across machines
 even though absolute ops/sec vary. They are calibrated to the **measured v0.1
 baseline**, not to aspirational targets:
 
-- **Allocation:** `B.bytesPerOp ≤ A.bytesPerOp × 2.0`. The wrapper allocates
-  ≈ 1.2× bare Pino (one extra payload object per log); the 2.0× ceiling
-  tolerates the noise inherent in `heapUsed` sampling while still catching a
-  genuine 2× allocation regression.
-- **Throughput:** `C.opsPerSec ≥ B.opsPerSec × 0.004`. The full prod path runs
-  at ≈ 0.8 % of the bare wrapper, so the floor catches a further ~2× regression.
+- **Throughput (HARD gate):** `C.opsPerSec ≥ B.opsPerSec × 0.004`. The full prod
+  path runs at ≈ 0.8 % of the bare wrapper, so the floor catches a further ~2×
+  regression. This is the only budget that fails CI.
+- **Allocation (ADVISORY only):** `B.bytesPerOp ≤ A.bytesPerOp × 2.0`. The wrapper
+  allocates ≈ 1.2× bare Pino locally, but `heapUsed` deltas are dominated by GC
+  timing on shared CI runners (observed > 40× for identical code — pure noise),
+  so allocation is **printed but never fails CI**.
 
 ### Why the prod path is ~100× slower than the wrapper
 
@@ -78,4 +80,4 @@ the before/after table and the reason the new cost is acceptable.
 
 `.github/workflows/bench.yml` runs `pnpm bench` on every pull request (not on
 pushes to `main` — a perf gate is too noisy for every push) and fails the job on
-a budget violation.
+a **throughput** regression (allocation is advisory-only).
