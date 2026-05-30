@@ -76,6 +76,23 @@ describe('isValidTraceId', () => {
   'rejects a 32-char non-hex id', () => {
     expect(isValidTraceId('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz')).toBe(false)
   })
+
+  it(/*
+   * A valid 32-hex id with a non-hex PREFIX must be rejected — pins the leading
+   * `^` anchor so a 32-hex substring at the end can't sneak through.
+   */
+  'rejects a valid hex run preceded by non-hex characters', () => {
+    expect(isValidTraceId('zz4bf92f3577b34da6a3ce929d0e0e4736')).toBe(false)
+  })
+
+  it(/*
+   * A valid (non-all-zero) id that merely STARTS and ENDS with a zero must be
+   * accepted — pins both anchors of the all-zeros `/^0+$/` reject so a partial
+   * (prefix/suffix) zero match cannot reject a legitimate id.
+   */
+  'accepts a valid id that is bordered by zeros', () => {
+    expect(isValidTraceId('0bf92f3577b34da6a3ce929d0e0e4730')).toBe(true)
+  })
 })
 
 describe('isValidSpanId', () => {
@@ -105,5 +122,14 @@ describe('isValidSpanId', () => {
    */
   'rejects a non-hex id', () => {
     expect(isValidSpanId('zzzzzzzzzzzzzzzz')).toBe(false)
+  })
+
+  it(/*
+   * A valid (non-all-zero) span id that ENDS in a zero must be accepted — pins
+   * the leading anchor of the all-zeros `/^0+$/` reject so a trailing-zero match
+   * cannot reject a legitimate span.
+   */
+  'accepts a valid span id ending in zero', () => {
+    expect(isValidSpanId('00f067aa0ba90230')).toBe(true)
   })
 })

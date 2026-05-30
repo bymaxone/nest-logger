@@ -38,7 +38,11 @@ describe('validateOptions', () => {
    * bootstrap rather than discover silent drops at runtime.
    */
   'should throw when level is not a valid LogLevel', () => {
-    expect(() => validateOptions({ ...validOpts, level: 'verbose' as never })).toThrow(/level/i)
+    // Assert the actionable message body (not just /level/) so emptying the
+    // "must be one of" literal is caught.
+    expect(() => validateOptions({ ...validOpts, level: 'verbose' as never })).toThrow(
+      /options\.level must be one of/
+    )
   })
 
   it.each([

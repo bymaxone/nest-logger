@@ -3,33 +3,59 @@
  *
  * Layer: server — turns a resolved options snapshot into a configured Pino
  * logger. Wires PII redaction, the service base bindings, string level output,
- * the default error serializer, and the trace-context mixin (ALS + OTel).
- *
- * Single-stream stdout output for now; multi-destination fan-out arrives in
- * Phase 4 via the destination registry.
+ * the default error serializer, and the trace-context mixin (ALS + OTel), then
+ * fans the serialized output out to every registered destination via
+ * `pino.multistream`.
  */
 import pino from 'pino'
-import type { DestinationStream, Logger as PinoLogger, LoggerOptions } from 'pino'
+import type { Logger as PinoLogger, LoggerOptions } from 'pino'
 
+import type { ILogDestination } from './interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from './interfaces/logger-module-options.interface'
 import { createTraceContextMixin } from './mixins/trace-context.mixin'
 import type { LogContextService } from './services/log-context.service'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
+import { destinationToStream } from './utils/destination-to-stream'
+import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
 
 /**
  * Build a configured Pino instance from a resolved options snapshot.
  *
+ * Each destination becomes one entry in a `pino.multistream` fan-out. A
+ * destination's `minLevel` gates its own stream; entries below the Pino
+ * instance's own `level` are filtered upstream by Pino before the multistream
+ * sees them, so a `minLevel` BELOW the global `level` cannot widen what that
+ * destination receives (a known multistream constraint, acceptable for v0.1).
+ *
  * @param options - Fully-defaulted, frozen module options.
  * @param logContext - Request-context service consumed by the trace mixin.
- * @param stream - Optional destination stream. Defaults to Pino's stdout sink.
- *   The multi-destination fan-out (Phase 4) and unit tests inject a stream here.
- * @returns A configured Pino logger writing structured JSON to the destination.
+ * @param destinations - Non-empty list of sinks to fan out to. The registry
+ *   (`DestinationRegistry`) owns their `onInit` / `onShutdown` lifecycle; this
+ *   factory only wires their streams.
+ * @returns A configured Pino logger writing structured JSON to every destination.
  */
 export function buildPinoInstance(
   options: ResolvedBymaxLoggerModuleOptions,
   logContext: LogContextService,
-  stream?: DestinationStream
+  destinations: readonly ILogDestination[]
 ): PinoLogger {
+  // Every serializer (default `err` + any consumer-supplied) is size-bounded so
+  // an oversized field is replaced by a compact truncation envelope instead of
+  // flooding the sink. `Object.fromEntries` avoids a dynamic `obj[key] =` write
+  // (which would trip the object-injection lint rule).
+  const maxBytes = options.maxEntrySizeBytes
+  const serializers = {
+    err: createSizeBoundedSerializer(pino.stdSerializers.err, maxBytes),
+    ...Object.fromEntries(
+      Object.entries(options.serializers).map(
+        ([key, serializer]): [string, (input: unknown) => unknown] => [
+          key,
+          createSizeBoundedSerializer(serializer, maxBytes)
+        ]
+      )
+    )
+  }
+
   const pinoOptions: LoggerOptions = {
     level: options.level,
     redact: {
@@ -45,12 +71,14 @@ export function buildPinoInstance(
       // `formatters.log` (which cannot see ambient ALS / OTel state).
       level: (label) => ({ level: label })
     },
-    serializers: {
-      err: pino.stdSerializers.err,
-      ...options.serializers
-    },
+    serializers,
     mixin: createTraceContextMixin(logContext, options.otel)
   }
 
-  return stream ? pino(pinoOptions, stream) : pino(pinoOptions)
+  const streams = destinations.map((destination) => ({
+    level: destination.minLevel ?? options.level,
+    stream: destinationToStream(destination)
+  }))
+
+  return pino(pinoOptions, pino.multistream(streams))
 }

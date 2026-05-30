@@ -1,15 +1,20 @@
 import { Module } from '@nestjs/common'
+import type { FactoryProvider } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
+import pino from 'pino'
 
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
+import { applyDefaults } from './config/default-options'
 import { LOGGER_OPTIONS_TOKEN } from './constants/injection-tokens.constants'
+import { HttpLoggingInterceptor } from './interceptors/http-logging.interceptor'
+import { PassThroughInterceptor } from './interceptors/passthrough.interceptor'
 import type {
   BymaxLoggerModuleOptions,
   BymaxLoggerModuleOptionsFactory,
   ResolvedBymaxLoggerModuleOptions
 } from './interfaces/logger-module-options.interface'
-import { BymaxLoggerModule } from './logger.module'
+import { asyncHttpInterceptorProvider, BymaxLoggerModule } from './logger.module'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
 
@@ -153,5 +158,34 @@ describe('BymaxLoggerModule.forRootAsync', () => {
       useFactory: () => ({ service })
     })
     expect(dynamic.global).toBe(false)
+  })
+})
+
+describe('asyncHttpInterceptorProvider (async HTTP gate)', () => {
+  // A real but silent Pino instance avoids fabricating a Logger mock (cast-free).
+  const logger = new PinoLoggerService(pino({ enabled: false }))
+
+  it(/*
+   * When http.isEnabled resolves true on the async path, the global interceptor
+   * slot must hold the REAL HttpLoggingInterceptor — giving forRootAsync access-log
+   * parity with the sync forRoot.
+   */
+  'resolves the real HttpLoggingInterceptor when http is enabled', () => {
+    const provider = asyncHttpInterceptorProvider() as FactoryProvider
+    const interceptor = provider.useFactory(
+      applyDefaults({ service, http: { isEnabled: true } }),
+      logger
+    )
+    expect(interceptor).toBeInstanceOf(HttpLoggingInterceptor)
+  })
+
+  it(/*
+   * When http logging is disabled, the slot must hold a transparent pass-through
+   * (not the real interceptor) so the always-registered slot adds no behavior.
+   */
+  'resolves a transparent pass-through when http is disabled', () => {
+    const provider = asyncHttpInterceptorProvider() as FactoryProvider
+    const interceptor = provider.useFactory(applyDefaults({ service }), logger)
+    expect(interceptor).toBeInstanceOf(PassThroughInterceptor)
   })
 })

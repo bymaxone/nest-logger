@@ -29,7 +29,15 @@ export interface HttpOptions {
   shouldCaptureExceptions?: boolean
   /** Generate `requestId` when the request header is absent. Default: true. */
   shouldGenerateRequestId?: boolean
-  /** Paths that bypass HTTP logging (health checks, metrics). Defaults: `/health`, `/metrics`. */
+  /**
+   * Paths that bypass HTTP logging (health checks, metrics). Defaults:
+   * `/health`, `/metrics`.
+   *
+   * SECURITY: each pattern is `.test()`-ed against the (attacker-controllable)
+   * request path on every request. Supply only anchored, linear-time regexes
+   * (e.g. `/^\/health$/`); a pattern with catastrophic backtracking would turn a
+   * crafted URL into a ReDoS vector. The defaults are anchored and safe.
+   */
   excludePaths?: readonly RegExp[]
   /** Header name carrying the tenant identifier. Default: `x-tenant-id`. */
   tenantIdHeader?: string

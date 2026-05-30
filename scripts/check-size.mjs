@@ -15,13 +15,34 @@ import { brotliCompressSync, constants } from 'node:zlib'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-// Budgets are in bytes, measured against the brotli'd .mjs bundle (matches
-// what a consumer's bundler/CDN ships to browsers). Server budget accounts
-// for the NestJS module surface + Pino factory + interceptors externalized
-// to peer deps; shared is just types + constants.
+// Budgets are in bytes (KiB units, `n * 1024`, matching the table's ÷1024
+// display) measured against the brotli'd .mjs bundle — what a consumer's
+// bundler/CDN ships. Brotli, not gzip, to match real wire compression.
+//
+// Bymax bundle-size convention (canonical: Obsidian → 03 - Resources/NestJS/
+// Bymax-Conventions.md → "Bundle-size budgets"):
+//   1. The .mjs ships UNMINIFIED with JSDoc (tsup `minify: false`) on purpose —
+//      readable stack traces / source inside a consumer's node_modules outweigh
+//      a few KB on a backend lib that never reaches a browser. We do NOT minify
+//      a lib just to satisfy a size budget.
+//   2. The budget is CALIBRATED to the real built artifact + MODEST headroom:
+//      enough to absorb normal inter-release growth, tight enough to catch
+//      accidental bloat (e.g. a peer dep leaking into the bundle). It is a
+//      bloat tripwire, NOT a hard design ceiling — when real growth is
+//      legitimate, raise it (and say why here); when the artifact shrinks,
+//      tighten it. Avoid >2x headroom: it silently lets bloat through.
+//
+// Calibration (2026-05-30):
+//   - server: 12.05 KiB real -> 12.5 KiB budget (~4% headroom; src/server is
+//     mature and Phase 5 does not touch it). The +0.3 KiB over the original
+//     12 KiB is legitimate Phase 4 feature surface (pretty / registry /
+//     multistream / truncation / child-logger / async-HTTP), not bloat.
+//   - shared: 0.34 KiB real -> 1.0 KiB budget (was 3.5 KiB — 10x headroom
+//     defeats bloat detection; 1.0 KiB still absorbs years of constant/type
+//     growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 12_000 },
-  { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 3_500 }
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 12.5 * 1024 },
+  { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 
 const fmt = (n) => `${(n / 1024).toFixed(2)} kB`

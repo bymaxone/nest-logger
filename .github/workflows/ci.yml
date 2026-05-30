@@ -1,0 +1,106 @@
+name: CI
+
+# Runs on every push to `main` and on every PR targeting `main`. The
+# `workflow_dispatch` trigger is kept so the same job can be re-run manually
+# from the Actions tab when needed.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same ref when a new commit is pushed.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: CI only reads the repository. No write scopes are granted so a
+# compromised dependency in a workflow step cannot mutate the repo or its releases.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (typecheck · lint · test · build · size)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [24.x]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Flags PRs that introduce dependencies with known vulnerabilities or
+      # license violations. PR-only — on push to main there is no base ref to
+      # diff against. Requires the repo's Dependency Graph to be enabled
+      # (Settings → Code security → Dependency graph); until it is, the action
+      # errors with "not supported on this repository", so this step is kept
+      # non-blocking. Socket Security remains the hard dependency-vulnerability
+      # gate on PRs in the meantime.
+      - name: Dependency review
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.8.1
+          run_install: false
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit + E2E tests with coverage (100% enforced)
+        run: pnpm test:cov:all
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-node-${{ matrix.node-version }}
+          path: coverage/
+          retention-days: 14
+
+      - name: Build all subpaths
+        run: pnpm build
+
+      - name: Verify build output integrity
+        # Confirms every declared subpath produced both ESM and CJS bundles
+        # plus type declarations. A missing artifact here indicates a tsup
+        # misconfiguration that would ship a broken package to npm.
+        run: |
+          for subpath in server shared; do
+            for ext in mjs cjs d.ts d.cts; do
+              if [ ! -f "dist/$subpath/index.$ext" ]; then
+                echo "Missing dist/$subpath/index.$ext"
+                exit 1
+              fi
+            done
+          done
+          echo "Both subpaths produced ESM + CJS + .d.ts + .d.cts"
+
+      - name: Bundle size budget
+        # Zero-dependency brotli-size gate over the built .mjs subpaths.
+        # See scripts/check-size.mjs for budgets and rationale.
+        run: pnpm size

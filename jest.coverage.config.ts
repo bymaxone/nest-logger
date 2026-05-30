@@ -17,6 +17,11 @@ const config: Config = {
   testEnvironment: 'node',
   rootDir: '.',
   testMatch: ['<rootDir>/src/**/*.spec.ts', '<rootDir>/test/e2e/**/*.e2e-spec.ts'],
+  // This config scans the whole project (rootDir '.'), so exclude build output
+  // and Stryker sandboxes: both hold copies of `src/` that share the package's
+  // Haste module name, which otherwise crashes jest-haste-map with
+  // "dupMap.get is not a function" on the `@bymax-one/nest-logger` alias.
+  modulePathIgnorePatterns: ['<rootDir>/dist/', '<rootDir>/.stryker-tmp/'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   // Mirror the subpath aliases declared in tsconfig.json "paths" so tests and
   // production code resolve the same module instance — a dual-package hazard

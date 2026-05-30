@@ -161,6 +161,21 @@ describe('PinoLoggerService', () => {
       const spy = jest.spyOn(rawLogger, 'error')
       service.error('failed')
       expect(spy).toHaveBeenCalledWith({ context: undefined }, 'failed')
+      // jest's argument equality ignores undefined-valued keys, so assert the
+      // `stack` KEY is absent explicitly — pins the `if (stack !== undefined)`
+      // guard against being forced always-true (which would add `stack:undefined`).
+      expect(spy.mock.calls[0]?.[0]).not.toHaveProperty('stack')
+    })
+
+    it(/*
+     * A non-string value at the stack position (index 0) must be ignored — no
+     * `stack` key may appear. Pins the `typeof optionalParams[0] === 'string'`
+     * guard against being forced always-true.
+     */
+    'error() ignores a non-string stack argument', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      service.error('failed', 123 as never)
+      expect(spy.mock.calls[0]?.[0]).not.toHaveProperty('stack')
     })
 
     it(/*

@@ -7,7 +7,7 @@
  * `forRootAsync` registration paths live here and share a common provider set.
  */
 import { Module } from '@nestjs/common'
-import type { DynamicModule, Provider } from '@nestjs/common'
+import type { DynamicModule, INestApplication, NestInterceptor, Provider } from '@nestjs/common'
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core'
 
 import { applyDefaults } from './config/default-options'
@@ -18,9 +18,14 @@ import {
   LOGGER_OPTIONS_TOKEN,
   LOGGER_PINO_INSTANCE_TOKEN
 } from './constants/injection-tokens.constants'
+import {
+  collectContextLoggerProviders,
+  collectContextLoggerTokens
+} from './decorators/inject-logger.provider'
 import { DefaultStdoutDestination } from './destinations/default-stdout.destination'
 import { HttpExceptionFilter } from './filters/http-exception.filter'
 import { HttpLoggingInterceptor } from './interceptors/http-logging.interceptor'
+import { PassThroughInterceptor } from './interceptors/passthrough.interceptor'
 import type { ILogDestination } from './interfaces/log-destination.interface'
 import type {
   BymaxLoggerModuleOptions,
@@ -29,6 +34,7 @@ import type {
 import { BymaxLoggerModuleBase, BUILDER_OPTIONS_TOKEN } from './logger.module.builder'
 import type { ASYNC_OPTIONS_TYPE, OPTIONS_TYPE } from './logger.module.builder'
 import { buildPinoInstance } from './pino-factory'
+import { DestinationRegistry } from './services/destination-registry.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
@@ -82,9 +88,12 @@ function buildCommonProviders(): Provider[] {
     { provide: LOG_CONTEXT_TOKEN, useExisting: LogContextService },
     {
       provide: LOGGER_PINO_INSTANCE_TOKEN,
-      useFactory: (options: ResolvedBymaxLoggerModuleOptions, logContext: LogContextService) =>
-        buildPinoInstance(options, logContext),
-      inject: [LOGGER_OPTIONS_TOKEN, LogContextService]
+      useFactory: (
+        options: ResolvedBymaxLoggerModuleOptions,
+        logContext: LogContextService,
+        destinations: readonly ILogDestination[]
+      ) => buildPinoInstance(options, logContext, destinations),
+      inject: [LOGGER_OPTIONS_TOKEN, LogContextService, LOGGER_DESTINATIONS_TOKEN]
     },
     {
       provide: LOGGER_DESTINATIONS_TOKEN,
@@ -93,8 +102,41 @@ function buildCommonProviders(): Provider[] {
       inject: [LOGGER_OPTIONS_TOKEN]
     },
     PinoLoggerService,
+    // Internal lifecycle owner for destinations (onInit / onShutdown). Not
+    // exported — consumers never inject it directly.
+    DestinationRegistry,
+    // One child-logger provider per context discovered from @InjectLogger(context).
+    ...collectContextLoggerProviders(),
     bootstrapProvider()
   ]
+}
+
+/**
+ * Global HTTP interceptor provider for the ASYNC registration path.
+ *
+ * Async-resolved options are unknown when the providers array is built, so the
+ * interceptor slot is always registered and gated at the factory: the real
+ * {@link HttpLoggingInterceptor} when `http.isEnabled`, otherwise a transparent
+ * {@link PassThroughInterceptor} (which only forwards — safe to leave registered
+ * when HTTP logging is off). This gives `forRootAsync` access-log parity with the
+ * sync `forRoot` without auto-installing the catch-all exception filter (see the
+ * `forRootAsync` doc for why the filter stays explicit).
+ *
+ * @internal Exported only for unit testing; NOT re-exported by the package barrel.
+ * @returns The `APP_INTERCEPTOR` provider for the async path.
+ */
+export function asyncHttpInterceptorProvider(): Provider {
+  return {
+    provide: APP_INTERCEPTOR,
+    useFactory: (
+      options: ResolvedBymaxLoggerModuleOptions,
+      logger: PinoLoggerService
+    ): NestInterceptor =>
+      options.http.isEnabled
+        ? new HttpLoggingInterceptor(logger, options)
+        : new PassThroughInterceptor(),
+    inject: [LOGGER_OPTIONS_TOKEN, PinoLoggerService]
+  }
 }
 
 /**
@@ -119,7 +161,10 @@ export function augmentLoggerModule(base: DynamicModule, providers: Provider[]):
       LOGGER_DESTINATIONS_TOKEN,
       LOG_CONTEXT_TOKEN,
       LogContextService,
-      PinoLoggerService
+      PinoLoggerService,
+      // Export the per-context child-logger tokens so consumer modules can inject
+      // them (the module is global, so only exported providers are visible).
+      ...collectContextLoggerTokens()
     ]
   }
 }
@@ -166,11 +211,14 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
    * Phase 2 ships the destinations array under `LOGGER_DESTINATIONS_TOKEN`; no
    * Phase 2 destination defines an `onInit` hook, so nothing is lost.
    *
-   * Note: the HTTP interceptor/filter are wired only by {@link forRoot}, where
-   * `http.isEnabled` is known at module-definition time. Async options resolve at
-   * runtime, after the providers array is built, so conditional global
-   * registration is not possible here — consumers needing HTTP logging with async
-   * config should use `forRoot`. A runtime-gated registration path is roadmap v0.2.
+   * HTTP access logging IS supported on this path: the global interceptor slot
+   * is always registered and gated at runtime against the resolved
+   * `http.isEnabled` (see {@link asyncHttpInterceptorProvider}). The catch-all
+   * exception FILTER is intentionally NOT auto-wired here — registering a global
+   * `@Catch()` filter from async config would either interfere with a consumer's
+   * own filters (when disabled) or require unsafe re-throwing. Async consumers who
+   * want it register `HttpExceptionFilter` themselves:
+   * `{ provide: APP_FILTER, useClass: HttpExceptionFilter }`.
    *
    * @param options - Async options (factory + inject + imports, or class).
    * @returns The configured `DynamicModule`.
@@ -185,8 +233,43 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
         },
         inject: [BUILDER_OPTIONS_TOKEN]
       },
-      ...buildCommonProviders()
+      ...buildCommonProviders(),
+      // Access-log interceptor with parity to the sync path: always registered,
+      // gated at runtime against the async-resolved `http.isEnabled`.
+      asyncHttpInterceptorProvider()
     ]
     return augmentLoggerModule(super.forRootAsync(options), providers)
+  }
+
+  /**
+   * Replace NestJS's internal logger with this library's `PinoLoggerService` and
+   * flush any logs buffered since `NestFactory.create(..., { bufferLogs: true })`.
+   *
+   * Call once in `main.ts` AFTER creating the app and BEFORE `app.listen(...)`.
+   * The module cannot do this itself — a module never sees the
+   * `INestApplication` instance — so this static helper bridges the gap.
+   *
+   * @param app - The Nest application returned by `NestFactory.create()`.
+   * @throws Error When `BymaxLoggerModule` was not imported (no `PinoLoggerService`
+   *   in the container) — a clear message instead of a cryptic DI failure. The
+   *   original DI error is attached as the error `cause` so the underlying
+   *   failure is preserved for debugging.
+   * @example
+   *   const app = await NestFactory.create(AppModule, { bufferLogs: true })
+   *   BymaxLoggerModule.useNestLogger(app)
+   *   await app.listen(3000)
+   */
+  static useNestLogger(app: INestApplication): void {
+    let logger: PinoLoggerService
+    try {
+      logger = app.get(PinoLoggerService, { strict: false })
+    } catch (cause) {
+      throw new Error(
+        '[BymaxLoggerModule] useNestLogger(app) called but BymaxLoggerModule was not imported',
+        { cause }
+      )
+    }
+    app.useLogger(logger)
+    app.flushLogs()
   }
 }

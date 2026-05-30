@@ -23,6 +23,8 @@ import { catchError, tap, throwError } from 'rxjs'
 import type { Observable } from 'rxjs'
 
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+import { LOGGER_OPTIONS_TOKEN } from '../constants/injection-tokens.constants'
+import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import type { RequestWithUser } from '../interfaces/request-with-user.interface'
 import { PinoLoggerService } from '../services/pino-logger.service'
 import { normalizeUrl, stripQueryString } from '../utils/normalize-url.util'
@@ -44,12 +46,32 @@ const UNKNOWN_USER_AGENT = 'unknown'
  */
 @Injectable()
 export class HttpLoggingInterceptor implements NestInterceptor {
+  /** Path patterns that bypass HTTP logging entirely (health checks, metrics). */
+  private readonly excludePaths: readonly RegExp[]
+
   /**
    * @param logger - The structured logger the lifecycle entries are written to.
    *   Injected by token explicitly: the package is bundled without
    *   `emitDecoratorMetadata`, so implicit class-type injection would not resolve.
+   * @param options - Resolved module options (read for `http.excludePaths`).
+   *   Injected by token for the same bundling reason.
    */
-  constructor(@Inject(PinoLoggerService) private readonly logger: PinoLoggerService) {}
+  constructor(
+    @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
+    @Inject(LOGGER_OPTIONS_TOKEN) options: ResolvedBymaxLoggerModuleOptions
+  ) {
+    this.excludePaths = options.http.excludePaths
+  }
+
+  /**
+   * Whether a request path bypasses HTTP logging (matches any `excludePaths`).
+   *
+   * @param path - The query-stripped request path.
+   * @returns `true` when the path matches a configured exclude pattern.
+   */
+  private isExcluded(path: string): boolean {
+    return this.excludePaths.some((pattern) => pattern.test(path))
+  }
 
   /**
    * Emit the START entry, then attach success/redirect/error logging to the
@@ -65,6 +87,13 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     const res = http.getResponse<Response>()
 
     const { method, url, ip } = req
+
+    // Excluded paths (health checks, metrics) bypass logging entirely — no START
+    // and no terminal entry — so monitoring traffic does not flood the logs.
+    if (this.isExcluded(stripQueryString(url))) {
+      return next.handle()
+    }
+
     const rawUserAgent = req.headers['user-agent']
     const userAgent = typeof rawUserAgent === 'string' ? rawUserAgent : UNKNOWN_USER_AGENT
     const userId = req.user?.id
