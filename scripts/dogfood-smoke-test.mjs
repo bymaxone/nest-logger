@@ -27,9 +27,9 @@ import { fileURLToPath } from 'node:url'
 import { execSync, spawnSync } from 'node:child_process'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-// Unique, unpredictable temp dir (mkdtemp appends random chars) — avoids the
-// symlink/race hazards of writing to a fixed, world-known path under /tmp.
-const CONSUMER_DIR = mkdtempSync(join(tmpdir(), 'dogfood-consumer-'))
+// Created lazily inside section 6 (not at module load) so the earlier
+// build-artifact check can `process.exit(2)` without leaking a temp dir.
+let consumerDir
 
 const EXPECTED_DIST_FILES = [
   'dist/server/index.mjs',
@@ -183,7 +183,10 @@ try {
 
 section('6. Consumer file: link smoke (minimal resolution check)')
 try {
-  // Scaffold a minimal consumer (CONSUMER_DIR already exists via mkdtempSync)
+  // Scaffold a minimal consumer in a unique, unpredictable temp dir (mkdtemp
+  // appends random chars) — avoids the symlink/race hazards of a fixed /tmp
+  // path. Created here, not at module load, so early exits leak nothing.
+  consumerDir = mkdtempSync(join(tmpdir(), 'dogfood-consumer-'))
   const consumerPkgJson = {
     name: 'dogfood-consumer',
     version: '0.0.1',
@@ -192,11 +195,11 @@ try {
       '@bymax-one/nest-logger': `file:${ROOT}`
     }
   }
-  writeFileSync(resolve(CONSUMER_DIR, 'package.json'), JSON.stringify(consumerPkgJson, null, 2))
+  writeFileSync(resolve(consumerDir, 'package.json'), JSON.stringify(consumerPkgJson, null, 2))
 
   // Install via pnpm (resolves the file: link)
   const installResult = spawnSync('pnpm', ['install', '--no-frozen-lockfile'], {
-    cwd: CONSUMER_DIR,
+    cwd: consumerDir,
     encoding: 'utf8',
     timeout: 60_000
   })
@@ -207,11 +210,11 @@ try {
 
     // Verify both subpaths resolve from consumer node_modules
     const consumerServerPath = resolve(
-      CONSUMER_DIR,
+      consumerDir,
       'node_modules/@bymax-one/nest-logger/dist/server/index.mjs'
     )
     const consumerSharedPath = resolve(
-      CONSUMER_DIR,
+      consumerDir,
       'node_modules/@bymax-one/nest-logger/dist/shared/index.mjs'
     )
 
@@ -238,7 +241,7 @@ try {
       '.catch((e) => { console.error(e); process.exit(5) })'
     ].join('')
     const importResult = spawnSync('node', ['--input-type=module', '-e', specifierProbe], {
-      cwd: CONSUMER_DIR,
+      cwd: consumerDir,
       encoding: 'utf8',
       timeout: 30_000
     })
@@ -253,11 +256,13 @@ try {
 } catch (err) {
   fail(`Consumer scaffolding failed: ${String(err.message)}`)
 } finally {
-  // Cleanup
-  try {
-    rmSync(CONSUMER_DIR, { recursive: true, force: true })
-  } catch {
-    // ignore
+  // Cleanup (only if the temp dir was actually created)
+  if (consumerDir) {
+    try {
+      rmSync(consumerDir, { recursive: true, force: true })
+    } catch {
+      // ignore
+    }
   }
 }
 
