@@ -123,11 +123,10 @@ describe('DestinationRegistry', () => {
     })
 
     it(/*
-     * If a destination's onShutdown throws, the failure must fall back to
-     * process.stderr.write (PinoLoggerService may already be torn down) and must
-     * not abort the rest of the shutdown sequence.
+     * If a destination's onShutdown throws an Error, the failure must fall back
+     * to process.stderr.write using the error's stack (or message when no stack).
      */
-    'falls back to process.stderr.write when onShutdown throws', async () => {
+    'falls back to process.stderr.write when onShutdown throws an Error', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const boom = makeDestination('boom', {
         onInit: jest.fn(),
@@ -139,6 +138,46 @@ describe('DestinationRegistry', () => {
       await registry.onApplicationShutdown()
 
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Shutdown failed for "boom"'))
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * When the thrown cause is a non-Error value (e.g. a string), String(cause)
+     * must be used as the detail — covers the instanceof-false branch.
+     */
+    'falls back to process.stderr.write when onShutdown throws a non-Error', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const boom = makeDestination('boom', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn().mockRejectedValue('non-error-string')
+      })
+      const registry = new DestinationRegistry([boom], logger)
+      await registry.onModuleInit()
+
+      await registry.onApplicationShutdown()
+
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('non-error-string'))
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * When the Error has no stack (e.g. stripped by a transpiler), the message
+     * must be used as the detail — covers the stack ?? message branch.
+     */
+    'uses error.message when stack is absent', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const stacklessError = new Error('no-stack')
+      Reflect.deleteProperty(stacklessError, 'stack')
+      const boom = makeDestination('boom', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn().mockRejectedValue(stacklessError)
+      })
+      const registry = new DestinationRegistry([boom], logger)
+      await registry.onModuleInit()
+
+      await registry.onApplicationShutdown()
+
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('no-stack'))
       stderrSpy.mockRestore()
     })
   })
