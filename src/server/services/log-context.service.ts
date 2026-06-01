@@ -3,7 +3,7 @@
  *
  * Layer: server/services — the propagation primitive that lets every log
  * entry inherit `requestId` / `tenantId` / `userId` without prop-drilling.
- * A request-scoped middleware (Phase 3) opens a scope per HTTP request; the
+ * The `RequestIdMiddleware` opens a scope per HTTP request; the
  * Pino `TraceContextMixin` reads the active store on every log call.
  */
 import { AsyncLocalStorage } from 'node:async_hooks'

@@ -23,6 +23,17 @@ export interface BymaxLoggerModuleExtras {
   isGlobal?: boolean
 }
 
+/**
+ * `BymaxLoggerModuleBase` — base class providing the generated `forRoot` /
+ * `forRootAsync` implementations.
+ *
+ * `BUILDER_OPTIONS_TOKEN` — internal DI token for the raw (pre-defaulted)
+ * consumer options; not intended for injection outside this module.
+ *
+ * `OPTIONS_TYPE` / `ASYNC_OPTIONS_TYPE` — `typeof`-only sentinels used as
+ * parameter types in the static factory overrides; never instantiated at
+ * runtime.
+ */
 export const {
   ConfigurableModuleClass: BymaxLoggerModuleBase,
   MODULE_OPTIONS_TOKEN: BUILDER_OPTIONS_TOKEN,

@@ -14,8 +14,6 @@
  *
  * Registered as `APP_FILTER` by `BymaxLoggerModule` when `http.isEnabled` and
  * `http.shouldCaptureExceptions` are both set.
- *
- * See `docs/development_plan.md` §4.3 and `docs/technical_specification.md` §8.1.
  */
 import { Catch, HttpException, HttpStatus, Inject } from '@nestjs/common'
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common'

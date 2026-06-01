@@ -5,8 +5,6 @@
  * module's `configure(consumer)` hook, which the library cannot do on the
  * consumer's behalf. This helper encapsulates the one-liner so consumers do not
  * import the middleware class directly.
- *
- * See `docs/development_plan.md` §4.5 for the design rationale.
  */
 import type { MiddlewareConsumer } from '@nestjs/common'
 

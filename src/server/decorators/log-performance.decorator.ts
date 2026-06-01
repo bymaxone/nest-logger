@@ -11,8 +11,6 @@
  * The wrapper is always `async`: applying it to a synchronous method changes the
  * method's effective return type to `Promise<T>` at runtime. Use it on methods
  * that are already `async` (or whose callers can await the result).
- *
- * See `docs/development_plan.md` §4.4 for the design rationale.
  */
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { PinoLoggerService } from '../services/pino-logger.service'

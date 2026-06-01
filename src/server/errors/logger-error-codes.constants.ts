@@ -5,8 +5,6 @@
  * These codes are NOT part of the public log-key catalog
  * (`RESERVED_LOG_KEYS`) because consumers do not subscribe to them as
  * application events — they only surface inside library diagnostics.
- *
- * @see technical_specification.md §13 — authoritative source for this list.
  */
 export const LOGGER_ERROR_CODES = Object.freeze({
   /** Module options failed structural validation. */

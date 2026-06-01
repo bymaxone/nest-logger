@@ -6,9 +6,6 @@
  * the async factory pair. The synchronous and asynchronous variants are
  * intentionally separate types (not a union) so the dynamic-module helper
  * can branch on shape without runtime discrimination.
- *
- * See `docs/technical_specification.md` §4.1 for the full semantics of
- * every field.
  */
 import type { ModuleMetadata, Type } from '@nestjs/common'
 
@@ -17,8 +14,7 @@ import type { LogLevel } from '../../shared/types/log-level.type'
 import type { ServiceMetadata } from '../../shared/types/service-metadata.type'
 
 /**
- * HTTP module configuration — used by the optional HTTP interceptor + filter
- * shipped in Phase 3.
+ * HTTP module configuration — used by the optional HTTP interceptor and filter.
  *
  * Every field is optional; defaults are applied by `applyDefaults`.
  */
@@ -71,8 +67,6 @@ export interface OtelOptions {
 
 /**
  * Synchronous configuration for `BymaxLoggerModule.forRoot()`.
- *
- * See `docs/technical_specification.md` §4.1 for full semantics of every field.
  */
 export interface BymaxLoggerModuleOptions {
   /** Mandatory service metadata — emitted on every log entry. */
@@ -109,10 +103,10 @@ export interface BymaxLoggerModuleOptions {
  * Fully-resolved options after `applyDefaults` runs.
  *
  * Every optional field is filled, and the nested `http` / `otel` bags are
- * deep-required because `applyDefaults` populates each of their fields. This is
- * the precise shape every runtime layer (pino factory, services, middleware)
- * consumes — distinct from the loosely-typed `BymaxLoggerModuleOptions` the
- * consumer supplies.
+ * deep-required because {@link applyDefaults} populates each of their fields.
+ * This is the precise shape every runtime layer (pino factory, services,
+ * middleware) consumes — distinct from the loosely-typed
+ * `BymaxLoggerModuleOptions` the consumer supplies.
  */
 export type ResolvedBymaxLoggerModuleOptions = Readonly<
   Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel'>> & {
@@ -123,8 +117,18 @@ export type ResolvedBymaxLoggerModuleOptions = Readonly<
 
 /**
  * Factory interface used by `useExisting` / `useClass` async wiring.
+ *
+ * Implement this interface when the module options depend on providers that are
+ * already in the DI graph (e.g., a `ConfigService`). Pass the class to
+ * `forRootAsync({ useClass: MyFactory })` or the token to `useExisting`.
  */
 export interface BymaxLoggerModuleOptionsFactory {
+  /**
+   * Produce the synchronous or asynchronous module options.
+   *
+   * @returns Resolved or promised `BymaxLoggerModuleOptions`.
+   * @throws Any error thrown here propagates as a module-initialisation failure.
+   */
   createLoggerOptions(): BymaxLoggerModuleOptions | Promise<BymaxLoggerModuleOptions>
 }
 

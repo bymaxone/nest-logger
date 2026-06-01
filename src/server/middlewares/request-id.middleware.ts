@@ -6,10 +6,8 @@
  * request's `requestId` and optional `tenantId`. Runs before guards and
  * interceptors, which is exactly where the correlation scope must start.
  *
- * Express-only for now (`@nestjs/platform-express`). A Fastify adapter is
- * roadmap v0.2 and out of scope here.
- *
- * See `docs/development_plan.md` §3.5 for the design rationale.
+ * Express-only (`@nestjs/platform-express`). A Fastify adapter is not currently
+ * supported.
  */
 import { randomUUID } from 'node:crypto'
 

@@ -10,11 +10,8 @@
  *
  * This complements (does not replace) Pino's built-in `err` serializer: the
  * built-in stays wired for the `err` field convention, while `sanitizeError` is
- * for our own call sites that need cause-chain + circular-ref safety and stack
- * scrubbing.
- *
- * See `docs/technical_specification.md` §8.1 and `docs/development_plan.md`
- * §5.4c for the design rationale.
+ * for call sites that need cause-chain traversal, circular-reference safety, and
+ * stack scrubbing.
  */
 
 /** Default number of `cause` / `AggregateError` links walked before truncating. */

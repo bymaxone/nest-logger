@@ -124,11 +124,11 @@ describe('DestinationRegistry', () => {
 
     it(/*
      * If a destination's onShutdown throws, the failure must fall back to
-     * console.error (PinoLoggerService may already be torn down) and must not
-     * abort the rest of the shutdown sequence.
+     * process.stderr.write (PinoLoggerService may already be torn down) and must
+     * not abort the rest of the shutdown sequence.
      */
-    'falls back to console.error when onShutdown throws', async () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+    'falls back to process.stderr.write when onShutdown throws', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const boom = makeDestination('boom', {
         onInit: jest.fn(),
         onShutdown: jest.fn().mockRejectedValue(new Error('shutdown-fail'))
@@ -138,10 +138,8 @@ describe('DestinationRegistry', () => {
 
       await registry.onApplicationShutdown()
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Shutdown failed for "boom"'),
-        expect.any(Error)
-      )
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Shutdown failed for "boom"'))
+      stderrSpy.mockRestore()
     })
   })
 

@@ -10,8 +10,8 @@ import { PinoLoggerService } from '../services/pino-logger.service'
 describe('InjectLogger', () => {
   it(/*
    * When a context label is supplied it must be recorded under the param-slot
-   * metadata key (`<propertyKey>:<index>`), which Phase 4 reads to auto-apply
-   * setContext(). Constructor params have an undefined propertyKey → 'undefined:0'.
+   * metadata key (`<propertyKey>:<index>`), which a `LoggerContextInterceptor`
+   * reads to auto-apply setContext(). Constructor params have an undefined propertyKey → 'undefined:0'.
    */
   'records the context label as metadata when provided', () => {
     class WithContext {
@@ -58,8 +58,8 @@ describe('InjectLogger', () => {
   })
 
   it(/*
-   * The metadata key is read by the Phase 4 LoggerContextInterceptor and is part
-   * of the contract; a rename would silently break context auto-application.
+   * The metadata key is part of the public contract and must remain stable;
+   * a rename would silently break context auto-application.
    */
   'exposes a stable metadata key', () => {
     expect(INJECT_LOGGER_CONTEXT_METADATA_KEY).toBe('bymax_logger:context')
