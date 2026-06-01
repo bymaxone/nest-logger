@@ -16,8 +16,8 @@ describe('LogContext', () => {
   })
 
   it(/*
-   * The metadata key is part of the public contract (Phase 4 reads it) and must
-   * remain stable; a rename would silently break context auto-application.
+   * The metadata key is part of the public contract and must remain stable;
+   * a rename would silently break context auto-application.
    */
   'exposes a stable metadata key', () => {
     expect(LOG_CONTEXT_METADATA_KEY).toBe('bymax_logger:log_context')

@@ -206,10 +206,10 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
    * the Pino instance and the bootstrap log are produced only after they
    * resolve, never at module-decoration time.
    *
-   * Note: the destination-registry `onModuleInit` lifecycle hook is intentionally
-   * deferred to Phase 4 (LOG-045), where the `DestinationRegistry` is implemented.
-   * Phase 2 ships the destinations array under `LOGGER_DESTINATIONS_TOKEN`; no
-   * Phase 2 destination defines an `onInit` hook, so nothing is lost.
+   * Note: the destination-registry `onModuleInit` lifecycle hook is managed by
+   * `DestinationRegistry` itself, not by this factory. The destinations array is
+   * registered under `LOGGER_DESTINATIONS_TOKEN`; no built-in destination defines
+   * an `onInit` hook, so nothing is lost.
    *
    * HTTP access logging IS supported on this path: the global interceptor slot
    * is always registered and gated at runtime against the resolved

@@ -13,8 +13,6 @@
  * logged URL so secrets in query parameters never reach the sink.
  *
  * Registered as `APP_INTERCEPTOR` by `BymaxLoggerModule` when `http.isEnabled`.
- *
- * See `docs/development_plan.md` §4.2 for the design rationale.
  */
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common'
 import type { CallHandler, ExecutionContext, NestInterceptor } from '@nestjs/common'

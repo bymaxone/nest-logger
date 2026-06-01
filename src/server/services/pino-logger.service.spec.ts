@@ -42,7 +42,8 @@ describe('PinoLoggerService', () => {
     })
 
     it(/*
-     * errorStructured() must serialize the Error into name/message/stack.
+     * errorStructured() must serialize the Error into type/message/stack,
+     * matching Pino's built-in err serializer shape.
      */
     'emits a structured error entry with a serialized err', () => {
       const spy = jest.spyOn(rawLogger, 'error')
@@ -53,7 +54,7 @@ describe('PinoLoggerService', () => {
         logKey: 'PAYMENT_FAILED',
         userId: 'u_1',
         amount: 10,
-        err: { name: 'Error', message: 'boom' }
+        err: { type: 'Error', message: 'boom' }
       })
     })
 
@@ -88,7 +89,7 @@ describe('PinoLoggerService', () => {
       expect(payload).toMatchObject({
         logKey: 'REAL_ERR',
         userId: 'u_1',
-        err: { name: 'Error', message: 'boom' }
+        err: { type: 'Error', message: 'boom' }
       })
     })
   })
@@ -213,7 +214,7 @@ describe('PinoLoggerService', () => {
       expect(message).toBe('kaboom')
       expect(payload).toEqual({
         context: 'Boot',
-        err: { name: 'Error', message: 'kaboom', stack: expect.any(String) }
+        err: { type: 'Error', message: 'kaboom', stack: expect.any(String) }
       })
     })
 
@@ -282,10 +283,11 @@ describe('PinoLoggerService', () => {
     })
 
     it(/*
-     * onApplicationShutdown() must resolve without throwing (no-op until Phase 4).
+     * onApplicationShutdown() must return undefined without throwing; DestinationRegistry
+     * owns flushing so this method is intentionally a no-op.
      */
-    'onApplicationShutdown resolves', async () => {
-      await expect(service.onApplicationShutdown()).resolves.toBeUndefined()
+    'onApplicationShutdown returns undefined', () => {
+      expect(service.onApplicationShutdown()).toBeUndefined()
     })
   })
 })

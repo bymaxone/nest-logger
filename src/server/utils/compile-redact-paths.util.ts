@@ -1,3 +1,11 @@
+/**
+ * Redact-path compilation utility.
+ *
+ * Layer: server/utils — a pure helper that merges consumer-supplied redact
+ * paths with the library defaults before passing the combined list to the Pino
+ * factory. Deduplication is mandatory because `fast-redact` throws on duplicate
+ * paths.
+ */
 import { DEFAULT_REDACT_PATHS } from '../constants/default-redact-paths.constants'
 
 /**

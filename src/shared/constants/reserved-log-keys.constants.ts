@@ -3,8 +3,6 @@
  *
  * Consumer apps SHOULD NOT use these names for application-level events
  * to avoid collision in log aggregation queries (Datadog, Loki, Elastic).
- *
- * @see technical_specification.md §12.3 for the authoritative list and rationale.
  */
 export const RESERVED_LOG_KEYS = Object.freeze({
   LOGGER_BOOTSTRAP_OK: 'LOGGER_BOOTSTRAP_OK',

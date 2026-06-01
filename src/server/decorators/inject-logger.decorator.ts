@@ -13,8 +13,6 @@
  *
  * The context label is also recorded as reflect-metadata under the param slot,
  * preserved for tooling/introspection.
- *
- * See `docs/development_plan.md` §4.4 / §5.4a for the design rationale.
  */
 import { Inject } from '@nestjs/common'
 

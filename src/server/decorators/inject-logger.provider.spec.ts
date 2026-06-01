@@ -112,7 +112,7 @@ describe('@InjectLogger integration', () => {
   it(/*
    * A constructor param decorated with @InjectLogger('UsersController') must
    * receive a logger that stamps context: 'UsersController' on every entry — the
-   * headline ergonomic contract this task closes.
+   * headline ergonomic contract for context-bound injection.
    */
   'injects a context-bound child logger', async () => {
     const capture = createCapture()
@@ -147,7 +147,7 @@ describe('@InjectLogger integration', () => {
 
   it(/*
    * @InjectLogger() with no context must still resolve to the shared root
-   * PinoLoggerService (back-compat with the Phase 3 behavior).
+   * PinoLoggerService, preserving backward compatibility with unparameterized injection.
    */
   'resolves the root PinoLoggerService when no context is given', async () => {
     const ref = await Test.createTestingModule({

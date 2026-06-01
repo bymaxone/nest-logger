@@ -6,8 +6,6 @@
  * placeholder. Without it, every distinct UUID / numeric id would mint a new
  * log-key value and explode the cardinality of log-aggregation queries
  * (Datadog, Loki, Elastic), making per-route dashboards unusable.
- *
- * See `docs/development_plan.md` §4.1 for the design rationale.
  */
 
 // Each fixed-length pattern ends with a negative lookahead asserting the next

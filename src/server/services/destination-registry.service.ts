@@ -66,8 +66,8 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
 
   /**
    * Flush and close active destinations in REVERSE registration order, so a
-   * destination registered first (e.g. stdout) closes last. Failures fall back
-   * to `console.error`: `PinoLoggerService` may already be torn down at this
+   * destination registered first (e.g. stdout) closes last. Failures are written
+   * directly to stderr: `PinoLoggerService` may already be torn down at this
    * point in the shutdown sequence.
    */
   async onApplicationShutdown(): Promise<void> {
@@ -75,7 +75,10 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       try {
         await destination.onShutdown?.()
       } catch (cause) {
-        console.error(`[DestinationRegistry] Shutdown failed for "${destination.name}":`, cause)
+        const detail = cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)
+        process.stderr.write(
+          `[DestinationRegistry] Shutdown failed for "${destination.name}": ${detail}\n`
+        )
       }
     }
   }

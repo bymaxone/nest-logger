@@ -2,7 +2,7 @@
  * NestJS logger service backed by Pino 10.
  *
  * Layer: server/services — the injectable consumers receive via `@InjectLogger`
- * (Phase 3) or `app.useLogger()`. It implements the official NestJS
+ * or `app.useLogger()`. It implements the official NestJS
  * `LoggerService` contract (variadic methods) AND a structured API that follows
  * the `MODULE_ACTION_RESULT` log-key convention.
  *
@@ -13,8 +13,6 @@
  * The structured API currently covers `info` / `warn` (via `info` /
  * `warnStructured`) and `error` (via `errorStructured`). Structured `debug` /
  * `fatal` helpers are intentionally out of scope until a consumer needs them.
- *
- * See `docs/technical_specification.md` §6.1 for the full API surface.
  */
 import { Inject, Injectable } from '@nestjs/common'
 import type { LoggerService as NestLoggerService, OnApplicationShutdown } from '@nestjs/common'
@@ -220,18 +218,21 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
   /**
-   * NestJS shutdown hook. Pino flushing is fire-and-forget here; destination
-   * flushing is handled by `DestinationRegistry` (Phase 4).
+   * NestJS shutdown hook. Destination flushing is handled by `DestinationRegistry`;
+   * this service has no additional teardown work.
    */
-  async onApplicationShutdown(): Promise<void> {
-    // Intentionally empty until the destination registry lands (Phase 4).
+  onApplicationShutdown(): void {
+    // Intentionally empty; DestinationRegistry manages its own flush on shutdown.
   }
 
   // ─── Private ──────────────────────────────────────────────────────────────
 
-  /** Serialize an Error into a plain, log-safe object. */
+  /**
+   * Serialize an Error into a plain, log-safe object matching Pino's built-in
+   * `err` serializer shape (`type`, `message`, `stack`).
+   */
   private serializeError(error: Error): Record<string, unknown> {
-    return { name: error.name, message: error.message, stack: error.stack }
+    return { type: error.constructor.name, message: error.message, stack: error.stack }
   }
 
   /** Resolve the context: last string param wins, else the instance context. */
