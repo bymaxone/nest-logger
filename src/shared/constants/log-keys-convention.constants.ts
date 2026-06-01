@@ -3,8 +3,8 @@
  *
  * The convention is `MODULE_ACTION_RESULT` (e.g., `USER_CREATED`,
  * `AUTH_LOGIN_SUCCESS`), but the regex accepts **two or more** uppercase words —
- * see spec §12.3 for reserved keys that legitimately use four words
- * (`HTTP_REQUEST_CLIENT_ERROR`, `LOGGER_DESTINATION_WRITE_FAILED`).
+ * keys in {@link RESERVED_LOG_KEYS} legitimately use four words
+ * (e.g. `HTTP_REQUEST_CLIENT_ERROR`, `LOGGER_DESTINATION_WRITE_FAILED`).
  *
  * Pattern: two mandatory uppercase-prefixed groups separated by `_`, plus one
  * optional third group. Within each group, `[A-Z0-9_]+` allows digits and
