@@ -56,7 +56,7 @@ export const depth = (field: string): readonly string[] =>
 
 /**
  * Fields covered by every depth-1-to-4 wildcard. Centralized so the spec can
- * compute the expected length without hard-coding 97.
+ * compute the expected length without hard-coding 113.
  */
 export const REDACT_COMMON_FIELDS: readonly string[] = [
   // Passwords (5)
@@ -86,6 +86,11 @@ export const REDACT_COMMON_FIELDS: readonly string[] = [
   'cpf',
   'cnpj',
   'rg',
+  // Generic secrets (4) — the most common short-form credential field names
+  'secret',
+  'clientSecret',
+  'signingSecret',
+  'privateKey',
   // Conservative PII (1) — consumer can disable if logging email is justified
   'email'
 ] as const
@@ -104,7 +109,7 @@ export const REDACT_ABSOLUTE_PATHS: readonly string[] = [
 
 /**
  * Canonical list of redact paths merged into Pino's `redact.paths` option by
- * default. Expected length: 23 common fields × 4 depths + 5 absolute = **97**.
+ * default. Expected length: 27 common fields × 4 depths + 5 absolute = **113**.
  */
 export const DEFAULT_REDACT_PATHS: readonly string[] = [
   ...REDACT_COMMON_FIELDS.flatMap((field) => depth(field)),

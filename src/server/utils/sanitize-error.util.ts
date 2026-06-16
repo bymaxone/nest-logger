@@ -4,9 +4,10 @@
  * Layer: server/utils — a pure helper consumed by `HttpExceptionFilter` (and any
  * other site that must log an arbitrary thrown value). It normalizes any
  * `unknown` into a JSON-safe {@link SanitizedError} shape while defending against
- * the three things that crash naive serializers on the error path: circular
- * references, runaway `cause` chains, and `AggregateError` fan-out. It NEVER
- * throws — a logging concern must never crash the request that produced it.
+ * the things that crash naive serializers on the error path: circular
+ * references, runaway `cause` chains, and `AggregateError` fan-out (both depth
+ * AND width). It NEVER throws — a logging concern must never crash the request
+ * that produced it.
  *
  * This complements (does not replace) Pino's built-in `err` serializer: the
  * built-in stays wired for the `err` field convention, while `sanitizeError` is
@@ -17,16 +18,27 @@
 /** Default number of `cause` / `AggregateError` links walked before truncating. */
 const DEFAULT_MAX_CAUSE_DEPTH = 3
 
+/**
+ * Maximum number of `AggregateError.errors` members serialized for a single node.
+ * Bounds the WIDTH of the fan-out (depth is bounded separately): a `Promise.any`
+ * over thousands of rejections must not turn one log call into O(N) sanitize +
+ * stack-scrub work. Members past this cap collapse into a single width marker.
+ */
+const MAX_AGGREGATE_ERRORS = 10
+
 /** Sentinel substituted for a value already visited while walking the graph. */
 const CIRCULAR_SENTINEL = '[Circular]'
 
 /**
- * Marker substituted for a `cause` or aggregate branch that exceeds the
- * configured depth budget. Bounds the recursion against pathological inputs.
+ * Marker substituted for a `cause` / aggregate branch that exceeds a budget —
+ * either the cause-depth budget or the aggregate-width cap. Bounds the work done
+ * against pathological (or malicious) inputs.
  */
 interface TruncatedMarker {
   readonly _truncated: true
-  readonly _reason: 'cause-depth-exceeded'
+  readonly _reason: 'cause-depth-exceeded' | 'aggregate-width-exceeded'
+  /** Members omitted past the width cap — present only on a width marker. */
+  readonly _omitted?: number
 }
 
 /**
@@ -47,8 +59,8 @@ export interface SanitizedError {
 }
 
 /**
- * A nested sanitized value: a full {@link SanitizedError}, the depth-truncation
- * marker, or the circular-reference sentinel.
+ * A nested sanitized value: a full {@link SanitizedError}, a truncation marker
+ * (depth or width), or the circular-reference sentinel.
  */
 type SanitizedChild = SanitizedError | TruncatedMarker | typeof CIRCULAR_SENTINEL
 
@@ -69,8 +81,10 @@ export interface SanitizeErrorOptions {
  *   - `Error` (and native subclasses: `TypeError`, `RangeError`, `SyntaxError`,
  *     …) → `{ name, message, stack }` with `node_modules/` stack frames removed.
  *   - `cause` chains are walked recursively up to `maxCauseDepth`; deeper links
- *     become the truncation marker.
- *   - `AggregateError.errors` are sanitized recursively under the same budget.
+ *     become the depth-truncation marker.
+ *   - `AggregateError.errors` are sanitized recursively under the same depth
+ *     budget, and capped at {@link MAX_AGGREGATE_ERRORS} in width (the remainder
+ *     collapses to a single width marker recording the omitted count).
  *   - Circular references collapse to the `'[Circular]'` sentinel.
  *   - NEVER throws: any internal failure yields `{ name: 'SanitizeFailed', … }`.
  *
@@ -120,17 +134,19 @@ function toSanitizedError(
     const isAtDepthLimit = depth >= maxDepth
     if (value.cause !== undefined) {
       result.cause = isAtDepthLimit
-        ? createTruncatedMarker()
+        ? createDepthMarker()
         : toSanitizedChild(value.cause, seen, depth + 1, maxDepth)
     }
 
     const aggregated = readAggregatedErrors(value)
     if (aggregated !== undefined) {
-      result.errors = aggregated.map((inner) =>
-        isAtDepthLimit
-          ? createTruncatedMarker()
-          : toSanitizedChild(inner, seen, depth + 1, maxDepth)
+      const capped = aggregated.slice(0, MAX_AGGREGATE_ERRORS)
+      result.errors = capped.map((inner) =>
+        isAtDepthLimit ? createDepthMarker() : toSanitizedChild(inner, seen, depth + 1, maxDepth)
       )
+      if (aggregated.length > MAX_AGGREGATE_ERRORS) {
+        result.errors.push(createWidthMarker(aggregated.length - MAX_AGGREGATE_ERRORS))
+      }
     }
 
     return result
@@ -201,10 +217,22 @@ function isObject(value: unknown): value is object {
 }
 
 /**
- * Create a fresh depth-truncation marker.
+ * Create a depth-truncation marker for a `cause` / aggregate branch that ran
+ * past the depth budget.
  *
- * @returns A new {@link TruncatedMarker}.
+ * @returns A new depth {@link TruncatedMarker}.
  */
-function createTruncatedMarker(): TruncatedMarker {
+function createDepthMarker(): TruncatedMarker {
   return { _truncated: true, _reason: 'cause-depth-exceeded' }
+}
+
+/**
+ * Create a width-truncation marker recording how many `AggregateError` members
+ * were omitted past {@link MAX_AGGREGATE_ERRORS}.
+ *
+ * @param omitted - Count of omitted members.
+ * @returns A new width {@link TruncatedMarker}.
+ */
+function createWidthMarker(omitted: number): TruncatedMarker {
+  return { _truncated: true, _reason: 'aggregate-width-exceeded', _omitted: omitted }
 }

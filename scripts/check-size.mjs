@@ -32,16 +32,21 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      legitimate, raise it (and say why here); when the artifact shrinks,
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
-// Calibration (2026-05-30):
-//   - server: 12.05 KiB real -> 12.5 KiB budget (~4% headroom; src/server is
-//     mature and Phase 5 does not touch it). The +0.3 KiB over the original
-//     12 KiB is legitimate Phase 4 feature surface (pretty / registry /
-//     multistream / truncation / child-logger / async-HTTP), not bloat.
-//   - shared: 0.34 KiB real -> 1.0 KiB budget (was 3.5 KiB — 10x headroom
-//     defeats bloat detection; 1.0 KiB still absorbs years of constant/type
-//     growth while catching a real regression).
+// Calibration history (newest first):
+//   - 2026-06-16 — server: 12.84 KiB real -> 13.5 KiB budget (~5% headroom).
+//     The +0.34 KiB over the prior 12.5 KiB is legitimate audit-hardening
+//     surface — fail-soft destination containment, query-string stripping in the
+//     exception filter, AggregateError width capping, the request-id generation
+//     toggle, and the JSDoc that ships unminified alongside it — not bloat.
+//   - 2026-05-30 — server: 12.05 KiB real -> 12.5 KiB budget (~4% headroom).
+//     The +0.3 KiB over the original 12 KiB is legitimate feature surface
+//     (pretty / registry / multistream / truncation / child-logger / async-HTTP),
+//     not bloat.
+//   - 2026-05-30 — shared: 0.34 KiB real -> 1.0 KiB budget (was 3.5 KiB — 10x
+//     headroom defeats bloat detection; 1.0 KiB still absorbs years of
+//     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 12.5 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 13.5 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 

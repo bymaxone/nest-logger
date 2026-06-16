@@ -4,6 +4,7 @@ export type {
   BymaxLoggerModuleOptions,
   BymaxLoggerModuleAsyncOptions,
   BymaxLoggerModuleOptionsFactory,
+  ResolvedBymaxLoggerModuleOptions,
   HttpOptions,
   OtelOptions
 } from './logger-module-options.interface'

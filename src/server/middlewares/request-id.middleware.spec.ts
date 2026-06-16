@@ -144,3 +144,60 @@ describe('RequestIdMiddleware (integration via applyRequestIdMiddleware)', () =>
     expect(res.body.requestId).toBe(atLimit)
   })
 })
+
+/** Wires the middleware with request-id generation disabled (gateway owns it). */
+@Module({
+  imports: [
+    BymaxLoggerModule.forRoot({
+      service: { name: 'no-gen-test', version: '1.0.0' },
+      http: { shouldGenerateRequestId: false }
+    })
+  ],
+  controllers: [ContextController]
+})
+class NoGenContextModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    applyRequestIdMiddleware(consumer)
+  }
+}
+
+describe('RequestIdMiddleware with shouldGenerateRequestId disabled', () => {
+  let app: INestApplication
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [NoGenContextModule] }).compile()
+    app = moduleRef.createNestApplication({ logger: false })
+    await app.init()
+  })
+
+  afterAll(async () => {
+    await app.close()
+  })
+
+  it(/*
+   * With generation disabled and no inbound header, the middleware must NOT mint
+   * an id: no x-request-id header is exposed and the context carries no requestId —
+   * correlation is delegated to the upstream gateway. Pins both the
+   * `shouldGenerateRequestId ? … : undefined` and `if (requestId !== undefined)` branches.
+   */
+  'mints no request id when disabled and no header is present', async () => {
+    const res = await request(app.getHttpServer()).get('/ctx').expect(200)
+
+    expect(res.headers['x-request-id']).toBeUndefined()
+    expect(res.body.requestId).toBeUndefined()
+  })
+
+  it(/*
+   * With generation disabled an INBOUND header must still be honored and echoed —
+   * the gateway-provided id flows through unchanged.
+   */
+  'still honors an inbound x-request-id when generation is disabled', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/ctx')
+      .set('x-request-id', 'gw-1')
+      .expect(200)
+
+    expect(res.headers['x-request-id']).toBe('gw-1')
+    expect(res.body.requestId).toBe('gw-1')
+  })
+})

@@ -28,7 +28,16 @@ import type { ILogDestination } from '../interfaces/log-destination.interface'
  */
 @Injectable()
 export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
-  /** Destinations that initialized successfully, in registration order. */
+  /**
+   * Destinations that initialized successfully, in registration order.
+   *
+   * Note: the Pino multistream is built from the full registered list, and the
+   * write path is independently fail-soft (see `destinationToStream`). This set
+   * is the authoritative record of init success — it drives reverse-order
+   * shutdown — but is not currently used to remove a failed-init sink from the
+   * write fan-out; a sink that failed `onInit` still receives writes, contained
+   * fail-soft by the wrapper.
+   */
   private readonly active: ILogDestination[] = []
 
   /**

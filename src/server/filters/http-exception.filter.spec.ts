@@ -144,4 +144,17 @@ describe('HttpExceptionFilter (integration)', () => {
       expect.objectContaining({ status: 500 })
     )
   })
+
+  it(/*
+   * The logged `url` must have its query string stripped: query params routinely
+   * carry secrets (reset tokens, OAuth codes) and cannot be redacted as a
+   * substring once embedded in the URL. The secret must never reach the log.
+   */
+  'strips the query string from the logged url', async () => {
+    await request(app.getHttpServer()).get('/boom?token=supersecret&x=1').expect(500)
+
+    const metadata = errorSpy.mock.calls.at(-1)?.[3] as Record<string, unknown>
+    expect(metadata).toMatchObject({ url: '/boom' })
+    expect(JSON.stringify(metadata)).not.toContain('supersecret')
+  })
 })

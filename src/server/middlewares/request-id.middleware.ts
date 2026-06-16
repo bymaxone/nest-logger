@@ -59,18 +59,22 @@ function isAcceptableHeaderValue(value: unknown): value is string {
 export class RequestIdMiddleware implements NestMiddleware {
   /** Header name carrying the tenant id, resolved from module options. */
   private readonly tenantIdHeader: string
+  /** Whether to mint a `requestId` when the inbound header is absent. */
+  private readonly shouldGenerateRequestId: boolean
 
   /**
    * @param logContext - The AsyncLocalStorage-backed context service. Injected by
    *   token explicitly: the package is bundled without `emitDecoratorMetadata`,
    *   so implicit class-type injection would not resolve.
-   * @param options - Resolved module options (read for `http.tenantIdHeader`).
+   * @param options - Resolved module options (read for `http.tenantIdHeader` and
+   *   `http.shouldGenerateRequestId`).
    */
   constructor(
     @Inject(LogContextService) private readonly logContext: LogContextService,
     @Inject(LOGGER_OPTIONS_TOKEN) options: ResolvedBymaxLoggerModuleOptions
   ) {
     this.tenantIdHeader = options.http.tenantIdHeader
+    this.shouldGenerateRequestId = options.http.shouldGenerateRequestId
   }
 
   /**
@@ -86,10 +90,16 @@ export class RequestIdMiddleware implements NestMiddleware {
     // `security/detect-object-injection` sink list (the names are runtime
     // configuration / named constants, not inline literals).
     const incoming: unknown = Reflect.get(req.headers, REQUEST_ID_HEADER)
-    const requestId = isAcceptableHeaderValue(incoming) ? incoming : randomUUID()
-    res.setHeader(REQUEST_ID_HEADER, requestId)
+    const fromHeader = isAcceptableHeaderValue(incoming) ? incoming : undefined
+    // Honor `shouldGenerateRequestId`: with it disabled (and no inbound header),
+    // correlation is left to the upstream gateway — no id is minted or exposed.
+    const requestId = fromHeader ?? (this.shouldGenerateRequestId ? randomUUID() : undefined)
 
-    const context: LogContext = { requestId }
+    const context: LogContext = {}
+    if (requestId !== undefined) {
+      res.setHeader(REQUEST_ID_HEADER, requestId)
+      context.requestId = requestId
+    }
     const rawTenantId: unknown = Reflect.get(req.headers, this.tenantIdHeader)
     if (isAcceptableHeaderValue(rawTenantId)) {
       context.tenantId = rawTenantId

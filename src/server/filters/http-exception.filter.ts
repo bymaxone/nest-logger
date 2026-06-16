@@ -12,6 +12,12 @@
  * always returns the fixed, detail-free `{ statusCode: 500, message: 'Internal
  * server error' }`.
  *
+ * The logged `url` has its query string stripped (`stripQueryString`): query
+ * params routinely carry secrets (reset tokens, OAuth codes, signed-URL
+ * signatures) and Pino's `redact.paths` cannot scrub a substring inside a string
+ * value — so the query must be removed before the URL is logged, exactly as the
+ * request interceptor already does.
+ *
  * Registered as `APP_FILTER` by `BymaxLoggerModule` when `http.isEnabled` and
  * `http.shouldCaptureExceptions` are both set.
  */
@@ -22,6 +28,7 @@ import type { Response } from 'express'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { RequestWithUser } from '../interfaces/request-with-user.interface'
 import { PinoLoggerService } from '../services/pino-logger.service'
+import { stripQueryString } from '../utils/normalize-url.util'
 import { sanitizeError } from '../utils/sanitize-error.util'
 
 /** Body returned when a non-`HttpException` reaches the filter. */
@@ -54,10 +61,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const res = ctx.getResponse<Response>()
     const req = ctx.getRequest<RequestWithUser>()
     const userId = req.user?.id
+    // Strip the query string: it may carry secrets and cannot be redacted as a
+    // substring once embedded in the logged `url` string.
+    const url = stripQueryString(req.url)
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus()
-      const metadata = { method: req.method, url: req.url, status }
+      const metadata = { method: req.method, url, status }
       if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
         // sanitizeError guarantees (1) no-throw on a hostile exception and (2)
         // node_modules/ stack scrubbing. Note: errorStructured re-serializes to
@@ -90,7 +100,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       userId,
       {
         method: req.method,
-        url: req.url,
+        url,
         status
       }
     )

@@ -63,6 +63,19 @@ describe('createSizeBoundedSerializer', () => {
   })
 
   it(/*
+   * A serializer output that JSON.stringify CANNOT measure (a circular reference,
+   * or a hostile toJSON) must pass through without throwing — the logging path is
+   * fail-soft and must never crash the caller. Covers the JSON.stringify try/catch.
+   */
+  'passes an unstringifiable (circular) value through without throwing', () => {
+    const circular: Record<string, unknown> = {}
+    circular['self'] = circular
+    const serialize = createSizeBoundedSerializer(() => circular, 10)
+    expect(() => serialize('ignored')).not.toThrow()
+    expect(serialize('ignored')).toBe(circular)
+  })
+
+  it(/*
    * A value whose serialized size is EXACTLY the ceiling must pass through — the
    * comparison is strictly `> maxBytes`, not `>=`. Pins the boundary so an
    * off-by-one (`>` → `>=`) regression is caught.

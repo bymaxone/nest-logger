@@ -25,13 +25,17 @@ type PinoLevelMethod = 'info' | 'warn' | 'debug' | 'trace' | 'fatal'
 
 /**
  * Pino-backed implementation of the NestJS `LoggerService` contract plus the
- * structured `MODULE_ACTION_RESULT` API. Inject it directly (or hand it to
- * `app.useLogger()`); call `setContext()` once to label every subsequent entry.
+ * structured `MODULE_ACTION_RESULT` API.
+ *
+ * For a per-class context label, inject a CHILD logger already bound to that
+ * context via `@InjectLogger(MyService.name)` — do NOT call `setContext()` per
+ * class: this is a singleton, so a per-class `setContext()` clobbers the label
+ * for every other holder (see {@link PinoLoggerService.setContext}).
  *
  * @example
- *   constructor(private readonly logger: PinoLoggerService) {
- *     this.logger.setContext(UserService.name)
- *   }
+ *   constructor(
+ *     @InjectLogger(UserService.name) private readonly logger: PinoLoggerService,
+ *   ) {}
  *   // ...
  *   this.logger.info('USER_CREATED', 'New user registered', userId, { plan: 'pro' })
  */
@@ -183,7 +187,13 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   // ─── Helpers / escape hatches ─────────────────────────────────────────────
 
   /**
-   * Set the context label (typically the class name) applied to subsequent logs.
+   * Set the global context label applied to subsequent logs from THIS instance.
+   *
+   * WARNING: `PinoLoggerService` is a singleton. Calling this per class clobbers
+   * the label for every other holder, and calling it at request time is a
+   * cross-request race. For a per-class label use `@InjectLogger(MyClass.name)`
+   * (which binds a child logger instead of mutating shared state); reserve
+   * `setContext()` for a single global / bootstrap label.
    *
    * @param context - The context label.
    */
@@ -230,9 +240,15 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   /**
    * Serialize an Error into a plain, log-safe object matching Pino's built-in
    * `err` serializer shape (`type`, `message`, `stack`).
+   *
+   * Reads `error.name` (NOT `error.constructor.name`) for `type`: native
+   * subclasses set `name` to their class name, and a sanitized plain-object error
+   * (from `sanitizeError`) carries the real class name on `name` — whereas its
+   * `constructor.name` would be the unhelpful `'Object'`, breaking `err.type`
+   * dashboards for every exception logged through `HttpExceptionFilter`.
    */
   private serializeError(error: Error): Record<string, unknown> {
-    return { type: error.constructor.name, message: error.message, stack: error.stack }
+    return { type: error.name, message: error.message, stack: error.stack }
   }
 
   /** Resolve the context: last string param wins, else the instance context. */
