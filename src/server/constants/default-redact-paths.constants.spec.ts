@@ -32,14 +32,14 @@ describe('depth helper', () => {
 
 describe('DEFAULT_REDACT_PATHS', () => {
   it(/*
-   * Locks the canonical count to the documented composition (23 common
-   * fields × 4 depths + 5 absolute paths = 97). A drift breaks consumer
+   * Locks the canonical count to the documented composition (27 common
+   * fields × 4 depths + 5 absolute paths = 113). A drift breaks consumer
    * dashboards that count redacted fields.
    */
-  'should match the derived length 23 × 4 + 5 = 97', () => {
+  'should match the derived length 27 × 4 + 5 = 113', () => {
     const expected = REDACT_COMMON_FIELDS.length * 4 + REDACT_ABSOLUTE_PATHS.length
     expect(DEFAULT_REDACT_PATHS.length).toBe(expected)
-    expect(DEFAULT_REDACT_PATHS.length).toBeGreaterThanOrEqual(97)
+    expect(DEFAULT_REDACT_PATHS.length).toBeGreaterThanOrEqual(113)
   })
 
   it(/*
@@ -47,9 +47,11 @@ describe('DEFAULT_REDACT_PATHS', () => {
    * headers, PII) are all represented — guards against a future refactor
    * accidentally removing a category.
    */
-  'should cover passwords, tokens, BR documents, HTTP headers and email', () => {
+  'should cover passwords, tokens, secrets, BR documents, HTTP headers and email', () => {
     expect(DEFAULT_REDACT_PATHS).toContain('*.password')
     expect(DEFAULT_REDACT_PATHS).toContain('*.accessToken')
+    expect(DEFAULT_REDACT_PATHS).toContain('*.secret')
+    expect(DEFAULT_REDACT_PATHS).toContain('*.clientSecret')
     expect(DEFAULT_REDACT_PATHS).toContain('*.cpf')
     expect(DEFAULT_REDACT_PATHS).toContain('*.cnpj')
     expect(DEFAULT_REDACT_PATHS).toContain('*.email')

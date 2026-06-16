@@ -1,5 +1,6 @@
 import type { Writable } from 'node:stream'
 
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 
 import { destinationToStream } from './destination-to-stream'
@@ -13,6 +14,17 @@ function writeOnce(stream: Writable, chunk: string | Buffer): Promise<void> {
 }
 
 describe('destinationToStream', () => {
+  let stderrSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    // Write failures are reported to stderr (the safe sink) — capture + silence it.
+    stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+  })
+
+  afterEach(() => {
+    stderrSpy.mockRestore()
+  })
+
   it(/*
    * A synchronous string write must reach the destination unchanged and complete
    * without error — the hot path for stdout-style destinations.
@@ -24,6 +36,7 @@ describe('destinationToStream', () => {
     await writeOnce(stream, 'entry\n')
 
     expect(destination.write).toHaveBeenCalledWith('entry\n')
+    expect(stderrSpy).not.toHaveBeenCalled()
   })
 
   it(/*
@@ -53,36 +66,48 @@ describe('destinationToStream', () => {
   })
 
   it(/*
-   * A rejected async write must surface as a stream error (callback receives it),
-   * isolating the failure to this destination's wrapper.
+   * A rejected async write must be CONTAINED (fail-soft): the stream completes
+   * WITHOUT error (never a crashing 'error' event) and the failure is reported
+   * once to stderr as a structured LOGGER_DESTINATION_WRITE_FAILED line naming
+   * the destination, the Error type, and the message.
    */
-  'propagates a rejected async write as a stream error', async () => {
+  'contains a rejected async write and reports it to stderr', async () => {
     const stream = destinationToStream({
       name: 'async-fail',
       write: jest.fn().mockRejectedValue(new Error('async-boom'))
     })
 
-    await expect(writeOnce(stream, 'x\n')).rejects.toThrow('async-boom')
+    await expect(writeOnce(stream, 'x\n')).resolves.toBeUndefined()
+
+    const line = stderrSpy.mock.calls[0]?.[0] as string
+    expect(line).toContain(RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED)
+    expect(line).toContain('async-fail')
+    expect(line).toContain('"type":"Error"')
+    expect(line).toContain('async-boom')
   })
 
   it(/*
-   * A non-Error async rejection must be coerced into an Error so the stream
-   * always emits a proper Error instance.
+   * A non-Error async rejection must also be contained, with the value coerced
+   * via String() and tagged UnknownError — covers the non-Error reportWriteFailure arm.
    */
-  'coerces a non-Error async rejection into an Error', async () => {
+  'contains a non-Error async rejection', async () => {
     const stream = destinationToStream({
       name: 'async-weird',
       write: jest.fn().mockRejectedValue('string-rejection')
     })
 
-    await expect(writeOnce(stream, 'x\n')).rejects.toThrow('string-rejection')
+    await expect(writeOnce(stream, 'x\n')).resolves.toBeUndefined()
+
+    const line = stderrSpy.mock.calls[0]?.[0] as string
+    expect(line).toContain('"type":"UnknownError"')
+    expect(line).toContain('string-rejection')
   })
 
   it(/*
-   * A synchronous throw inside write must be caught and surfaced via the stream
-   * callback rather than crashing the Pino producer.
+   * A synchronous throw inside write must be caught and contained — reported to
+   * stderr, never crashing the Pino producer.
    */
-  'surfaces a synchronous throw as a stream error', async () => {
+  'contains a synchronous throw and reports it to stderr', async () => {
     const stream = destinationToStream({
       name: 'sync-fail',
       write: jest.fn(() => {
@@ -90,13 +115,17 @@ describe('destinationToStream', () => {
       })
     })
 
-    await expect(writeOnce(stream, 'x\n')).rejects.toThrow('sync-boom')
+    await expect(writeOnce(stream, 'x\n')).resolves.toBeUndefined()
+
+    const line = stderrSpy.mock.calls[0]?.[0] as string
+    expect(line).toContain('sync-fail')
+    expect(line).toContain('sync-boom')
   })
 
   it(/*
-   * A non-Error synchronous throw must also be coerced into an Error.
+   * A non-Error synchronous throw must also be contained and stringified.
    */
-  'coerces a non-Error synchronous throw into an Error', async () => {
+  'contains a non-Error synchronous throw', async () => {
     const stream = destinationToStream({
       name: 'sync-weird',
       write: jest.fn(() => {
@@ -104,6 +133,8 @@ describe('destinationToStream', () => {
       })
     })
 
-    await expect(writeOnce(stream, 'x\n')).rejects.toThrow('string-throw')
+    await expect(writeOnce(stream, 'x\n')).resolves.toBeUndefined()
+
+    expect(stderrSpy.mock.calls[0]?.[0]).toContain('string-throw')
   })
 })

@@ -47,7 +47,15 @@ export function createSizeBoundedSerializer<T>(
 ): (input: T) => unknown {
   return (input: T): unknown => {
     const serialized = baseSerializer(input)
-    const json = JSON.stringify(serialized)
+    let json: string | undefined
+    try {
+      json = JSON.stringify(serialized)
+    } catch {
+      // A circular reference or a hostile `toJSON()` makes the value
+      // un-measurable. Fail soft — the logging path must never throw — and pass
+      // the value through; Pino's own serializer handles circular refs downstream.
+      return serialized
+    }
     // A serializer may legitimately produce `undefined` (JSON.stringify → undefined
     // for undefined / functions / symbols). There is nothing to measure, so pass it
     // through untouched rather than crash `Buffer.byteLength`.

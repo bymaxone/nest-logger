@@ -1,6 +1,8 @@
 import pino from 'pino'
 import type { Logger } from 'pino'
 
+import type { SanitizedError } from '../utils/sanitize-error.util'
+
 import { PinoLoggerService } from './pino-logger.service'
 
 describe('PinoLoggerService', () => {
@@ -56,6 +58,26 @@ describe('PinoLoggerService', () => {
         amount: 10,
         err: { type: 'Error', message: 'boom' }
       })
+    })
+
+    it(/*
+     * serializeError must read `error.name`, not `error.constructor.name`: a
+     * sanitized plain-object error carries its real class name on `name` while
+     * `constructor.name` would be the unhelpful 'Object'. Pins the err.type source.
+     */
+    'serializes err.type from error.name, not constructor.name', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      // The runtime value is a SanitizedError plain object (from sanitizeError),
+      // which structurally satisfies `Error` — exactly how HttpExceptionFilter
+      // feeds errorStructured. No cast needed; constructor.name here is 'Object'.
+      const sanitized: SanitizedError = {
+        name: 'ForbiddenException',
+        message: 'denied',
+        stack: 'stack'
+      }
+      service.errorStructured('HTTP_EXCEPTION_HANDLED', sanitized)
+      const [payload] = spy.mock.calls[0] ?? []
+      expect(payload).toMatchObject({ err: { type: 'ForbiddenException', message: 'denied' } })
     })
 
     it(/*

@@ -111,18 +111,19 @@ The lib applies this strategy by default — see §4.
 
 See the canonical file: [`src/server/constants/default-redact-paths.constants.ts`](../../src/server/constants/default-redact-paths.constants.ts).
 
-**Current coverage (97 total paths — 92 via `depth()` + 5 absolute paths):**
+**Current coverage (113 total paths — 108 via `depth()` + 5 absolute paths):**
 
 | Category            | Fields (count)                                                                  | Depth | Generated paths |
 | ------------------- | ------------------------------------------------------------------------------- | ----- | --------------- |
 | Passwords           | 5 (`password`, `passwordHash`, `passwordConfirm`, `newPassword`, `oldPassword`) | 1-4   | 20              |
 | Tokens              | 6 (`token`, `accessToken`, `refreshToken`, `idToken`, `apiKey`, `apiSecret`)    | 1-4   | 24              |
 | MFA                 | 3 (`mfaSecret`, `mfaRecoveryCodes`, `totpSecret`)                               | 1-4   | 12              |
+| Generic secrets     | 4 (`secret`, `clientSecret`, `signingSecret`, `privateKey`)                     | 1-4   | 16              |
 | Payment (PCI DSS)   | 5 (`cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`)                         | 1-4   | 20              |
 | BR documents (LGPD) | 3 (`cpf`, `cnpj`, `rg`)                                                         | 1-4   | 12              |
 | Email (PII)         | 1 (`email`)                                                                     | 1-4   | 4               |
 | HTTP headers        | 5 (absolute paths)                                                              | —     | 5               |
-| **Total**           | **23 fields via depth + 5 absolute**                                            | —     | **97**          |
+| **Total**           | **27 fields via depth + 5 absolute**                                            | —     | **113**         |
 
 ### When the consumer SHOULD extend
 
@@ -248,7 +249,7 @@ Use in **E2E tests** to ensure the app provides the paths the domain requires.
 | 200-400 | 5-10%             | Audit — likely redundant paths                            |
 | > 400   | > 10%             | Refactor — use a custom serializer or group by sub-object |
 
-The lib default sits at 97 paths — comfortably within the 100 budget.
+The lib default sits at 113 paths; throughput is governed by the `pnpm bench` gate (against the recalibrated v0.1 baseline), not a hard path-count budget.
 
 ---
 
@@ -266,7 +267,7 @@ The lib default sits at 97 paths — comfortably within the 100 budget.
 
 Every deployment must have tests ensuring:
 
-- [ ] `DEFAULT_REDACT_PATHS.length` matches the expected value (**97**)
+- [ ] `DEFAULT_REDACT_PATHS.length` matches the expected value (**113**)
 - [ ] `compileRedactPaths(extras, false)` includes defaults AND extras, with no duplicates
 - [ ] `compileRedactPaths(extras, true)` returns only extras
 - [ ] A log with `{ password: 'x' }` produces JSON with `"password":"[REDACTED]"`

@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+# Global hooks run via ~/.config/husky/init.sh

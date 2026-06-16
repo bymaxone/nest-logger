@@ -75,7 +75,11 @@ export interface BymaxLoggerModuleOptions {
   level?: LogLevel
   /** Register the module as `@Global()`. Default: true. */
   isGlobal?: boolean
-  /** Replace the NestJS internal logger via `app.useLogger()`. Default: true. */
+  /**
+   * @deprecated Not read by the module — a module cannot call `app.useLogger()`
+   *   itself (it never sees the `INestApplication`). Call
+   *   `BymaxLoggerModule.useNestLogger(app)` in `main.ts` instead. Default: true.
+   */
   shouldUseAsNestLogger?: boolean
   /** Additional Pino redact paths — merged with `DEFAULT_REDACT_PATHS`. */
   redactPaths?: readonly string[]
@@ -85,7 +89,12 @@ export interface BymaxLoggerModuleOptions {
   shouldDisableDefaultRedact?: boolean
   /** Custom destinations beyond `DefaultStdoutDestination`. */
   destinations?: readonly ILogDestination[]
-  /** Force pretty-print output. Default: `NODE_ENV !== 'production'`. */
+  /**
+   * @deprecated Currently inert — a `true` value does not change output on its
+   *   own. For pretty local logs add `new PrettyDevDestination()` to
+   *   `destinations` (and install the optional `pino-pretty` peer dep).
+   *   Default: `NODE_ENV !== 'production'`.
+   */
   isPretty?: boolean
   /** HTTP module configuration. */
   http?: HttpOptions

@@ -1,6 +1,9 @@
 import type { Config } from 'jest'
 
-import base from './jest.config'
+// Explicit `.ts` extension: Stryker loads this config in its sandbox under Node 24,
+// where native-TS ESM requires the extension on relative imports (an extensionless
+// './jest.config' throws ERR_MODULE_NOT_FOUND and aborts the whole mutation run).
+import base from './jest.config.ts'
 
 /**
  * Stryker-only Jest configuration.

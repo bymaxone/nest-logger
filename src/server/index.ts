@@ -31,17 +31,20 @@ export { LogContext, LOG_CONTEXT_METADATA_KEY } from './decorators/log-context.d
 export { LogPerformance } from './decorators/log-performance.decorator'
 
 // Interfaces and contracts
-// Note: the per-request `LogContext` bag interface is intentionally NOT
-// re-exported here — the public `LogContext` name belongs to the class-level
-// decorator above. The bag type stays an internal contract consumed via
-// `LogContextService`.
+// The per-request context bag is exported as `LogContextBag` (the bare
+// `LogContext` name belongs to the class-level decorator above) so consumers can
+// type `LogContextService.run()` / `.set()` arguments. `ResolvedBymaxLoggerModuleOptions`
+// is exported because it surfaces in the public `.d.ts` of the interceptor/middleware
+// constructors.
 export type {
   ILogDestination,
   BymaxLoggerModuleOptions,
   BymaxLoggerModuleAsyncOptions,
   BymaxLoggerModuleOptionsFactory,
+  ResolvedBymaxLoggerModuleOptions,
   HttpOptions,
-  OtelOptions
+  OtelOptions,
+  LogContext as LogContextBag
 } from './interfaces'
 
 // DI tokens

@@ -108,6 +108,37 @@ describe('sanitizeError', () => {
   })
 
   it(/*
+   * An AggregateError WIDER than the cap must serialize the first
+   * MAX_AGGREGATE_ERRORS (10) members and collapse the remainder into ONE width
+   * marker recording how many were omitted — bounding O(N) fan-out work on the
+   * error path (a Promise.any over thousands of rejections).
+   */
+  'should cap AggregateError width and record the omitted count', () => {
+    const members = Array.from({ length: 13 }, (_, i) => new Error(`e${i}`))
+    const result = sanitizeError(new AggregateError(members, 'many failures'))
+    // 10 sanitized members + 1 width marker = 11 entries.
+    expect(result.errors).toHaveLength(11)
+    expect(result.errors?.[0]).toMatchObject({ message: 'e0' })
+    expect(result.errors?.[10]).toEqual({
+      _truncated: true,
+      _reason: 'aggregate-width-exceeded',
+      _omitted: 3
+    })
+  })
+
+  it(/*
+   * An AggregateError AT exactly the width cap must NOT gain a width marker —
+   * pins the `aggregated.length > MAX_AGGREGATE_ERRORS` boundary against an
+   * off-by-one (`>` → `>=`) regression.
+   */
+  'should not add a width marker at exactly the cap', () => {
+    const members = Array.from({ length: 10 }, (_, i) => new Error(`e${i}`))
+    const result = sanitizeError(new AggregateError(members, 'exactly ten'))
+    expect(result.errors).toHaveLength(10)
+    expect(result.errors?.[9]).toMatchObject({ message: 'e9' })
+  })
+
+  it(/*
    * A self-referential cause must collapse to the circular sentinel instead of
    * recursing forever. This is the canonical crash a naive serializer hits.
    */

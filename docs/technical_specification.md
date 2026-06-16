@@ -114,7 +114,7 @@ The community lib [`nestjs-pino`](https://github.com/iamolegga/nestjs-pino) (Iam
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Parity with `@bymax-one/nest-auth` | The public bymax repo grows by keeping its own visual identity + conventions. Depending on a community lib breaks architectural parity.                                                              |
 | `MODULE_ACTION_RESULT` convention  | `nestjs-pino` is agnostic — it neither requires nor encourages the convention. To ensure uniform adoption across the bymax ecosystem, we need an API that makes the convention **the natural path**. |
-| Opinionated redact registry        | `nestjs-pino` exposes `pinoHttp.redact` without opinion; the consumer chooses. This lib **opines**: 97 default paths covering BR PII (CPF/CNPJ/RG) + LGPD + PCI DSS, merged with custom extensions.  |
+| Opinionated redact registry        | `nestjs-pino` exposes `pinoHttp.redact` without opinion; the consumer chooses. This lib **opines**: 113 default paths covering BR PII (CPF/CNPJ/RG) + LGPD + PCI DSS, merged with custom extensions. |
 | Out-of-the-box OTel correlation    | `nestjs-pino` does not have a built-in OTel mixin (the consumer wires `@opentelemetry/instrumentation-pino`). This lib detects `trace.getActiveSpan()` automatically.                                |
 | Productivity decorators            | `nestjs-pino` does not provide `@InjectLogger`, `@LogContext`, `@LogPerformance`. This lib delivers them zero-config.                                                                                |
 | Multi-tenant via `tenantId`        | `nestjs-pino` requires the consumer to wire the header. This lib reads `x-tenant-id` by default and propagates via ALS.                                                                              |
@@ -1787,7 +1787,7 @@ export const DEFAULT_REDACT_PATHS: readonly string[] = [
 ] as const
 ```
 
-> **Performance:** with 97 generated paths (23 fields × 4 levels = 92 + 5 absolute header paths), `fast-redact` compiles everything into a single JS function at initialization. Pino benchmark: redacting 100 paths impacts ~3% on throughput. There is in the per-log regex matching overhead.
+> **Performance:** with 113 generated paths (27 fields × 4 levels = 108 + 5 absolute header paths), `fast-redact` compiles everything into a single JS function at initialization. Pino benchmark: redacting 100 paths impacts ~3% on throughput. There is in the per-log regex matching overhead.
 
 > **Auditing the redact registry:** the consumer can inspect via `LOGGER_OPTIONS_TOKEN` (see §10.5). In test environments, expose `compileRedactPaths(opts).effectivePaths` for CI assertions that expected paths are active.
 
@@ -1825,7 +1825,7 @@ BymaxLoggerModule.forRoot({
 - ≤ 200 total paths: < 5% throughput impact
 - > 200 paths: evaluate grouping by depth or a custom serializer
 
-Official Pino benchmark: redacting 100 paths impacts ~3% on throughput. The lib's default list (§10.1) generates 97 paths and stays within budget.
+Official Pino benchmark: redacting 100 paths impacts ~3% on throughput. The lib's default list (§10.1) generates 113 paths and stays within budget.
 
 ### 10.4 Customizable censor
 

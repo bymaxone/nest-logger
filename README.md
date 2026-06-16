@@ -44,7 +44,7 @@ The library has **zero direct dependencies** — all packages arrive as peer dep
 ## 🔥 Features
 
 - **Structured JSON** — every entry has `level`, `time`, `service`, `logKey`, `msg`, and arbitrary metadata fields
-- **PII redaction by default** — 97 paths covering passwords, tokens, PCI DSS card data, MFA secrets, CPF/CNPJ/RG (LGPD), and common HTTP headers — powered by `fast-redact`
+- **PII redaction by default** — 113 paths covering passwords, tokens, generic secrets, PCI DSS card data, MFA secrets, CPF/CNPJ/RG (LGPD), and common HTTP headers — powered by `fast-redact`
 - **OpenTelemetry correlation** — optional `@opentelemetry/api` peer; injects `traceId`/`spanId`/`traceFlags` into every log via a Pino mixin when an active span is detected
 - **AsyncLocalStorage context** — `requestId`, `tenantId`, `userId` flow automatically through the request lifecycle without prop drilling
 - **HTTP logging interceptor** — auto-logs all HTTP requests/responses with URL normalization (UUIDs and numeric IDs replaced by `:id` placeholder)
@@ -300,17 +300,17 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
 ### Top-level options
 
-| Option                       | Type                 | Default         | Description                                                                            |
-| ---------------------------- | -------------------- | --------------- | -------------------------------------------------------------------------------------- |
-| `service.name`               | `string`             | **Required**    | Service name emitted in every log entry                                                |
-| `service.version`            | `string`             | **Required**    | Release version/SHA emitted in every log entry                                         |
-| `level`                      | `LogLevel`           | `'info'`        | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`           |
-| `isPretty`                   | `boolean`            | `!isProduction` | Enable `pino-pretty` human-readable output. Requires optional peer `pino-pretty`       |
-| `redactPaths`                | `string[]`           | `[]`            | Additional `fast-redact` paths merged with the defaults                                |
-| `shouldDisableDefaultRedact` | `boolean`            | `false`         | Skip the 97 default PII paths. ⚠️ Emits a bootstrap warning — document why             |
-| `redactCensor`               | `string \| function` | `'[REDACTED]'`  | Replacement value for redacted fields. A function receives the raw value               |
-| `maxEntrySizeBytes`          | `number`             | `65536`         | Entries larger than this are replaced by a structured `LOGGER_ENTRY_TRUNCATED` warning |
-| `destinations`               | `ILogDestination[]`  | `[]`            | Additional sinks (Loki, Postgres, rolling file, …) alongside default stdout            |
+| Option                       | Type                 | Default         | Description                                                                                                              |
+| ---------------------------- | -------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `service.name`               | `string`             | **Required**    | Service name emitted in every log entry                                                                                  |
+| `service.version`            | `string`             | **Required**    | Release version/SHA emitted in every log entry                                                                           |
+| `level`                      | `LogLevel`           | `'info'`        | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                             |
+| `isPretty`                   | `boolean`            | `!isProduction` | ⚠️ Reserved — not auto-wired. For pretty output add `new PrettyDevDestination()` to `destinations` (needs `pino-pretty`) |
+| `redactPaths`                | `string[]`           | `[]`            | Additional `fast-redact` paths merged with the defaults                                                                  |
+| `shouldDisableDefaultRedact` | `boolean`            | `false`         | Skip the 113 default PII paths. ⚠️ Emits a bootstrap warning — document why                                              |
+| `redactCensor`               | `string \| function` | `'[REDACTED]'`  | Replacement value for redacted fields. A function receives the raw value                                                 |
+| `maxEntrySizeBytes`          | `number`             | `65536`         | Entries larger than this are replaced by a structured `LOGGER_ENTRY_TRUNCATED` warning                                   |
+| `destinations`               | `ILogDestination[]`  | `[]`            | Additional sinks (Loki, Postgres, rolling file, …) alongside default stdout                                              |
 
 ### `http` options
 
@@ -335,13 +335,14 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
 ### Default paths
 
-The library ships **97 redact paths** compiled at initialization into a single `fast-redact` function (< 3% throughput impact). These cover:
+The library ships **113 redact paths** compiled at initialization into a single `fast-redact` function (< 3% throughput impact). These cover:
 
 | Category                  | Fields                                                                                                                                    |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Passwords                 | `password`, `passwordHash`, `passwordConfirm`, `newPassword`, `oldPassword`                                                               |
 | Tokens                    | `token`, `accessToken`, `refreshToken`, `idToken`, `apiKey`, `apiSecret`                                                                  |
 | MFA                       | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret`                                                                                             |
+| Generic secrets           | `secret`, `clientSecret`, `signingSecret`, `privateKey`                                                                                   |
 | Payment / PCI DSS         | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                                       |
 | Personal documents (LGPD) | `cpf`, `cnpj`, `rg`                                                                                                                       |
 | Conservative PII          | `email`                                                                                                                                   |
@@ -575,7 +576,7 @@ Application Service
               └── OTel span      → { traceId, spanId, traceFlags }
               │
               ▼
-         fast-redact             ← compiled redact function (97 paths)
+         fast-redact             ← compiled redact function (113 paths)
               │
               ▼
     ┌─────────────────────────────┐
@@ -591,7 +592,7 @@ Application Service
 - **Singleton scope, not `Scope.REQUEST`** — `AsyncLocalStorage` delivers per-request context at zero latency overhead. NestJS request scope adds ~5% latency on the injection graph; unacceptable on a logger that runs every request.
 - **One Pino mixin** — ALS context and OTel trace context are composed into a single mixin. Merge order is deterministic: ALS fields first, then OTel (OTel wins on name conflicts because an active span is the authoritative trace identity).
 - **Zero direct dependencies** — the library ships with `"dependencies": {}`. All packages arrive as peer dependencies so consumers control exact versions.
-- **`fast-redact` compiled at init** — 97 paths compile once at module bootstrap into a specialized JS function. No per-log regex matching.
+- **`fast-redact` compiled at init** — 113 paths compile once at module bootstrap into a specialized JS function. No per-log regex matching.
 
 ---
 
