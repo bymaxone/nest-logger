@@ -125,8 +125,13 @@ async function main(): Promise<void> {
     .add('C: prod path', runProd)
   await bench.run()
 
-  const ops = (name: string): number =>
-    bench.tasks.find((task) => task.name === name)?.result?.hz ?? 0
+  // tinybench v6 replaced the scalar `result.hz` with a `throughput` Statistics
+  // object whose `mean` is the ops/sec equivalent. Narrow the result union with
+  // `in` so a not-started / errored task safely yields 0 instead of a type error.
+  const ops = (name: string): number => {
+    const result = bench.tasks.find((task) => task.name === name)?.result
+    return result && 'throughput' in result ? result.throughput.mean : 0
+  }
   const aOps = ops('A: bare pino')
   const bOps = ops('B: PinoLoggerService')
   const cOps = ops('C: prod path')
