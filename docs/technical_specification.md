@@ -1787,7 +1787,7 @@ export const DEFAULT_REDACT_PATHS: readonly string[] = [
 ] as const
 ```
 
-> **Performance:** with 113 generated paths (27 fields × 4 levels = 108 + 5 absolute header paths), `fast-redact` compiles everything into a single JS function at initialization. Pino benchmark: redacting 100 paths impacts ~3% on throughput. There is in the per-log regex matching overhead.
+> **Performance:** with 113 generated paths (27 fields × 4 levels = 108 + 5 absolute header paths), `fast-redact` compiles everything into a single JS function at initialization. Pino benchmark: redacting 100 paths impacts ~3% on throughput. There is no per-log regex matching overhead.
 
 > **Auditing the redact registry:** the consumer can inspect via `LOGGER_OPTIONS_TOKEN` (see §10.5). In test environments, expose `compileRedactPaths(opts).effectivePaths` for CI assertions that expected paths are active.
 

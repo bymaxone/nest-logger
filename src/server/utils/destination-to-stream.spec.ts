@@ -137,4 +137,26 @@ describe('destinationToStream', () => {
 
     expect(stderrSpy.mock.calls[0]?.[0]).toContain('string-throw')
   })
+
+  it(/*
+   * The safe sink itself can fail: if process.stderr.write throws (e.g. EPIPE on
+   * a closed pipe), the failure report must be swallowed so the fail-soft
+   * contract is absolute — a broken stderr must NOT turn a dropped log into a
+   * host crash. The stream still completes without error. Covers the stderr
+   * try/catch in reportWriteFailure.
+   */
+  'swallows a throwing stderr so a write failure still cannot crash the host', async () => {
+    stderrSpy.mockImplementation(() => {
+      throw new Error('EPIPE')
+    })
+    const stream = destinationToStream({
+      name: 'sink-and-stderr-fail',
+      write: jest.fn(() => {
+        throw new Error('sink-boom')
+      })
+    })
+
+    await expect(writeOnce(stream, 'x\n')).resolves.toBeUndefined()
+    expect(stderrSpy).toHaveBeenCalled()
+  })
 })
