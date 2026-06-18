@@ -144,6 +144,10 @@ describe('BymaxLoggerModule.forRoot', () => {
         (call: unknown[]) => call[0] === RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK
       )
       expect(bootstrapCalls).toHaveLength(1)
+      expect(bootstrapCalls[0]).toEqual([
+        RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK,
+        'BymaxLoggerModule initialized'
+      ])
       await ref.close()
     })
   })
@@ -205,7 +209,9 @@ describe('BymaxLoggerModule.useNestLogger', () => {
 
   it(/*
    * When BymaxLoggerModule was never imported the helper must throw a clear,
-   * actionable error instead of leaking a cryptic Nest DI exception.
+   * actionable error instead of leaking a cryptic Nest DI exception. The
+   * original DI error is attached as `.cause` so the underlying failure is
+   * preserved for debugging — pins the `{ cause }` argument in the throw.
    */
   'throws a clear error when the module was not imported', async () => {
     const moduleRef = await Test.createTestingModule({
@@ -213,9 +219,17 @@ describe('BymaxLoggerModule.useNestLogger', () => {
     }).compile()
     const app = moduleRef.createNestApplication()
 
-    expect(() => BymaxLoggerModule.useNestLogger(app)).toThrow(
+    let thrown: unknown
+    try {
+      BymaxLoggerModule.useNestLogger(app)
+    } catch (e) {
+      thrown = e
+    }
+    expect(thrown).toBeInstanceOf(Error)
+    expect((thrown as Error).message).toBe(
       '[BymaxLoggerModule] useNestLogger(app) called but BymaxLoggerModule was not imported'
     )
+    expect((thrown as Error).cause).toBeInstanceOf(Error)
     await app.close()
   })
 })

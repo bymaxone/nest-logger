@@ -84,6 +84,9 @@ describe('destinationToStream', () => {
     expect(line).toContain('async-fail')
     expect(line).toContain('"type":"Error"')
     expect(line).toContain('async-boom')
+    expect(line).toContain('"level":"error"')
+    expect(line).toContain('failed to write')
+    expect(line.endsWith('\n')).toBe(true)
   })
 
   it(/*

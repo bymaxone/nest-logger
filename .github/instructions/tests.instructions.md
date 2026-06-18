@@ -10,7 +10,7 @@ applyTo: '**/*.spec.ts,**/*.e2e.spec.ts'
 
 ## Mutation testing threshold
 
-Stryker score must be **≥ 99%** (`high: 99, low: 95, break: 95`). Flag tests that use generic matchers (`toBeDefined()`, `toBeTruthy()`) where a value assertion is possible — they survive Stryker mutants.
+Break gate: **95%** (`thresholds.break: 95`). Current score is **97.42%** — the theoretical maximum given 10 documented equivalent mutants (see `docs/mutation_testing_results.md §Residual survivors`). The aspirational `high: 99` is not reachable without `// Stryker disable` comments, which are prohibited in this project (see below). Flag tests that use generic matchers (`toBeDefined()`, `toBeTruthy()`) where a value assertion is possible — they survive Stryker mutants.
 
 ## Test structure and naming
 
@@ -56,9 +56,11 @@ expect(err?.message).toBe('logKey is required') // kills path mutant and message
 // ✅ also test: expect(isValidLogKey('HTTP_REQUEST_START')).toBe(true)
 ```
 
-## Stryker disable comments
+## Stryker disable comments — PROHIBITED in this project
 
-Equivalent mutants only: `// Stryker disable next-line <Mutator>: <reason why mutant is equivalent>`
+Do **not** add `// Stryker disable` inline comments. They ship verbatim in the unminified `.mjs` bundle (tsup `minify: false`) and push the server subpath past its 13.5 KiB brotli budget.
+
+Equivalent mutants must be **documented in `docs/mutation_testing_results.md §Residual survivors`** instead, with an explanation of why the mutant is semantically equivalent. This is the canonical approach for this project.
 
 ## Log key assertions
 

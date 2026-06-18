@@ -14,7 +14,7 @@
   <a href="https://www.npmjs.com/package/@bymax-one/nest-logger"><img src="https://img.shields.io/npm/dm/@bymax-one/nest-logger?style=flat-square&colorA=000000&colorB=000000" alt="npm downloads" /></a>
   <a href="https://github.com/bymaxone/nest-logger/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/bymaxone/nest-logger/ci.yml?branch=main&style=flat-square&colorA=000000&label=CI" alt="CI status" /></a>
   <a href="https://github.com/bymaxone/nest-logger/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square&colorA=000000" alt="coverage" /></a>
-  <a href="https://github.com/bymaxone/nest-logger/blob/main/docs/mutation_testing_results.md"><img src="https://img.shields.io/badge/mutation-95.93%25-brightgreen?style=flat-square&colorA=000000" alt="mutation score" /></a>
+  <a href="https://github.com/bymaxone/nest-logger/blob/main/docs/mutation_testing_results.md"><img src="https://img.shields.io/badge/mutation-97.42%25-brightgreen?style=flat-square&colorA=000000" alt="mutation score" /></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/bymaxone/nest-logger"><img src="https://api.scorecard.dev/projects/github.com/bymaxone/nest-logger/badge?style=flat-square" alt="OpenSSF Scorecard" /></a>
   <a href="https://github.com/bymaxone/nest-logger/blob/main/LICENSE"><img src="https://img.shields.io/github/license/bymaxone/nest-logger?style=flat-square&colorA=000000&colorB=000000" alt="license" /></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
@@ -702,7 +702,7 @@ pnpm typecheck         # tsc strict check (all tsconfig variants)
 pnpm lint              # ESLint
 ```
 
-Coverage gate: **100%** on statements, branches, functions, and lines — identical to the `nest-auth` gate. Mutation: **95.93%** current vs the **95%** break gate (Stryker `thresholds.break: 95`); 99% is the aspirational target — see [mutation_testing_results.md](docs/mutation_testing_results.md).
+Coverage gate: **100%** on statements, branches, functions, and lines. Mutation: **97.42%** current vs the **95%** break gate (Stryker `thresholds.break: 95`); 97.42% is the theoretical maximum — all 10 surviving mutants are documented equivalents. See [mutation_testing_results.md](docs/mutation_testing_results.md).
 
 ---
 

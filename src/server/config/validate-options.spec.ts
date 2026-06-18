@@ -38,11 +38,33 @@ describe('validateOptions', () => {
    * bootstrap rather than discover silent drops at runtime.
    */
   'should throw when level is not a valid LogLevel', () => {
-    // Assert the actionable message body (not just /level/) so emptying the
-    // "must be one of" literal is caught.
+    // Assert that at least one comma-space separator appears in the level list
+    // so the `join(', ')` literal is pinned — an empty separator mutant collapses
+    // the list into a single unreadable token.
     expect(() => validateOptions({ ...validOpts, level: 'verbose' as never })).toThrow(
-      /options\.level must be one of/
+      /options\.level must be one of: .*, /
     )
+  })
+
+  it(/*
+   * Non-string service.name must be rejected — pins the `typeof !== 'string'`
+   * guard so it cannot be mutated away. TypeScript callers cannot reach this
+   * branch, but JavaScript callers can.
+   */
+  'should throw when service.name is not a string', () => {
+    expect(() =>
+      validateOptions({ ...validOpts, service: { name: 123 as never, version: '1.0.0' } })
+    ).toThrow('[BymaxLoggerModule] options.service.name must be a non-empty string')
+  })
+
+  it(/*
+   * Non-string service.version must be rejected — same guard as above, for the
+   * version field.
+   */
+  'should throw when service.version is not a string', () => {
+    expect(() =>
+      validateOptions({ ...validOpts, service: { name: 'app', version: [] as never } })
+    ).toThrow('[BymaxLoggerModule] options.service.version must be a non-empty string')
   })
 
   it.each([

@@ -6,13 +6,17 @@ import {
   InternalServerErrorException,
   Param
 } from '@nestjs/common'
-import type { INestApplication } from '@nestjs/common'
+import type { CallHandler, ExecutionContext, INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import type { NextFunction, Request, Response } from 'express'
+import { of } from 'rxjs'
 import request from 'supertest'
 
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import { BymaxLoggerModule } from '../logger.module'
 import { PinoLoggerService } from '../services/pino-logger.service'
+
+import { HttpLoggingInterceptor } from './http-logging.interceptor'
 
 /**
  * Fixture controller exercising every interceptor branch through real HTTP:
@@ -345,5 +349,50 @@ describe('HttpLoggingInterceptor (integration)', () => {
     const duration = (errorCall?.[3] as { duration: number }).duration
     expect(duration).toBeGreaterThanOrEqual(0)
     expect(duration).toBeLessThan(60_000)
+  })
+})
+
+describe('HttpLoggingInterceptor unit', () => {
+  /**
+   * Build a minimal interceptor with mocked logger and options — no HTTP server,
+   * no NestJS app bootstrap. Used to test statusCode boundary conditions that
+   * cannot be exercised reliably via supertest (e.g. 1xx responses never reach
+   * the handler in a real HTTP stack).
+   */
+  function makeInterceptor(infoFn: jest.Mock): HttpLoggingInterceptor {
+    const logger = { info: infoFn, warnStructured: jest.fn(), errorStructured: jest.fn() } as never
+    const opts = { http: { excludePaths: [] } } as never
+    return new HttpLoggingInterceptor(logger, opts)
+  }
+
+  function makeCtx(statusCode: number): ExecutionContext {
+    return {
+      switchToHttp: () => ({
+        getRequest: () => ({ method: 'GET', url: '/probe', ip: '127.0.0.1', headers: {} }),
+        getResponse: () => ({ statusCode })
+      })
+    } as never
+  }
+
+  it(/*
+   * A 1xx (informational) response is neither 2xx nor 3xx, so logSuccess must
+   * emit only the START entry. Pins the `statusCode >= HTTP_SUCCESS_MIN` (≥ 200)
+   * guard — a mutation to `true` would incorrectly log SUCCESS for 1xx.
+   */
+  'logs only START (not SUCCESS or REDIRECT) for a 1xx response', async () => {
+    const infoSpy = jest.fn()
+    const interceptor = makeInterceptor(infoSpy)
+    const callHandler: CallHandler = { handle: () => of(undefined) }
+
+    await new Promise<void>((resolve, reject) => {
+      interceptor
+        .intercept(makeCtx(100), callHandler)
+        .subscribe({ complete: resolve, error: reject })
+    })
+
+    const keys = (infoSpy.mock.calls as unknown[][]).map((c) => c[0])
+    expect(keys).toContain(RESERVED_LOG_KEYS.HTTP_REQUEST_START)
+    expect(keys).not.toContain(RESERVED_LOG_KEYS.HTTP_REQUEST_SUCCESS)
+    expect(keys).not.toContain(RESERVED_LOG_KEYS.HTTP_REQUEST_REDIRECT)
   })
 })
