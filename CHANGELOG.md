@@ -11,6 +11,27 @@ heading here.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-18
+
+### Security
+
+- Pin `esbuild` to `^0.28.1` (via `pnpm.overrides`) to clear CVE alerts in the
+  transitive dependency brought in by `tsup`
+
+### Fixed
+
+- Benchmark harness (`bench/throughput.bench.ts`) migrated to the tinybench v6 API
+  (`Bench` → `Tinybench`, `.run()` → `await bench.run()`) after a breaking change
+  in tinybench v6
+
+### Changed
+
+- Mutation score improved from 95.93 % → **97.42 %** (theoretical maximum); all 7
+  previously-unresolved `perTest` attribution survivors eliminated via targeted test
+  assertions — see [`docs/mutation_testing_results.md`](docs/mutation_testing_results.md)
+- Dev dependencies bumped: commitlint 21, lint-staged 17, `@types/node` 25,
+  TypeScript 5.9, Jest 30, and the full dev-dependencies group
+
 ## [0.1.0] - 2026-05-30
 
 ### Added
@@ -48,5 +69,6 @@ heading here.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/bymaxone/nest-logger/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/bymaxone/nest-logger/releases/tag/v0.1.0
