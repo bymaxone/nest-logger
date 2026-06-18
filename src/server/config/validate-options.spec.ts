@@ -42,7 +42,7 @@ describe('validateOptions', () => {
     // so the `join(', ')` literal is pinned — an empty separator mutant collapses
     // the list into a single unreadable token.
     expect(() => validateOptions({ ...validOpts, level: 'verbose' as never })).toThrow(
-      /options\.level must be one of: .*,/
+      /options\.level must be one of: .*, /
     )
   })
 

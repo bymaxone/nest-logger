@@ -9,8 +9,8 @@ import {
 import type { CallHandler, ExecutionContext, INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import type { NextFunction, Request, Response } from 'express'
-import request from 'supertest'
 import { of } from 'rxjs'
+import request from 'supertest'
 
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import { BymaxLoggerModule } from '../logger.module'
@@ -384,8 +384,10 @@ describe('HttpLoggingInterceptor unit', () => {
     const interceptor = makeInterceptor(infoSpy)
     const callHandler: CallHandler = { handle: () => of(undefined) }
 
-    await new Promise<void>((resolve) => {
-      interceptor.intercept(makeCtx(100), callHandler).subscribe({ complete: resolve })
+    await new Promise<void>((resolve, reject) => {
+      interceptor
+        .intercept(makeCtx(100), callHandler)
+        .subscribe({ complete: resolve, error: reject })
     })
 
     const keys = (infoSpy.mock.calls as unknown[][]).map((c) => c[0])

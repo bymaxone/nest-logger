@@ -53,12 +53,12 @@ Open `reports/mutation/mutation.html` after a run for the full per-file breakdow
 
 ## Score history
 
-| Run                            | Date       | Score   | Notes                                                                |
-| ------------------------------ | ---------- | ------- | -------------------------------------------------------------------- |
-| Baseline                       | 2026-05-29 | 86 %    | First run, no hardening                                              |
-| After hardening                | 2026-05-29 | 95.93 % | 30 survivors killed; equivalents documented                          |
-| Intermediate (inline comments) | 2026-05-29 | 97.5 %  | `// Stryker disable` comments removed — exceeded 12 kB bundle budget |
-| Genuine survivors eliminated   | 2026-06-18 | 97.42 % | 7 more survivors killed via targeted assertions; 10 equivalents left |
+| Run                            | Date       | Score   | Notes                                                                                |
+| ------------------------------ | ---------- | ------- | ------------------------------------------------------------------------------------ |
+| Baseline                       | 2026-05-29 | 86 %    | First run, no hardening                                                              |
+| After hardening                | 2026-05-29 | 95.93 % | 30 survivors killed; equivalents documented                                          |
+| Intermediate (inline comments) | 2026-05-29 | 97.5 %  | `// Stryker disable` comments removed — exceeded 12 KiB server budget (now 13.5 KiB) |
+| Genuine survivors eliminated   | 2026-06-18 | 97.42 % | 7 more survivors killed via targeted assertions; 10 equivalents left                 |
 
 Current production score: **97.42 %** (exit 0, break gate passes). Theoretical maximum — see `mutation_testing_results.md §Residual survivors`.
 
@@ -89,7 +89,7 @@ The 10 remaining survivors are all documented equivalent mutants (see `mutation_
 The equivalent mutants are documented in `mutation_testing_results.md §Residual survivors`.
 Do **not** annotate them with `// Stryker disable next-line` — those comments ship in the
 unminified `.mjs` bundle (tsup `minify: false`) and will push the server subpath past its
-12 kB brotli budget. The documentation approach is the correct solution for this project.
+13.5 KiB brotli budget. The documentation approach is the correct solution for this project.
 
 ---
 

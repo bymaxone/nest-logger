@@ -20,9 +20,9 @@ heading here.
 
 ### Fixed
 
-- Benchmark harness (`bench/throughput.bench.ts`) migrated to the tinybench v6 API
-  (`Bench` → `Tinybench`, `.run()` → `await bench.run()`) after a breaking change
-  in tinybench v6
+- Benchmark harness (`bench/throughput.bench.ts`) migrated to the tinybench v6 API:
+  result access changed from the `result.hz` scalar to `result.throughput.mean`
+  (Statistics object); `.run()` is now async
 
 ### Changed
 
