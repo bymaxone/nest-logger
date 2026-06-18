@@ -1,6 +1,6 @@
 # Mutation Testing Results
 
-> **Last run:** 2026-05-29
+> **Last run:** 2026-06-18
 > **Command:** `pnpm mutation` (Stryker 9, jest runner, `coverageAnalysis: perTest`, `ignoreStatic: true`)
 > **Report:** [`reports/mutation/mutation.html`](../reports/mutation/mutation.html)
 
@@ -8,29 +8,26 @@
 
 | Metric                                                 | Value                                              |
 | ------------------------------------------------------ | -------------------------------------------------- |
-| **Global mutation score**                              | **95.93 %**                                        |
+| **Global mutation score**                              | **95.62 %**                                        |
 | Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅                        |
 | Aspirational target (`thresholds.high`)                | 99 % → not reached (residual artifacts, see below) |
-| Killed                                                 | 357                                                |
-| Survived                                               | 15                                                 |
-| Timeout (counts as detected)                           | 2                                                  |
-| Compile/runtime errors (type-system-guarded, excluded) | 251                                                |
+| Killed                                                 | 366                                                |
+| Survived                                               | 17                                                 |
+| Timeout (counts as detected)                           | 5                                                  |
+| Compile/runtime errors (type-system-guarded, excluded) | 261                                                |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `359 / 374 = 95.93 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `371 / 388 = 95.62 %`.
 
 Up from the **86 %** first baseline. `pnpm mutation` passes its break gate (exit 0).
 
 > An intermediate run reached **97.5 %** using inline `// Stryker disable` comments
 > for the equivalent mutants. Those comments are NOT stripped from the published,
 > deliberately-unminified `.mjs` bundle and pushed it past the 12 KiB size budget,
-> so they were removed (the equivalents are documented in this file instead) — the
-> 6 equivalent mutants now count as "Survived", giving 95.93 %. Both numbers pass
-> the 95 % break gate.
+> so they were removed (the equivalents are documented in this file instead).
 
 ## Hardening performed
 
-Targeted assertions were added to kill ~30 runtime survivors across the tree
-(both Phase 1–3 and Phase 4 code), e.g.:
+Targeted assertions were added to kill ~30 runtime survivors across the tree, e.g.:
 
 - **pretty-dev**: assert `pino-pretty.build()` is called with the exact options; assert `onShutdown` ends the stream + registers an `'error'` listener.
 - **default-options**: assert the anchored `excludePaths` regex behavior + OTel field-name defaults.
@@ -41,6 +38,7 @@ Targeted assertions were added to kill ~30 runtime survivors across the tree
 - **pino-logger**: `error()` stack-key branches (jest equality was hiding `stack: undefined`).
 - **request-id**: 256-char correlation-id boundary.
 - **truncate / validate-options / inject-logger**: exact byte ceiling, level message, symbol description.
+- **destination-to-stream**: assert `level`, `msg` content and trailing `\n` in the stderr fail-soft report.
 
 **Equivalent mutants** (documented here rather than with inline `// Stryker
 disable`, which would ship in the unminified bundle — see the size note above):
@@ -53,6 +51,9 @@ disable`, which would ship in the unminified bundle — see the size note above)
 - `sanitize-error.ts` `isObject` `ConditionalExpression`/`LogicalOperator` (×4):
   the guard only gates `seen.has(value)` (a `WeakSet`), which is always `false`
   for primitives, so mutating it cannot change the output for any input.
+- `truncate-large-entries.ts` `catch { return serialized }` → `catch {}`: the
+  empty-catch variant falls through to `if (json === undefined) { return serialized }`
+  immediately after — same observable output for all inputs.
 
 **`ignoreStatic: true`** was enabled — the Stryker-documented fix for `perTest`
 static mutants, which are module-load literals that perTest cannot attribute to a
@@ -68,18 +69,18 @@ mutants that are nonetheless covered behaviorally by the suite.
 | `validate-options.ts`          | 89.66 %      | residual perTest artifact (see below) |
 | `trace-context.mixin.ts`       | 92.86 %      | residual perTest artifact (see below) |
 
-## Residual survivors (15)
+## Residual survivors (17)
 
-**6 are equivalent mutants** (listed above) — not killable by definition.
+**7 are equivalent mutants** (listed above) — not killable by definition.
 
-**9 are Stryker artifacts**, not genuine coverage gaps — the affected code is
-exercised by explicit tests (302 unit+e2e tests, 100 % line/branch coverage):
+**10 are Stryker artifacts**, not genuine coverage gaps — the affected code is
+exercised by explicit tests (328 unit + 26 e2e tests, 100 % line/branch coverage):
 
 - **2 × `http-logging.interceptor` (`ConditionalExpression`)** — the success/redirect
   range `if`s. The killing tests exist (418, 300, 400 boundary tests), but the
   supertest-driven HTTP suite is flaky under Stryker's instrumented runtime (the
   "socket hang up" seen on the initial run), so the kills aren't reliably attributed.
-- **3 × `validate-options` + 1 × `trace-context.mixin` + 3 × `logger.module`** — a
+- **3 × `validate-options` + 1 × `trace-context.mixin` + 4 × `logger.module`** — a
   `perTest` coverage-attribution artifact: the test fixtures (e.g.
   `request-id.middleware.spec`, `logger.module.async.spec`) run `forRoot` (→
   `validateOptions`, → the mixin) at module-LOAD with valid options, so Stryker
