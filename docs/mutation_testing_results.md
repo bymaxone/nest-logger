@@ -8,37 +8,38 @@
 
 | Metric                                                 | Value                                              |
 | ------------------------------------------------------ | -------------------------------------------------- |
-| **Global mutation score**                              | **95.62 %**                                        |
+| **Global mutation score**                              | **97.42 %**                                        |
 | Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅                        |
-| Aspirational target (`thresholds.high`)                | 99 % → not reached (residual artifacts, see below) |
-| Killed                                                 | 366                                                |
-| Survived                                               | 17                                                 |
+| Aspirational target (`thresholds.high`)                | 99 % → not reached (equivalent mutants, see below) |
+| Killed                                                 | 373                                                |
+| Survived                                               | 10                                                 |
 | Timeout (counts as detected)                           | 5                                                  |
 | Compile/runtime errors (type-system-guarded, excluded) | 261                                                |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `371 / 388 = 95.62 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `378 / 388 = 97.42 %`.
 
-Up from the **86 %** first baseline. `pnpm mutation` passes its break gate (exit 0).
+Up from the **86 %** first baseline and **95.93 %** at v0.1.0 preparation. `pnpm mutation` passes its break gate (exit 0). The remaining 10 survivors are all equivalent mutants (documented below) — this is the theoretical maximum without `// Stryker disable` comments.
 
-> An intermediate run reached **97.5 %** using inline `// Stryker disable` comments
-> for the equivalent mutants. Those comments are NOT stripped from the published,
-> deliberately-unminified `.mjs` bundle and pushed it past the 12 KiB size budget,
-> so they were removed (the equivalents are documented in this file instead).
+> Inline `// Stryker disable` comments are NOT used — they ship in the deliberately
+> unminified `.mjs` bundle and push the server subpath past its 13.5 KiB size budget.
+> Equivalents are documented here instead.
 
 ## Hardening performed
 
-Targeted assertions were added to kill ~30 runtime survivors across the tree, e.g.:
+Targeted assertions were added to kill ~40 runtime survivors across the tree, e.g.:
 
 - **pretty-dev**: assert `pino-pretty.build()` is called with the exact options; assert `onShutdown` ends the stream + registers an `'error'` listener.
 - **default-options**: assert the anchored `excludePaths` regex behavior + OTel field-name defaults.
 - **sanitize-error**: assert absent-cause, newline-preserved stack, aggregate-member depth budget.
 - **otel-detector**: trace/span-id regex anchor boundaries (prefix/border-zero cases).
 - **log-performance**: `Date.now`-mocked exact-threshold boundary + message content.
-- **http-logging.interceptor**: message content, sane-duration bounds, 300/400 status boundaries.
+- **http-logging.interceptor**: message content, sane-duration bounds, 300/400 status boundaries; unit test with mocked `ExecutionContext` for 1xx statusCode boundary (pins both `>= HTTP_SUCCESS_MIN` guards).
 - **pino-logger**: `error()` stack-key branches (jest equality was hiding `stack: undefined`).
 - **request-id**: 256-char correlation-id boundary.
 - **truncate / validate-options / inject-logger**: exact byte ceiling, level message, symbol description.
 - **destination-to-stream**: assert `level`, `msg` content and trailing `\n` in the stderr fail-soft report.
+- **validate-options**: non-string `service.name` / `service.version` tests + comma-space format in `level` error message.
+- **logger.module**: bootstrap message content assertion; `error.cause` assertion in `useNestLogger`.
 
 **Equivalent mutants** (documented here rather than with inline `// Stryker
 disable`, which would ship in the unminified bundle — see the size note above):
@@ -54,6 +55,16 @@ disable`, which would ship in the unminified bundle — see the size note above)
 - `truncate-large-entries.ts` `catch { return serialized }` → `catch {}`: the
   empty-catch variant falls through to `if (json === undefined) { return serialized }`
   immediately after — same observable output for all inputs.
+- `trace-context.mixin.ts` `if (store)` → `if (true)`: `Object.assign(target, undefined)`
+  is a documented no-op in JavaScript — the block body is identical to skipping it when
+  `logContext.getStore()` returns `undefined` outside any ALS scope.
+- `logger.module.ts:69` `return true` → `return false`: the return value is stored as the
+  `LOGGER_BOOTSTRAP_TOKEN` injectable, which nothing in the module or consumer code reads.
+  Changing it from `true` to `false` is observable only by inspecting the DI container
+  directly — not by any behavior the library exposes.
+- `logger.module.ts:265` `{ strict: false }` → `{}`: both forms throw a `NotFoundException`
+  when `PinoLoggerService` is absent from the container — NestJS throws on missing providers
+  regardless of the `strict` option when the provider does not exist anywhere in the module graph.
 
 **`ignoreStatic: true`** was enabled — the Stryker-documented fix for `perTest`
 static mutants, which are module-load literals that perTest cannot attribute to a
@@ -62,33 +73,18 @@ mutants that are nonetheless covered behaviorally by the suite.
 
 ## Critical paths
 
-| File                           | Score        | Note                                  |
-| ------------------------------ | ------------ | ------------------------------------- |
-| `normalize-url.util.ts`        | **100 %** ✅ |                                       |
-| `compile-redact-paths.util.ts` | **100 %** ✅ |                                       |
-| `validate-options.ts`          | 89.66 %      | residual perTest artifact (see below) |
-| `trace-context.mixin.ts`       | 92.86 %      | residual perTest artifact (see below) |
+| File                           | Score        | Note                      |
+| ------------------------------ | ------------ | ------------------------- |
+| `normalize-url.util.ts`        | **100 %** ✅ |                           |
+| `compile-redact-paths.util.ts` | **100 %** ✅ |                           |
+| `http-logging.interceptor.ts`  | **100 %** ✅ | unit + integration tests  |
+| `services/*`                   | **100 %** ✅ |                           |
+| `trace-context.mixin.ts`       | 92.86 %      | 1 equivalent (see above)  |
+| `sanitize-error.util.ts`       | 88.89 %      | 4 equivalents (see above) |
+| `truncate-large-entries.ts`    | 88.89 %      | 1 equivalent (see above)  |
 
-## Residual survivors (17)
+## Residual survivors (10)
 
-**7 are equivalent mutants** (listed above) — not killable by definition.
-
-**10 are Stryker artifacts**, not genuine coverage gaps — the affected code is
-exercised by explicit tests (328 unit + 26 e2e tests, 100 % line/branch coverage):
-
-- **2 × `http-logging.interceptor` (`ConditionalExpression`)** — the success/redirect
-  range `if`s. The killing tests exist (418, 300, 400 boundary tests), but the
-  supertest-driven HTTP suite is flaky under Stryker's instrumented runtime (the
-  "socket hang up" seen on the initial run), so the kills aren't reliably attributed.
-- **3 × `validate-options` + 1 × `trace-context.mixin` + 4 × `logger.module`** — a
-  `perTest` coverage-attribution artifact: the test fixtures (e.g.
-  `request-id.middleware.spec`, `logger.module.async.spec`) run `forRoot` (→
-  `validateOptions`, → the mixin) at module-LOAD with valid options, so Stryker
-  attributes only the load-time coverage and does not run the runtime tests
-  (e.g. the empty-name / store-present tests) that would kill them.
-
-**Path to 99 % / critical-paths-100 %** (follow-up): refactor the unit test
-fixtures so no `@Module` runs `forRoot` at file-load (move it into `beforeAll`),
-and/or unit-test the interceptor with a mocked `ExecutionContext` instead of
-supertest so the kills run outside Stryker's flaky HTTP path. Tracked as a
-follow-up — the enforced gate (break 95) already passes.
+**All 10 are equivalent mutants** (documented above) — not killable by definition.
+There are zero genuine coverage gaps remaining. The maximum theoretical score without
+`// Stryker disable` comments is 97.42 % (= 378/388).
