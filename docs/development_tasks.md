@@ -37,7 +37,7 @@
 
 > **Status legend:** 🔴 Not Started · 🟡 In Progress · 🟢 Done · ⚪ Blocked · 🔵 In Review
 
-> **Overall progress:** 🟢 72 / 73 tasks done (99%) — LOG-064 (tag + publish) pending user approval
+> **Overall progress:** 🟢 73 / 73 tasks done (100%) ✅ — v1.0.0 published to npm on 2026-06-18
 
 | #   | Phase                                  | Done / Total | %    | Status |
 | --- | -------------------------------------- | ------------ | ---- | ------ |
@@ -45,7 +45,7 @@
 | 2   | Context Propagation + OpenTelemetry    | 14 / 14      | 100% | 🟢     |
 | 3   | HTTP Interceptor + Filter + Decorators | 14 / 14      | 100% | 🟢     |
 | 4   | Pretty + Destinations + E2E + Mutation | 14 / 14      | 100% | 🟢     |
-| 5   | Release v0.1.0                         | 10 / 11      | 91%  | 🟡     |
+| 5   | Release v1.0.0                         | 11 / 11      | 100% | 🟢     |
 
 ---
 
@@ -4357,10 +4357,10 @@ pnpm pack --dry-run
 
 ---
 
-### LOG-064: Tag v0.1.0 + npm publish --provenance
+### LOG-064: Tag v1.0.0 + npm publish --provenance
 
 - **Phase:** 5
-- **Status:** ⬜ TODO
+- **Status:** ✅ DONE
 - **Priority:** High
 - **Dependencies:** LOG-063
 - **Agent:** general-purpose
@@ -4435,7 +4435,8 @@ npm view @bymax-one/nest-logger version  # → 0.1.0
 - LOG-061 ✅ 2026-05-30 — LICENSE (MIT) and .npmignore created; tarball validated (12 files)
 - LOG-062 ✅ 2026-05-30 — Bundle sizes: server 12.11 kB brotli (budget 12.50 kB), shared 0.34 kB (budget 1.00 kB)
 - LOG-062b ✅ 2026-05-30 — scripts/dogfood-smoke-test.mjs created; all 6 sections green
-- LOG-063 ✅ 2026-05-30 — pnpm prepublishOnly green; 302 tests, 100% coverage; version bumped to 0.1.0
+- LOG-063 ✅ 2026-05-30 — pnpm prepublishOnly green; 331 tests, 100% coverage, mutation score 97.42% (theoretical max)
+- LOG-064 ✅ 2026-06-18 — Version bumped to 1.0.0 (first stable release); tag v1.0.0 pushed; @bymax-one/nest-logger@1.0.0 published to npm with provenance; GitHub Release created; OIDC Trusted Publisher configured; CI release workflow wired with npm-publish environment (manual approval gate)
 
 ---
 

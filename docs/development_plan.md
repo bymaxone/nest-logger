@@ -1,8 +1,8 @@
 # Development Plan — @bymax-one/nest-logger
 
 > **Version:** 2.0.0
-> **Last updated:** 2026-05-27
-> **Status:** Draft for execution
+> **Last updated:** 2026-06-18
+> **Status:** ✅ COMPLETE — v1.0.0 published to npm on 2026-06-18
 > **Reference spec:** [`docs/technical_specification.md`](./technical_specification.md)
 > **Target engine:** Pino 10.x + OpenTelemetry SDK 1.x (optional)
 > **Derived document:** `docs/development_tasks.md` (Layer 3 — generated from this plan)
