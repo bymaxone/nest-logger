@@ -35,14 +35,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      # Flags PRs that introduce dependencies with known vulnerabilities or
+      # Blocks PRs that introduce dependencies with known vulnerabilities or
       # license violations. PR-only — on push to main there is no base ref to
       # diff against. Requires the repo's Dependency Graph to be enabled
-      # (Settings → Code security → Dependency graph); kept non-blocking until
-      # it is enabled. Remove continue-on-error once the graph is active.
+      # (Settings → Code security → Dependency graph). Free on public repos.
       - name: Dependency review
         if: github.event_name == 'pull_request'
-        continue-on-error: true
         uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
