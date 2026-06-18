@@ -83,7 +83,15 @@ jobs:
         # the GitHub OIDC token (`id-token: write` above) for a short-lived
         # publish credential. `--no-git-checks` is required because the CI
         # runner checks out a detached HEAD at the tag SHA.
-        run: pnpm publish --provenance --no-git-checks
+        # Skips gracefully when the version was already published manually
+        # (e.g. during the bootstrap of the first release).
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if npm view "@bymax-one/nest-logger@${PKG_VERSION}" version 2>/dev/null | grep -qF "$PKG_VERSION"; then
+            echo "Version ${PKG_VERSION} already published on npm — skipping publish step."
+          else
+            pnpm publish --provenance --no-git-checks
+          fi
 
       - name: Extract release notes from CHANGELOG
         # Pulls the section for the current tag out of CHANGELOG.md so the
