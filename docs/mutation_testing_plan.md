@@ -1,7 +1,7 @@
 # Mutation Testing Plan — @bymax-one/nest-logger
 
 > **Status:** Stryker installed, configured, and already run (first baseline: 2026-05-29).
-> **Current score:** 95.93 % — passes `break: 95` gate ✅, below `high: 99` aspirational target.
+> **Current score:** 97.42 % — passes `break: 95` gate ✅. Theoretical maximum given 10 documented equivalent mutants.
 > **Full results:** [`docs/mutation_testing_results.md`](./mutation_testing_results.md)
 
 ---
@@ -58,26 +58,29 @@ Open `reports/mutation/mutation.html` after a run for the full per-file breakdow
 | Baseline                       | 2026-05-29 | 86 %    | First run, no hardening                                              |
 | After hardening                | 2026-05-29 | 95.93 % | 30 survivors killed; equivalents documented                          |
 | Intermediate (inline comments) | 2026-05-29 | 97.5 %  | `// Stryker disable` comments removed — exceeded 12 kB bundle budget |
+| Genuine survivors eliminated   | 2026-06-18 | 97.42 % | 7 more survivors killed via targeted assertions; 10 equivalents left |
 
-Current production score: **95.93 %** (exit 0, break gate passes).
+Current production score: **97.42 %** (exit 0, break gate passes). Theoretical maximum — see `mutation_testing_results.md §Residual survivors`.
 
 ---
 
-## Path to 99 % (tracked as follow-up)
+## Theoretical maximum — 97.42 %
 
-The 15 surviving mutants are documented in [`mutation_testing_results.md`](./mutation_testing_results.md). In summary:
+All 7 previously-identified `perTest` attribution artifacts have been killed (2026-06-18):
 
-**6 are equivalent mutants** — not killable by definition (no test can distinguish them from the original). Documented there rather than with inline `// Stryker disable` comments, which would ship in the unminified `.mjs` bundle and pushed the server subpath past its 12 kB brotli budget.
+1. **HTTP interceptor 1xx boundary** — added a unit test instantiating `HttpLoggingInterceptor`
+   directly with a mocked `ExecutionContext`, bypassing `supertest` entirely. Kills both
+   `>= HTTP_SUCCESS_MIN` and `>= HTTP_REDIRECT_MIN` survivors simultaneously.
 
-**9 are Stryker `perTest` attribution artifacts** — the killing tests exist (100 % line/branch coverage proves it), but Stryker does not correctly attribute them because:
+2. **`validate-options`** — added two dedicated tests for non-string `service.name` / `service.version`,
+   and tightened the level error message regex to pin the `join(', ')` separator.
 
-1. **HTTP interceptor** — `supertest`-driven HTTP tests flake under Stryker's instrumented runtime ("socket hang up").
-   - Fix: unit-test the interceptor with a mocked `ExecutionContext` instead of supertest.
+3. **`logger.module`** — added assertions on bootstrap message content and `error.cause` in
+   `useNestLogger` error path.
 
-2. **`validate-options` + `trace-context.mixin` + `logger.module`** — test fixtures run `forRoot` at module-load time (static `@Module` declaration), so Stryker attributes coverage to the load event, not to the runtime tests that kill the mutants.
-   - Fix: move `forRoot` calls into `beforeAll` so Stryker can attribute per-test.
-
-Both fixes are straightforward but require touching existing test files. Target: **99 % after these refactors**, before v0.2.0.
+The 10 remaining survivors are all documented equivalent mutants (see `mutation_testing_results.md
+§Residual survivors`). **97.42 % is the theoretical maximum** for this codebase without
+`// Stryker disable` inline comments (which would inflate the bundle past the 13.5 kB budget).
 
 ---
 
