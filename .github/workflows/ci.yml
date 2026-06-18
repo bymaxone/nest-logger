@@ -35,16 +35,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      # Flags PRs that introduce dependencies with known vulnerabilities or
+      # Blocks PRs that introduce dependencies with known vulnerabilities or
       # license violations. PR-only — on push to main there is no base ref to
       # diff against. Requires the repo's Dependency Graph to be enabled
-      # (Settings → Code security → Dependency graph); until it is, the action
-      # errors with "not supported on this repository", so this step is kept
-      # non-blocking. Socket Security remains the hard dependency-vulnerability
-      # gate on PRs in the meantime.
+      # (Settings → Code security → Dependency graph). Free on public repos.
       - name: Dependency review
         if: github.event_name == 'pull_request'
-        continue-on-error: true
         uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
