@@ -43,7 +43,7 @@ The library has **zero direct dependencies** — all packages arrive as peer dep
 
 - **🎯 One module, the whole pipeline** — Logger service, HTTP interceptor, exception filter, context propagation, redaction, and destinations arrive in a single `forRoot()`. No gluing together `pino-http`, a redaction layer, and a transport by hand.
 - **🔌 Your sinks, your rules** — The library defines `ILogDestination`. You implement it for Loki, Postgres, a rolling file, or anything else. No vendor lock-in, no hidden transport dependencies.
-- **🔒 Private by default** — 113 redact paths compile at bootstrap covering passwords, tokens, PCI DSS card data, MFA secrets, and LGPD documents. Leaking a secret requires opting out, not opting in.
+- **🔒 Redacted by default** — 113 redact paths compile at bootstrap covering the standard set: passwords, tokens, PCI DSS card data, MFA secrets, and LGPD documents. Domain-specific field names are yours to add via `redactPaths`.
 - **⚡ On the hot path, so it stays cheap** — Singleton providers, one composed Pino mixin, and a pre-compiled redactor. No `Scope.REQUEST`, no per-log regex matching.
 - **🔭 Correlated when you need it** — When an OpenTelemetry span is active, `traceId`/`spanId`/`traceFlags` land in every entry. When the peer is absent, the mixin steps aside at zero cost.
 
@@ -61,7 +61,7 @@ pnpm add @bymax-one/nest-logger
 - ✅ **`MODULE_ACTION_RESULT` Log Keys** — a naming convention enforced by an exported regex for CI validation
 - ✅ **NestJS `LoggerService` Bridge** — drop-in replacement; all NestJS internal logs flow through Pino
 - ✅ **Pretty-Print in Dev** — opt-in `PrettyDevDestination` for readable local output (requires optional `pino-pretty`)
-- ✅ **Entry Size Guard** — truncates oversized entries (default 64 KB) with a structured warning instead of silently dropping them
+- ✅ **Field Size Guard** — a serialized field over the ceiling (default 64 KB) is replaced by a compact truncation envelope instead of flooding the sink
 
 ### 🛡️ Security & Privacy
 
@@ -81,8 +81,8 @@ pnpm add @bymax-one/nest-logger
 ### 🔌 Destinations
 
 - ✅ **Pluggable Destinations** — implement `ILogDestination` to ship logs to Loki, Postgres, rolling files, or any sink
-- ✅ **Zero-Downtime Lifecycle** — `onInit()` / `onShutdown()` hooks; a failing destination is removed without affecting others
-- ✅ **Crash-Proof Writes** — every `write()` is wrapped in a try/catch and reported as a meta-log, never propagated to the app
+- ✅ **Managed Lifecycle** — `onInit()` / `onShutdown()` hooks; a destination that fails `onInit()` is reported and excluded from shutdown, and boot is never aborted
+- ✅ **Crash-Proof Writes** — every `write()` is wrapped in a try/catch; a failure is reported on `stderr` and swallowed, never propagated to the app
 
 ### 🧩 Developer Experience
 
@@ -98,10 +98,10 @@ pnpm add @bymax-one/nest-logger
 
 One package, two entry points — import only what your app needs:
 
-| Subpath    | Import                          | Purpose                                                                         |  Dependencies   |
-| ---------- | ------------------------------- | ------------------------------------------------------------------------------- | :-------------: |
-| **Server** | `@bymax-one/nest-logger`        | NestJS module, logger service, interceptor, filter, decorators, destinations    | NestJS 11, pino |
-| **Shared** | `@bymax-one/nest-logger/shared` | Types, constants, the log-key regex — `LogLevel`, `LogEntry`, `ServiceMetadata` |      None       |
+| Subpath    | Import                          | Purpose                                                                         |              Dependencies               |
+| ---------- | ------------------------------- | ------------------------------------------------------------------------------- | :-------------------------------------: |
+| **Server** | `@bymax-one/nest-logger`        | NestJS module, logger service, interceptor, filter, decorators, destinations    | NestJS 11, pino, rxjs, reflect-metadata |
+| **Shared** | `@bymax-one/nest-logger/shared` | Types, constants, the log-key regex — `LogLevel`, `LogEntry`, `ServiceMetadata` |                  None                   |
 
 ```
 shared (zero deps)
@@ -146,7 +146,7 @@ pnpm add @opentelemetry/api @opentelemetry/sdk-node
 ```
 
 > [!NOTE]
-> `@opentelemetry/api` is detected at bootstrap. When it is absent the trace mixin steps aside and logs a single `LOGGER_OTEL_API_UNAVAILABLE` info entry — the logger never fails to start over an optional peer.
+> `@opentelemetry/api` is resolved lazily when the Pino instance is built. When it is absent the trace mixin silently steps aside — the logger never fails to start, and never warns, over an optional peer.
 
 ### 2. Register the module
 
@@ -366,7 +366,7 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 | `redactPaths`                | `string[]`          | `[]`            | Additional `fast-redact` paths merged with the defaults                                                                  |
 | `shouldDisableDefaultRedact` | `boolean`           | `false`         | Skip the 113 default PII paths. ⚠️ Emits a bootstrap warning — document why                                              |
 | `redactCensor`               | `string`            | `'[REDACTED]'`  | Replacement value written in place of every redacted field                                                               |
-| `maxEntrySizeBytes`          | `number`            | `65536`         | Entries larger than this are replaced by a structured `LOGGER_ENTRY_TRUNCATED` warning                                   |
+| `maxEntrySizeBytes`          | `number`            | `65536`         | UTF-8 byte ceiling per serialized field (`err` + any custom serializer); over it the value becomes a truncation envelope |
 | `destinations`               | `ILogDestination[]` | `[]`            | Additional sinks (Loki, Postgres, rolling file, …) alongside default stdout                                              |
 
 ### `http` options
@@ -666,11 +666,11 @@ Trace context is never copied verbatim into a log entry. The OTel mixin reads th
 
 ### Destination failures are contained
 
-Every `write()` runs inside a try/catch. A destination that throws produces a `LOGGER_DESTINATION_WRITE_FAILED` line on `stderr` and the entry is skipped for that sink only; a destination whose `onInit()` rejects is reported as `LOGGER_DESTINATION_INIT_FAILED` and dropped from the active set without blocking boot. A logging backend going down degrades logging — it never takes the application with it.
+Every `write()` runs inside a try/catch. A destination that throws or rejects produces a `LOGGER_DESTINATION_WRITE_FAILED` line on `stderr` — never back through the logger, which would turn a broken sink into a write → log → write feedback loop — and the entry is dropped for that sink only. A destination whose `onInit()` rejects is reported as `LOGGER_DESTINATION_INIT_FAILED` and excluded from the shutdown sequence without blocking boot; it stays in the write fan-out, where the same fail-soft wrapper contains it. A logging backend going down degrades logging — it never takes the application with it.
 
-### Bounded entry size
+### Bounded field size
 
-Entries larger than `maxEntrySizeBytes` (64 KB by default) are replaced by a structured `LOGGER_ENTRY_TRUNCATED` warning rather than being written or silently dropped. This bounds the memory and bandwidth one oversized payload can consume, and leaves a record that truncation happened.
+Every serializer — the default `err` one and any you supply — is wrapped so a field whose serialized JSON exceeds `maxEntrySizeBytes` (64 KB by default) is replaced by a compact envelope: `_truncated`, `_logKey: 'LOGGER_ENTRY_TRUNCATED'`, `_originalSize`, and a 200-character `_preview`. An accidentally logged webhook payload costs a bounded number of bytes and leaves a record that truncation happened, instead of flooding the sink.
 
 ### Security Checklist
 
@@ -687,20 +687,20 @@ When integrating `@bymax-one/nest-logger` in production, verify each of the foll
 
 ## 🛡️ Security Table
 
-| Layer               | Implementation                                                                                                 |
-| ------------------- | -------------------------------------------------------------------------------------------------------------- |
-| PII Redaction       | 113 `fast-redact` paths compiled once at bootstrap — no per-log regex matching                                 |
-| Credentials         | `password`, `passwordHash`, `token`, `accessToken`, `refreshToken`, `apiKey`, `apiSecret`, `privateKey`        |
-| MFA Secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret` — redacted at wildcard depths 1–4                                |
-| PCI DSS             | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                            |
-| LGPD Documents      | `cpf`, `cnpj`, `rg`, plus `email` as a conservative default                                                    |
-| HTTP Headers        | `authorization`, `cookie`, `x-api-key`, `x-auth-token`, `set-cookie` — absolute paths on `req` / `res`         |
-| Redact List         | `DEFAULT_REDACT_PATHS` is append-only; removal requires a major version                                        |
-| Trace Injection     | `isValidTraceId` / `isValidSpanId` validated before any identifier is written                                  |
-| URL Cardinality     | UUIDs and numeric IDs normalized to `:id` — bounds label cardinality and keeps raw identifiers out of the path |
-| Destination Failure | Every `write()` try/catch-wrapped; a failing sink is skipped or dropped, never propagated to the caller        |
-| Entry Size          | Hard cap at `maxEntrySizeBytes` (64 KB default) with a structured truncation warning                           |
-| Supply Chain        | `"dependencies": {}` — no transitive runtime packages of the library's own choosing                            |
+| Layer               | Implementation                                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| PII Redaction       | 113 `fast-redact` paths compiled once at bootstrap — no per-log regex matching                                     |
+| Credentials         | `password`, `passwordHash`, `token`, `accessToken`, `refreshToken`, `apiKey`, `apiSecret`, `privateKey`            |
+| MFA Secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret` — redacted at wildcard depths 1–4                                    |
+| PCI DSS             | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                |
+| LGPD Documents      | `cpf`, `cnpj`, `rg`, plus `email` as a conservative default                                                        |
+| HTTP Headers        | `authorization`, `cookie`, `x-api-key`, `x-auth-token`, `set-cookie` — absolute paths on `req` / `res`             |
+| Redact List         | `DEFAULT_REDACT_PATHS` is append-only; removal requires a major version                                            |
+| Trace Injection     | `isValidTraceId` / `isValidSpanId` validated before any identifier is written                                      |
+| URL Cardinality     | UUIDs and numeric IDs normalized to `:id` — bounds label cardinality and keeps raw identifiers out of the path     |
+| Destination Failure | Every `write()` try/catch-wrapped; a failure is reported on `stderr` and swallowed, never propagated to the caller |
+| Field Size          | Per-field UTF-8 cap at `maxEntrySizeBytes` (64 KB default); oversized values become a truncation envelope          |
+| Supply Chain        | `"dependencies": {}` — no transitive runtime packages of the library's own choosing                                |
 
 > [!IMPORTANT]
 > Redaction protects the fields it knows about. Any new field carrying a secret or a personal document must be added to `redactPaths` — the default list covers the standard set, not your domain's.
@@ -812,16 +812,19 @@ interface ILogDestination {
 
 ## 🚨 Error Code Catalog
 
-| Code                              | Severity          | When                                                     | Action                                                                |
-| --------------------------------- | ----------------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
-| `LOGGER_INVALID_OPTIONS`          | Throws at init    | `service.name` or `service.version` missing              | Add the required fields                                               |
-| `LOGGER_INVALID_LEVEL`            | Throws at init    | `level` is not a valid Pino value                        | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`              |
-| `LOGGER_PRETTY_UNAVAILABLE`       | Warn on bootstrap | `isPretty: true` but `pino-pretty` not installed         | Install `pino-pretty` or set `isPretty: false`                        |
-| `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap | OTel mixin active but `@opentelemetry/api` not installed | Install the package or set `otel.shouldAutoInjectTraceContext: false` |
-| `LOGGER_DESTINATION_INIT_FAILED`  | Error (logged)    | `destination.onInit()` rejects                           | Destination is removed; other destinations continue                   |
-| `LOGGER_DESTINATION_WRITE_FAILED` | Warn (logged)     | `destination.write()` throws                             | Entry skipped for that destination; others continue                   |
-| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Throws            | `LogContextService.set()` called outside `run()`         | Wrap in `logContext.run({ ... }, () => ...)`                          |
-| `LOGGER_ENTRY_TRUNCATED`          | Warn (meta-log)   | Entry exceeds `maxEntrySizeBytes`                        | Reduce metadata or raise the limit                                    |
+| Code                              | Surfaces as                  | When                                                              | Action                                                                |
+| --------------------------------- | ---------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `LOGGER_INVALID_OPTIONS`          | Thrown `Error` at init       | `service`, `service.name`, or `service.version` missing or empty  | Add the required fields                                               |
+| `LOGGER_INVALID_LEVEL`            | Thrown `Error` at init       | `level` is not a valid Pino value                                 | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`              |
+| `LOGGER_PRETTY_UNAVAILABLE`       | Thrown `Error` at `onInit()` | `PrettyDevDestination` registered but `pino-pretty` not installed | Install `pino-pretty` or drop the destination                         |
+| `LOGGER_OTEL_API_UNAVAILABLE`     | Nothing emitted              | `@opentelemetry/api` cannot be resolved                           | None — the trace mixin steps aside silently                           |
+| `LOGGER_DESTINATION_INIT_FAILED`  | Structured error log         | `destination.onInit()` rejects                                    | Sink is excluded from shutdown; boot continues, writes stay fail-soft |
+| `LOGGER_DESTINATION_WRITE_FAILED` | NDJSON line on `stderr`      | `destination.write()` throws or rejects                           | Entry dropped for that destination; others continue                   |
+| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Thrown `Error`               | `LogContextService.set()` called outside `run()`                  | Wrap in `logContext.run({ ... }, () => ...)`                          |
+| `LOGGER_ENTRY_TRUNCATED`          | `_logKey` in the envelope    | A serialized field exceeds `maxEntrySizeBytes`                    | Reduce the payload or raise the ceiling                               |
+
+> [!NOTE]
+> The codes above name the condition, not a machine-readable field. Thrown errors carry a human-readable message prefixed with the emitting class (e.g. `[BymaxLoggerModule] options.service is required`), not the code string.
 
 ---
 
