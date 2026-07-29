@@ -19,6 +19,13 @@ heading here.
   kept on their maintenance releases because `minimatch` 3 and 9 consume
   `brace-expansion` as a default export, which the 5.x line no longer provides.
   Dev-only: the published package has zero runtime dependencies.
+- Force `qs` to `^6.15.3` (via `pnpm.overrides`) to clear GHSA-q8mj-m7cp-5q26
+  (`qs.stringify` DoS). `typed-rest-client`, pulled in by Stryker, pins `qs` at
+  the affected `6.15.1` exactly, so no dependency refresh could resolve it
+- Pin every third-party and GitHub-owned action to a full commit SHA, with the
+  release tag kept as a trailing comment so Dependabot can still bump them. The
+  org's own `bymaxone/.github` reusable workflows and composite action stay on
+  the `@v1` moving tag by design, so shared-pipeline fixes keep propagating
 
 ### Changed
 
