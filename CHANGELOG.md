@@ -11,6 +11,28 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **CommonJS consumers no longer receive ESM type declarations.** Both subpaths
+  now declare `types` per condition, so `require()` resolves to the `.d.cts`
+  declarations that match the `.cjs` runtime. Previously a single `types` entry
+  pointed at the `.d.ts` files, which — with `"type": "module"` — TypeScript
+  reads as ESM, so a project on `moduleResolution: node16` / `nodenext`
+  importing from CommonJS got declarations for the wrong module format.
+- Added top-level `main`, `module` and `types` so the root entrypoint also
+  resolves under the legacy `moduleResolution: node` algorithm. The `./shared`
+  subpath remains unresolvable in that mode, which is inherent to subpath
+  exports and not fixable without a directory shim.
+- Exposed `./package.json` through the `exports` map. Reading it previously
+  failed with `ERR_PACKAGE_PATH_NOT_EXPORTED`, which breaks tooling that
+  inspects an installed package's manifest.
+
+### Added
+
+- `pnpm check:exports` (`@arethetypeswrong/cli`) — packs the tarball and
+  resolves every entrypoint the way each module resolution mode would. Wired
+  into CI and into the release workflow ahead of the publish step.
+
 ## [1.0.1] - 2026-07-29
 
 Supply-chain and tooling hardening only. `src/` is unchanged since 1.0.0, so the

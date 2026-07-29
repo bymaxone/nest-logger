@@ -22,16 +22,30 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.mjs",
-      "require": "./dist/server/index.cjs"
+      "import": {
+        "types": "./dist/server/index.d.ts",
+        "default": "./dist/server/index.mjs"
+      },
+      "require": {
+        "types": "./dist/server/index.d.cts",
+        "default": "./dist/server/index.cjs"
+      }
     },
     "./shared": {
-      "types": "./dist/shared/index.d.ts",
-      "import": "./dist/shared/index.mjs",
-      "require": "./dist/shared/index.cjs"
-    }
+      "import": {
+        "types": "./dist/shared/index.d.ts",
+        "default": "./dist/shared/index.mjs"
+      },
+      "require": {
+        "types": "./dist/shared/index.d.cts",
+        "default": "./dist/shared/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
   },
+  "main": "./dist/server/index.cjs",
+  "module": "./dist/server/index.mjs",
+  "types": "./dist/server/index.d.cts",
   "scripts": {
     "build": "pnpm clean && tsup",
     "lint": "eslint src",
@@ -48,6 +62,7 @@
     "bench": "node --expose-gc --import tsx bench/throughput.bench.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
     "size": "node scripts/check-size.mjs",
+    "check:exports": "attw --pack . --profile node16",
     "clean": "rm -rf dist coverage",
     "prepublishOnly": "pnpm clean && pnpm typecheck && pnpm lint && pnpm test:cov:all && pnpm build",
     "release": "pnpm publish --provenance",
@@ -66,11 +81,11 @@
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
+    "@opentelemetry/api": "^1.9.0",
     "pino": "^10.0.0",
-    "reflect-metadata": "^0.2.0",
-    "rxjs": "^7.8.0",
     "pino-pretty": "^13.0.0",
-    "@opentelemetry/api": "^1.9.0"
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.8.0"
   },
   "peerDependenciesMeta": {
     "pino-pretty": {
@@ -81,6 +96,7 @@
     }
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@commitlint/cli": "^21.0.2",
     "@commitlint/config-conventional": "^21.0.2",
     "@eslint/js": "^9.39.4",

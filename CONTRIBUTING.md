@@ -35,7 +35,7 @@ everything ships as a `peerDependency` or a `node:` builtin. Conventions live in
 ## Verification — run before every PR
 
 ```bash
-pnpm typecheck && pnpm lint && pnpm test:cov:all && pnpm build && pnpm size
+pnpm typecheck && pnpm lint && pnpm test:cov:all && pnpm build && pnpm size && pnpm check:exports
 ```
 
 All of the following must pass:
