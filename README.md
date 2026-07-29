@@ -39,59 +39,116 @@
 
 The library has **zero direct dependencies** — all packages arrive as peer dependencies, so you control exact versions and the supply chain surface stays minimal.
 
+### Why nest-logger?
+
+- **🎯 One module, the whole pipeline** — Logger service, HTTP interceptor, exception filter, context propagation, redaction, and destinations arrive in a single `forRoot()`. No gluing together `pino-http`, a redaction layer, and a transport by hand.
+- **🔌 Your sinks, your rules** — The library defines `ILogDestination`. You implement it for Loki, Postgres, a rolling file, or anything else. No vendor lock-in, no hidden transport dependencies.
+- **🔒 Redacted by default** — 113 redact paths compile at bootstrap covering the standard set: passwords, tokens, PCI DSS card data, MFA secrets, and LGPD documents. Domain-specific field names are yours to add via `redactPaths`.
+- **⚡ On the hot path, so it stays cheap** — Singleton providers, one composed Pino mixin, and a pre-compiled redactor. No `Scope.REQUEST`, no per-log regex matching.
+- **🔭 Correlated when you need it** — When an OpenTelemetry span is active, `traceId`/`spanId`/`traceFlags` land in every entry. When the peer is absent, the mixin steps aside at zero cost.
+
+```
+pnpm add @bymax-one/nest-logger
+```
+
 ---
 
 ## 🔥 Features
 
-- **Structured JSON** — every entry has `level`, `time`, `service`, `logKey`, `msg`, and arbitrary metadata fields
-- **PII redaction by default** — 113 paths covering passwords, tokens, generic secrets, PCI DSS card data, MFA secrets, CPF/CNPJ/RG (LGPD), and common HTTP headers — powered by `fast-redact`
-- **OpenTelemetry correlation** — optional `@opentelemetry/api` peer; injects `traceId`/`spanId`/`traceFlags` into every log via a Pino mixin when an active span is detected
-- **AsyncLocalStorage context** — `requestId`, `tenantId`, `userId` flow automatically through the request lifecycle without prop drilling
-- **HTTP logging interceptor** — auto-logs all HTTP requests/responses with URL normalization (UUIDs and numeric IDs replaced by `:id` placeholder)
-- **Exception filter** — captures NestJS `HttpException` and unexpected errors with structured output
-- **Pluggable destinations** — implement `ILogDestination` to ship logs to Loki, Postgres, rolling files, or any sink
-- **NestJS `LoggerService` bridge** — drop-in replacement; all NestJS internal logs flow through Pino
-- **`MODULE_ACTION_RESULT` log key convention** — enforced by an exported regex for CI validation
-- **Pretty-print in dev** — auto-enabled when `NODE_ENV !== 'production'` (requires optional `pino-pretty`)
-- **Entry size guard** — truncates oversized entries (default 64 KB) with a structured warning instead of silently dropping them
-- **Zero-downtime destination lifecycle** — `onInit()` / `onShutdown()` hooks; a failing destination is removed without affecting others
+### 📝 Core Logging
+
+- ✅ **Structured JSON** — every entry has `level`, `time`, `service`, `logKey`, `msg`, and arbitrary metadata fields
+- ✅ **`MODULE_ACTION_RESULT` Log Keys** — a naming convention enforced by an exported regex for CI validation
+- ✅ **NestJS `LoggerService` Bridge** — drop-in replacement; all NestJS internal logs flow through Pino
+- ✅ **Pretty-Print in Dev** — opt-in `PrettyDevDestination` for readable local output (requires optional `pino-pretty`)
+- ✅ **Field Size Guard** — a serialized field over the ceiling (default 64 KB) is replaced by a compact truncation envelope instead of flooding the sink
+
+### 🛡️ Security & Privacy
+
+- ✅ **PII Redaction by Default** — 113 paths covering passwords, tokens, and generic secrets — powered by `fast-redact`
+- ✅ **PCI DSS & MFA Coverage** — card data and MFA secrets redacted out of the box, with common HTTP auth headers
+- ✅ **LGPD-Aware Paths** — CPF, CNPJ, and RG redacted by default for Brazilian workloads
+- ✅ **Append-Only Redact List** — `DEFAULT_REDACT_PATHS` never shrinks without a major version; extend it via `redactPaths`
+- ✅ **Validated Trace IDs** — OTel identifiers pass `isValidTraceId` before injection, never raw user input
+
+### 🔍 Observability & Context
+
+- ✅ **OpenTelemetry Correlation** — optional `@opentelemetry/api` peer; injects `traceId`/`spanId`/`traceFlags` into every log via a Pino mixin when an active span is detected
+- ✅ **AsyncLocalStorage Context** — `requestId`, `tenantId`, `userId` flow automatically through the request lifecycle without prop drilling
+- ✅ **HTTP Logging Interceptor** — auto-logs all HTTP requests/responses with URL normalization (UUIDs and numeric IDs replaced by `:id`)
+- ✅ **Exception Filter** — captures NestJS `HttpException` and unexpected errors with structured output
+
+### 🔌 Destinations
+
+- ✅ **Pluggable Destinations** — implement `ILogDestination` to ship logs to Loki, Postgres, rolling files, or any sink
+- ✅ **Managed Lifecycle** — `onInit()` / `onShutdown()` hooks; a destination that fails `onInit()` is reported and excluded from shutdown, and boot is never aborted
+- ✅ **Crash-Proof Writes** — every `write()` is wrapped in a try/catch; a failure is reported on `stderr` and swallowed, never propagated to the app
+
+### 🧩 Developer Experience
+
+- ✅ **Zero Runtime Dependencies** — everything arrives as a peer dependency, so you control versions and supply-chain surface
+- ✅ **2 Subpath Exports** — `.` for the NestJS server API, `./shared` for zero-dependency types and constants
+- ✅ **Dynamic Module** — configure via `forRoot()` or `forRootAsync()`, sensible defaults included
+- ✅ **Strict TypeScript** — `strict: true`, no `any` in production code, JSDoc on every public export
+- ✅ **100% Coverage + Mutation Tested** — statements, branches, functions, and lines gated at 100%, with Stryker as the deeper gate
 
 ---
 
 ## 📦 Subpath Exports
 
-The package ships two entry points:
+One package, two entry points — import only what your app needs:
 
-| Import path                     | Contents                                                                                                                       | Deps                    |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------- |
-| `@bymax-one/nest-logger`        | Full server API: `BymaxLoggerModule`, `PinoLoggerService`, `LogContextService`, destinations, decorators, interceptors         | NestJS + Pino peer deps |
-| `@bymax-one/nest-logger/shared` | Zero-dependency utilities: `LOG_KEYS_CONVENTION_REGEX`, `RESERVED_LOG_KEYS`, types (`LogLevel`, `LogEntry`, `ServiceMetadata`) | None                    |
+| Subpath    | Import                          | Purpose                                                                         |              Dependencies               |
+| ---------- | ------------------------------- | ------------------------------------------------------------------------------- | :-------------------------------------: |
+| **Server** | `@bymax-one/nest-logger`        | NestJS module, logger service, interceptor, filter, decorators, destinations    | NestJS 11, pino, rxjs, reflect-metadata |
+| **Shared** | `@bymax-one/nest-logger/shared` | Types, constants, the log-key regex — `LogLevel`, `LogEntry`, `ServiceMetadata` |                  None                   |
+
+```
+shared (zero deps)
+     ↑
+  server
+```
 
 The `/shared` subpath is safe to import in isomorphic code, test helpers, CLI scripts, or shared packages that must not pull in NestJS.
 
 ---
 
-## 📥 Installation
-
-```bash
-# Install the library
-pnpm add @bymax-one/nest-logger
-
-# Required peer dependencies
-pnpm add pino reflect-metadata
-
-# Optional — pretty dev output
-pnpm add -D pino-pretty
-
-# Optional — OpenTelemetry correlation
-pnpm add @opentelemetry/api @opentelemetry/sdk-node
-```
-
----
+> [!TIP]
+> Prefer to learn from a working app? See the [nest-logger-example](https://github.com/bymaxone/nest-logger-example) — a full NestJS project wired with this library.
 
 ## 🚀 Quick Start
 
-### Step 1 — Register the module
+### 1. Install
+
+```bash
+# Using pnpm (recommended)
+pnpm add @bymax-one/nest-logger
+
+# Using npm
+npm install @bymax-one/nest-logger
+
+# Using yarn
+yarn add @bymax-one/nest-logger
+```
+
+> [!IMPORTANT]
+> You must also install the required **peer dependencies**. The library ships `"dependencies": {}`, so nothing arrives implicitly:
+
+```bash
+# Server subpath (required)
+pnpm add @nestjs/common @nestjs/core pino reflect-metadata rxjs
+
+# Optional — pretty local output via PrettyDevDestination
+pnpm add -D pino-pretty
+
+# Optional — OpenTelemetry trace correlation
+pnpm add @opentelemetry/api @opentelemetry/sdk-node
+```
+
+> [!NOTE]
+> `@opentelemetry/api` is resolved lazily when the Pino instance is built. When it is absent the trace mixin silently steps aside — the logger never fails to start, and never warns, over an optional peer.
+
+### 2. Register the module
 
 ```typescript
 // app.module.ts
@@ -110,9 +167,9 @@ import { BymaxLoggerModule } from '@bymax-one/nest-logger'
 export class AppModule {}
 ```
 
-`isPretty` defaults to `true` when `NODE_ENV !== 'production'` — no extra config needed in development.
+Stdout is wired automatically — `DefaultStdoutDestination` is always active, so this is all you need to be logging structured JSON.
 
-### Step 2 — Async configuration with `ConfigService`
+### 3. Async configuration with `ConfigService`
 
 ```typescript
 // app.module.ts
@@ -140,7 +197,7 @@ import { BymaxLoggerModule } from '@bymax-one/nest-logger'
 export class AppModule {}
 ```
 
-### Step 3 — Inject the logger in a service
+### 4. Inject the logger in a service
 
 ```typescript
 // payments.service.ts
@@ -209,7 +266,7 @@ Output (pretty-print, development):
     stripeRefundId: "re_abc"
 ```
 
-### Step 4 — HTTP logging (automatic)
+### 5. HTTP logging (automatic)
 
 Enable `http.isEnabled: true` in the module options. The `HttpLoggingInterceptor` is registered globally and emits:
 
@@ -225,7 +282,7 @@ Enable `http.isEnabled: true` in the module options. The `HttpLoggingInterceptor
 
 URLs are automatically normalized — `/users/550e8400-e29b-41d4-a716-446655440000` becomes `/users/:id` so Loki/Grafana cardinality stays bounded.
 
-### Step 5 — OpenTelemetry correlation
+### 6. OpenTelemetry correlation
 
 Initialize the OTel SDK **before** importing NestJS — this is critical:
 
@@ -271,7 +328,7 @@ void bootstrap()
 
 Once active, every log entry automatically carries `traceId`, `spanId`, and `traceFlags`. Click the `traceId` in Grafana to jump directly to the correlated span in Tempo or Honeycomb.
 
-### Step 6 — Context propagation with `LogContextService`
+### 7. Context propagation with `LogContextService`
 
 ```typescript
 // request-id.middleware.ts
@@ -300,17 +357,17 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
 ### Top-level options
 
-| Option                       | Type                 | Default         | Description                                                                                                              |
-| ---------------------------- | -------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `service.name`               | `string`             | **Required**    | Service name emitted in every log entry                                                                                  |
-| `service.version`            | `string`             | **Required**    | Release version/SHA emitted in every log entry                                                                           |
-| `level`                      | `LogLevel`           | `'info'`        | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                             |
-| `isPretty`                   | `boolean`            | `!isProduction` | ⚠️ Reserved — not auto-wired. For pretty output add `new PrettyDevDestination()` to `destinations` (needs `pino-pretty`) |
-| `redactPaths`                | `string[]`           | `[]`            | Additional `fast-redact` paths merged with the defaults                                                                  |
-| `shouldDisableDefaultRedact` | `boolean`            | `false`         | Skip the 113 default PII paths. ⚠️ Emits a bootstrap warning — document why                                              |
-| `redactCensor`               | `string \| function` | `'[REDACTED]'`  | Replacement value for redacted fields. A function receives the raw value                                                 |
-| `maxEntrySizeBytes`          | `number`             | `65536`         | Entries larger than this are replaced by a structured `LOGGER_ENTRY_TRUNCATED` warning                                   |
-| `destinations`               | `ILogDestination[]`  | `[]`            | Additional sinks (Loki, Postgres, rolling file, …) alongside default stdout                                              |
+| Option                       | Type                | Default         | Description                                                                                                              |
+| ---------------------------- | ------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `service.name`               | `string`            | **Required**    | Service name emitted in every log entry                                                                                  |
+| `service.version`            | `string`            | **Required**    | Release version/SHA emitted in every log entry                                                                           |
+| `level`                      | `LogLevel`          | `'info'`        | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                             |
+| `isPretty`                   | `boolean`           | `!isProduction` | ⚠️ Reserved — not auto-wired. For pretty output add `new PrettyDevDestination()` to `destinations` (needs `pino-pretty`) |
+| `redactPaths`                | `string[]`          | `[]`            | Additional `fast-redact` paths merged with the defaults                                                                  |
+| `shouldDisableDefaultRedact` | `boolean`           | `false`         | Skip the 113 default PII paths. ⚠️ Emits a bootstrap warning — document why                                              |
+| `redactCensor`               | `string`            | `'[REDACTED]'`  | Replacement value written in place of every redacted field                                                               |
+| `maxEntrySizeBytes`          | `number`            | `65536`         | UTF-8 byte ceiling per serialized field (`err` + any custom serializer); over it the value becomes a truncation envelope |
+| `destinations`               | `ILogDestination[]` | `[]`            | Additional sinks (Loki, Postgres, rolling file, …) alongside default stdout                                              |
 
 ### `http` options
 
@@ -328,54 +385,6 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 | ----------------------------------- | ----------------------------- | ------------- | ------------------------------------------------------------------------ |
 | `otel.shouldAutoInjectTraceContext` | `boolean`                     | `true`        | Detect `@opentelemetry/api` and inject `traceId`/`spanId` via Pino mixin |
 | `otel.fieldFormat`                  | `'camelCase' \| 'snake_case'` | `'camelCase'` | Field names in log entries: `traceId`/`spanId` vs `trace_id`/`span_id`   |
-
----
-
-## 🔐 PII Redaction
-
-### Default paths
-
-The library ships **113 redact paths** compiled at initialization into a single `fast-redact` function (< 3% throughput impact). These cover:
-
-| Category                  | Fields                                                                                                                                    |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Passwords                 | `password`, `passwordHash`, `passwordConfirm`, `newPassword`, `oldPassword`                                                               |
-| Tokens                    | `token`, `accessToken`, `refreshToken`, `idToken`, `apiKey`, `apiSecret`                                                                  |
-| MFA                       | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret`                                                                                             |
-| Generic secrets           | `secret`, `clientSecret`, `signingSecret`, `privateKey`                                                                                   |
-| Payment / PCI DSS         | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                                       |
-| Personal documents (LGPD) | `cpf`, `cnpj`, `rg`                                                                                                                       |
-| Conservative PII          | `email`                                                                                                                                   |
-| HTTP headers (absolute)   | `req.headers.authorization`, `req.headers.cookie`, `req.headers["x-api-key"]`, `req.headers["x-auth-token"]`, `res.headers["set-cookie"]` |
-
-Every field is listed at wildcard depths 1–4 (`*.field`, `*.*.field`, `*.*.*.field`, `*.*.*.*.field`) because `fast-redact`'s `*` matches a single level only — not recursive.
-
-### Extending the defaults
-
-```typescript
-BymaxLoggerModule.forRoot({
-  service: { name: 'my-app', version: '1.0.0' },
-  redactPaths: [
-    '*.internalSecret', // depth-1 wildcard
-    'body.creditCard.*', // all fields inside a subobject
-    'payload.user.taxId' // exact path
-  ]
-})
-```
-
-The extra paths are **merged** with the defaults — never replacing them.
-
-### Disabling defaults (not recommended)
-
-```typescript
-BymaxLoggerModule.forRoot({
-  service: { name: 'my-app', version: '1.0.0' },
-  shouldDisableDefaultRedact: true, // ⚠️ emits LOGGER_BOOTSTRAP_WARNING
-  redactPaths: ['*.password'] // you own the full list
-})
-```
-
-A `LOGGER_BOOTSTRAP_WARNING` entry is emitted on startup so security reviews can audit when PII protection was intentionally reduced.
 
 ---
 
@@ -587,12 +596,151 @@ Application Service
     └─────────────────────────────┘
 ```
 
-**Key design decisions:**
+### Design Principles
 
-- **Singleton scope, not `Scope.REQUEST`** — `AsyncLocalStorage` delivers per-request context at zero latency overhead. NestJS request scope adds ~5% latency on the injection graph; unacceptable on a logger that runs every request.
-- **One Pino mixin** — ALS context and OTel trace context are composed into a single mixin. Merge order is deterministic: ALS fields first, then OTel (OTel wins on name conflicts because an active span is the authoritative trace identity).
-- **Zero direct dependencies** — the library ships with `"dependencies": {}`. All packages arrive as peer dependencies so consumers control exact versions.
-- **`fast-redact` compiled at init** — 113 paths compile once at module bootstrap into a specialized JS function. No per-log regex matching.
+| Principle                     | Description                                                                                                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **🪶 Singleton Scope**        | `AsyncLocalStorage` delivers per-request context at zero latency overhead — NestJS `Scope.REQUEST` adds ~5% on the injection graph, unacceptable on a logger that runs for every request         |
+| **🧬 One Composed Mixin**     | ALS context and OTel trace context merge into a single Pino mixin with a deterministic order: ALS first, then OTel — an active span is the authoritative trace identity, so it wins on conflicts |
+| **⚡ Compiled Redaction**     | 113 `fast-redact` paths compile once at module bootstrap into a specialized function; no per-log regex matching, under 3% throughput impact                                                      |
+| **🔌 Interface-Driven Sinks** | `ILogDestination` is a contract — Loki, Postgres, rolling files, or anything else is a consumer implementation, never a dependency of this package                                               |
+| **🌳 Zero Runtime Deps**      | `"dependencies": {}` — every package arrives as a peer dependency, so consumers pin exact versions and the supply-chain surface stays theirs                                                     |
+
+---
+
+## 🔐 Security Model
+
+A logger sees every payload the application handles, so the security posture is about what **never** reaches the sink — and about a sink failure never reaching the application.
+
+### Redaction by default
+
+The library ships **113 redact paths** compiled at initialization into a single `fast-redact` function (< 3% throughput impact). These cover:
+
+| Category                  | Fields                                                                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Passwords                 | `password`, `passwordHash`, `passwordConfirm`, `newPassword`, `oldPassword`                                                               |
+| Tokens                    | `token`, `accessToken`, `refreshToken`, `idToken`, `apiKey`, `apiSecret`                                                                  |
+| MFA                       | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret`                                                                                             |
+| Generic secrets           | `secret`, `clientSecret`, `signingSecret`, `privateKey`                                                                                   |
+| Payment / PCI DSS         | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                                       |
+| Personal documents (LGPD) | `cpf`, `cnpj`, `rg`                                                                                                                       |
+| Conservative PII          | `email`                                                                                                                                   |
+| HTTP headers (absolute)   | `req.headers.authorization`, `req.headers.cookie`, `req.headers["x-api-key"]`, `req.headers["x-auth-token"]`, `res.headers["set-cookie"]` |
+
+Every field is listed at wildcard depths 1–4 (`*.field`, `*.*.field`, `*.*.*.field`, `*.*.*.*.field`) because `fast-redact`'s `*` matches a single level only — not recursive.
+
+### Extending the defaults
+
+```typescript
+BymaxLoggerModule.forRoot({
+  service: { name: 'my-app', version: '1.0.0' },
+  redactPaths: [
+    '*.internalSecret', // depth-1 wildcard
+    'body.creditCard.*', // all fields inside a subobject
+    'payload.user.taxId' // exact path
+  ]
+})
+```
+
+The extra paths are **merged** with the defaults — never replacing them.
+
+### Disabling defaults (not recommended)
+
+```typescript
+BymaxLoggerModule.forRoot({
+  service: { name: 'my-app', version: '1.0.0' },
+  shouldDisableDefaultRedact: true, // ⚠️ emits LOGGER_BOOTSTRAP_WARNING
+  redactPaths: ['*.password'] // you own the full list
+})
+```
+
+A `LOGGER_BOOTSTRAP_WARNING` entry is emitted on startup so security reviews can audit when PII protection was intentionally reduced.
+
+### An append-only default list
+
+`DEFAULT_REDACT_PATHS` is append-only by contract: a path may be added in a minor release, but removing one requires a major version bump. A field that stopped being redacted silently is a leak that no consumer would notice — the version number is what makes it visible.
+
+### Validated trace identifiers
+
+Trace context is never copied verbatim into a log entry. The OTel mixin reads the active span and passes its identifiers through `isValidTraceId` / `isValidSpanId` before injecting them, so a malformed or attacker-influenced value cannot be written into the correlation fields your dashboards and alerts key on.
+
+### Destination failures are contained
+
+Every `write()` runs inside a try/catch. A destination that throws or rejects produces a `LOGGER_DESTINATION_WRITE_FAILED` line on `stderr` — never back through the logger, which would turn a broken sink into a write → log → write feedback loop — and the entry is dropped for that sink only. A destination whose `onInit()` rejects is reported as `LOGGER_DESTINATION_INIT_FAILED` and excluded from the shutdown sequence without blocking boot; it stays in the write fan-out, where the same fail-soft wrapper contains it. A logging backend going down degrades logging — it never takes the application with it.
+
+### Bounded field size
+
+Every serializer — the default `err` one and any you supply — is wrapped so a field whose serialized JSON exceeds `maxEntrySizeBytes` (64 KB by default) is replaced by a compact envelope: `_truncated`, `_logKey: 'LOGGER_ENTRY_TRUNCATED'`, `_originalSize`, and a 200-character `_preview`. An accidentally logged webhook payload costs a bounded number of bytes and leaves a record that truncation happened, instead of flooding the sink.
+
+### Security Checklist
+
+When integrating `@bymax-one/nest-logger` in production, verify each of the following:
+
+- `shouldDisableDefaultRedact` stays `false` — if it is on, the `LOGGER_BOOTSTRAP_WARNING` must be justified in a security review
+- Every custom field carrying a secret or personal document is added to `redactPaths` at the depths it actually appears
+- `http.excludePaths` regexes are anchored and linear-time — an unbounded pattern runs on every request URL (ReDoS)
+- Custom destinations never re-serialize the raw request object; they receive the already-redacted `LogEntry`
+- Destination credentials (Loki, Postgres, OTLP) come from the environment, never from values written into module options in source control
+- Log retention at the sink matches your data-retention policy — redaction bounds what is stored, not how long
+
+---
+
+## 🛡️ Security Table
+
+| Layer               | Implementation                                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| PII Redaction       | 113 `fast-redact` paths compiled once at bootstrap — no per-log regex matching                                     |
+| Credentials         | `password`, `passwordHash`, `token`, `accessToken`, `refreshToken`, `apiKey`, `apiSecret`, `privateKey`            |
+| MFA Secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret` — redacted at wildcard depths 1–4                                    |
+| PCI DSS             | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                |
+| LGPD Documents      | `cpf`, `cnpj`, `rg`, plus `email` as a conservative default                                                        |
+| HTTP Headers        | `authorization`, `cookie`, `x-api-key`, `x-auth-token`, `set-cookie` — absolute paths on `req` / `res`             |
+| Redact List         | `DEFAULT_REDACT_PATHS` is append-only; removal requires a major version                                            |
+| Trace Injection     | `isValidTraceId` / `isValidSpanId` validated before any identifier is written                                      |
+| URL Cardinality     | UUIDs and numeric IDs normalized to `:id` — bounds label cardinality and keeps raw identifiers out of the path     |
+| Destination Failure | Every `write()` try/catch-wrapped; a failure is reported on `stderr` and swallowed, never propagated to the caller |
+| Field Size          | Per-field UTF-8 cap at `maxEntrySizeBytes` (64 KB default); oversized values become a truncation envelope          |
+| Supply Chain        | `"dependencies": {}` — no transitive runtime packages of the library's own choosing                                |
+
+> [!IMPORTANT]
+> Redaction protects the fields it knows about. Any new field carrying a secret or a personal document must be added to `redactPaths` — the default list covers the standard set, not your domain's.
+
+---
+
+## 🧱 Tech Stack
+
+[![Pino](https://img.shields.io/badge/Pino-10-green?style=flat-square)](https://getpino.io)
+[![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?style=flat-square&logo=nestjs)](https://nestjs.com)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Node.js](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![Jest](https://img.shields.io/badge/Jest-30-C21325?style=flat-square&logo=jest)](https://jestjs.io)
+[![Stryker](https://img.shields.io/badge/Stryker-Mutation_Testing-red?style=flat-square)](https://stryker-mutator.io)
+[![pnpm](https://img.shields.io/badge/pnpm-10-F69220?style=flat-square&logo=pnpm&logoColor=white)](https://pnpm.io)
+[![tsup](https://img.shields.io/badge/tsup-8-orange?style=flat-square)](https://tsup.egoist.dev)
+
+---
+
+## 🧪 Testing & Quality
+
+A logger runs on every request of every service that installs it, so the suite is held to a bar beyond "it runs" — every behavior is pinned so that a regression **fails a test**.
+
+- ✅ **100% line coverage** — statements, branches, functions, and lines, enforced as a release gate across unit + e2e
+- ✅ **97.42% mutation score** — verified with [Stryker](https://stryker-mutator.io/) against a `break` threshold of 95; 97.42% is the theoretical maximum for this codebase
+- ✅ **Every survivor documented** — the 10 remaining mutants are equivalents, each recorded in [docs/mutation_testing_results.md](./docs/mutation_testing_results.md) rather than silenced with an inline comment, so the score is an accounting rather than a number
+- ✅ **No real I/O in unit tests** — the Pino instance and every destination are mocked; e2e tests exercise the wired module through `@nestjs/testing` and supertest
+
+```bash
+pnpm test              # unit tests (Jest)
+pnpm test:cov          # coverage report
+pnpm test:e2e          # end-to-end tests (supertest)
+pnpm test:cov:all      # full coverage gate (100% statements/branches/functions/lines)
+pnpm mutation          # Stryker mutation testing (95% break gate)
+pnpm typecheck         # tsc strict check (all tsconfig variants)
+pnpm lint              # ESLint
+```
+
+> [!NOTE]
+> Line coverage proves a line _executed_ under test; mutation testing proves a test _would fail_ if that line were wrong. The full methodology and per-area breakdown are in [docs/mutation_testing_results.md](./docs/mutation_testing_results.md).
 
 ---
 
@@ -664,16 +812,19 @@ interface ILogDestination {
 
 ## 🚨 Error Code Catalog
 
-| Code                              | Severity          | When                                                     | Action                                                                |
-| --------------------------------- | ----------------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
-| `LOGGER_INVALID_OPTIONS`          | Throws at init    | `service.name` or `service.version` missing              | Add the required fields                                               |
-| `LOGGER_INVALID_LEVEL`            | Throws at init    | `level` is not a valid Pino value                        | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`              |
-| `LOGGER_PRETTY_UNAVAILABLE`       | Warn on bootstrap | `isPretty: true` but `pino-pretty` not installed         | Install `pino-pretty` or set `isPretty: false`                        |
-| `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap | OTel mixin active but `@opentelemetry/api` not installed | Install the package or set `otel.shouldAutoInjectTraceContext: false` |
-| `LOGGER_DESTINATION_INIT_FAILED`  | Error (logged)    | `destination.onInit()` rejects                           | Destination is removed; other destinations continue                   |
-| `LOGGER_DESTINATION_WRITE_FAILED` | Warn (logged)     | `destination.write()` throws                             | Entry skipped for that destination; others continue                   |
-| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Throws            | `LogContextService.set()` called outside `run()`         | Wrap in `logContext.run({ ... }, () => ...)`                          |
-| `LOGGER_ENTRY_TRUNCATED`          | Warn (meta-log)   | Entry exceeds `maxEntrySizeBytes`                        | Reduce metadata or raise the limit                                    |
+| Code                              | Surfaces as                  | When                                                              | Action                                                                |
+| --------------------------------- | ---------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `LOGGER_INVALID_OPTIONS`          | Thrown `Error` at init       | `service`, `service.name`, or `service.version` missing or empty  | Add the required fields                                               |
+| `LOGGER_INVALID_LEVEL`            | Thrown `Error` at init       | `level` is not a valid Pino value                                 | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`              |
+| `LOGGER_PRETTY_UNAVAILABLE`       | Thrown `Error` at `onInit()` | `PrettyDevDestination` registered but `pino-pretty` not installed | Install `pino-pretty` or drop the destination                         |
+| `LOGGER_OTEL_API_UNAVAILABLE`     | Nothing emitted              | `@opentelemetry/api` cannot be resolved                           | None — the trace mixin steps aside silently                           |
+| `LOGGER_DESTINATION_INIT_FAILED`  | Structured error log         | `destination.onInit()` rejects                                    | Sink is excluded from shutdown; boot continues, writes stay fail-soft |
+| `LOGGER_DESTINATION_WRITE_FAILED` | NDJSON line on `stderr`      | `destination.write()` throws or rejects                           | Entry dropped for that destination; others continue                   |
+| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Thrown `Error`               | `LogContextService.set()` called outside `run()`                  | Wrap in `logContext.run({ ... }, () => ...)`                          |
+| `LOGGER_ENTRY_TRUNCATED`          | `_logKey` in the envelope    | A serialized field exceeds `maxEntrySizeBytes`                    | Reduce the payload or raise the ceiling                               |
+
+> [!NOTE]
+> The codes above name the condition, not a machine-readable field. Thrown errors carry a human-readable message prefixed with the emitting class (e.g. `[BymaxLoggerModule] options.service is required`), not the code string.
 
 ---
 
@@ -687,35 +838,6 @@ interface ILogDestination {
 | 30   | `info`      | `log`     | Significant business events               |
 | 20   | `debug`     | `debug`   | Implementation detail for troubleshooting |
 | 10   | `trace`     | `verbose` | Ultra-granular (rarely in prod)           |
-
----
-
-## 🧪 Testing & Quality
-
-```bash
-pnpm test              # unit tests (Jest)
-pnpm test:cov          # coverage report
-pnpm test:e2e          # end-to-end tests (supertest)
-pnpm test:cov:all      # full coverage gate (100% statements/branches/functions/lines)
-pnpm mutation          # Stryker mutation testing (95% break gate)
-pnpm typecheck         # tsc strict check (all tsconfig variants)
-pnpm lint              # ESLint
-```
-
-Coverage gate: **100%** on statements, branches, functions, and lines. Mutation: **97.42%** current vs the **95%** break gate (Stryker `thresholds.break: 95`); 97.42% is the theoretical maximum — all 10 surviving mutants are documented equivalents. See [mutation_testing_results.md](docs/mutation_testing_results.md).
-
----
-
-## 🧱 Tech Stack
-
-[![Pino](https://img.shields.io/badge/Pino-10-green?style=flat-square)](https://getpino.io)
-[![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?style=flat-square&logo=nestjs)](https://nestjs.com)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Node.js](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
-[![Jest](https://img.shields.io/badge/Jest-30-C21325?style=flat-square&logo=jest)](https://jestjs.io)
-[![Stryker](https://img.shields.io/badge/Stryker-Mutation_Testing-red?style=flat-square)](https://stryker-mutator.io)
-[![pnpm](https://img.shields.io/badge/pnpm-10-F69220?style=flat-square&logo=pnpm&logoColor=white)](https://pnpm.io)
-[![tsup](https://img.shields.io/badge/tsup-8-orange?style=flat-square)](https://tsup.egoist.dev)
 
 ---
 
