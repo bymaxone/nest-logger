@@ -11,6 +11,21 @@ heading here.
 
 ## [Unreleased]
 
+### Security
+
+- Force patched `brace-expansion` on every major line still present in the dev
+  tree (`1.1.17`, `2.1.3`, `5.0.8`, via `pnpm.overrides`) to clear GHSA-mh99-v99m-4gvg
+  (unbounded expansion length → out-of-memory crash). The 1.x and 2.x lines are
+  kept on their maintenance releases because `minimatch` 3 and 9 consume
+  `brace-expansion` as a default export, which the 5.x line no longer provides.
+  Dev-only: the published package has zero runtime dependencies.
+
+### Changed
+
+- Refresh dev dependencies (NestJS 11.1.28, typescript-eslint 8.65, prettier 3.9.6,
+  lint-staged 17.2, tsx 4.23.1, ts-jest 29.4.12, tinybench 6.1.2, globals 17.8, and
+  their transitive closure)
+
 ## [1.0.0] - 2026-06-18
 
 ### Security
