@@ -11,6 +11,11 @@ heading here.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-29
+
+Supply-chain and tooling hardening only. `src/` is unchanged since 1.0.0, so the
+published `dist/` is identical — no runtime behaviour changes for consumers.
+
 ### Security
 
 - Force patched `brace-expansion` on every major line still present in the dev
@@ -91,6 +96,7 @@ heading here.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/bymaxone/nest-logger/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/bymaxone/nest-logger/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/bymaxone/nest-logger/releases/tag/v0.1.0
