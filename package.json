@@ -1,6 +1,6 @@
 {
   "name": "@bymax-one/nest-logger",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Structured JSON logging for NestJS based on Pino 10, with optional OpenTelemetry correlation.",
   "author": "Bymax One <support@bymax.one>",
   "license": "MIT",
@@ -46,6 +46,13 @@
   "main": "./dist/server/index.cjs",
   "module": "./dist/server/index.mjs",
   "types": "./dist/server/index.d.cts",
+  "typesVersions": {
+    "*": {
+      "shared": [
+        "./dist/shared/index.d.cts"
+      ]
+    }
+  },
   "scripts": {
     "build": "pnpm clean && tsup",
     "lint": "eslint src",
@@ -62,7 +69,7 @@
     "bench": "node --expose-gc --import tsx bench/throughput.bench.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
     "size": "node scripts/check-size.mjs",
-    "check:exports": "attw --pack . --profile node16",
+    "check:exports": "attw --pack .",
     "clean": "rm -rf dist coverage",
     "prepublishOnly": "pnpm clean && pnpm typecheck && pnpm lint && pnpm test:cov:all && pnpm build",
     "release": "pnpm publish --provenance",

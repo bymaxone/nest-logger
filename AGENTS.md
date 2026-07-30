@@ -207,6 +207,13 @@ Post-build checks: both exports resolve, CJS + ESM work, `.d.ts` present, no bun
 `.d.cts`. A single shared `types` key makes CommonJS consumers resolve ESM
 declarations, because `"type": "module"` marks plain `.d.ts` as ESM.
 
+Subpaths also need a `typesVersions` entry: the `moduleResolution: node`
+algorithm predates `exports` and ignores it, so without it a consumer on that
+setting (the Nest CLI default when `module: commonjs` is set with no explicit
+`moduleResolution`) cannot find the subpath's types. `pnpm check:exports` runs
+the strict `attw` profile, which covers that mode — never weaken it with
+`--profile` to silence a row.
+
 ---
 
 ## 7. Common Pitfalls
