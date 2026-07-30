@@ -11,6 +11,24 @@ heading here.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-07-29
+
+### Fixed
+
+- **Declared `@types/express` as an optional peer dependency.** The published
+  declarations reference `Request` / `Response` / `NextFunction` from `express`
+  (the HTTP interceptor, the exception filter and the request-id middleware all
+  type their signatures with them), but the requirement was undeclared. A
+  consumer compiling with `skipLibCheck: false` and no express types installed
+  hit `error TS2307: Cannot find module 'express'` from inside
+  `dist/server/index.d.ts` with nothing in `package.json` pointing at the cause.
+  Present since 1.0.0 — the imports are `import type` only, so runtime was never
+  affected and no express code is bundled.
+
+  It is marked optional because nothing in the library needs express at runtime:
+  a consumer on a non-express adapter (Fastify) can ignore it, as can anyone
+  keeping `skipLibCheck: true` — the default the Nest CLI scaffolds.
+
 ## [1.0.2] - 2026-07-29
 
 ### Fixed
@@ -130,7 +148,9 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/bymaxone/nest-logger/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/bymaxone/nest-logger/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/bymaxone/nest-logger/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/bymaxone/nest-logger/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/bymaxone/nest-logger/releases/tag/v0.1.0
