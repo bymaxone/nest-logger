@@ -23,10 +23,9 @@
  */
 import { Catch, HttpException, HttpStatus, Inject } from '@nestjs/common'
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common'
-import type { Response } from 'express'
 
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
-import type { RequestWithUser } from '../interfaces/request-with-user.interface'
+import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
 import { PinoLoggerService } from '../services/pino-logger.service'
 import { stripQueryString } from '../utils/normalize-url.util'
 import { sanitizeError } from '../utils/sanitize-error.util'
@@ -58,8 +57,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
    */
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp()
-    const res = ctx.getResponse<Response>()
-    const req = ctx.getRequest<RequestWithUser>()
+    const res = ctx.getResponse<LoggableResponse>()
+    const req = ctx.getRequest<LoggableRequest>()
     const userId = req.user?.id
     // Strip the query string: it may carry secrets and cannot be redacted as a
     // substring once embedded in the logged `url` string.

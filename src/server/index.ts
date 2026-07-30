@@ -35,9 +35,15 @@ export { LogPerformance } from './decorators/log-performance.decorator'
 // `LogContext` name belongs to the class-level decorator above) so consumers can
 // type `LogContextService.run()` / `.set()` arguments. `ResolvedBymaxLoggerModuleOptions`
 // is exported because it surfaces in the public `.d.ts` of the interceptor/middleware
-// constructors.
+// constructors. The `Loggable*` HTTP contracts are exported for the same reason:
+// they type `RequestIdMiddleware.use()`, so a consumer calling it directly needs
+// to be able to name them.
 export type {
   ILogDestination,
+  IncomingHeaders,
+  LoggableRequest,
+  LoggableResponse,
+  NextHandler,
   BymaxLoggerModuleOptions,
   BymaxLoggerModuleAsyncOptions,
   BymaxLoggerModuleOptionsFactory,

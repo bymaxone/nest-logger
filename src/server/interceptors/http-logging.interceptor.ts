@@ -16,14 +16,13 @@
  */
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common'
 import type { CallHandler, ExecutionContext, NestInterceptor } from '@nestjs/common'
-import type { Response } from 'express'
 import { catchError, tap, throwError } from 'rxjs'
 import type { Observable } from 'rxjs'
 
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import { LOGGER_OPTIONS_TOKEN } from '../constants/injection-tokens.constants'
+import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
-import type { RequestWithUser } from '../interfaces/request-with-user.interface'
 import { PinoLoggerService } from '../services/pino-logger.service'
 import { normalizeUrl, stripQueryString } from '../utils/normalize-url.util'
 
@@ -81,8 +80,8 @@ export class HttpLoggingInterceptor implements NestInterceptor {
    */
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const http = context.switchToHttp()
-    const req = http.getRequest<RequestWithUser>()
-    const res = http.getResponse<Response>()
+    const req = http.getRequest<LoggableRequest>()
+    const res = http.getResponse<LoggableResponse>()
 
     const { method, url, ip } = req
 
