@@ -11,6 +11,24 @@ heading here.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-07-29
+
+### Fixed
+
+- **Declared `@types/express` as an optional peer dependency.** The published
+  declarations reference `Request` / `Response` / `NextFunction` from `express`
+  (the HTTP interceptor, the exception filter and the request-id middleware all
+  type their signatures with them), but the requirement was undeclared. A
+  consumer compiling with `skipLibCheck: false` and no express types installed
+  hit `error TS2307: Cannot find module 'express'` from inside
+  `dist/server/index.d.ts` with nothing in `package.json` pointing at the cause.
+  Present since 1.0.0 — the imports are `import type` only, so runtime was never
+  affected and no express code is bundled.
+
+  It is marked optional because nothing in the library needs express at runtime:
+  a consumer on a non-express adapter (Fastify) can ignore it, as can anyone
+  keeping `skipLibCheck: true` — the default the Nest CLI scaffolds.
+
 ## [1.0.2] - 2026-07-29
 
 ### Fixed
