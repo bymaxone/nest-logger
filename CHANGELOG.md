@@ -9,6 +9,27 @@ The `release.yml` workflow extracts the section matching the pushed `vX.Y.Z` tag
 as the GitHub Release body, so each released version needs a matching `## [X.Y.Z]`
 heading here.
 
+## [1.0.5] — 2026-07-30
+
+### Security
+
+- **Peer floors raised to exclude known-vulnerable NestJS versions.** `@nestjs/common ^11.0.0`
+  admitted 11.0.0–11.0.15, carrying [GHSA-cj7v-w2c7-cp7c](https://github.com/advisories/GHSA-cj7v-w2c7-cp7c)
+  (remote code execution via the `Content-Type` header, patched in 11.0.16), and
+  `@nestjs/core ^11.0.0` admitted everything up to 11.1.17, carrying
+  [GHSA-36xv-jgw5-4q75](https://github.com/advisories/GHSA-36xv-jgw5-4q75) (patched in 11.1.18).
+
+  A peer range states which versions this library supports. A floor below a published
+  advisory told a consumer a vulnerable install was supported, and nothing in their
+  tooling contradicted it — the install resolved cleanly and silently. Floors are now
+  `^11.0.16` and `^11.1.18`.
+
+  Shipped as a patch, which is where a security fix belongs; a minor would reach the
+  same installs anyway, since `^1.0.4` accepts `1.1.0` as readily as `1.0.5`. No
+  runtime behaviour changed.
+
+---
+
 ## [Unreleased]
 
 ## [1.0.4] - 2026-07-29
@@ -188,6 +209,7 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
   `release.yml`, Dependabot, and issue templates
 
 [Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.4...HEAD
+[1.0.5]: https://github.com/bymaxone/nest-logger/compare/v1.0.3...v1.0.5
 [1.0.4]: https://github.com/bymaxone/nest-logger/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-logger/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/bymaxone/nest-logger/compare/v1.0.1...v1.0.2

@@ -2181,8 +2181,8 @@ The lib is intentionally focused on logging. **Out of scope:**
 
 ```json
 "peerDependencies": {
-  "@nestjs/common": "^11.0.0",
-  "@nestjs/core": "^11.0.0",
+  "@nestjs/common": "^11.0.16",
+  "@nestjs/core": "^11.1.18",
   "pino": "^10.0.0",
   "reflect-metadata": "^0.2.0"
 }
