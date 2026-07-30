@@ -52,6 +52,12 @@ jobs:
             done
           done
           echo "Both subpaths produced ESM + CJS + .d.ts + .d.cts"
+      - name: Verify published type resolution
+        # Compiling `src` cannot catch a broken `exports` map: a consumer
+        # resolving the package through the packed tarball may still land on
+        # declarations for the wrong module format. `attw` packs the tarball and
+        # resolves every entrypoint the way each module resolution mode would.
+        run: pnpm check:exports
       - name: Bundle size budget
         run: pnpm size
 

@@ -197,10 +197,22 @@ pnpm lint         # eslint src
 pnpm test:cov     # jest --coverage (100% gate)
 pnpm build        # tsup
 pnpm size         # check brotli budgets (server <12.5KB, shared <1KB)
+pnpm check:exports # attw: resolve every entrypoint per module resolution mode
 pnpm release      # pnpm publish --provenance
 ```
 
 Post-build checks: both exports resolve, CJS + ESM work, `.d.ts` present, no bundled peer deps.
+
+`exports` declares `types` **per condition** — `import` -> `.d.ts`, `require` ->
+`.d.cts`. A single shared `types` key makes CommonJS consumers resolve ESM
+declarations, because `"type": "module"` marks plain `.d.ts` as ESM.
+
+Subpaths also need a `typesVersions` entry: the `moduleResolution: node`
+algorithm predates `exports` and ignores it, so without it a consumer on that
+setting (the Nest CLI default when `module: commonjs` is set with no explicit
+`moduleResolution`) cannot find the subpath's types. `pnpm check:exports` runs
+the strict `attw` profile, which covers that mode — never weaken it with
+`--profile` to silence a row.
 
 ---
 

@@ -78,6 +78,14 @@ jobs:
       - name: Verify (typecheck · lint · test · build)
         run: pnpm prepublishOnly
 
+      - name: Verify published type resolution
+        # Runs after the build inside prepublishOnly and before the publish, so
+        # a tag cannot ship a tarball whose `exports` map resolves to
+        # declarations for the wrong module format. It cannot live in
+        # prepublishOnly itself: attw packs the tarball, and the nested pack
+        # inside `pnpm publish` resolves to a path that does not exist.
+        run: pnpm check:exports
+
       - name: Publish to npm with provenance
         # OIDC trusted publishing — pnpm delegates to npm CLI, which exchanges
         # the GitHub OIDC token (`id-token: write` above) for a short-lived
