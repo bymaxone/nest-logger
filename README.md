@@ -144,15 +144,13 @@ pnpm add -D pino-pretty
 # Optional — OpenTelemetry trace correlation
 pnpm add @opentelemetry/api @opentelemetry/sdk-node
 
-# Optional — express types, only if you compile with `skipLibCheck: false`
-pnpm add -D @types/express
 ```
 
 > [!NOTE]
 > `@opentelemetry/api` is resolved lazily when the Pino instance is built. When it is absent the trace mixin silently steps aside — the logger never fails to start, and never warns, over an optional peer.
 
 > [!NOTE]
-> `@types/express` is an **optional type-only peer**. The HTTP interceptor, the exception filter and the request-id middleware type their signatures with express's `Request` / `Response` / `NextFunction`, so the published declarations import them. Nothing needs express at runtime — no express code is bundled. You only need the types installed if you compile with `skipLibCheck: false`; with the Nest CLI default (`skipLibCheck: true`), or on a non-express adapter, you can ignore it.
+> The published declarations depend on no HTTP framework's types. The HTTP interceptor, the exception filter and the request-id middleware are typed by structural contracts (`LoggableRequest`, `LoggableResponse`, `NextHandler`) that an Express request and response satisfy as-is, so nothing extra is needed even when you compile with `skipLibCheck: false`. The emitted `.d.ts` imports only `@nestjs/common`, `pino` and `rxjs`.
 
 ### 2. Register the module
 

@@ -11,6 +11,45 @@ heading here.
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-07-29
+
+### Fixed
+
+- **The published declarations no longer depend on Express's types.** The HTTP
+  logging interceptor, the exception filter and the request-id middleware typed
+  their signatures with `Request` / `Response` / `NextFunction` from `express`,
+  so `dist/server/index.d.ts` imported from `express` and a consumer compiling
+  with `skipLibCheck: false` and no express types installed hit
+  `error TS2307: Cannot find module 'express'`. Present since 1.0.0; the imports
+  were `import type` only, so runtime was never affected and no express code was
+  ever bundled.
+
+  They are now typed by structural contracts declaring exactly the members this
+  package reads — `LoggableRequest` (`headers`, `method`, `url`, `ip`,
+  `user?.id`), `LoggableResponse` (`statusCode`, `setHeader`, `status().json()`)
+  and `NextHandler`. The emitted declarations import only `@nestjs/common`,
+  `pino` and `rxjs`, all declared peers.
+
+  **Not a breaking change:** an Express request and response satisfy the
+  contracts structurally, so existing call sites keep compiling with no cast —
+  the parameter types only widen what is accepted. The internal
+  `RequestWithUser` alias is gone, replaced by `LoggableRequest`; it was never
+  exported.
+
+### Added
+
+- `LoggableRequest`, `LoggableResponse`, `NextHandler` and `IncomingHeaders` are
+  exported from the package root: they type `RequestIdMiddleware.use()`, so a
+  consumer invoking it directly (in a test, say) can name them.
+
+### Removed
+
+- The `@types/express` optional peer dependency added in 1.0.3. With the
+  declarations self-contained it serves no purpose — nothing in the published
+  types names an express symbol. It stays a devDependency: the specs build
+  express-shaped mocks deliberately, to prove a real express request and
+  response still satisfy the contracts.
+
 ## [1.0.3] - 2026-07-29
 
 ### Fixed
@@ -148,7 +187,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/bymaxone/nest-logger/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-logger/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/bymaxone/nest-logger/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/bymaxone/nest-logger/compare/v1.0.0...v1.0.1

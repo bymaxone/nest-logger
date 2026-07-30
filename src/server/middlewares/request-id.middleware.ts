@@ -13,9 +13,13 @@ import { randomUUID } from 'node:crypto'
 
 import { Inject, Injectable } from '@nestjs/common'
 import type { NestMiddleware } from '@nestjs/common'
-import type { NextFunction, Request, Response } from 'express'
 
 import { LOGGER_OPTIONS_TOKEN } from '../constants/injection-tokens.constants'
+import type {
+  LoggableRequest,
+  LoggableResponse,
+  NextHandler
+} from '../interfaces/http-context.interface'
 import type { LogContext } from '../interfaces/log-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { LogContextService } from '../services/log-context.service'
@@ -81,11 +85,11 @@ export class RequestIdMiddleware implements NestMiddleware {
    * Echo or mint the `x-request-id`, expose it on the response, and run the
    * remainder of the request inside a fresh log-context scope.
    *
-   * @param req - The incoming Express request.
-   * @param res - The outgoing Express response.
+   * @param req - The incoming request (Express satisfies the contract).
+   * @param res - The outgoing response (Express satisfies the contract).
    * @param next - The next handler in the chain.
    */
-  use(req: Request, res: Response, next: NextFunction): void {
+  use(req: LoggableRequest, res: LoggableResponse, next: NextHandler): void {
     // `Reflect.get` keeps both header lookups off the
     // `security/detect-object-injection` sink list (the names are runtime
     // configuration / named constants, not inline literals).
