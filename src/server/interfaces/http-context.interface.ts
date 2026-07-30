@@ -1,10 +1,13 @@
 /**
  * Minimal HTTP request/response contracts the logging layer reads.
  *
- * Layer: server/interfaces — internal contracts shared by the HTTP logging
- * interceptor, the exception filter and the request-id middleware. Declared
- * structurally, listing only the members those three actually touch, so the
- * published declarations depend on no HTTP framework's types. Naming Express's
+ * Layer: server/interfaces — exported structural contracts shared by the HTTP
+ * logging interceptor, the exception filter and the request-id middleware. They
+ * are part of the public API: they appear in those components' published
+ * signatures, so a consumer calling `RequestIdMiddleware.use()` directly needs
+ * to be able to name them. Declared structurally, listing only the members
+ * those three actually touch, so the published declarations depend on no HTTP
+ * framework's types. Naming Express's
  * `Request`/`Response` here would make the emitted `.d.ts` import from
  * `express`, forcing every consumer that compiles with `skipLibCheck: false` to
  * install `@types/express` whether or not they use those signatures.
