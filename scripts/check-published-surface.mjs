@@ -20,7 +20,7 @@
 import { execFileSync } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -207,7 +207,16 @@ async function checkLinks() {
     if (!anchors.has(a)) fail('links', `anchor ${a} matches no heading`)
   }
   for (const r of relative) {
-    if (!existsSync(join(ROOT, r))) fail('links', `${r} does not exist in the repository`)
+    // Resolve and confine before touching the filesystem. `..` segments would
+    // otherwise walk out of the repository and have the runner stat arbitrary
+    // paths, and a link that escapes the repository is broken documentation
+    // regardless — the file it names is not in the package.
+    const target = resolve(ROOT, r.replace(/^\/+/, ''))
+    if (target !== ROOT && !target.startsWith(ROOT + sep)) {
+      fail('links', `${r} resolves outside the repository`)
+    } else if (!existsSync(target)) {
+      fail('links', `${r} does not exist in the repository`)
+    }
   }
 
   const results = await Promise.all(
