@@ -48,7 +48,9 @@ const failures = []
 const fail = (check, detail) => failures.push(`${check}: ${detail}`)
 
 // ---------------------------------------------------------------------------
-// 1. Every link in the README resolves.
+// 1. Every link in the README points somewhere real. A bad HTTP status fails the
+//    gate; a link the machine could not reach at all is reported as a note, since
+//    an offline runner is not a defect in the documentation.
 // ---------------------------------------------------------------------------
 
 /** Slug a Markdown heading the way GitHub does. Deliberately does NOT trim: the
@@ -66,6 +68,52 @@ function slug(heading) {
  * a shell comment, not a heading, and letting it into the anchor set makes a
  * broken anchor pass. */
 const README_PROSE = README.replace(/^```[\s\S]*?^```$/gm, '')
+
+/** Hosts a documentation link must never point at. This check runs on
+ * `pull_request`, so without it a fork could put `http://169.254.169.254/…` or a
+ * loopback address in the README and have the CI runner probe it — the runner
+ * reaching an endpoint the author cannot reach themselves. Rejected before the
+ * request, not after, and reported as a finding rather than skipped: a published
+ * README has no business linking to a private address either way.
+ *
+ * Every bare IP literal is refused, not just the private ranges. Enumerating
+ * ranges means enumerating them again for IPv6, and again for whatever notation
+ * is missed next; a documentation link points at a hostname, so the whole class
+ * can go. The private ranges keep their own message because naming the range is
+ * the more useful diagnosis when a link does hit one. */
+function unroutableReason(url) {
+  let u
+  try {
+    u = new URL(url)
+  } catch {
+    return 'is not a valid URL'
+  }
+  if (u.protocol !== 'https:') return `uses ${u.protocol.replace(':', '')}, not https`
+  const h = u.hostname.toLowerCase()
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local')) {
+    return 'is a loopback name'
+  }
+  // A URL parser brackets every IPv6 literal, so the brackets are the test —
+  // no need to recognise the address notation itself.
+  if (h.startsWith('[')) {
+    const v6 = h.slice(1, -1)
+    if (v6 === '::1') return 'is a loopback address'
+    if (/^f[cd]/.test(v6)) return 'is a unique-local address'
+    if (/^fe[89ab]/.test(v6)) return 'is a link-local address'
+    return 'is an IPv6 literal, not a hostname'
+  }
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    if (a === 127 || h === '0.0.0.0') return 'is a loopback address'
+    if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
+      return 'is a private address'
+    }
+    if (a === 169 && b === 254) return 'is a link-local address (cloud metadata range)'
+    return 'is an IPv4 literal, not a hostname'
+  }
+  return null
+}
 
 async function checkLinks() {
   const anchors = new Set(
@@ -93,6 +141,9 @@ async function checkLinks() {
 
   const results = await Promise.all(
     [...links].map(async (url) => {
+      const unroutable = unroutableReason(url)
+      if (unroutable) return `${url} → ${unroutable}`
+
       // npmjs.com serves 403 to any datacenter IP, browser User-Agent included,
       // so asking it whether a package page exists measures Cloudflare rather
       // than the package. The registry is the authoritative source for the same
@@ -199,7 +250,13 @@ function checkChangelog() {
   // while the changelog claims released versions, say so instead of passing:
   // a silent no-op is the failure mode this whole gate exists to prevent.
   try {
-    execFileSync('git', ['fetch', '--tags', '--quiet'], { cwd: ROOT, stdio: 'ignore' })
+    // Bounded: an unreachable remote must not hang a publish. On timeout the
+    // local tags below are all there is, and the shallow guard still fires.
+    execFileSync('git', ['fetch', '--tags', '--quiet'], {
+      cwd: ROOT,
+      stdio: 'ignore',
+      timeout: 20_000
+    })
   } catch {
     // No network or no remote — the local tags below are then all there is.
   }
@@ -258,7 +315,9 @@ function scaffoldConsumer() {
   rmSync(GATE_DIR, { recursive: true, force: true })
   const scope = join(GATE_DIR, 'node_modules', ...PKG.name.split('/').slice(0, -1))
   mkdirSync(scope, { recursive: true })
-  symlinkSync(ROOT, join(GATE_DIR, 'node_modules', PKG.name), 'dir')
+  // 'junction' rather than 'dir': a directory symlink needs elevation or Developer
+  // Mode on Windows, where a junction does not. Node ignores the type on POSIX.
+  symlinkSync(ROOT, join(GATE_DIR, 'node_modules', PKG.name), 'junction')
   writeFileSync(
     join(GATE_DIR, 'tsconfig.json'),
     `${JSON.stringify(
@@ -330,7 +389,8 @@ function checkSnippets() {
     const m = /Property '[^']+' does not exist on type '([^']+)'/.exec(line)
     if (!m) return false
     const file = /^([^(]+)\(/.exec(line)?.[1]
-    const own = sources.get(file?.split('/').pop() ?? '') ?? ''
+    // `tsc` emits backslashes on Windows, so the basename is taken on either.
+    const own = sources.get(file?.split(/[\\/]/).pop() ?? '') ?? ''
     return new RegExp(`\\b(class|interface|type)\\s+${m[1]}\\b`).test(own)
   }
   /** An import of some OTHER package the fixture does not install — a documented
