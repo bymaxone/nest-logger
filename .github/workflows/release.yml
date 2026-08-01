@@ -92,6 +92,18 @@ jobs:
         # nested-pack objection that keeps check:exports out does not apply.
         run: pnpm check:published
 
+      - name: Release-shape gates (bundle size + dogfood smoke test)
+        # `prepublishOnly` runs typecheck/lint/tests/build but not these, and a
+        # tag is the only path that publishes from CI. The size budget stops a
+        # release that silently doubled the bundle; the dogfood smoke is the only
+        # gate that resolves the packed tarball from a real consumer in ESM and
+        # CJS, which is what catches a DI or `exports` defect the source-based
+        # suite cannot see. Both scripts already existed here and simply were
+        # never wired into the publish path.
+        run: |
+          pnpm size
+          node scripts/dogfood-smoke-test.mjs
+
       - name: Publish to npm with provenance
         # OIDC trusted publishing — pnpm delegates to npm CLI, which exchanges
         # the GitHub OIDC token (`id-token: write` above) for a short-lived
