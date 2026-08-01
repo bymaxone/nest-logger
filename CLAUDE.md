@@ -88,6 +88,18 @@ mutation testing to `prepublishOnly` or the per-PR CI — it runs automatically 
 
 ---
 
+## Documentation changes ship
+
+**`README.md` and `CHANGELOG.md` are in `files`, so they are part of the published package.** A documentation fix that stays on `main` leaves the npm page — where people actually read it — still wrong. So a change to any shipped file gets a **patch release**, not a "next time" note:
+
+- Bump the version and add the `## [x.y.z]` CHANGELOG section in the same pull request.
+- State plainly that `dist/` is unchanged and **verify it** rather than asserting it: unpack the published tarball and diff it against a fresh build. "Documentation only" is a claim about the artifact, and the artifact is checkable.
+- It is a **patch**. There is no feature, and a minor would reach exactly the same installs anyway.
+
+Files outside `files` — `scripts/`, `.github/`, `docs/`, `CLAUDE.md`, config — do not ship and do not justify a release on their own.
+
+---
+
 ## Guidelines — Load Only What You Need
 
 > **Do NOT load all guidelines at once.** Each is 30-80KB. Read only 1-2 relevant to your current task.
