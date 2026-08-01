@@ -102,7 +102,13 @@ async function checkLinks() {
         }
         return `${url} → HTTP ${res.status}`
       } catch (err) {
-        return `${url} → ${err instanceof Error ? err.message : String(err)}`
+        // A transport error cannot tell "this link is dead" from "that host is
+        // down right now". Reported, never fatal — this gate also guards
+        // `prepublishOnly`, and someone else's outage must not block a release.
+        console.log(
+          `  note: ${url} could not be reached (${err instanceof Error ? err.message : String(err)})`
+        )
+        return null
       }
     })
   )
@@ -152,6 +158,16 @@ function checkChangelog() {
   // is ABSENT — and a heading deleted while adding the next one is exactly how
   // the 1.0.3 entry was swallowed by 1.0.4. The tags are the outside source of
   // truth for what was released, so they are what the file is measured against.
+  // `actions/checkout` clones with depth 1 and no tags, so `git tag --list`
+  // returns an empty set with exit code 0 — the cross-check would pass by
+  // finding nothing to check. Fetch them first, and if they still are not there
+  // while the changelog claims released versions, say so instead of passing:
+  // a silent no-op is the failure mode this whole gate exists to prevent.
+  try {
+    execFileSync('git', ['fetch', '--tags', '--quiet'], { cwd: ROOT, stdio: 'ignore' })
+  } catch {
+    // No network or no remote — the local tags below are then all there is.
+  }
   let released = []
   try {
     released = execFileSync('git', ['tag', '--list', 'v*.*.*'], { cwd: ROOT, encoding: 'utf8' })
@@ -160,6 +176,14 @@ function checkChangelog() {
       .filter((t) => /^\d+\.\d+\.\d+$/.test(t))
   } catch {
     fail('changelog', 'could not list git tags, so no version could be cross-checked')
+    return
+  }
+  if (released.length === 0 && documented.size > 0) {
+    fail(
+      'changelog',
+      `no v*.*.* tags are visible but the changelog documents ${documented.size} released version(s) — ` +
+        'the cross-check cannot run. In CI, check out with `fetch-depth: 0` or `fetch-tags: true`.'
+    )
     return
   }
   const missing = released.filter((v) => !documented.has(v))
