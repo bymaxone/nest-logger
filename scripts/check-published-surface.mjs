@@ -176,6 +176,19 @@ function checkChangelog() {
     if (!n || n.length < 40) fail('changelog', `the "${v}" section is empty or missing`)
   }
 
+  // Every version heading is reference-link syntax, so it renders as plain text
+  // unless a `[x.y.z]: url` definition exists. Three headings had one and three
+  // did not, which is invisible until someone reads the rendered file.
+  const defined = new Set([...CHANGELOG.matchAll(/^\[(\d+\.\d+\.\d+)\]: /gm)].map((m) => m[1]))
+  for (const v of documented) {
+    if (!defined.has(v)) {
+      fail(
+        'changelog',
+        `the "${v}" heading is a reference link with no \`[${v}]: …\` definition, so it renders as plain text`
+      )
+    }
+  }
+
   // Checking only the versions the file happens to list cannot notice one that
   // is ABSENT — and a heading deleted while adding the next one is exactly how
   // the 1.0.3 entry was swallowed by 1.0.4. The tags are the outside source of
