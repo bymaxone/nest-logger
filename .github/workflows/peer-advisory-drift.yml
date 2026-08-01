@@ -10,7 +10,7 @@
 # and becomes wrong anyway — the advisory database is what moves. A range that
 # was clean when it was written starts admitting a vulnerable version the day a
 # new advisory is published, with no commit and no alert to notice.
-name: peer-advisory-drift
+name: Peer Advisory Drift
 
 on:
   schedule:
@@ -18,6 +18,16 @@ on:
     # and GitHub delays them under load.
     - cron: '17 6 * * 1'
   workflow_dispatch:
+
+# Single-flight across the whole repository, deliberately NOT keyed by
+# `github.ref` the way the other workflows here are. What two runs would race
+# over is one tracking issue per repository, so a ref-scoped group would put a
+# dispatch and a scheduled run in different groups and leave the race intact.
+# Queue rather than cancel: interrupting a run midway through rewriting or
+# closing that issue is worse than waiting for it.
+concurrency:
+  group: peer-advisory-drift
+  cancel-in-progress: false
 
 # `issues: write` lets the check file and close its own tracking issue.
 # Permissions on a reusable workflow can only narrow what the caller grants, so
@@ -28,4 +38,9 @@ permissions:
 
 jobs:
   drift:
+    # `workflow_dispatch` can be fired from any branch. Auditing a branch's
+    # unmerged manifest and writing the result to the repository-wide tracking
+    # issue would report findings that do not describe what this package
+    # actually declares.
+    if: github.ref_name == github.event.repository.default_branch
     uses: bymaxone/.github/.github/workflows/peer-advisory-drift.yml@v1
