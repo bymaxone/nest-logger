@@ -38,6 +38,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `check:published` cross-checks every release tag against a CHANGELOG
+          # section. The default checkout is shallow and carries no tags, so the
+          # check would find nothing and pass — the silent no-op it exists to
+          # prevent.
+          fetch-depth: 0
       - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
       - name: Build all subpaths
         run: pnpm build
@@ -58,6 +64,15 @@ jobs:
         # declarations for the wrong module format. `attw` packs the tarball and
         # resolves every entrypoint the way each module resolution mode would.
         run: pnpm check:exports
+      - name: Verify the published surface matches the documentation
+        # Three checks that each exist because a defect reached npm without them:
+        # the README's links resolve; its TypeScript snippets and the type tests
+        # compile against `dist/` resolved through the `exports` map (`test:types`
+        # maps the package to `./src`, so it cannot see a divergence between the
+        # source and the shipped `.d.ts`); and every `v*.*.*` tag has a CHANGELOG
+        # section, the tags being the outside source of truth a file cannot
+        # contradict about itself.
+        run: pnpm check:published
       - name: Bundle size budget
         run: pnpm size
 

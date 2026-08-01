@@ -337,15 +337,21 @@ Once active, every log entry automatically carries `traceId`, `spanId`, and `tra
 ```typescript
 // request-id.middleware.ts
 import { Injectable, NestMiddleware } from '@nestjs/common'
-import { LogContextService } from '@bymax-one/nest-logger'
+import {
+  LogContextService,
+  type LoggableRequest,
+  type LoggableResponse
+} from '@bymax-one/nest-logger'
 import { randomUUID } from 'node:crypto'
 
 @Injectable()
 export class RequestIdMiddleware implements NestMiddleware {
   constructor(private readonly logContext: LogContextService) {}
 
-  use(req: Request, res: Response, next: () => void) {
-    const requestId = req.headers['x-request-id'] ?? `r_${randomUUID()}`
+  use(req: LoggableRequest, res: LoggableResponse, next: () => void) {
+    // A header can arrive repeated, so its type is `string | string[]`.
+    const raw = req.headers['x-request-id']
+    const requestId = (Array.isArray(raw) ? raw[0] : raw) ?? `r_${randomUUID()}`
     this.logContext.run({ requestId }, next)
   }
 }
@@ -439,7 +445,8 @@ export class LokiDestination implements ILogDestination {
   private readonly url: string
   private readonly headers: Record<string, string>
   private readonly labels: Record<string, string>
-  private buffer: LogEntry[] = []
+  // Serialized lines, not objects — `write` receives the payload already encoded.
+  private buffer: string[] = []
   private flushTimer?: NodeJS.Timeout
 
   constructor(opts: {
@@ -466,8 +473,10 @@ export class LokiDestination implements ILogDestination {
     await this.flush()
   }
 
-  write(entry: LogEntry): void {
-    this.buffer.push(entry)
+  // `payload` already IS the serialized entry, newline-terminated. Buffer it as
+  // it arrives; parse only where a field is genuinely needed, as `flush` does.
+  write(payload: string): void {
+    this.buffer.push(payload)
     if (this.buffer.length >= 100) void this.flush()
   }
 
@@ -478,7 +487,10 @@ export class LokiDestination implements ILogDestination {
       streams: [
         {
           stream: this.labels,
-          values: batch.map((e) => [String(BigInt(e.time) * 1_000_000n), JSON.stringify(e)])
+          values: batch.map((line) => [
+            String(BigInt((JSON.parse(line) as LogEntry).time) * 1_000_000n),
+            line.trimEnd()
+          ])
         }
       ]
     })
@@ -520,7 +532,10 @@ export class PrismaLogDestination implements ILogDestination {
 
   constructor(private readonly prisma: PrismaClient) {}
 
-  write(entry: LogEntry): void {
+  write(payload: string): void {
+    // This destination stores individual columns, so it is one of the few that
+    // has to parse. A sink that forwards the line verbatim should not.
+    const entry = JSON.parse(payload) as LogEntry
     void this.prisma.applicationLog.create({
       data: {
         level: entry.level,
@@ -557,8 +572,9 @@ export class RollingFileDestination implements ILogDestination {
     await new Promise<void>((resolve) => this.stream?.end(resolve))
   }
 
-  write(entry: LogEntry): void {
-    this.stream?.write(JSON.stringify(entry) + '\n')
+  write(payload: string): void {
+    // Already newline-terminated JSON — re-serializing would double-encode it.
+    this.stream?.write(payload)
   }
 }
 ```
@@ -806,7 +822,8 @@ type LogEntry = {
 interface ILogDestination {
   readonly name: string
   readonly minLevel?: LogLevel
-  write(entry: LogEntry): void
+  /** `payload` is a newline-terminated JSON entry, UTF-8 encoded — not an object. */
+  write(payload: string): void | Promise<void>
   onInit?(): Promise<void>
   onShutdown?(): Promise<void>
 }

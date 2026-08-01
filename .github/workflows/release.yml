@@ -86,6 +86,12 @@ jobs:
         # inside `pnpm publish` resolves to a path that does not exist.
         run: pnpm check:exports
 
+      - name: Verify the published surface matches the documentation
+        # Also runs inside prepublishOnly; kept here too because a tag is the
+        # only path that publishes from CI, and this gate packs nothing, so the
+        # nested-pack objection that keeps check:exports out does not apply.
+        run: pnpm check:published
+
       - name: Publish to npm with provenance
         # OIDC trusted publishing — pnpm delegates to npm CLI, which exchanges
         # the GitHub OIDC token (`id-token: write` above) for a short-lived

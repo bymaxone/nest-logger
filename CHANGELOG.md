@@ -30,6 +30,52 @@ heading here.
   same installs anyway, since `^1.0.4` accepts `1.1.0` as readily as `1.0.5`. No
   runtime behaviour changed.
 
+### Fixed
+
+- **The custom-destination examples did not compile against `ILogDestination`.**
+  The published interface takes a serialized line:
+
+  ```ts
+  write(payload: string): void | Promise<void>   // newline-terminated JSON, UTF-8
+  ```
+
+  All three examples in the README — `LokiDestination`, `PrismaLogDestination`,
+  `RollingFileDestination` — and the API reference table declared
+  `write(entry: LogEntry): void`, so anyone following the README to build a
+  destination got:
+
+  ```
+  TS2416: Property 'write' in type 'LokiDestination' is not assignable to the
+          same property in base type 'ILogDestination'.
+  ```
+
+  `ILogDestination` is this library's extension point, so the documentation was
+  teaching the wrong shape for the one thing consumers are meant to implement.
+  `RollingFileDestination` compounded it by re-serializing a payload that already
+  **is** newline-terminated JSON — anyone casting past the type error would have
+  written double-encoded lines to disk.
+
+  Each example now does what its own job requires rather than all three doing the
+  same thing: Loki buffers the line verbatim, Prisma parses because it stores
+  individual columns, rolling-file writes it through untouched.
+
+- **The request-id middleware typed `req` as the global DOM `Request`**, whose
+  `headers` is a `Headers` instance and cannot be indexed (`TS7052`). `1.0.4`
+  introduced `LoggableRequest` and `LoggableResponse` for exactly this and exports
+  them; the README never adopted them. It does now, and narrows the
+  `string | string[]` a repeated header produces.
+
+### Added
+
+- **`pnpm check:published`** — verifies that the README's links resolve, that its
+  TypeScript snippets and the type tests compile against the built package, and
+  that every `v*.*.*` tag has a `## [x.y.z]` CHANGELOG section. It resolves the
+  package through its `exports` map into `dist/`, which `test:types` cannot do:
+  that one maps the package to `./src` through tsconfig `paths` and so never
+  compiles what the README claims. Both defects above were found by it.
+
+  Runs in CI, in `release.yml`, and inside `prepublishOnly`.
+
 ## [1.0.4] - 2026-07-29
 
 ### Fixed
