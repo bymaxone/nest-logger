@@ -2181,19 +2181,19 @@ The lib is intentionally focused on logging. **Out of scope:**
 
 ```json
 "peerDependencies": {
-  "@nestjs/common": "^11.0.0",
-  "@nestjs/core": "^11.0.0",
+  "@nestjs/common": "^11.0.16",
+  "@nestjs/core": "^11.1.18",
   "pino": "^10.0.0",
   "reflect-metadata": "^0.2.0"
 }
 ```
 
-| Package            | Version | Justification                                       |
-| ------------------ | ------- | --------------------------------------------------- |
-| `@nestjs/common`   | `^11`   | Decorators, `Injectable`, `LoggerService` interface |
-| `@nestjs/core`     | `^11`   | `APP_INTERCEPTOR`, `APP_FILTER`, `ModuleRef`        |
-| `pino`             | `^10`   | Logging engine                                      |
-| `reflect-metadata` | `^0.2`  | NestJS decorators                                   |
+| Package            | Version    | Justification                                                                           |
+| ------------------ | ---------- | --------------------------------------------------------------------------------------- |
+| `@nestjs/common`   | `^11.0.16` | Decorators, `Injectable`, `LoggerService` interface. Floor excludes GHSA-cj7v-w2c7-cp7c |
+| `@nestjs/core`     | `^11.1.18` | `APP_INTERCEPTOR`, `APP_FILTER`, `ModuleRef`. Floor excludes GHSA-36xv-jgw5-4q75        |
+| `pino`             | `^10.0.0`  | Logging engine                                                                          |
+| `reflect-metadata` | `^0.2.0`   | NestJS decorators                                                                       |
 
 ### 15.2 Optional peer dependencies
 
