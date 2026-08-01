@@ -40,6 +40,9 @@ const GATE_DIR = join(ROOT, '.docs-gate')
  * library has none — the check then covers only the README snippets. */
 const TYPE_TESTS_GLOB = existsSync(join(ROOT, 'test', 'types')) ? '../test/types/**/*.ts' : '*.ts'
 
+/** The repository's pinned compiler. */
+const TSC = join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc')
+
 const failures = []
 /** Record a failure without stopping, so one run reports every problem. */
 const fail = (check, detail) => failures.push(`${check}: ${detail}`)
@@ -59,17 +62,30 @@ function slug(heading) {
     .replace(/\s/g, '-')
 }
 
+/** README with fenced blocks removed. A `# Using pnpm` inside a ```bash fence is
+ * a shell comment, not a heading, and letting it into the anchor set makes a
+ * broken anchor pass. */
+const README_PROSE = README.replace(/^```[\s\S]*?^```$/gm, '')
+
 async function checkLinks() {
-  const anchors = new Set([...README.matchAll(/^#{1,6}\s+(.+)$/gm)].map((m) => `#${slug(m[1])}`))
-  // Only follow links a reader clicks. Badge images are excluded: a rate-limited
-  // shields.io would fail the build for a reason that is not ours.
-  const links = new Set([
-    ...[...README.matchAll(/\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)].map((m) => m[1]),
-    ...[...README.matchAll(/<a\s+href="(https?:\/\/[^"]+)"/g)].map((m) => m[1])
-  ])
-  const internal = new Set(
-    [...README.matchAll(/\[[^\]]*\]\((#[^)\s]+)\)/g)].map((m) => m[1].toLowerCase())
+  const anchors = new Set(
+    [...README_PROSE.matchAll(/^#{1,6}\s+(.+)$/gm)].map((m) => `#${slug(m[1])}`)
   )
+  // Only follow links a reader clicks. A badge is `[![alt](image)](target)`, and
+  // a naive link regex captures the IMAGE — probing shields.io on every run and
+  // failing the build when it rate-limits, for a reason that is not ours. The
+  // image is stripped first so only the target remains.
+  const clickable = README.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+  const links = new Set([
+    ...[...clickable.matchAll(/\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)].map((m) => m[1]),
+    ...[...clickable.matchAll(/<a\s+href="(https?:\/\/[^"]+)"/g)].map((m) => m[1])
+  ])
+  // Both spellings: the section links are Markdown, but the header navigation is
+  // raw HTML. Collecting only the first left this README's nav bar unchecked.
+  const internal = new Set([
+    ...[...README.matchAll(/\[[^\]]*\]\((#[^)\s]+)\)/g)].map((m) => m[1].toLowerCase()),
+    ...[...README.matchAll(/<a\s+href="(#[^"]+)"/g)].map((m) => m[1].toLowerCase())
+  ])
 
   for (const a of internal) {
     if (!anchors.has(a)) fail('links', `anchor ${a} matches no heading`)
@@ -89,9 +105,12 @@ async function checkLinks() {
       const headers = { 'user-agent': 'Mozilla/5.0 (compatible; bymax-docs-gate)' }
       try {
         // HEAD first; some hosts answer it with 405, so fall back to GET.
-        let res = await fetch(probe, { method: 'HEAD', redirect: 'follow', headers })
+        // Bounded per request: this gate runs inside `prepublishOnly`, and one
+        // hung host must not stall a publish until the job timeout.
+        const opts = { redirect: 'follow', headers, signal: AbortSignal.timeout(10_000) }
+        let res = await fetch(probe, { method: 'HEAD', ...opts })
         if (res.status === 405 || res.status === 403 || res.status === 429) {
-          res = await fetch(probe, { method: 'GET', redirect: 'follow', headers })
+          res = await fetch(probe, { method: 'GET', ...opts })
         }
         if (res.ok) return null
         // A package page 404s until the first publish. Reported, never fatal:
@@ -129,7 +148,10 @@ function releaseNotes(version) {
   if (start === -1) return null
   const rest = lines.slice(start + 1)
   const end = rest.findIndex((l) => /^## \[/.test(l))
-  return (end === -1 ? rest : rest.slice(0, end)).join('\n').trim()
+  // `.replace(/\s+$/, '')` and not `.trim()`: the awk prints each line verbatim
+  // and only command substitution drops the trailing newline. Trimming the left
+  // side too would report a different body from the one the release publishes.
+  return (end === -1 ? rest : rest.slice(0, end)).join('\n').replace(/\s+$/, '')
 }
 
 function checkChangelog() {
@@ -178,11 +200,25 @@ function checkChangelog() {
     fail('changelog', 'could not list git tags, so no version could be cross-checked')
     return
   }
-  if (released.length === 0 && documented.size > 0) {
+  // No tags is the normal state of a package that has never been released, so
+  // the absence alone proves nothing. What must not pass quietly is a SHALLOW
+  // checkout, where the tags exist but were not fetched — there the check would
+  // find nothing and report success.
+  let shallow = false
+  try {
+    shallow =
+      execFileSync('git', ['rev-parse', '--is-shallow-repository'], {
+        cwd: ROOT,
+        encoding: 'utf8'
+      }).trim() === 'true'
+  } catch {
+    // Not a git repository at all; the tag list below is simply empty.
+  }
+  if (released.length === 0 && shallow) {
     fail(
       'changelog',
-      `no v*.*.* tags are visible but the changelog documents ${documented.size} released version(s) — ` +
-        'the cross-check cannot run. In CI, check out with `fetch-depth: 0` or `fetch-tags: true`.'
+      'the checkout is shallow and carries no tags, so the cross-check cannot run. ' +
+        'In CI, check out with `fetch-depth: 0` or `fetch-tags: true`.'
     )
     return
   }
@@ -289,7 +325,10 @@ function checkSnippets() {
   const isForeignModule = (line) => /error TS2307/.test(line) && !line.includes(PKG.name)
 
   try {
-    execFileSync('npx', ['tsc', '-p', GATE_DIR], { cwd: ROOT, stdio: 'pipe' })
+    // The repository's own TypeScript, not `npx tsc`: npx may fetch a different
+    // version, and a gate that compiles against a compiler the project does not
+    // use is measuring the wrong thing.
+    execFileSync(process.execPath, [TSC, '-p', GATE_DIR], { cwd: ROOT, stdio: 'pipe' })
     console.log(`  snippets: ${subjects.length} README snippets compile against dist/`)
   } catch (err) {
     const lines = `${err.stdout ?? ''}${err.stderr ?? ''}`
