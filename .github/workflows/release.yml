@@ -84,13 +84,13 @@ jobs:
         # declarations for the wrong module format. It cannot live in
         # prepublishOnly itself: attw packs the tarball, and the nested pack
         # inside `pnpm publish` resolves to a path that does not exist.
+        #
+        # `check:published` needs no equivalent step: it packs nothing, so it
+        # lives in prepublishOnly and already ran there. Repeating it here would
+        # re-probe every README link and recompile the snippets for no new
+        # information, adding time and one more chance of a network flake to the
+        # one job that must not fail spuriously.
         run: pnpm check:exports
-
-      - name: Verify the published surface matches the documentation
-        # Also runs inside prepublishOnly; kept here too because a tag is the
-        # only path that publishes from CI, and this gate packs nothing, so the
-        # nested-pack objection that keeps check:exports out does not apply.
-        run: pnpm check:published
 
       - name: Release-shape gates (bundle size + dogfood smoke test)
         # `prepublishOnly` runs typecheck/lint/tests/build but not these, and a

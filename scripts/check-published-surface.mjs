@@ -18,8 +18,9 @@
  */
 
 import { execFileSync } from 'node:child_process'
+import { lookup } from 'node:dns/promises'
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -48,7 +49,9 @@ const failures = []
 const fail = (check, detail) => failures.push(`${check}: ${detail}`)
 
 // ---------------------------------------------------------------------------
-// 1. Every link in the README resolves.
+// 1. Every link in the README points somewhere real. A bad HTTP status fails the
+//    gate; a link the machine could not reach at all is reported as a note, since
+//    an offline runner is not a defect in the documentation.
 // ---------------------------------------------------------------------------
 
 /** Slug a Markdown heading the way GitHub does. Deliberately does NOT trim: the
@@ -66,6 +69,107 @@ function slug(heading) {
  * a shell comment, not a heading, and letting it into the anchor set makes a
  * broken anchor pass. */
 const README_PROSE = README.replace(/^```[\s\S]*?^```$/gm, '')
+
+/** Classifies a bare IP address as one a documentation link must not reach, or
+ * null when it is ordinary public space. Shared by the literal check and the
+ * resolved-address check, so both answer with the same vocabulary. */
+function privateAddressReason(ip) {
+  const h = ip.toLowerCase()
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    if (a === 127) return 'a loopback address'
+    // 0.0.0.0/8 is "this network" — 0.0.0.0 is the address a socket binds to
+    // for "everything", and the rest of the block is not routable either.
+    if (a === 0) return 'in the unspecified network (0.0.0.0/8)'
+    if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
+      return 'a private address'
+    }
+    if (a === 169 && b === 254) return 'a link-local address (cloud metadata range)'
+    return null
+  }
+  if (h === '::1') return 'a loopback address'
+  if (h === '::') return 'the unspecified address'
+  if (h.startsWith('::ffff:')) return privateAddressReason(h.slice('::ffff:'.length))
+  if (/^f[cd]/.test(h)) return 'a unique-local address'
+  if (/^fe[89ab]/.test(h)) return 'a link-local address'
+  return null
+}
+
+/** Hosts a documentation link must never point at. This check runs on
+ * `pull_request`, so without it a fork could put `https://169.254.169.254/…` or a
+ * loopback address in the README and have the CI runner probe it — the runner
+ * reaching an endpoint the author cannot reach themselves. Rejected before the
+ * request, not after, and reported as a finding rather than skipped: a published
+ * README has no business linking to a private address either way.
+ *
+ * Every bare IP literal is refused, not just the private ranges. Enumerating
+ * ranges means enumerating them again for IPv6, and again for whatever notation
+ * is missed next; a documentation link points at a hostname, so the whole class
+ * can go. The private ranges keep their own message because naming the range is
+ * the more useful diagnosis when a link does hit one.
+ *
+ * A hostname is resolved before it is fetched, because a name pointed at
+ * 169.254.169.254 reaches the same endpoint an IP literal would. This narrows
+ * the hole rather than closing it: the fetch resolves the name a second time, so
+ * a record that changes between the two calls still gets through. Closing that
+ * needs the resolved address pinned into the connection, which is more machinery
+ * than a documentation gate warrants — a static private record is the case worth
+ * stopping, and this stops it. A name that does not resolve at all is left to the
+ * fetch, which reports an unreachable host as a note. */
+async function unroutableReason(url) {
+  let u
+  try {
+    u = new URL(url)
+  } catch {
+    return 'is not a valid URL'
+  }
+  if (u.protocol !== 'https:') return `uses ${u.protocol.replace(':', '')}, not https`
+  // A fully-qualified name keeps its trailing dot through the URL parser, and
+  // `localhost.` resolves exactly like `localhost` — so the dot has to go
+  // before the name is compared, or it is a one-character bypass.
+  const h = u.hostname.toLowerCase().replace(/\.$/, '')
+  if (h === 'localhost' || h.endsWith('.localhost')) return 'is a loopback name'
+  if (h.endsWith('.local')) return 'is an mDNS name, resolvable only on the local link'
+  // A URL parser brackets every IPv6 literal, so the brackets are the test —
+  // no need to recognise the address notation itself.
+  if (h.startsWith('[')) {
+    const reason = privateAddressReason(h.slice(1, -1))
+    return reason ? `is ${reason}` : 'is an IPv6 literal, not a hostname'
+  }
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) {
+    const reason = privateAddressReason(h)
+    return reason ? `is ${reason}` : 'is an IPv4 literal, not a hostname'
+  }
+  let addresses
+  try {
+    // Bounded like the fetch below is. A resolver that hangs would otherwise
+    // stall Promise.all indefinitely and take CI with it, and a lookup that
+    // cannot answer in five seconds tells us nothing anyway. `unref` so a
+    // pending timer never holds the process open.
+    addresses = await Promise.race([
+      // The losing promise keeps running after the race resolves, so a lookup
+      // that rejects late would surface as an unhandled rejection. Swallowed
+      // here into the same "could not resolve" answer the catch below gives.
+      lookup(h, { all: true }).catch(() => null),
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve(null)
+        }, 5_000).unref()
+      })
+    ])
+  } catch {
+    return null
+  }
+  // Unresolvable, or slower than the bound: left to the fetch, which reports an
+  // unreachable host as a note rather than failing the gate.
+  if (!addresses) return null
+  for (const { address } of addresses) {
+    const reason = privateAddressReason(address)
+    if (reason) return `resolves to ${address}, which is ${reason}`
+  }
+  return null
+}
 
 async function checkLinks() {
   const anchors = new Set(
@@ -87,12 +191,39 @@ async function checkLinks() {
     ...[...README.matchAll(/<a\s+href="(#[^"]+)"/g)].map((m) => m[1].toLowerCase())
   ])
 
+  // Relative links are the ones most likely to rot — a file gets renamed and
+  // nothing outside the README notices. They cost no network to verify, and the
+  // section above claims to check every link, so it has to mean every link.
+  const relative = new Set(
+    [
+      ...[...clickable.matchAll(/\[[^\]]*\]\((?!https?:|#|mailto:)([^)\s]+)\)/g)].map((m) => m[1]),
+      ...[...clickable.matchAll(/<a\s+href="(?!https?:|#|mailto:)([^"]+)"/g)].map((m) => m[1])
+    ]
+      .map((target) => target.split('#')[0])
+      .filter(Boolean)
+  )
+
   for (const a of internal) {
     if (!anchors.has(a)) fail('links', `anchor ${a} matches no heading`)
+  }
+  for (const r of relative) {
+    // Resolve and confine before touching the filesystem. `..` segments would
+    // otherwise walk out of the repository and have the runner stat arbitrary
+    // paths, and a link that escapes the repository is broken documentation
+    // regardless — the file it names is not in the package.
+    const target = resolve(ROOT, r.replace(/^\/+/, ''))
+    if (target !== ROOT && !target.startsWith(ROOT + sep)) {
+      fail('links', `${r} resolves outside the repository`)
+    } else if (!existsSync(target)) {
+      fail('links', `${r} does not exist in the repository`)
+    }
   }
 
   const results = await Promise.all(
     [...links].map(async (url) => {
+      const unroutable = await unroutableReason(url)
+      if (unroutable) return `${url} → ${unroutable}`
+
       // npmjs.com serves 403 to any datacenter IP, browser User-Agent included,
       // so asking it whether a package page exists measures Cloudflare rather
       // than the package. The registry is the authoritative source for the same
@@ -132,7 +263,9 @@ async function checkLinks() {
     })
   )
   for (const r of results) if (r) fail('links', r)
-  console.log(`  links: ${links.size} external, ${internal.size} internal`)
+  console.log(
+    `  links: ${links.size} external, ${internal.size} internal, ${relative.size} relative`
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -199,7 +332,13 @@ function checkChangelog() {
   // while the changelog claims released versions, say so instead of passing:
   // a silent no-op is the failure mode this whole gate exists to prevent.
   try {
-    execFileSync('git', ['fetch', '--tags', '--quiet'], { cwd: ROOT, stdio: 'ignore' })
+    // Bounded: an unreachable remote must not hang a publish. On timeout the
+    // local tags below are all there is, and the shallow guard still fires.
+    execFileSync('git', ['fetch', '--tags', '--quiet'], {
+      cwd: ROOT,
+      stdio: 'ignore',
+      timeout: 20_000
+    })
   } catch {
     // No network or no remote — the local tags below are then all there is.
   }
@@ -258,7 +397,9 @@ function scaffoldConsumer() {
   rmSync(GATE_DIR, { recursive: true, force: true })
   const scope = join(GATE_DIR, 'node_modules', ...PKG.name.split('/').slice(0, -1))
   mkdirSync(scope, { recursive: true })
-  symlinkSync(ROOT, join(GATE_DIR, 'node_modules', PKG.name), 'dir')
+  // 'junction' rather than 'dir': a directory symlink needs elevation or Developer
+  // Mode on Windows, where a junction does not. Node ignores the type on POSIX.
+  symlinkSync(ROOT, join(GATE_DIR, 'node_modules', PKG.name), 'junction')
   writeFileSync(
     join(GATE_DIR, 'tsconfig.json'),
     `${JSON.stringify(
@@ -272,9 +413,12 @@ function scaffoldConsumer() {
           noUnusedLocals: false,
           // A README snippet may name a handler parameter it does not use; that is
           // prose, not an API defect.
-          noUnusedParameters: false
+          noUnusedParameters: false,
+          // A React snippet is JSX; without this it fails to parse for a reason
+          // that says nothing about the published API. Inert when there is none.
+          jsx: 'react-jsx'
         },
-        include: ['*.ts', TYPE_TESTS_GLOB]
+        include: ['*.ts', '*.tsx', TYPE_TESTS_GLOB]
       },
       null,
       2
@@ -287,10 +431,16 @@ function scaffoldConsumer() {
 // ---------------------------------------------------------------------------
 
 function checkSnippets() {
-  const blocks = [...README.matchAll(/^```(?:ts|typescript)\n([\s\S]*?)^```$/gm)].map((m) => m[1])
+  // `tsx` too, and the fence language is kept: a React example has to be written
+  // to a .tsx file or it does not parse, and a package with a React subpath
+  // documents its surface in exactly those blocks.
+  const blocks = [...README.matchAll(/^```(ts|typescript|tsx)\n([\s\S]*?)^```$/gm)].map((m) => ({
+    ext: m[1] === 'tsx' ? 'tsx' : 'ts',
+    code: m[2]
+  }))
   // Only snippets that IMPORT the package: those are the ones making a claim
   // about the public API. Merely naming it in a comment is not a claim.
-  const subjects = blocks.filter((b) => new RegExp(`from ['"]${PKG.name}`).test(b))
+  const subjects = blocks.filter((b) => new RegExp(`from ['"]${PKG.name}`).test(b.code))
   if (subjects.length === 0) {
     fail('snippets', 'no README snippet imports the package — the gate would be vacuous')
     return
@@ -299,8 +449,8 @@ function checkSnippets() {
   scaffoldConsumer()
   /** file name → its source, so a diagnostic can be traced back to the snippet. */
   const sources = new Map()
-  subjects.forEach((code, i) => {
-    const name = `snippet-${String(i + 1).padStart(2, '0')}.ts`
+  subjects.forEach(({ ext, code }, i) => {
+    const name = `snippet-${String(i + 1).padStart(2, '0')}.${ext}`
     sources.set(name, code)
     writeFileSync(join(GATE_DIR, name), code)
   })
@@ -330,7 +480,8 @@ function checkSnippets() {
     const m = /Property '[^']+' does not exist on type '([^']+)'/.exec(line)
     if (!m) return false
     const file = /^([^(]+)\(/.exec(line)?.[1]
-    const own = sources.get(file?.split('/').pop() ?? '') ?? ''
+    // `tsc` emits backslashes on Windows, so the basename is taken on either.
+    const own = sources.get(file?.split(/[\\/]/).pop() ?? '') ?? ''
     return new RegExp(`\\b(class|interface|type)\\s+${m[1]}\\b`).test(own)
   }
   /** An import of some OTHER package the fixture does not install — a documented
