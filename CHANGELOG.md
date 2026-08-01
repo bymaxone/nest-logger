@@ -9,7 +9,9 @@ The `release.yml` workflow extracts the section matching the pushed `vX.Y.Z` tag
 as the GitHub Release body, so each released version needs a matching `## [X.Y.Z]`
 heading here.
 
-## [1.0.5] — 2026-07-30
+## [Unreleased]
+
+## [1.0.5] - 2026-07-30
 
 ### Security
 
@@ -27,10 +29,6 @@ heading here.
   Shipped as a patch, which is where a security fix belongs; a minor would reach the
   same installs anyway, since `^1.0.4` accepts `1.1.0` as readily as `1.0.5`. No
   runtime behaviour changed.
-
----
-
-## [Unreleased]
 
 ## [1.0.4] - 2026-07-29
 
@@ -208,8 +206,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.4...HEAD
-[1.0.5]: https://github.com/bymaxone/nest-logger/compare/v1.0.3...v1.0.5
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/bymaxone/nest-logger/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/bymaxone/nest-logger/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-logger/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/bymaxone/nest-logger/compare/v1.0.1...v1.0.2
