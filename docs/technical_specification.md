@@ -2200,28 +2200,24 @@ The lib is intentionally focused on logging. **Out of scope:**
 ```json
 "peerDependencies": {
   "pino-pretty": "^13.0.0",
-  "pino-roll": "^3.0.0",
-  "@opentelemetry/api": "^1.9.0",
-  "@opentelemetry/sdk-node": ">=0.218.0 <1.10.0"
+  "@opentelemetry/api": "^1.9.0"
 },
 "peerDependenciesMeta": {
   "pino-pretty": { "optional": true },
-  "pino-roll": { "optional": true },
-  "@opentelemetry/api": { "optional": true },
-  "@opentelemetry/sdk-node": { "optional": true }
+  "@opentelemetry/api": { "optional": true }
 }
 ```
 
-| Package                   | When to install                                                                                                                                              | Declared range      |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
-| `pino-pretty`             | If `pretty: true` or using `PrettyDevDestination`                                                                                                            | `^13.0.0`           |
-| `pino-roll`               | If using `RollingFileDestination` to write to a file                                                                                                         | `^3.0.0`            |
-| `@opentelemetry/api`      | If you want `traceId`/`spanId` correlation in logs                                                                                                           | `^1.9.0`            |
-| `@opentelemetry/sdk-node` | To initialize tracing in the consumer (`main.ts`) — declared as optional peer so the resolver respects the `api < 1.10` ceiling enforced by SDK Node 0.218.x | `>=0.218.0 <1.10.0` |
+| Package              | When to install                                    | Declared range |
+| -------------------- | -------------------------------------------------- | -------------- |
+| `pino-pretty`        | If `pretty: true` or using `PrettyDevDestination`  | `^13.0.0`      |
+| `@opentelemetry/api` | If you want `traceId`/`spanId` correlation in logs | `^1.9.0`       |
 
 > **Note on `pino-http`**: the lib does **not** depend on `pino-http`. Consumers can use `pino-http` independently if they choose; this lib does not depend on it (see §17.5 for the rationale).
 >
-> **Note about `@opentelemetry/sdk-node`**: the lib **does not initialize** the SDK — that stays with the consumer. The optional peer range exists only to keep the resolver aware that SDK Node 0.218.x pins `@opentelemetry/api` at `>=1.3.0 <1.10.0`. Track pre-1.0 releases — breaking changes may occur (currently `experimental/v0.218.0`).
+> **Note about `@opentelemetry/sdk-node` and `pino-roll`**: neither is a declared peer, and neither should become one. The lib imports neither — `sdk-node` is initialized by the consumer in its own `main.ts`, and `pino-roll` belongs to the `RollingFileDestination` **adapter example** in §5.7, which a consumer copies and owns. Declaring a peer the package never imports buys nothing (an optional peer documents a requirement, it does not resolve one) and costs: with pnpm's `auto-install-peers`, optional peers are materialized into the lockfile and generate Dependabot alerts for code this library never runs.
+>
+> The constraint that mattered survives without the declaration: SDK Node 0.218.x pins `@opentelemetry/api` at `>=1.3.0 <1.10.0`, which is why the `api` range above stays at `^1.9.0`. Track pre-1.0 releases — breaking changes may occur (currently `experimental/v0.218.0`).
 >
 > **Note about `@opentelemetry/api` version**: our peer dep declares `^1.9.0` (any 1.x ≥ 1.9.0). `@opentelemetry/sdk-node` 0.218.x caps `@opentelemetry/api` at `<1.10` — consumers pinning a newer `api` will break OTel SDK init. **Keep `^1.9.0` until SDK Node 1.0 ships.** The lib itself only consumes the `trace` API namespace, which has been stable since 1.3+, so the lib does not introduce its own ceiling — the ceiling is dictated by the SDK.
 
@@ -2256,7 +2252,6 @@ The lib has **no direct dependencies**. The entire ecosystem comes via peer deps
   "jest": "^30",
   "pino": "^10",
   "pino-pretty": "^13",
-  "pino-roll": "^3",
   "prettier": "^3.8",
   "reflect-metadata": "^0.2",
   "supertest": "^7",
@@ -2341,7 +2336,7 @@ Deliverables:
 
 - [ ] `PrettyDevDestination` (optional peer dep `pino-pretty`)
 - [ ] `DestinationRegistry` (init/shutdown lifecycle)
-- [ ] `RollingFileDestination` (reference, optional peer dep `pino-roll`)
+- [ ] `RollingFileDestination` (adapter example; the consumer brings `pino-roll`, which is not a declared peer)
 - [ ] Destination test suite with `Testcontainers` (Loki via Docker)
 - [ ] Mutation testing baseline (Stryker)
 - [ ] Documentation: README + 3 complete examples
