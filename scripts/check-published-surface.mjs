@@ -140,10 +140,24 @@ async function unroutableReason(url) {
   }
   let addresses
   try {
-    addresses = await lookup(h, { all: true })
+    // Bounded like the fetch below is. A resolver that hangs would otherwise
+    // stall Promise.all indefinitely and take CI with it, and a lookup that
+    // cannot answer in five seconds tells us nothing anyway. `unref` so a
+    // pending timer never holds the process open.
+    addresses = await Promise.race([
+      lookup(h, { all: true }),
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve(null)
+        }, 5_000).unref()
+      })
+    ])
   } catch {
     return null
   }
+  // Unresolvable, or slower than the bound: left to the fetch, which reports an
+  // unreachable host as a note rather than failing the gate.
+  if (!addresses) return null
   for (const { address } of addresses) {
     const reason = privateAddressReason(address)
     if (reason) return `resolves to ${address}, which is ${reason}`
