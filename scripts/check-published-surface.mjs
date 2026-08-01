@@ -18,6 +18,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
+import { lookup } from 'node:dns/promises'
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -69,8 +70,31 @@ function slug(heading) {
  * broken anchor pass. */
 const README_PROSE = README.replace(/^```[\s\S]*?^```$/gm, '')
 
+/** Classifies a bare IP address as one a documentation link must not reach, or
+ * null when it is ordinary public space. Shared by the literal check and the
+ * resolved-address check, so both answer with the same vocabulary. */
+function privateAddressReason(ip) {
+  const h = ip.toLowerCase()
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    if (a === 127) return 'a loopback address'
+    if (h === '0.0.0.0') return 'the unspecified address'
+    if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
+      return 'a private address'
+    }
+    if (a === 169 && b === 254) return 'a link-local address (cloud metadata range)'
+    return null
+  }
+  if (h === '::1') return 'a loopback address'
+  if (h.startsWith('::ffff:')) return privateAddressReason(h.slice('::ffff:'.length))
+  if (/^f[cd]/.test(h)) return 'a unique-local address'
+  if (/^fe[89ab]/.test(h)) return 'a link-local address'
+  return null
+}
+
 /** Hosts a documentation link must never point at. This check runs on
- * `pull_request`, so without it a fork could put `http://169.254.169.254/…` or a
+ * `pull_request`, so without it a fork could put `https://169.254.169.254/…` or a
  * loopback address in the README and have the CI runner probe it — the runner
  * reaching an endpoint the author cannot reach themselves. Rejected before the
  * request, not after, and reported as a finding rather than skipped: a published
@@ -80,8 +104,17 @@ const README_PROSE = README.replace(/^```[\s\S]*?^```$/gm, '')
  * ranges means enumerating them again for IPv6, and again for whatever notation
  * is missed next; a documentation link points at a hostname, so the whole class
  * can go. The private ranges keep their own message because naming the range is
- * the more useful diagnosis when a link does hit one. */
-function unroutableReason(url) {
+ * the more useful diagnosis when a link does hit one.
+ *
+ * A hostname is resolved before it is fetched, because a name pointed at
+ * 169.254.169.254 reaches the same endpoint an IP literal would. This narrows
+ * the hole rather than closing it: the fetch resolves the name a second time, so
+ * a record that changes between the two calls still gets through. Closing that
+ * needs the resolved address pinned into the connection, which is more machinery
+ * than a documentation gate warrants — a static private record is the case worth
+ * stopping, and this stops it. A name that does not resolve at all is left to the
+ * fetch, which reports an unreachable host as a note. */
+async function unroutableReason(url) {
   let u
   try {
     u = new URL(url)
@@ -93,28 +126,27 @@ function unroutableReason(url) {
   // `localhost.` resolves exactly like `localhost` — so the dot has to go
   // before the name is compared, or it is a one-character bypass.
   const h = u.hostname.toLowerCase().replace(/\.$/, '')
-  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local')) {
-    return 'is a loopback name'
-  }
+  if (h === 'localhost' || h.endsWith('.localhost')) return 'is a loopback name'
+  if (h.endsWith('.local')) return 'is an mDNS name, resolvable only on the local link'
   // A URL parser brackets every IPv6 literal, so the brackets are the test —
   // no need to recognise the address notation itself.
   if (h.startsWith('[')) {
-    const v6 = h.slice(1, -1)
-    if (v6 === '::1') return 'is a loopback address'
-    if (/^f[cd]/.test(v6)) return 'is a unique-local address'
-    if (/^fe[89ab]/.test(v6)) return 'is a link-local address'
-    return 'is an IPv6 literal, not a hostname'
+    const reason = privateAddressReason(h.slice(1, -1))
+    return reason ? `is ${reason}` : 'is an IPv6 literal, not a hostname'
   }
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
-  if (v4) {
-    const [a, b] = [Number(v4[1]), Number(v4[2])]
-    if (a === 127) return 'is a loopback address'
-    if (h === '0.0.0.0') return 'is the unspecified address'
-    if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
-      return 'is a private address'
-    }
-    if (a === 169 && b === 254) return 'is a link-local address (cloud metadata range)'
-    return 'is an IPv4 literal, not a hostname'
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) {
+    const reason = privateAddressReason(h)
+    return reason ? `is ${reason}` : 'is an IPv4 literal, not a hostname'
+  }
+  let addresses
+  try {
+    addresses = await lookup(h, { all: true })
+  } catch {
+    return null
+  }
+  for (const { address } of addresses) {
+    const reason = privateAddressReason(address)
+    if (reason) return `resolves to ${address}, which is ${reason}`
   }
   return null
 }
@@ -145,7 +177,7 @@ async function checkLinks() {
 
   const results = await Promise.all(
     [...links].map(async (url) => {
-      const unroutable = unroutableReason(url)
+      const unroutable = await unroutableReason(url)
       if (unroutable) return `${url} → ${unroutable}`
 
       // npmjs.com serves 403 to any datacenter IP, browser User-Agent included,
