@@ -79,7 +79,9 @@ function privateAddressReason(ip) {
   if (v4) {
     const [a, b] = [Number(v4[1]), Number(v4[2])]
     if (a === 127) return 'a loopback address'
-    if (h === '0.0.0.0') return 'the unspecified address'
+    // 0.0.0.0/8 is "this network" — 0.0.0.0 is the address a socket binds to
+    // for "everything", and the rest of the block is not routable either.
+    if (a === 0) return 'in the unspecified network (0.0.0.0/8)'
     if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
       return 'a private address'
     }
@@ -87,6 +89,7 @@ function privateAddressReason(ip) {
     return null
   }
   if (h === '::1') return 'a loopback address'
+  if (h === '::') return 'the unspecified address'
   if (h.startsWith('::ffff:')) return privateAddressReason(h.slice('::ffff:'.length))
   if (/^f[cd]/.test(h)) return 'a unique-local address'
   if (/^fe[89ab]/.test(h)) return 'a link-local address'
@@ -145,7 +148,10 @@ async function unroutableReason(url) {
     // cannot answer in five seconds tells us nothing anyway. `unref` so a
     // pending timer never holds the process open.
     addresses = await Promise.race([
-      lookup(h, { all: true }),
+      // The losing promise keeps running after the race resolves, so a lookup
+      // that rejects late would surface as an unhandled rejection. Swallowed
+      // here into the same "could not resolve" answer the catch below gives.
+      lookup(h, { all: true }).catch(() => null),
       new Promise((resolve) => {
         setTimeout(() => {
           resolve(null)
@@ -185,8 +191,23 @@ async function checkLinks() {
     ...[...README.matchAll(/<a\s+href="(#[^"]+)"/g)].map((m) => m[1].toLowerCase())
   ])
 
+  // Relative links are the ones most likely to rot — a file gets renamed and
+  // nothing outside the README notices. They cost no network to verify, and the
+  // section above claims to check every link, so it has to mean every link.
+  const relative = new Set(
+    [
+      ...[...clickable.matchAll(/\[[^\]]*\]\((?!https?:|#|mailto:)([^)\s]+)\)/g)].map((m) => m[1]),
+      ...[...clickable.matchAll(/<a\s+href="(?!https?:|#|mailto:)([^"]+)"/g)].map((m) => m[1])
+    ]
+      .map((target) => target.split('#')[0])
+      .filter(Boolean)
+  )
+
   for (const a of internal) {
     if (!anchors.has(a)) fail('links', `anchor ${a} matches no heading`)
+  }
+  for (const r of relative) {
+    if (!existsSync(join(ROOT, r))) fail('links', `${r} does not exist in the repository`)
   }
 
   const results = await Promise.all(
@@ -233,7 +254,9 @@ async function checkLinks() {
     })
   )
   for (const r of results) if (r) fail('links', r)
-  console.log(`  links: ${links.size} external, ${internal.size} internal`)
+  console.log(
+    `  links: ${links.size} external, ${internal.size} internal, ${relative.size} relative`
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -381,9 +404,12 @@ function scaffoldConsumer() {
           noUnusedLocals: false,
           // A README snippet may name a handler parameter it does not use; that is
           // prose, not an API defect.
-          noUnusedParameters: false
+          noUnusedParameters: false,
+          // A React snippet is JSX; without this it fails to parse for a reason
+          // that says nothing about the published API. Inert when there is none.
+          jsx: 'react-jsx'
         },
-        include: ['*.ts', TYPE_TESTS_GLOB]
+        include: ['*.ts', '*.tsx', TYPE_TESTS_GLOB]
       },
       null,
       2
@@ -396,10 +422,16 @@ function scaffoldConsumer() {
 // ---------------------------------------------------------------------------
 
 function checkSnippets() {
-  const blocks = [...README.matchAll(/^```(?:ts|typescript)\n([\s\S]*?)^```$/gm)].map((m) => m[1])
+  // `tsx` too, and the fence language is kept: a React example has to be written
+  // to a .tsx file or it does not parse, and a package with a React subpath
+  // documents its surface in exactly those blocks.
+  const blocks = [...README.matchAll(/^```(ts|typescript|tsx)\n([\s\S]*?)^```$/gm)].map((m) => ({
+    ext: m[1] === 'tsx' ? 'tsx' : 'ts',
+    code: m[2]
+  }))
   // Only snippets that IMPORT the package: those are the ones making a claim
   // about the public API. Merely naming it in a comment is not a claim.
-  const subjects = blocks.filter((b) => new RegExp(`from ['"]${PKG.name}`).test(b))
+  const subjects = blocks.filter((b) => new RegExp(`from ['"]${PKG.name}`).test(b.code))
   if (subjects.length === 0) {
     fail('snippets', 'no README snippet imports the package — the gate would be vacuous')
     return
@@ -408,8 +440,8 @@ function checkSnippets() {
   scaffoldConsumer()
   /** file name → its source, so a diagnostic can be traced back to the snippet. */
   const sources = new Map()
-  subjects.forEach((code, i) => {
-    const name = `snippet-${String(i + 1).padStart(2, '0')}.ts`
+  subjects.forEach(({ ext, code }, i) => {
+    const name = `snippet-${String(i + 1).padStart(2, '0')}.${ext}`
     sources.set(name, code)
     writeFileSync(join(GATE_DIR, name), code)
   })
