@@ -89,7 +89,10 @@ function unroutableReason(url) {
     return 'is not a valid URL'
   }
   if (u.protocol !== 'https:') return `uses ${u.protocol.replace(':', '')}, not https`
-  const h = u.hostname.toLowerCase()
+  // A fully-qualified name keeps its trailing dot through the URL parser, and
+  // `localhost.` resolves exactly like `localhost` — so the dot has to go
+  // before the name is compared, or it is a one-character bypass.
+  const h = u.hostname.toLowerCase().replace(/\.$/, '')
   if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local')) {
     return 'is a loopback name'
   }
@@ -105,7 +108,8 @@ function unroutableReason(url) {
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
   if (v4) {
     const [a, b] = [Number(v4[1]), Number(v4[2])]
-    if (a === 127 || h === '0.0.0.0') return 'is a loopback address'
+    if (a === 127) return 'is a loopback address'
+    if (h === '0.0.0.0') return 'is the unspecified address'
     if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
       return 'is a private address'
     }
