@@ -105,10 +105,24 @@ jobs:
           node scripts/dogfood-smoke-test.mjs
 
       - name: Publish to npm with provenance
-        # OIDC trusted publishing — pnpm delegates to npm CLI, which exchanges
+        # `--ignore-scripts`: npm runs `prepublishOnly` on publish, and this job
+        # already ran it as its own step. Without the flag it runs twice — and the
+        # second run starts with `clean`, deleting and rebuilding the `dist/` that
+        # `size` and `check:exports` just validated, so the tarball shipped is not
+        # the artifact the gates checked. Observed in the nest-realtime 1.0.1 run.
+        #
+        # `npm publish`, not `pnpm publish`: the registry's `readme` field is
+        # populated from the publish request, and pnpm 11 does not send it. Every
+        # package here published under pnpm 11 landed with an empty `readme` — the
+        # npm page rendering no documentation at all — while every one published
+        # under pnpm 10, which delegated to the npm CLI, carries it. Confirmed on
+        # nest-realtime@1.0.1, where switching restored both `readme` and
+        # `_npmVersion` in a single release.
+        #
+        # OIDC trusted publishing still authenticates: the npm CLI exchanges
         # the GitHub OIDC token (`id-token: write` above) for a short-lived
-        # publish credential. `--no-git-checks` is required because the CI
-        # runner checks out a detached HEAD at the tag SHA.
+        # publish credential. npm runs no git checks, so the detached HEAD the
+        # runner sits on at the tag SHA needs no flag of its own.
         # Skips gracefully when the version was already published manually
         # (e.g. during the bootstrap of the first release).
         run: |
@@ -116,7 +130,7 @@ jobs:
           if npm view "@bymax-one/nest-logger@${PKG_VERSION}" version 2>/dev/null | grep -qF "$PKG_VERSION"; then
             echo "Version ${PKG_VERSION} already published on npm — skipping publish step."
           else
-            pnpm publish --provenance --no-git-checks
+            npm publish --provenance --access public --ignore-scripts
           fi
 
       - name: Extract release notes from CHANGELOG
