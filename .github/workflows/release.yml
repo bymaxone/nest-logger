@@ -105,6 +105,12 @@ jobs:
           node scripts/dogfood-smoke-test.mjs
 
       - name: Publish to npm with provenance
+        # `--ignore-scripts`: npm runs `prepublishOnly` on publish, and this job
+        # already ran it as its own step. Without the flag it runs twice — and the
+        # second run starts with `clean`, deleting and rebuilding the `dist/` that
+        # `size` and `check:exports` just validated, so the tarball shipped is not
+        # the artifact the gates checked. Observed in the nest-realtime 1.0.1 run.
+        #
         # `npm publish`, not `pnpm publish`: the registry's `readme` field is
         # populated from the publish request, and pnpm 11 does not send it. Every
         # package here published under pnpm 11 landed with an empty `readme` — the
@@ -124,7 +130,7 @@ jobs:
           if npm view "@bymax-one/nest-logger@${PKG_VERSION}" version 2>/dev/null | grep -qF "$PKG_VERSION"; then
             echo "Version ${PKG_VERSION} already published on npm — skipping publish step."
           else
-            npm publish --provenance --access public
+            npm publish --provenance --access public --ignore-scripts
           fi
 
       - name: Extract release notes from CHANGELOG
