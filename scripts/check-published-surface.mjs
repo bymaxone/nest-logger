@@ -183,13 +183,28 @@ class UnroutableRedirect extends Error {}
  * would follow it — the very thing `unroutableReason` exists to stop. Every hop
  * is validated before it is requested, and the chain is bounded: a redirect loop
  * must not spin inside a release gate. */
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+
 async function fetchChecked(url, init, hops = 0) {
   if (hops > 5) throw new UnroutableRedirect('follows more than 5 redirects')
   const res = await fetch(url, { ...init, redirect: 'manual' })
-  if (res.status < 300 || res.status >= 400) return res
+  // The statuses the Fetch standard actually redirects on. `3xx` is wider than
+  // that — a 304 or a 300 is a response to return, not a hop to follow.
+  if (!REDIRECT_STATUSES.has(res.status)) return res
   const location = res.headers.get('location')
   if (!location) return res
-  const next = new URL(location, url).href
+  // Release the socket before the next hop: undici holds the connection until
+  // the body is read or cancelled, and this runs across every README link at
+  // once.
+  await res.body?.cancel().catch(() => undefined)
+  let next
+  try {
+    next = new URL(location, url).href
+  } catch {
+    // A Location that does not parse is a defect in the chain, not an outage,
+    // so it must not fall through to the transport-error note below.
+    throw new UnroutableRedirect(`redirects to an unparsable location: ${location}`)
+  }
   const reason = await unroutableReason(next)
   if (reason) throw new UnroutableRedirect(`redirects to ${next}, which ${reason}`)
   return fetchChecked(next, init, hops + 1)
