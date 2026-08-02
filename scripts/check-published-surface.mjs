@@ -275,13 +275,19 @@ async function checkLinks() {
       const headers = { 'user-agent': 'Mozilla/5.0 (compatible; bymax-docs-gate)' }
       try {
         // HEAD first; some hosts answer it with 405, so fall back to GET.
-        // Bounded per request: this gate runs inside `prepublishOnly`, and one
-        // hung host must not stall a publish until the job timeout.
+        // Bounded per LINK, not per request: one signal covers the HEAD, the GET
+        // fallback and every redirect hop together. That is the useful bound —
+        // what must not stall a publish is the check of one link, however many
+        // requests it takes.
         const opts = { headers, signal: AbortSignal.timeout(10_000) }
         let res = await fetchChecked(probe, { method: 'HEAD', ...opts })
         if (res.status === 405 || res.status === 403 || res.status === 429) {
+          await res.body?.cancel().catch(() => undefined)
           res = await fetchChecked(probe, { method: 'GET', ...opts })
         }
+        // Only the status is ever read. undici holds the connection until the
+        // body is read or cancelled, and this runs across every link at once.
+        await res.body?.cancel().catch(() => undefined)
         if (res.ok) return null
         // A package page 404s until the first publish. Reported, never fatal:
         // failing here would block the very release that makes the link true.
