@@ -272,6 +272,14 @@ async function checkLinks() {
         /^https:\/\/www\.npmjs\.com\/package\/(.+)$/,
         (_, name) => `https://registry.npmjs.org/${encodeURIComponent(name)}`
       )
+      // The rewrite above changes what is actually requested, so the invariant —
+      // nothing is requested before it is validated — has to be re-established
+      // for the rewritten target too. Today it is a fixed registry host, but the
+      // guard must not depend on that staying true.
+      if (probe !== url) {
+        const rewritten = await unroutableReason(probe)
+        if (rewritten) return `${url} → rewritten to ${probe}, which ${rewritten}`
+      }
       const headers = { 'user-agent': 'Mozilla/5.0 (compatible; bymax-docs-gate)' }
       try {
         // HEAD first; some hosts answer it with 405, so fall back to GET.
@@ -279,6 +287,11 @@ async function checkLinks() {
         // fallback and every redirect hop together. That is the useful bound —
         // what must not stall a publish is the check of one link, however many
         // requests it takes.
+        //
+        // It covers the REQUESTS only. Each hop's `unroutableReason` runs a DNS
+        // lookup with its own 5s bound, outside this signal, so a chain's worst
+        // case is this timeout plus one lookup per hop. Both are bounded, which
+        // is what matters here; they are not one budget.
         const opts = { headers, signal: AbortSignal.timeout(10_000) }
         let res = await fetchChecked(probe, { method: 'HEAD', ...opts })
         if (res.status === 405 || res.status === 403 || res.status === 429) {
