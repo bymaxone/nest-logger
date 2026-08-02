@@ -171,6 +171,30 @@ async function unroutableReason(url) {
   return null
 }
 
+/** Thrown when a hop in a redirect chain points somewhere the guard refuses.
+ * Distinguished from a transport error so it fails the gate instead of
+ * degrading to a note — a redirect into private space is a finding, not an
+ * outage. */
+class UnroutableRedirect extends Error {}
+
+/** `fetch` with the redirect chain followed by hand, because `redirect:
+ * 'follow'` would check only the URL written in the README. A public host is
+ * free to answer 302 with `Location: http://169.254.169.254/…`, and the runner
+ * would follow it — the very thing `unroutableReason` exists to stop. Every hop
+ * is validated before it is requested, and the chain is bounded: a redirect loop
+ * must not spin inside a release gate. */
+async function fetchChecked(url, init, hops = 0) {
+  if (hops > 5) throw new UnroutableRedirect('follows more than 5 redirects')
+  const res = await fetch(url, { ...init, redirect: 'manual' })
+  if (res.status < 300 || res.status >= 400) return res
+  const location = res.headers.get('location')
+  if (!location) return res
+  const next = new URL(location, url).href
+  const reason = await unroutableReason(next)
+  if (reason) throw new UnroutableRedirect(`redirects to ${next}, which ${reason}`)
+  return fetchChecked(next, init, hops + 1)
+}
+
 async function checkLinks() {
   const anchors = new Set(
     [...README_PROSE.matchAll(/^#{1,6}\s+(.+)$/gm)].map((m) => `#${slug(m[1])}`)
@@ -238,10 +262,10 @@ async function checkLinks() {
         // HEAD first; some hosts answer it with 405, so fall back to GET.
         // Bounded per request: this gate runs inside `prepublishOnly`, and one
         // hung host must not stall a publish until the job timeout.
-        const opts = { redirect: 'follow', headers, signal: AbortSignal.timeout(10_000) }
-        let res = await fetch(probe, { method: 'HEAD', ...opts })
+        const opts = { headers, signal: AbortSignal.timeout(10_000) }
+        let res = await fetchChecked(probe, { method: 'HEAD', ...opts })
         if (res.status === 405 || res.status === 403 || res.status === 429) {
-          res = await fetch(probe, { method: 'GET', ...opts })
+          res = await fetchChecked(probe, { method: 'GET', ...opts })
         }
         if (res.ok) return null
         // A package page 404s until the first publish. Reported, never fatal:
@@ -252,6 +276,9 @@ async function checkLinks() {
         }
         return `${url} → HTTP ${res.status}`
       } catch (err) {
+        // A refused redirect is a finding about the link itself, not someone
+        // else's outage, so it fails rather than degrading to a note.
+        if (err instanceof UnroutableRedirect) return `${url} → ${err.message}`
         // A transport error cannot tell "this link is dead" from "that host is
         // down right now". Reported, never fatal — this gate also guards
         // `prepublishOnly`, and someone else's outage must not block a release.
