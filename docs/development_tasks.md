@@ -171,7 +171,7 @@ To reset a task (return to TODO):
 > - `"peerDependenciesMeta"`: `pino-pretty` and `@opentelemetry/api` marked `{ "optional": true }`
 > - `"devDependencies"`: NestJS 11.x suite, jest 30, ts-jest 29, stryker 9 + jest-runner + typescript-checker, tsup 8.5, typescript 5.9, eslint 9, prettier 3.8
 > - `"scripts"`: build (tsup), lint, test, test:cov, test:e2e, test:cov:all, mutation, typecheck, size, clean, prepublishOnly, release
-> - `"packageManager": "pnpm@10.8.1"`, `"engines": { "node": ">=24.0.0" }`
+> - `"packageManager": "pnpm@11.20.0"`, `"engines": { "node": ">=24.0.0" }`
 > - `"publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" }`
 >
 > After creating, run `pnpm install` in `/Users/maximiliano/Documents/MyApps/bymax-one/nest-logger/`. Verify that `pnpm-lock.yaml` is generated without missing peer dep warnings.
