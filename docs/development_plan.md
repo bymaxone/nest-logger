@@ -274,7 +274,7 @@ Copy from `/Users/maximiliano/Documents/MyApps/nest-auth/` and adapt (replace `n
     "tsup": "^8.5.1",
     "typescript": "^5.9.3"
   },
-  "packageManager": "pnpm@10.8.1",
+  "packageManager": "pnpm@11.20.0",
   "engines": { "node": ">=24.0.0" },
   "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" }
 }
@@ -345,7 +345,7 @@ ls -la dist/shared/
 
 **Risks/Notes:**
 
-- ⚠️ `pnpm@10.8.1` is required; using a different version may break lockfile resolution
+- ⚠️ `pnpm@11.20.0` is required; using a different version may break lockfile resolution
 - ⚠️ Node 24 LTS is the minimum; `createRequire` and `import.meta.url` are essential for OTel detection
 - ⚠️ Do not copy `tsup.config.ts` from nest-auth literally — nest-auth has 5 entries, nest-logger only 2
 
