@@ -213,7 +213,6 @@ function scrubStack(stack: string): string {
  * @returns `true` when `value` is a non-null object.
  */
 function isObject(value: unknown): value is object {
-  // Stryker disable next-line ConditionalExpression,LogicalOperator: equivalent — the only caller pairs this with `seen.has(value)`, and the cycle set holds objects, so a primitive this predicate wrongly admits is never a member and the guard answers false regardless
   return typeof value === 'object' && value !== null
 }
 

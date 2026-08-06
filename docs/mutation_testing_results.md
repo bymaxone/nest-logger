@@ -6,15 +6,15 @@
 
 ## Summary
 
-| Metric                                                        | Value                                              |
-| ------------------------------------------------------------- | -------------------------------------------------- |
-| **Global mutation score** (superseded — see the dated re-run) | **97.42 %**                                        |
-| Break threshold (`thresholds.break`)                          | 95 % → **PASS (exit 0)** ✅                        |
-| Aspirational target (`thresholds.high`)                       | 99 % → not reached (equivalent mutants, see below) |
-| Killed                                                        | 373                                                |
-| Survived                                                      | 10                                                 |
-| Timeout (counts as detected)                                  | 5                                                  |
-| Compile/runtime errors (type-system-guarded, excluded)        | 261                                                |
+| Metric                                                 | Value                                              |
+| ------------------------------------------------------ | -------------------------------------------------- |
+| **Global mutation score**                              | **97.42 %**                                        |
+| Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅                        |
+| Aspirational target (`thresholds.high`)                | 99 % → not reached (equivalent mutants, see below) |
+| Killed                                                 | 373                                                |
+| Survived                                               | 10                                                 |
+| Timeout (counts as detected)                           | 5                                                  |
+| Compile/runtime errors (type-system-guarded, excluded) | 261                                                |
 
 Score = `(killed + timeout) / (killed + timeout + survived)` = `378 / 388 = 97.42 %`.
 
@@ -95,8 +95,8 @@ There are zero genuine coverage gaps remaining. The maximum theoretical score wi
 
 | Metric             | Value        |
 | ------------------ | ------------ |
-| **Mutation score** | **99.73 %**  |
-| Surviving mutants  | 1            |
+| **Mutation score** | **97.42 %**  |
+| Surviving mutants  | 10           |
 | Break threshold    | 95 % -> PASS |
 
 `detectOtelTraceApi` resolves `@opentelemetry/api`, and the specifier itself was pinned by
@@ -108,10 +108,16 @@ resolver and asserts what it asked for.
 `useNestLogger` also gained a feature-module case — the shape where the provider sits outside the
 host module's own injector and a strict lookup would refuse it.
 
-One survivor remains and it is NOT equivalent. The test above kills it: applying that exact
-mutation by hand turns the suite red. Stryker does not attribute the test to the mutant, on a
-full run as well as a scoped one, so it reports as surviving. Recorded rather than suppressed,
-because calling it equivalent would be false.
+The score is unchanged at 97.42 %, and that is the honest number for this package: its plan
+forbids inline `// Stryker disable` comments because they ship in the unminified bundle and eat
+the server subpath's brotli budget. An earlier revision of this branch added them and reported
+99.73 %; they are gone.
+
+One of the ten is worth separating from the equivalents. `otel-detector.ts:40` is NOT equivalent
+— the test added above kills it, and applying that exact mutation by hand turns the suite red.
+Stryker does not attribute the test to the mutant, on a full run as well as a scoped one, so it
+reports as surviving. Recorded as such rather than reclassified, because calling it equivalent
+would be false.
 
 Every equivalence claim in this section was checked by running the mutant, not by reading it.
 Where a `// Stryker disable next-line` directive was found not to apply — above a `} catch {`, a

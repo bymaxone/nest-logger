@@ -11,14 +11,14 @@ heading here.
 
 ## [Unreleased]
 
-## [1.0.6] — 2026-08-06
+## [1.0.6] - 2026-08-06
 
-**Runtime change.** `dist/` differs from `1.0.5`: the source carries new mutation-suppression
-comments, and this package's bundler preserves comments.
+**Tests and documentation only.** `dist/` is byte-identical to `1.0.5`.
 
-### Documentation
-
-- The mutation badge said **97.42%**; the measured score is **99.73%**.
+An earlier revision of this branch added inline `// Stryker disable` comments and reported a
+99.73% score off the back of them. That is against this package's own plan, which forbids them
+because they ship in the unminified bundle and eat the server subpath's brotli budget. They are
+gone; the score is the measured 97.42% with the equivalents documented instead.
 
 ### Tests
 
