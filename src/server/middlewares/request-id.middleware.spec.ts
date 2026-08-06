@@ -1,4 +1,4 @@
-import { Controller, Get, Module } from '@nestjs/common'
+import { Controller, Get, Inject, Module } from '@nestjs/common'
 import type { INestApplication, MiddlewareConsumer, NestModule } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import request from 'supertest'
@@ -13,7 +13,7 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 /** Exposes the propagated context so tests can prove the scope started pre-handler. */
 @Controller()
 class ContextController {
-  constructor(private readonly logContext: LogContextService) {}
+  constructor(@Inject(LogContextService) private readonly logContext: LogContextService) {}
 
   @Get('ctx')
   ctx(): { requestId: unknown; tenantId: unknown } {
