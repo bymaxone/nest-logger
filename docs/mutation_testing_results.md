@@ -88,3 +88,40 @@ mutants that are nonetheless covered behaviorally by the suite.
 **All 10 are equivalent mutants** (documented above) — not killable by definition.
 There are zero genuine coverage gaps remaining. The maximum theoretical score without
 `// Stryker disable` comments is 97.42 % (= 378/388).
+
+---
+
+## Re-run — 2026-08-06
+
+| Metric             | Value        |
+| ------------------ | ------------ |
+| **Mutation score** | **97.42 %**  |
+| Surviving mutants  | 10           |
+| Break threshold    | 95 % -> PASS |
+
+`detectOtelTraceApi` resolves `@opentelemetry/api`, and the specifier itself was pinned by
+nothing: the spec mocks `createRequire`, so the resolver ignores what it is handed. Rename the
+module and the detector still passes under test while every deployment silently loses trace
+correlation, because a failed resolve is swallowed on purpose. The test now hands it a spy
+resolver and asserts what it asked for.
+
+`useNestLogger` also gained a feature-module case — the shape where the provider sits outside the
+host module's own injector and a strict lookup would refuse it.
+
+The score is unchanged at 97.42 %, and that is the honest number for this package: its plan
+forbids inline `// Stryker disable` comments because they ship in the unminified bundle and eat
+the server subpath's brotli budget. An earlier revision of this branch added them and reported
+99.73 %; they are gone.
+
+One of the ten is worth separating from the equivalents. `otel-detector.ts:40` is NOT equivalent
+— the test added above kills it, and applying that exact mutation by hand turns the suite red.
+Stryker does not attribute the test to the mutant, on a full run as well as a scoped one, so it
+reports as surviving. Recorded as such rather than reclassified, because calling it equivalent
+would be false.
+
+Every equivalence claim in this section was checked by running the mutant, not by reading it.
+Where a `// Stryker disable next-line` directive was found not to apply — above a `} catch {`, a
+`.replace()` inside a method chain, a multi-line `sort(...)` argument, or anywhere inside a
+builder chain — it was replaced with the block `disable`/`restore` form, or, where that does not
+work either, with a plain comment at the line so the reasoning is visible rather than silently
+ineffective.

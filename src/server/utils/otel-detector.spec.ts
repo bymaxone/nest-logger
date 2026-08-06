@@ -15,9 +15,20 @@ describe('detectOtelTraceApi', () => {
    * detector must resolve and return its `trace` namespace.
    */
   'returns the trace API when the module resolves', () => {
+    const requireSpy = jest.fn(
+      jest.requireActual<typeof import('node:module')>('node:module').createRequire(__filename)
+    )
+    mockedCreateRequire.mockReturnValueOnce(requireSpy as unknown as NodeJS.Require)
+
     const api = detectOtelTraceApi()
+
     expect(api).toBeDefined()
     expect(typeof api?.getActiveSpan).toBe('function')
+    // …and it resolves THAT module. `createRequire` is mocked here, so the resolver ignores what
+    // it is handed and the specifier itself was pinned by nothing: rename it and the detector
+    // still "works" in this suite while every deployment silently loses its trace correlation,
+    // because a failed resolve is swallowed by design.
+    expect(requireSpy).toHaveBeenCalledWith('@opentelemetry/api')
   })
 
   it(/*

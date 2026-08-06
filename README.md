@@ -745,7 +745,11 @@ When integrating `@bymax-one/nest-logger` in production, verify each of the foll
 A logger runs on every request of every service that installs it, so the suite is held to a bar beyond "it runs" — every behavior is pinned so that a regression **fails a test**.
 
 - ✅ **100% line coverage** — statements, branches, functions, and lines, enforced as a release gate across unit + e2e
-- ✅ **97.42% mutation score** — verified with [Stryker](https://stryker-mutator.io/) against a `break` threshold of 95; 97.42% is the theoretical maximum for this codebase
+- ✅ **97.42% mutation score** — verified with [Stryker](https://stryker-mutator.io/) against a
+  `break` threshold of 95. The ten survivors are documented equivalents rather than coverage gaps,
+  and they stay uncounted-against rather than silenced: this package's plan forbids inline
+  `// Stryker disable` comments because they ship in the unminified bundle (see the
+  [report](./docs/mutation_testing_results.md))
 - ✅ **Every survivor documented** — the 10 remaining mutants are equivalents, each recorded in [docs/mutation_testing_results.md](./docs/mutation_testing_results.md) rather than silenced with an inline comment, so the score is an accounting rather than a number
 - ✅ **No real I/O in unit tests** — the Pino instance and every destination are mocked; e2e tests exercise the wired module through `@nestjs/testing` and supertest
 

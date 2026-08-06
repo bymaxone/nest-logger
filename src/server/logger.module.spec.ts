@@ -1,3 +1,4 @@
+import { Module } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
@@ -204,6 +205,29 @@ describe('BymaxLoggerModule.useNestLogger', () => {
 
     expect(useLoggerSpy).toHaveBeenCalledWith(expect.any(PinoLoggerService))
     expect(flushLogsSpy).toHaveBeenCalledTimes(1)
+    await app.close()
+  })
+
+  // The lookup is non-strict on purpose. A consumer that imports the logger in a feature module
+  // rather than at the root has the provider outside the host module's own injector, and a strict
+  // `get` refuses it — so the helper would throw the "was not imported" error at a deployment
+  // that imported it perfectly well, and the message would be actively misleading. The
+  // root-level case above cannot tell the two apart, because there the provider is local.
+  it('resolves the logger from a feature module, not only from the root', async () => {
+    @Module({ imports: [BymaxLoggerModule.forRoot({ service })] })
+    class FeatureModule {}
+
+    @Module({ imports: [FeatureModule] })
+    class RootModule {}
+
+    const moduleRef = await Test.createTestingModule({ imports: [RootModule] }).compile()
+    const app = moduleRef.createNestApplication({ bufferLogs: true })
+    const useLoggerSpy = jest.spyOn(app, 'useLogger')
+
+    expect(() => {
+      BymaxLoggerModule.useNestLogger(app)
+    }).not.toThrow()
+    expect(useLoggerSpy).toHaveBeenCalledWith(expect.any(PinoLoggerService))
     await app.close()
   })
 

@@ -11,6 +11,24 @@ heading here.
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-08-06
+
+**Tests and documentation only.** `dist/` is byte-identical to `1.0.5`.
+
+An earlier revision of this branch added inline `// Stryker disable` comments and reported a
+99.73% score off the back of them. That is against this package's own plan, which forbids them
+because they ship in the unminified bundle and eat the server subpath's brotli budget. They are
+gone; the score is the measured 97.42% with the equivalents documented instead.
+
+### Tests
+
+- `detectOtelTraceApi` resolves `@opentelemetry/api`, and the specifier was pinned by nothing —
+  the spec mocks `createRequire`, so the resolver ignored what it was handed. Renaming the module
+  would have kept the suite green while every deployment silently lost trace correlation, because
+  a failed resolve is swallowed by design.
+- `useNestLogger` gained a feature-module case, the shape where the provider sits outside the host
+  module's own injector.
+
 ## [1.0.5] - 2026-07-30
 
 ### Security
@@ -253,6 +271,7 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
   `release.yml`, Dependabot, and issue templates
 
 [Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.5...HEAD
+[1.0.6]: https://github.com/bymaxone/nest-logger/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/bymaxone/nest-logger/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/bymaxone/nest-logger/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-logger/compare/v1.0.2...v1.0.3
