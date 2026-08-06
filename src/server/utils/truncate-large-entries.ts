@@ -48,6 +48,7 @@ export function createSizeBoundedSerializer<T>(
   return (input: T): unknown => {
     const serialized = baseSerializer(input)
     let json: string | undefined
+    // Stryker disable BlockStatement: equivalent — emptying this catch falls through to the `json === undefined` guard immediately below, which returns the same `serialized` value. Same observable output for every input. The block form is required because Stryker does not honour `next-line` on a catch-clause body.
     try {
       json = JSON.stringify(serialized)
     } catch {
@@ -56,6 +57,7 @@ export function createSizeBoundedSerializer<T>(
       // the value through; Pino's own serializer handles circular refs downstream.
       return serialized
     }
+    // Stryker restore BlockStatement
     // A serializer may legitimately produce `undefined` (JSON.stringify → undefined
     // for undefined / functions / symbols). There is nothing to measure, so pass it
     // through untouched rather than crash `Buffer.byteLength`.

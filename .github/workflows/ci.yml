@@ -45,6 +45,8 @@ jobs:
           # prevent.
           fetch-depth: 0
       - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
+      - name: Mutation directives parse and carry their reason
+        run: pnpm check:mutants
       - name: Build all subpaths
         run: pnpm build
       - name: Verify build output integrity

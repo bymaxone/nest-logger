@@ -60,6 +60,7 @@ export function createTraceContextMixin(
 
     // 1. Request context (requestId, tenantId, userId, custom keys).
     const store = logContext.getStore()
+    // Stryker disable next-line ConditionalExpression: equivalent — outside any ALS scope `getStore()` returns `undefined`, and `Object.assign(target, undefined)` is a documented no-op in JavaScript. Entering the block unconditionally is identical to skipping it.
     if (store) {
       Object.assign(merged, store)
     }

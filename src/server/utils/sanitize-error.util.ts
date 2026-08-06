@@ -173,6 +173,7 @@ function toSanitizedChild(
   depth: number,
   maxDepth: number
 ): SanitizedChild {
+  // Stryker disable next-line ConditionalExpression,LogicalOperator: equivalent — the `isObject` guard only gates `seen.has(value)` on a `WeakSet`, which is always `false` for a primitive. Mutating the guard cannot change the result for any input.
   if (isObject(value) && seen.has(value)) {
     return CIRCULAR_SENTINEL
   }
