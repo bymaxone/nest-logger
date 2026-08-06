@@ -271,6 +271,7 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
   `release.yml`, Dependabot, and issue templates
 
 [Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.5...HEAD
+[1.0.6]: https://github.com/bymaxone/nest-logger/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/bymaxone/nest-logger/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/bymaxone/nest-logger/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/bymaxone/nest-logger/compare/v1.0.2...v1.0.3
