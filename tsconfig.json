@@ -11,7 +11,7 @@
     "noFallthroughCasesInSwitch": true,
     "exactOptionalPropertyTypes": true,
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
+    "emitDecoratorMetadata": false,
     "useDefineForClassFields": false,
     "declaration": true,
     "declarationMap": true,
