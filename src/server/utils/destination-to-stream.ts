@@ -66,6 +66,7 @@ export function destinationToStream(destination: ILogDestination): Writable {
     // Keep string chunks as strings (Node's default re-encodes them to Buffers
     // before `_write`): the common Pino path emits NDJSON strings, so this skips
     // a string→Buffer→string round-trip on the hot logging path.
+    // Stryker disable next-line BooleanLiteral: equivalent in output — the flag only decides whether Node re-encodes string chunks before `_write`, and the writer below accepts `string | Buffer` and produces the same bytes either way; it is set for the round-trip it saves on the hot path
     decodeStrings: false,
     write(
       chunk: string | Buffer,

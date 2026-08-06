@@ -60,6 +60,7 @@ export function createTraceContextMixin(
 
     // 1. Request context (requestId, tenantId, userId, custom keys).
     const store = logContext.getStore()
+    // Stryker disable next-line ConditionalExpression: equivalent — `Object.assign` ignores a null or undefined source, so merging an absent store copies nothing; the guard skips the call rather than changing the result
     if (store) {
       Object.assign(merged, store)
     }

@@ -66,6 +66,7 @@ function bootstrapProvider(): Provider {
     provide: LOGGER_BOOTSTRAP_TOKEN,
     useFactory: (logger: PinoLoggerService): boolean => {
       logger.info(RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK, 'BymaxLoggerModule initialized')
+      // Stryker disable next-line BooleanLiteral: equivalent — nothing reads this token's value; the provider exists so the factory runs at boot and emits the line above, and Nest resolves any value the same
       return true
     },
     inject: [PinoLoggerService]
@@ -262,6 +263,7 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
   static useNestLogger(app: INestApplication): void {
     let logger: PinoLoggerService
     try {
+      // Stryker disable next-line ObjectLiteral: equivalent — the module is registered with `DynamicModule.global`, so the provider is in every injector and a strict lookup finds it too; the option is belt-and-braces for a consumer who re-registers it non-globally
       logger = app.get(PinoLoggerService, { strict: false })
     } catch (cause) {
       throw new Error(

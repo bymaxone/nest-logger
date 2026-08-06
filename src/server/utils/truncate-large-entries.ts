@@ -48,6 +48,7 @@ export function createSizeBoundedSerializer<T>(
   return (input: T): unknown => {
     const serialized = baseSerializer(input)
     let json: string | undefined
+    // Stryker disable BlockStatement: equivalent — emptying this catch leaves `json` undefined, which the check below already passes through untouched; the early return names the un-measurable case rather than deciding it
     try {
       json = JSON.stringify(serialized)
     } catch {
@@ -62,6 +63,7 @@ export function createSizeBoundedSerializer<T>(
     if (json === undefined) {
       return serialized
     }
+    // Stryker restore BlockStatement
     const byteSize = Buffer.byteLength(json, 'utf-8')
     if (byteSize > maxBytes) {
       return {
