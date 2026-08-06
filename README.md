@@ -14,7 +14,7 @@
   <a href="https://www.npmjs.com/package/@bymax-one/nest-logger"><img src="https://img.shields.io/npm/dm/@bymax-one/nest-logger?style=flat-square&colorA=000000&colorB=000000" alt="npm downloads" /></a>
   <a href="https://github.com/bymaxone/nest-logger/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/bymaxone/nest-logger/ci.yml?branch=main&style=flat-square&colorA=000000&label=CI" alt="CI status" /></a>
   <a href="https://github.com/bymaxone/nest-logger/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square&colorA=000000" alt="coverage" /></a>
-  <a href="https://github.com/bymaxone/nest-logger/blob/main/docs/mutation_testing_results.md"><img src="https://img.shields.io/badge/mutation-97.42%25-brightgreen?style=flat-square&colorA=000000" alt="mutation score" /></a>
+  <a href="https://github.com/bymaxone/nest-logger/blob/main/docs/mutation_testing_results.md"><img src="https://img.shields.io/badge/mutation-99.73%25-brightgreen?style=flat-square&colorA=000000" alt="mutation score" /></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/bymaxone/nest-logger"><img src="https://api.scorecard.dev/projects/github.com/bymaxone/nest-logger/badge?style=flat-square" alt="OpenSSF Scorecard" /></a>
   <a href="https://github.com/bymaxone/nest-logger/blob/main/LICENSE"><img src="https://img.shields.io/github/license/bymaxone/nest-logger?style=flat-square&colorA=000000&colorB=000000" alt="license" /></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
@@ -745,7 +745,10 @@ When integrating `@bymax-one/nest-logger` in production, verify each of the foll
 A logger runs on every request of every service that installs it, so the suite is held to a bar beyond "it runs" — every behavior is pinned so that a regression **fails a test**.
 
 - ✅ **100% line coverage** — statements, branches, functions, and lines, enforced as a release gate across unit + e2e
-- ✅ **97.42% mutation score** — verified with [Stryker](https://stryker-mutator.io/) against a `break` threshold of 95; 97.42% is the theoretical maximum for this codebase
+- ✅ **99.73% mutation score** — verified with [Stryker](https://stryker-mutator.io/) against a
+  `break` threshold of 95; the single survivor is covered by a test that kills it when applied by
+  hand, and is reported only because Stryker does not attribute that test to it (see the
+  [report](./docs/mutation_testing_results.md))
 - ✅ **Every survivor documented** — the 10 remaining mutants are equivalents, each recorded in [docs/mutation_testing_results.md](./docs/mutation_testing_results.md) rather than silenced with an inline comment, so the score is an accounting rather than a number
 - ✅ **No real I/O in unit tests** — the Pino instance and every destination are mocked; e2e tests exercise the wired module through `@nestjs/testing` and supertest
 

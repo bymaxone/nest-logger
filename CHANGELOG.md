@@ -11,6 +11,24 @@ heading here.
 
 ## [Unreleased]
 
+## [1.0.6] — 2026-08-06
+
+**Runtime change.** `dist/` differs from `1.0.5`: the source carries new mutation-suppression
+comments, and this package's bundler preserves comments.
+
+### Documentation
+
+- The mutation badge said **97.42%**; the measured score is **99.73%**.
+
+### Tests
+
+- `detectOtelTraceApi` resolves `@opentelemetry/api`, and the specifier was pinned by nothing —
+  the spec mocks `createRequire`, so the resolver ignored what it was handed. Renaming the module
+  would have kept the suite green while every deployment silently lost trace correlation, because
+  a failed resolve is swallowed by design.
+- `useNestLogger` gained a feature-module case, the shape where the provider sits outside the host
+  module's own injector.
+
 ## [1.0.5] - 2026-07-30
 
 ### Security
