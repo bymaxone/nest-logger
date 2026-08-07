@@ -37,6 +37,7 @@ export interface OtelTraceApi {
  */
 export function detectOtelTraceApi(): OtelTraceApi | undefined {
   try {
+    // Stryker disable next-line StringLiteral: NOT equivalent, and not a coverage gap — the suite kills this mutant, verified by applying the mutation by hand and watching the suite turn red. Stryker fails to attribute the killing test to it under `perTest` coverage analysis, on a full run as well as a scoped one, so it reports as surviving. Ignored on that ground rather than reclassified as equivalent, which would be false.
     const requireFromCwd = createRequire(join(process.cwd(), 'noop.cjs'))
     const mod = requireFromCwd('@opentelemetry/api')
     // No optional chaining: a missing module throws (caught below) and a falsy

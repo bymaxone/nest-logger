@@ -66,6 +66,7 @@ function bootstrapProvider(): Provider {
     provide: LOGGER_BOOTSTRAP_TOKEN,
     useFactory: (logger: PinoLoggerService): boolean => {
       logger.info(RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK, 'BymaxLoggerModule initialized')
+      // Stryker disable next-line BooleanLiteral: equivalent — this value is stored as the `LOGGER_BOOTSTRAP_TOKEN` injectable, which nothing in the module or in consumer code reads. Flipping it to `false` is observable only by inspecting the DI container directly, never through any behaviour the library exposes.
       return true
     },
     inject: [PinoLoggerService]
@@ -262,6 +263,7 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
   static useNestLogger(app: INestApplication): void {
     let logger: PinoLoggerService
     try {
+      // Stryker disable next-line ObjectLiteral: equivalent — the mutant replaces the literal with `{}`, and `NestApplicationContext.get` branches on `!(options && options.strict)`. An absent `strict` is `undefined`, which is falsy, so `{}` takes the same non-strict lookup across the whole module graph — the option is also this method's default. Resolution is identical for every container state, and the literal stays because it states the intent at the call site.
       logger = app.get(PinoLoggerService, { strict: false })
     } catch (cause) {
       throw new Error(

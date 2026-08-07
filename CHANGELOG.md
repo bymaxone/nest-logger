@@ -11,6 +11,52 @@ heading here.
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-08-07
+
+**Documentation and tooling.** `dist/` differs from `1.0.6` only in the text of the comments
+described below; no runtime code changed.
+
+### Changed
+
+- **Equivalent mutants are documented in the source instead of only in the report, and the
+  rule against that was retired on a measurement.** The plan forbade inline
+  `// Stryker disable` comments on the ground that they would push the server subpath past
+  its 13.5 kB brotli budget. Measured: seven directives took the bundle from **12.84 to
+  12.94 kB** — **+0.10 kB** against 0.66 kB of headroom, because brotli compresses their
+  repeated prefixes almost for free. The assumed cost was roughly ten times the real one, and
+  no budget changed.
+
+  With the ten survivors now carrying their reason inline, the measured score moves from
+  **97.42%** to **100%** — no test and no production logic changed; Stryker excludes an
+  ignored mutant from the denominator instead of counting it as one the suite failed to kill.
+
+- **One suppression is recorded as what it is, not as an equivalent.** `otel-detector.ts:40`
+  is killed by the suite — applying the mutation by hand turns the suite red — but Stryker
+  fails to attribute the killing test to it under `perTest` coverage analysis. Its directive
+  says exactly that. Calling it equivalent to reach a rounder number would have been false.
+
+- Two reasons were corrected after review. `decodeStrings: false` claimed equivalence "for
+  every input"; with `true`, Node encodes the string using the write's encoding and this
+  stream decodes with `toString('utf-8')`, so a `write(chunk, 'latin1')` would change
+  non-ASCII bytes. Nothing writes here but Pino, which emits UTF-8 NDJSON at the default
+  encoding, and the reason now says so and names where it stops being true. The
+  `{ strict: false }` reason argued from a missing provider; it now gives the actual
+  mechanism — `NestApplicationContext.get` branches on `!(options && options.strict)`, so the
+  mutant's `{}` leaves `strict` undefined, which is falsy, and takes the same non-strict
+  lookup.
+
+### Added
+
+- `check:mutants` gate (`scripts/check-mutation-directives.mjs`) — validates every
+  `// Stryker` comment against the parser's own regular expression, rejecting a reason written
+  after `--` instead of a colon, a reason wrapped onto a second comment line, a stray comma in
+  the mutator list, and a mutator name Stryker does not know, which matches nothing and so
+  silences nothing. Wired into CI and `prepublishOnly`.
+
+### Fixed
+
+- The `[Unreleased]` compare link still pointed at `v1.0.5` after `1.0.6` shipped.
+
 ## [1.0.6] - 2026-08-06
 
 **Tests and documentation only.** `dist/` is byte-identical to `1.0.5`.
@@ -270,7 +316,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.7...HEAD
+[1.0.7]: https://github.com/bymaxone/nest-logger/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/bymaxone/nest-logger/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/bymaxone/nest-logger/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/bymaxone/nest-logger/compare/v1.0.3...v1.0.4
