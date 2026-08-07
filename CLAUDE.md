@@ -79,10 +79,16 @@ pnpm mutation             # full run (~10-20 min); writes reports/mutation/mutat
 pnpm mutation:incremental # faster re-run using reports/stryker-incremental.json
 ```
 
-Equivalent mutants are documented in `docs/mutation_testing_results.md`
-(§Residual survivors) — **not** with inline `// Stryker disable` comments, which
-ship in the unminified `.mjs` bundle and push the server subpath past its size
-budget. Full setup, config rationale, and the iteration workflow live in
+Equivalent mutants are documented **in the source**, as
+`// Stryker disable next-line <Mutator>: <reason>` on the line they apply to, per
+`docs/mutation_testing_plan.md` §Suppression policy — the rule shared across the
+`@bymax-one/nest-*` libraries. `pnpm check:mutants` enforces the grammar: Stryker
+captures a reason only after the colon and only to the end of that line, so a reason
+written after `--` or wrapped onto a second comment line is silently dropped and the
+report shows `Ignored using a comment` instead. These comments do ship in the
+unminified `.mjs` bundle; the measured cost is +0.10 kB brotli for seven of them, which
+the server subpath's budget absorbs. Full setup, config rationale, and the iteration
+workflow live in
 [docs/mutation_testing_plan.md](./docs/mutation_testing_plan.md). Do **not** add
 mutation testing to `prepublishOnly` or the per-PR CI — it runs automatically post-merge on `main` via the shared reusable (`bymaxone/.github` → node-lib-ci) and can also be run on demand (`pnpm mutation`).
 

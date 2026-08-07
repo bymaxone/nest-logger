@@ -173,7 +173,6 @@ function toSanitizedChild(
   depth: number,
   maxDepth: number
 ): SanitizedChild {
-  // Stryker disable next-line ConditionalExpression,LogicalOperator: equivalent — the `isObject` guard only gates `seen.has(value)` on a `WeakSet`, which is always `false` for a primitive. Mutating the guard cannot change the result for any input.
   if (isObject(value) && seen.has(value)) {
     return CIRCULAR_SENTINEL
   }
@@ -214,6 +213,7 @@ function scrubStack(stack: string): string {
  * @returns `true` when `value` is a non-null object.
  */
 function isObject(value: unknown): value is object {
+  // Stryker disable next-line ConditionalExpression,LogicalOperator: equivalent — every mutant here widens the guard to admit primitives, and the only call site gates `seen.has(value)` on a `WeakSet`, which answers `false` for a primitive regardless. The circular-reference branch is therefore not taken for any value the mutants newly admit, so the sanitized output is unchanged.
   return typeof value === 'object' && value !== null
 }
 

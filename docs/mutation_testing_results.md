@@ -108,10 +108,10 @@ resolver and asserts what it asked for.
 `useNestLogger` also gained a feature-module case — the shape where the provider sits outside the
 host module's own injector and a strict lookup would refuse it.
 
-The score is unchanged at 97.42 %, and that is the honest number for this package: its plan
-forbids inline `// Stryker disable` comments because they ship in the unminified bundle and eat
-the server subpath's brotli budget. An earlier revision of this branch added them and reported
-99.73 %; they are gone.
+The score at that pass was 97.42 %, held there by a rule this package's plan used to carry: no
+inline `// Stryker disable` comments, because they ship in the unminified bundle and eat the
+server subpath's brotli budget. That rule was retired once the cost was measured rather than
+assumed — see the re-run at the end of this file.
 
 One of the ten is worth separating from the equivalents. `otel-detector.ts:40` is NOT equivalent
 — the test added above kills it, and applying that exact mutation by hand turns the suite red.
@@ -125,3 +125,42 @@ Where a `// Stryker disable next-line` directive was found not to apply — abov
 builder chain — it was replaced with the block `disable`/`restore` form, or, where that does not
 work either, with a plain comment at the line so the reasoning is visible rather than silently
 ineffective.
+
+---
+
+## Re-run — 2026-08-07
+
+| Metric                    | Value           |
+| ------------------------- | --------------- |
+| **Mutation score**        | **100.00 %**    |
+| Killed                    | 370             |
+| Timed out (counts killed) | 5               |
+| Survived                  | 0               |
+| Compile-error (excluded)  | 261             |
+| Break threshold           | 95 % -> PASS    |
+| High target               | 99 % -> reached |
+
+No test changed and no production logic changed. The ten survivors argued above now carry
+their reason on the line they apply to, so Stryker excludes them from the denominator rather
+than counting them as mutants the suite failed to kill.
+
+**The rule that forbade this was retired on a measurement.** It held that inline directives
+would push the server subpath past its 13.5 kB brotli budget. Measured: the seven directives
+took the bundle from **12.84 to 12.94 kB** — **+0.10 kB** against 0.66 kB of headroom, because
+brotli compresses their repeated prefixes almost for free. The assumed cost was roughly ten
+times the real one. No budget changed.
+
+Two details are worth recording, because both were settled by running the mutants rather than
+reasoning about them:
+
+- **The `sanitize-error` directive was first placed on the wrong line.** It went above the
+  call site, `if (isObject(value) && seen.has(value))`, while the four mutants live in the
+  body of `isObject` itself. The run reported them still surviving, which is how the mistake
+  surfaced; the directive now sits inside `isObject`. `next-line` binds to the following
+  statement, so a directive above a _use_ of a function does not reach mutants in its
+  _definition_.
+- **`otel-detector.ts:40` is suppressed but is NOT equivalent, and its directive says so.**
+  The suite kills that mutant — applying the mutation by hand turns the suite red — but
+  Stryker fails to attribute the killing test to it under `perTest` coverage analysis, on a
+  full run as well as a scoped one. It is ignored on that ground, named as a tool-attribution
+  failure. Calling it equivalent to reach a rounder number would have been false.
