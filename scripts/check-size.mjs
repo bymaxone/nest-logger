@@ -69,7 +69,12 @@ for (const { name, path, brotli: limit } of BUDGETS) {
   let raw
   try {
     raw = readFileSync(abs)
-  } catch {
+  } catch (error) {
+    // Only a missing file earns the friendly message. A permission error or a
+    // directory where a file belongs is a different problem, and reporting it as
+    // "run pnpm build" sends the reader to the wrong place — rethrow so the real
+    // code and stack reach the log.
+    if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error
     console.error(`Missing build artifact: ${path} — run \`pnpm build\` first.`)
     process.exit(2)
   }
