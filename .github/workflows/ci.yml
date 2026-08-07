@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   ci:
-    uses: bymaxone/.github/.github/workflows/node-lib-ci.yml@v1
+    uses: bymaxone/.github/.github/workflows/node-lib-ci.yml@bcd95609cd724e6d86168f3dd6e40eff4d2077ad # v1
     with:
       run-format-check: false # no format:check script; prettier runs via lint/pre-commit
       run-build: false # build + integrity + size verified in the `verify` job below
@@ -44,7 +44,7 @@ jobs:
           # check would find nothing and pass — the silent no-op it exists to
           # prevent.
           fetch-depth: 0
-      - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
+      - uses: bymaxone/.github/.github/actions/setup-node-pnpm@bcd95609cd724e6d86168f3dd6e40eff4d2077ad # v1
       - name: Mutation directives parse and carry their reason
         run: pnpm check:mutants
       - name: Build all subpaths
@@ -80,7 +80,7 @@ jobs:
 
   security:
     if: github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
-    uses: bymaxone/.github/.github/workflows/security.yml@v1
+    uses: bymaxone/.github/.github/workflows/security.yml@bcd95609cd724e6d86168f3dd6e40eff4d2077ad # v1
     with:
       fail-on-severity: high
 
