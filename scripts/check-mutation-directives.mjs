@@ -72,7 +72,8 @@ async function loadMutatorNames() {
     // entries are directories to start the `node_modules` walk from, hence the `dirname`.
     const core = dirname(require.resolve('@stryker-mutator/core'))
     const entry = require.resolve('@stryker-mutator/instrumenter', { paths: [core] })
-    const module = await import(pathToFileURL(join(entry, '..', 'mutators', 'index.js')).href)
+    const mutators = join(dirname(entry), 'mutators', 'index.js')
+    const module = await import(pathToFileURL(mutators).href)
     const names = module.allMutators?.map((/** @type {{ name: string }} */ m) => m.name)
     return Array.isArray(names) && names.length > 0 ? names : null
   } catch {
@@ -83,8 +84,9 @@ async function loadMutatorNames() {
 /**
  * Lists every TypeScript source file under a directory.
  *
- * @param {string} dir Directory to walk.
- * @returns {string[]} Absolute-from-cwd paths, sorted for stable output.
+ * @param {string} dir Directory to walk, relative to the current working directory.
+ * @returns {string[]} Paths in the same form as `dir` — relative to the cwd, not absolute —
+ *   sorted so the output is stable, and reported as-is so a reader can open them directly.
  */
 function sourceFiles(dir) {
   /** @type {string[]} */
@@ -101,10 +103,11 @@ function sourceFiles(dir) {
  * Collects every grammar violation in one file.
  *
  * @param {string} file Path to inspect.
- * @param {readonly string[] | null} mutatorNames Known mutator names, or `null` to skip that check.
+ * @param {ReadonlySet<string> | null} knownMutators Lowercased mutator names Stryker accepts,
+ *   or `null` to skip that check. A set, so the lookup does not rescan the list per directive.
  * @returns {Array<{ file: string, line: number, problem: string, hint: string }>} Violations found.
  */
-function inspect(file, mutatorNames) {
+function inspect(file, knownMutators) {
   const lines = readFileSync(file, 'utf8').split('\n')
   const problems = []
 
@@ -126,12 +129,20 @@ function inspect(file, mutatorNames) {
     const [, kind, , mutators, reason] = match
 
     for (const mutator of mutators.split(',').map((name) => name.trim())) {
-      if (mutator === WILDCARD || !mutatorNames) continue
-      if (!mutatorNames.some((known) => known.toLowerCase() === mutator.toLowerCase())) {
+      if (mutator === '') {
+        problems.push({
+          ...at,
+          problem: 'empty entry in the mutator list — a stray or trailing comma',
+          hint: 'list the mutators as "A,B", with no comma left dangling'
+        })
+        continue
+      }
+      if (mutator === WILDCARD || !knownMutators) continue
+      if (!knownMutators.has(mutator.toLowerCase())) {
         problems.push({
           ...at,
           problem: `unknown mutator "${mutator}" — this directive silences nothing`,
-          hint: `known mutators: ${mutatorNames.join(', ')}`
+          hint: 'the names Stryker accepts are listed once below'
         })
       }
     }
@@ -168,12 +179,17 @@ if (!mutatorNames) {
   console.log('• mutator names unavailable from the installed Stryker — skipping that check')
 }
 
-const problems = sourceFiles('src').flatMap((file) => inspect(file, mutatorNames))
+const knownMutators = mutatorNames ? new Set(mutatorNames.map((name) => name.toLowerCase())) : null
+
+const problems = sourceFiles('src').flatMap((file) => inspect(file, knownMutators))
 
 if (problems.length > 0) {
   for (const { file, line, problem, hint } of problems) {
     console.error(`✖ ${file}:${line} — ${problem}`)
     console.error(`  ${hint}`)
+  }
+  if (mutatorNames && problems.some(({ problem }) => problem.startsWith('unknown mutator'))) {
+    console.error(`\nMutators Stryker accepts: ${mutatorNames.join(', ')}`)
   }
   console.error(`\n${problems.length} malformed Stryker directive(s).`)
   process.exit(1)

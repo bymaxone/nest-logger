@@ -263,7 +263,7 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
   static useNestLogger(app: INestApplication): void {
     let logger: PinoLoggerService
     try {
-      // Stryker disable next-line ObjectLiteral: equivalent — both forms throw `NotFoundException` when `PinoLoggerService` is absent. NestJS throws on a provider missing from the whole module graph regardless of `strict`, so dropping the option changes nothing for any container state.
+      // Stryker disable next-line ObjectLiteral: equivalent — the mutant replaces the literal with `{}`, and `NestApplicationContext.get` branches on `!(options && options.strict)`. An absent `strict` is `undefined`, which is falsy, so `{}` takes the same non-strict lookup across the whole module graph — the option is also this method's default. Resolution is identical for every container state, and the literal stays because it states the intent at the call site.
       logger = app.get(PinoLoggerService, { strict: false })
     } catch (cause) {
       throw new Error(

@@ -66,7 +66,7 @@ export function destinationToStream(destination: ILogDestination): Writable {
     // Keep string chunks as strings (Node's default re-encodes them to Buffers
     // before `_write`): the common Pino path emits NDJSON strings, so this skips
     // a string→Buffer→string round-trip on the hot logging path.
-    // Stryker disable next-line BooleanLiteral: equivalent — with `true`, Node re-encodes the string chunk to a Buffer and `write()` decodes it back to the identical string. Only the internal round-trip differs; the output is indistinguishable for every input. The flag stays because it skips that round-trip on the hot logging path.
+    // Stryker disable next-line BooleanLiteral: equivalent for every chunk this stream receives — with `true`, Node encodes the string to a Buffer and `write()` below decodes it back with `toString('utf-8')`. Pino writes UTF-8 NDJSON strings at the default encoding, so the round-trip returns the identical string. It is NOT equivalent in general: a `write(chunk, 'latin1')` would round-trip through UTF-8 and change non-ASCII bytes, which is unreachable here because nothing writes to this stream but Pino. The flag stays because it skips the round-trip on the hot logging path.
     decodeStrings: false,
     write(
       chunk: string | Buffer,
