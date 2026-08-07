@@ -6,11 +6,19 @@
 name: CodeQL
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
   schedule:
     - cron: '0 6 * * 1'
+
+# Kept from the workflow this replaces: without it, repeated pushes to a
+# branch leave several analyses of the same ref running at once.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Job id is the convention across the org: it prefixes the reported check,
@@ -19,12 +27,13 @@ jobs:
     # Declared on the calling job, which is the only place that reaches the
     # called workflow: a job that sets its own permissions replaces the
     # workflow-level set rather than intersecting with it, and a called
-    # workflow cannot be granted more than its caller holds. Leaving this
-    # block out and relying on a workflow-level `contents: read` is what
-    # made the first attempt fail to start: security-events: write, which
-    # uploading SARIF requires, was above the ceiling the job had inherited.
+    # workflow cannot be granted more than its caller holds.
     permissions:
       contents: read
       security-events: write
       actions: read
     uses: bymaxone/.github/.github/workflows/codeql.yml@v1
+    with:
+      # Carried over from the workflow this replaces. It is a superset of the
+      # default suite, so leaving it out analyses strictly less than before.
+      queries: security-extended
