@@ -16,11 +16,13 @@ jobs:
   # Job id is the convention across the org: it prefixes the reported check,
   # so every repo shows `codeql / Analyze (<language>)` under the same name.
   codeql:
-    # Granted here, on the calling job, and not at the top of the file.
-    # Permissions can only be maintained or reduced down a reusable-workflow
-    # chain, so a top-level `contents: read` caps the ceiling and the called
-    # workflow asking for security-events: write — which uploading SARIF
-    # requires — fails the run before it starts.
+    # Declared on the calling job, which is the only place that reaches the
+    # called workflow: a job that sets its own permissions replaces the
+    # workflow-level set rather than intersecting with it, and a called
+    # workflow cannot be granted more than its caller holds. Leaving this
+    # block out and relying on a workflow-level `contents: read` is what
+    # made the first attempt fail to start: security-events: write, which
+    # uploading SARIF requires, was above the ceiling the job had inherited.
     permissions:
       contents: read
       security-events: write
