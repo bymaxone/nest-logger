@@ -31,7 +31,7 @@
   },
   "concurrency": 4,
   "timeoutMS": 30000,
-  "incremental": false,
+  "incremental": true,
   "incrementalFile": "reports/stryker-incremental.json",
   "reporters": ["progress", "clear-text", "html", "json"],
   "htmlReporter": {

@@ -75,8 +75,8 @@ Line coverage is 100%, but mutation testing is the real gate against weak tests.
 Run under Node 24:
 
 ```bash
-pnpm mutation             # full run (~10-20 min); writes reports/mutation/mutation.html
-pnpm mutation:incremental # faster re-run using reports/stryker-incremental.json
+pnpm mutation             # incremental — re-tests only what changed (~10-20 min); writes reports/mutation/mutation.html
+pnpm mutation:full        # cold — deletes the baseline first, measures the truth
 ```
 
 Equivalent mutants are documented **in the source**, as
