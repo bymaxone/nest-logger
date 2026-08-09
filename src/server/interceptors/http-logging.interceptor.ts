@@ -95,7 +95,7 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     const userAgent = typeof rawUserAgent === 'string' ? rawUserAgent : UNKNOWN_USER_AGENT
     // `id` for an ORM-style principal, `sub` for a JWT one (every nest-auth token).
     // Reading only `id` dropped the user field for every JWT-authenticated request.
-    const userId = req.user?.id ?? req.user?.sub
+    const userId = req.user?.sub ?? req.user?.id
     const normalizedUrl = normalizeUrl(url)
     const start = Date.now()
 

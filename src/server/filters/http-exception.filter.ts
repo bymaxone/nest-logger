@@ -61,7 +61,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const req = ctx.getRequest<LoggableRequest>()
     // `id` for an ORM principal, `sub` for a JWT one — see LoggableRequest. Reading
     // only `id` dropped the acting user from every JWT-authenticated error entry.
-    const userId = req.user?.id ?? req.user?.sub
+    const userId = req.user?.sub ?? req.user?.id
     // Strip the query string: it may carry secrets and cannot be redacted as a
     // substring once embedded in the logged `url` string.
     const url = stripQueryString(req.url)

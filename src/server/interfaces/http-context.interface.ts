@@ -26,9 +26,10 @@ export type IncomingHeaders = Record<string, string | string[] | undefined>
  * The inbound request members the logging layer reads.
  *
  * `user` is populated by upstream auth in the consumer app (a guard or
- * middleware). The acting-user id is read as `id` first, then `sub`: an ORM-style
- * principal names it `id`, while a JWT principal (every `@bymax-one/nest-auth`
- * token) names it `sub`. Reading only `id` — as this once did — silently dropped
+ * middleware). The acting-user id is read as `sub` first, then `id`: a JWT principal
+ * (every `@bymax-one/nest-auth` token) names it `sub`, while an ORM-style principal
+ * names it `id`. The JWT subject wins when both are present, since it is the
+ * authenticated identity. Reading only `id` — as this once did — silently dropped
  * the user field for every JWT-authenticated request.
  */
 export interface LoggableRequest {

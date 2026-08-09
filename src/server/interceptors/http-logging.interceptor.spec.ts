@@ -85,6 +85,11 @@ class FixtureController {
     return { ok: true }
   }
 
+  @Get('me-both')
+  meBoth(): { ok: boolean } {
+    return { ok: true }
+  }
+
   @Get('health')
   health(): { ok: boolean } {
     return { ok: true }
@@ -116,7 +121,13 @@ describe('HttpLoggingInterceptor (integration)', () => {
     app = moduleRef.createNestApplication({ logger: false })
     // Simulate an upstream auth layer populating req.user for one route.
     app.use((req: Request, _res: Response, next: NextFunction) => {
-      if (req.url.startsWith('/me-jwt')) {
+      if (req.url.startsWith('/me-both')) {
+        // Both fields present: the JWT subject must win over the ORM id.
+        ;(req as Request & { user?: { sub?: string; id?: string } }).user = {
+          sub: 's_2',
+          id: 'u_2'
+        }
+      } else if (req.url.startsWith('/me-jwt')) {
         // A JWT principal (every nest-auth token) names its subject `sub`, not `id`.
         ;(req as Request & { user?: { sub?: string } }).user = { sub: 's_1' }
       } else if (req.url.startsWith('/me')) {
@@ -276,8 +287,8 @@ describe('HttpLoggingInterceptor (integration)', () => {
 
   it(/*
    * A JWT principal names its subject `sub`, not `id`. The acting userId must
-   * still flow into the log entries — covers the `?? req.user?.sub` fallback that
-   * every nest-auth token relies on (reading only `id` dropped it before).
+   * still flow into the log entries — covers the `req.user?.id` fallback of
+   * `sub ?? id` that every nest-auth token relies on (reading only `id` dropped it before).
    */
   'extracts userId from req.user.sub when id is absent (JWT principal)', async () => {
     await request(app.getHttpServer()).get('/me-jwt').expect(200)
@@ -286,6 +297,22 @@ describe('HttpLoggingInterceptor (integration)', () => {
       'HTTP_REQUEST_START',
       expect.any(String),
       's_1',
+      expect.objectContaining({ method: 'GET' })
+    )
+  })
+
+  it(/*
+   * When a principal carries both `sub` and `id`, the JWT subject is the
+   * authenticated identity and must win — pins the `sub ?? id` precedence
+   * (an `id ?? sub` swap would attribute the log to the ORM id instead).
+   */
+  'prefers req.user.sub over req.user.id when both are present', async () => {
+    await request(app.getHttpServer()).get('/me-both').expect(200)
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      'HTTP_REQUEST_START',
+      expect.any(String),
+      's_2',
       expect.objectContaining({ method: 'GET' })
     )
   })

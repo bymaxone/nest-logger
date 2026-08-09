@@ -43,10 +43,11 @@ const MAX_CORRELATION_ID_LENGTH = 256
  * scans linearly and carries no backtracking question.
  *
  * The point is what it EXCLUDES: control characters, whitespace, and the HTML
- * metacharacters `< > " '`. The value is echoed back verbatim as `x-request-id`
- * and into the `correlationId` of the error envelope, so confining it to id-safe
- * characters keeps a client from planting a control byte or markup fragment in
- * the logs and responses of every request it makes.
+ * metacharacters `< > " '`. The value is echoed back verbatim on the `x-request-id`
+ * response header and stored as `requestId` in the per-request log context, so it
+ * reaches every log entry the request produces. Confining it to id-safe characters
+ * keeps a client from planting a control byte or markup fragment in the logs and the
+ * response header of every request it makes.
  */
 const CORRELATION_ID_CHARSET = /^[A-Za-z0-9._:/+=-]+$/
 
