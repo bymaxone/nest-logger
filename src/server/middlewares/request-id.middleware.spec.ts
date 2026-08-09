@@ -116,6 +116,36 @@ describe('RequestIdMiddleware (integration via applyRequestIdMiddleware)', () =>
   })
 
   it(/*
+   * An x-request-id carrying a character outside the id-safe set (here a markup
+   * fragment) must be rejected and replaced with a fresh UUID, so a client cannot
+   * plant markup or a control byte into the logs and the echoed correlationId.
+   */
+  'rejects a request id with disallowed characters and generates a fresh one', async () => {
+    const malicious = '<script>alert(1)</script>'
+    const res = await request(app.getHttpServer())
+      .get('/ctx')
+      .set('x-request-id', malicious)
+      .expect(200)
+
+    expect(res.headers['x-request-id']).not.toBe(malicious)
+    expect(res.headers['x-request-id']).toMatch(UUID_V4)
+    expect(res.body.requestId).toBe(res.headers['x-request-id'])
+  })
+
+  it(/*
+   * A tenant header with a disallowed character (a space here) must be dropped,
+   * not propagated into the log context — the same id-safe gate on the tenant path.
+   */
+  'omits a tenant id with disallowed characters', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/ctx')
+      .set('x-tenant-id', 'acme evil')
+      .expect(200)
+
+    expect(res.body.tenantId).toBeUndefined()
+  })
+
+  it(/*
    * An oversized tenant header must be dropped (not propagated) — covers the
    * length-bound rejection on the tenant path.
    */
