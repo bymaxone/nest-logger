@@ -340,7 +340,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.7...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.8...HEAD
+[1.0.8]: https://github.com/bymaxone/nest-logger/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/bymaxone/nest-logger/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/bymaxone/nest-logger/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/bymaxone/nest-logger/compare/v1.0.4...v1.0.5
