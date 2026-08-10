@@ -33,6 +33,16 @@ class FilterFixtureController {
   meBoom(): never {
     throw new Error('user boom')
   }
+
+  @Get('me-boom-jwt')
+  meBoomJwt(): never {
+    throw new Error('user boom')
+  }
+
+  @Get('me-boom-both')
+  meBoomBoth(): never {
+    throw new Error('user boom')
+  }
 }
 
 describe('HttpExceptionFilter (integration)', () => {
@@ -54,7 +64,16 @@ describe('HttpExceptionFilter (integration)', () => {
 
     app = moduleRef.createNestApplication({ logger: false })
     app.use((req: Request, _res: Response, next: NextFunction) => {
-      if (req.url.startsWith('/me-boom')) {
+      if (req.url.startsWith('/me-boom-both')) {
+        // Both fields present: the JWT subject must win over the ORM id.
+        ;(req as Request & { user?: { sub?: string; id?: string } }).user = {
+          sub: 's_2',
+          id: 'u_2'
+        }
+      } else if (req.url.startsWith('/me-boom-jwt')) {
+        // A JWT principal names its subject `sub`, not `id`.
+        ;(req as Request & { user?: { sub?: string } }).user = { sub: 's_1' }
+      } else if (req.url.startsWith('/me-boom')) {
         ;(req as Request & { user?: { id?: string } }).user = { id: 'u_1' }
       }
       next()
@@ -141,6 +160,38 @@ describe('HttpExceptionFilter (integration)', () => {
       'HTTP_EXCEPTION_UNHANDLED',
       expect.objectContaining({ name: expect.any(String) }),
       'u_1',
+      expect.objectContaining({ status: 500 })
+    )
+  })
+
+  it(/*
+   * A JWT principal names its subject `sub`, not `id`. The acting userId must
+   * still be attached to the exception log — covers the `req.user?.id` fallback
+   * of `sub ?? id` that every nest-auth token relies on.
+   */
+  'attaches userId from req.user.sub when id is absent (JWT principal)', async () => {
+    await request(app.getHttpServer()).get('/me-boom-jwt').expect(500)
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      'HTTP_EXCEPTION_UNHANDLED',
+      expect.objectContaining({ name: expect.any(String) }),
+      's_1',
+      expect.objectContaining({ status: 500 })
+    )
+  })
+
+  it(/*
+   * When a principal carries both `sub` and `id`, the JWT subject is the
+   * authenticated identity and must win — pins the `sub ?? id` precedence
+   * (an `id ?? sub` swap would attribute the error to the ORM id instead).
+   */
+  'attaches req.user.sub over req.user.id when both are present', async () => {
+    await request(app.getHttpServer()).get('/me-boom-both').expect(500)
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      'HTTP_EXCEPTION_UNHANDLED',
+      expect.objectContaining({ name: expect.any(String) }),
+      's_2',
       expect.objectContaining({ status: 500 })
     )
   })

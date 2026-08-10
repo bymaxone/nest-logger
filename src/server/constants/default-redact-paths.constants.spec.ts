@@ -32,14 +32,28 @@ describe('depth helper', () => {
 
 describe('DEFAULT_REDACT_PATHS', () => {
   it(/*
-   * Locks the canonical count to the documented composition (27 common
-   * fields × 4 depths + 5 absolute paths = 113). A drift breaks consumer
-   * dashboards that count redacted fields.
+   * Locks the canonical count to the documented composition (27 common fields
+   * at the root plus 27 × 4 depth wildcards + 5 absolute paths = 140). The root
+   * entries were added so a sensitive field spread into the record root as
+   * caller metadata is redacted, not only one nested a level deep. A drift
+   * breaks consumer dashboards that count redacted fields.
    */
-  'should match the derived length 27 × 4 + 5 = 113', () => {
-    const expected = REDACT_COMMON_FIELDS.length * 4 + REDACT_ABSOLUTE_PATHS.length
+  'should match the derived length 27 root + 27 × 4 + 5 = 140', () => {
+    const expected = REDACT_COMMON_FIELDS.length * 5 + REDACT_ABSOLUTE_PATHS.length
     expect(DEFAULT_REDACT_PATHS.length).toBe(expected)
-    expect(DEFAULT_REDACT_PATHS.length).toBeGreaterThanOrEqual(113)
+    expect(DEFAULT_REDACT_PATHS.length).toBeGreaterThanOrEqual(140)
+  })
+
+  it(/*
+   * The reason the root entries exist: `emitStructured` spreads caller metadata
+   * at the record root, so a bare `password` must be a redact path in its own
+   * right, not only `*.password`. This is the exact gap that let the library's
+   * own documented `info(key, msg, userId, { password })` call log in clear.
+   */
+  'should redact the bare (root-level) name of every common field', () => {
+    for (const field of REDACT_COMMON_FIELDS) {
+      expect(DEFAULT_REDACT_PATHS).toContain(field)
+    }
   })
 
   it(/*

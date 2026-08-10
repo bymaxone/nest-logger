@@ -97,6 +97,25 @@ describe('buildPinoInstance', () => {
   })
 
   it(/*
+   * A secret at the RECORD ROOT must be censored too, not only one nested a
+   * level deep. `emitStructured` spreads caller metadata at the root, so this is
+   * the shape the library's own `info(key, msg, userId, { password })` produces
+   * — the case that previously slipped past the depth-1+ wildcards and logged in
+   * clear. This pins the depth-0 redact entries that close it.
+   */
+  'redacts a secret at the record root (caller metadata)', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
+      capture.destination
+    ])
+    logger.info({ password: 'secret', accessToken: 'secret', apiKey: 'secret' }, 'x')
+    const [entry] = capture.entries()
+    expect(entry?.['password']).toBe('[REDACTED]')
+    expect(entry?.['accessToken']).toBe('[REDACTED]')
+    expect(entry?.['apiKey']).toBe('[REDACTED]')
+  })
+
+  it(/*
    * The default `err` serializer must expand Error objects into structured
    * fields (type / message / stack) for downstream parsing.
    */

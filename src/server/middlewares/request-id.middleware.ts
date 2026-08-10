@@ -36,15 +36,39 @@ const REQUEST_ID_HEADER = 'x-request-id'
 const MAX_CORRELATION_ID_LENGTH = 256
 
 /**
- * Whether a raw header value is an acceptable correlation/tenant id: a string
- * within the length bound. Non-strings and oversized values are rejected so the
- * caller can fall back to a generated id (or omit the field).
+ * Characters an accepted correlation/tenant id may contain: the union every real
+ * id format needs — hex and alphanumerics, plus the punctuation of UUID/ULID
+ * (`-`), W3C traceparent (`-`), dotted ids (`.`), namespaced ids (`:`, `/`) and
+ * base64url/base64 (`_`, `+`, `/`, `=`). A single character class with `+`, so it
+ * scans linearly and carries no backtracking question.
+ *
+ * The point is what it EXCLUDES: control characters, whitespace, and the HTML
+ * metacharacters `< > " '`. The value is echoed back verbatim on the `x-request-id`
+ * response header and stored as `requestId` in the per-request log context, so it
+ * reaches every log entry the request produces. Confining it to id-safe characters
+ * keeps a client from planting a control byte or markup fragment in the logs and the
+ * response header of every request it makes.
+ */
+const CORRELATION_ID_CHARSET = /^[A-Za-z0-9._:/+=-]+$/
+
+/**
+ * Whether a raw header value is an acceptable correlation/tenant id: a non-empty
+ * string within the length bound and drawn only from {@link CORRELATION_ID_CHARSET}.
+ * Anything else — a non-string, an oversized value, or one carrying a character
+ * outside the id-safe set — is rejected so the caller falls back to a generated
+ * id (or omits the field).
  *
  * @param value - The raw header value (anything).
- * @returns `true` when `value` is a string no longer than the bound.
+ * @returns `true` when `value` is an id-safe string within the bound.
  */
 function isAcceptableHeaderValue(value: unknown): value is string {
-  return typeof value === 'string' && value.length <= MAX_CORRELATION_ID_LENGTH
+  // No explicit non-empty check: {@link CORRELATION_ID_CHARSET} is anchored with `+`, so it
+  // already rejects the empty string, and a redundant `length >= 1` would only be untestable.
+  return (
+    typeof value === 'string' &&
+    value.length <= MAX_CORRELATION_ID_LENGTH &&
+    CORRELATION_ID_CHARSET.test(value)
+  )
 }
 
 /**

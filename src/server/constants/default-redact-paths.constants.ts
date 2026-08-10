@@ -109,9 +109,19 @@ export const REDACT_ABSOLUTE_PATHS: readonly string[] = [
 
 /**
  * Canonical list of redact paths merged into Pino's `redact.paths` option by
- * default. Expected length: 27 common fields × 4 depths + 5 absolute = **113**.
+ * default. Expected length: 27 root fields + 27 common fields × 4 depths + 5
+ * absolute = **140**.
+ *
+ * The bare field names come first, at depth 0 — the log record's own root.
+ * `emitStructured` spreads caller metadata there (`{ ...metadata, logKey, ... }`),
+ * so a field named `password` passed as metadata lands at the root, which the
+ * depth-1-and-deeper wildcards below never reach (`fast-redact`'s `*` matches a
+ * level, not the root). Without the bare name the library's own documented call
+ * `logger.info(key, msg, userId, { password })` would write the password in clear.
+ * Listing it makes the default set cover a sensitive field wherever it appears.
  */
 export const DEFAULT_REDACT_PATHS: readonly string[] = [
+  ...REDACT_COMMON_FIELDS,
   ...REDACT_COMMON_FIELDS.flatMap((field) => depth(field)),
   ...REDACT_ABSOLUTE_PATHS
 ] as const

@@ -43,7 +43,7 @@ The library has **zero direct dependencies** — all packages arrive as peer dep
 
 - **🎯 One module, the whole pipeline** — Logger service, HTTP interceptor, exception filter, context propagation, redaction, and destinations arrive in a single `forRoot()`. No gluing together `pino-http`, a redaction layer, and a transport by hand.
 - **🔌 Your sinks, your rules** — The library defines `ILogDestination`. You implement it for Loki, Postgres, a rolling file, or anything else. No vendor lock-in, no hidden transport dependencies.
-- **🔒 Redacted by default** — 113 redact paths compile at bootstrap covering the standard set: passwords, tokens, PCI DSS card data, MFA secrets, and LGPD documents. Domain-specific field names are yours to add via `redactPaths`.
+- **🔒 Redacted by default** — 140 redact paths compile at bootstrap covering the standard set: passwords, tokens, PCI DSS card data, MFA secrets, and LGPD documents. Domain-specific field names are yours to add via `redactPaths`.
 - **⚡ On the hot path, so it stays cheap** — Singleton providers, one composed Pino mixin, and a pre-compiled redactor. No `Scope.REQUEST`, no per-log regex matching.
 - **🔭 Correlated when you need it** — When an OpenTelemetry span is active, `traceId`/`spanId`/`traceFlags` land in every entry. When the peer is absent, the mixin steps aside at zero cost.
 
@@ -65,7 +65,7 @@ pnpm add @bymax-one/nest-logger
 
 ### 🛡️ Security & Privacy
 
-- ✅ **PII Redaction by Default** — 113 paths covering passwords, tokens, and generic secrets — powered by `fast-redact`
+- ✅ **PII Redaction by Default** — 140 paths covering passwords, tokens, and generic secrets — powered by `fast-redact`
 - ✅ **PCI DSS & MFA Coverage** — card data and MFA secrets redacted out of the box, with common HTTP auth headers
 - ✅ **LGPD-Aware Paths** — CPF, CNPJ, and RG redacted by default for Brazilian workloads
 - ✅ **Append-Only Redact List** — `DEFAULT_REDACT_PATHS` never shrinks without a major version; extend it via `redactPaths`
@@ -374,7 +374,7 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 | `level`                      | `LogLevel`          | `'info'`        | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                             |
 | `isPretty`                   | `boolean`           | `!isProduction` | ⚠️ Reserved — not auto-wired. For pretty output add `new PrettyDevDestination()` to `destinations` (needs `pino-pretty`) |
 | `redactPaths`                | `string[]`          | `[]`            | Additional `fast-redact` paths merged with the defaults                                                                  |
-| `shouldDisableDefaultRedact` | `boolean`           | `false`         | Skip the 113 default PII paths. ⚠️ Emits a bootstrap warning — document why                                              |
+| `shouldDisableDefaultRedact` | `boolean`           | `false`         | Skip the 140 default PII paths. ⚠️ Emits a bootstrap warning — document why                                              |
 | `redactCensor`               | `string`            | `'[REDACTED]'`  | Replacement value written in place of every redacted field                                                               |
 | `maxEntrySizeBytes`          | `number`            | `65536`         | UTF-8 byte ceiling per serialized field (`err` + any custom serializer); over it the value becomes a truncation envelope |
 | `destinations`               | `ILogDestination[]` | `[]`            | Additional sinks (Loki, Postgres, rolling file, …) alongside default stdout                                              |
@@ -605,7 +605,7 @@ Application Service
               └── OTel span      → { traceId, spanId, traceFlags }
               │
               ▼
-         fast-redact             ← compiled redact function (113 paths)
+         fast-redact             ← compiled redact function (140 paths)
               │
               ▼
     ┌─────────────────────────────┐
@@ -622,7 +622,7 @@ Application Service
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **🪶 Singleton Scope**        | `AsyncLocalStorage` delivers per-request context at zero latency overhead — NestJS `Scope.REQUEST` adds ~5% on the injection graph, unacceptable on a logger that runs for every request         |
 | **🧬 One Composed Mixin**     | ALS context and OTel trace context merge into a single Pino mixin with a deterministic order: ALS first, then OTel — an active span is the authoritative trace identity, so it wins on conflicts |
-| **⚡ Compiled Redaction**     | 113 `fast-redact` paths compile once at module bootstrap into a specialized function; no per-log regex matching, under 3% throughput impact                                                      |
+| **⚡ Compiled Redaction**     | 140 `fast-redact` paths compile once at module bootstrap into a specialized function; no per-log regex matching, under 3% throughput impact                                                      |
 | **🔌 Interface-Driven Sinks** | `ILogDestination` is a contract — Loki, Postgres, rolling files, or anything else is a consumer implementation, never a dependency of this package                                               |
 | **🌳 Zero Runtime Deps**      | `"dependencies": {}` — every package arrives as a peer dependency, so consumers pin exact versions and the supply-chain surface stays theirs                                                     |
 
@@ -634,7 +634,7 @@ A logger sees every payload the application handles, so the security posture is 
 
 ### Redaction by default
 
-The library ships **113 redact paths** compiled at initialization into a single `fast-redact` function (< 3% throughput impact). These cover:
+The library ships **140 redact paths** compiled at initialization into a single `fast-redact` function (< 3% throughput impact). These cover:
 
 | Category                  | Fields                                                                                                                                    |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -709,7 +709,7 @@ When integrating `@bymax-one/nest-logger` in production, verify each of the foll
 
 | Layer               | Implementation                                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| PII Redaction       | 113 `fast-redact` paths compiled once at bootstrap — no per-log regex matching                                     |
+| PII Redaction       | 140 `fast-redact` paths compiled once at bootstrap — no per-log regex matching                                     |
 | Credentials         | `password`, `passwordHash`, `token`, `accessToken`, `refreshToken`, `apiKey`, `apiSecret`, `privateKey`            |
 | MFA Secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret` — redacted at wildcard depths 1–4                                    |
 | PCI DSS             | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                |
