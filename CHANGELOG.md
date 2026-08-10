@@ -11,6 +11,30 @@ heading here.
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-08-10
+
+Remediation of a local audit's redaction, attribution and correlation-id findings. No API
+changed; the fixes are in the default redact set, the acting-user resolution and the docs.
+
+### Fixed
+
+- **Root-level metadata is redacted.** The default redact set now lists each sensitive field at
+  depth 0 as well as depths 1–4, so a value spread into a log record's own root — as
+  `emitStructured` does with caller metadata — is scrubbed. The depth-1-and-deeper wildcards never
+  reached the root, so a field named `password` passed as metadata was written in clear.
+- **Acting-user attribution reads the JWT subject first.** The HTTP logging interceptor and the
+  exception filter now resolve the acting user as `sub ?? id`, so a JWT principal (every
+  `@bymax-one/nest-auth` token) is attributed to its subject rather than an ORM `id` when a
+  principal carries both.
+
+### Documentation
+
+- The advertised default redact-path count is corrected from 113 to **140** (27 fields across
+  depths 0–4, plus 5 absolute header paths) across the README and the technical specification.
+- The correlation-id charset comment now describes what the middleware actually does — echo
+  `x-request-id` and store `requestId` in the log context — instead of a non-existent
+  error-envelope `correlationId` field.
+
 ## [1.0.7] - 2026-08-07
 
 **Documentation and tooling.** `dist/` differs from `1.0.6` only in the text of the comments
@@ -316,7 +340,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.7...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.8...HEAD
+[1.0.8]: https://github.com/bymaxone/nest-logger/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/bymaxone/nest-logger/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/bymaxone/nest-logger/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/bymaxone/nest-logger/compare/v1.0.4...v1.0.5
