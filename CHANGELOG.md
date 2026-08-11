@@ -11,6 +11,16 @@ heading here.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-11
+
+Coordinated ecosystem release aligning every `@bymax-one/*` package after the ioredis 6 /
+bullmq 6 migration. This is a version-alignment-only release: the published `dist/` is
+identical to `1.0.8`, and nothing changed but the version number.
+
+### Changed
+
+- No changes since `1.0.8`; version advanced to keep the `@bymax-one/*` line aligned.
+
 ## [1.0.8] - 2026-08-10
 
 Remediation of a local audit's redaction, attribution and correlation-id findings. No API
@@ -340,7 +350,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.0.8...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/bymaxone/nest-logger/compare/v1.0.8...v1.1.0
 [1.0.8]: https://github.com/bymaxone/nest-logger/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/bymaxone/nest-logger/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/bymaxone/nest-logger/compare/v1.0.5...v1.0.6
