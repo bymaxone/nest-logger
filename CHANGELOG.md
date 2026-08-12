@@ -53,6 +53,14 @@ shipped logging path **~50× faster**.
   `{ toJSON: () => ({ accessToken }) }` emit the token untouched. The walk now redacts the
   method's output, substituting it only when something was actually censored so a clean `Date` or
   `Decimal` is still passed through by reference.
+- **Hostile metadata and hostile errors no longer crash the caller.** The never-throw guarantee
+  now starts at the FIRST read of caller-controlled data: `Object.keys` fires a Proxy's `ownKeys`
+  trap and `Reflect.get` fires a getter, both before anything reached the redaction pipeline, so
+  `logger.info(key, msg, undefined, hostileMetadata)` threw outright. Unreadable metadata is
+  dropped whole and marked with the redaction-failure envelope while the entry keeps its real
+  `logKey`, message and correlation ids. The same guard covers the error path — `name`, `message`
+  and `stack` are ordinary properties a caller can redefine as throwing accessors, and `message`
+  is read outside the serializer.
 - **A throwing getter no longer crashes the log call.** Pino merges the mixin result with the
   caller's object before `formatters.log` runs, and the default strategy's `Object.assign` invokes
   every own getter — so a hostile getter threw before the redactor's fail-closed envelope could

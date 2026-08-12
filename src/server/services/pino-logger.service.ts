@@ -18,6 +18,7 @@ import { Inject, Injectable } from '@nestjs/common'
 import type { LoggerService as NestLoggerService, OnApplicationShutdown } from '@nestjs/common'
 import type { Logger as PinoLogger } from 'pino'
 
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import {
   LOGGER_PINO_INSTANCE_TOKEN,
   LOGGER_REDACTOR_TOKEN
@@ -50,14 +51,46 @@ function withoutOwnedKeys(metadata: Record<string, unknown> | undefined): Record
   if (metadata === undefined) {
     return {}
   }
-  const safe: Record<string, unknown> = {}
-  for (const key of Object.keys(metadata)) {
-    if (!OWNED_PAYLOAD_KEYS.includes(key)) {
-      // `Reflect` keeps the dynamic read/write off the object-injection sink list.
-      Reflect.set(safe, key, Reflect.get(metadata, key))
+  try {
+    const safe: Record<string, unknown> = {}
+    for (const key of Object.keys(metadata)) {
+      if (!OWNED_PAYLOAD_KEYS.includes(key)) {
+        // `Reflect` keeps the dynamic read/write off the object-injection sink list.
+        Reflect.set(safe, key, Reflect.get(metadata, key))
+      }
+    }
+    return safe
+  } catch {
+    // Reading the caller's metadata can throw before anything reaches the
+    // redactor: `Object.keys` runs a Proxy's `ownKeys` trap and `Reflect.get`
+    // runs a getter. The redaction pipeline promises never to crash the request
+    // that produced a log, and that promise has to start at the FIRST read of
+    // caller-controlled data, not at the formatter. Metadata that cannot be read
+    // cannot be proven safe, so it is dropped whole and marked — the entry still
+    // carries its real `logKey`, message and correlation ids.
+    return {
+      _redactionFailed: true,
+      _logKey: RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
     }
   }
-  return safe
+}
+
+/**
+ * Read `error.message` without letting a hostile getter escape.
+ *
+ * `message` is an ordinary property that a caller can redefine as a throwing
+ * accessor, and it is read OUTSIDE the serializer — straight into Pino's message
+ * argument — so it needs its own guard.
+ *
+ * @param error - The error being logged.
+ * @returns The message, or a fixed stand-in when it cannot be read.
+ */
+function safeErrorMessage(error: Error): string {
+  try {
+    return String(error.message)
+  } catch {
+    return 'Unreadable error message'
+  }
 }
 
 /**
@@ -149,7 +182,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     if (message instanceof Error) {
       const payload: Record<string, unknown> = { err: this.serializeError(message) }
       assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
-      this.pino.error(payload, message.message)
+      this.pino.error(payload, safeErrorMessage(message))
       return
     }
     // NestJS variadic contract is `error(message, stack?, context?)`: the stack
@@ -263,7 +296,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     }
     assignIfDefined(payload, 'userId', userId)
     assignIfDefined(payload, 'context', this.context)
-    this.pino.error(payload, error.message)
+    this.pino.error(payload, safeErrorMessage(error))
   }
 
   // ─── Helpers / escape hatches ─────────────────────────────────────────────
@@ -336,7 +369,15 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * dashboards for every exception logged through `HttpExceptionFilter`.
    */
   private serializeError(error: Error): Record<string, unknown> {
-    return { type: error.name, message: error.message, stack: error.stack }
+    try {
+      return { type: error.name, message: error.message, stack: error.stack }
+    } catch {
+      // `name` / `message` / `stack` are ordinary properties a caller can
+      // redefine as throwing accessors — V8 already exposes `stack` as an
+      // accessor. Degrading here keeps the never-throw contract on the path most
+      // likely to receive a hostile object: the one handling a thrown value.
+      return { type: 'SanitizeFailed', message: 'Failed to read the thrown value' }
+    }
   }
 
   /** Resolve the context: last string param wins, else the instance context. */
