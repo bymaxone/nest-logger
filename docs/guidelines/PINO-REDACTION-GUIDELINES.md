@@ -44,13 +44,14 @@ serializer. Inspection cannot close that window; reading once and pinning the re
 - **`ArrayBuffer` views** (`Buffer`, typed arrays) are returned untouched, as a cost bound:
   `Buffer` has a `toJSON` that would materialise a `{ type, data: number[] }` copy per entry.
 
-**Where redaction is applied** — three hooks, and each covers something the others cannot:
+**Where redaction is applied** — four hooks, and each covers something the others cannot:
 
-| Hook                        | Covers                                    | Why the others miss it                                         |
-| --------------------------- | ----------------------------------------- | -------------------------------------------------------------- |
-| `formatters.log`            | the merged record (mixin + caller object) | —                                                              |
-| every serializer's output   | fields a serializer PRODUCES              | `formatters.log` runs BEFORE serializers                       |
-| `PinoLoggerService.child()` | child bindings                            | Pino pre-serializes them into `chindings` before any formatter |
+| Hook                        | Covers                                                | Why the others miss it                                          |
+| --------------------------- | ----------------------------------------------------- | --------------------------------------------------------------- |
+| `formatters.log`            | the merged record (mixin + caller object)             | —                                                               |
+| `formatters.bindings`       | `base` — carries consumer-supplied `service` metadata | base never reaches `formatters.log`; runs once, at construction |
+| every serializer's output   | fields a serializer PRODUCES                          | `formatters.log` runs BEFORE serializers                        |
+| `PinoLoggerService.child()` | child bindings                                        | Pino pre-serializes them into `chindings` before any formatter  |
 
 ---
 
