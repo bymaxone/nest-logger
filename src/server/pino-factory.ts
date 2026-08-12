@@ -41,6 +41,9 @@ import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constan
  */
 const PATH_SEGMENT = /\[\s*['"]([^'"]+)['"]\s*\]|([^.[\]]+)/g
 
+/** An unquoted path segment that is an array index rather than a field name. */
+const INDEX_SEGMENT = /^\d+$/
+
 /**
  * The leaf field name of a `fast-redact` path.
  *
@@ -55,20 +58,32 @@ const PATH_SEGMENT = /\[\s*['"]([^'"]+)['"]\s*\]|([^.[\]]+)/g
  * `user.ssn` gets `ssn` censored wherever it appears, not only under `user`.
  * That errs toward redacting a name the consumer has already declared secret.
  *
+ * An UNQUOTED numeric segment is an array INDEX, not a field name, and is skipped
+ * like a wildcard. `tokens[0]` yields `tokens`, not `0`: the walk matches names,
+ * and it never compares array positions — feeding it `0` covered nothing while
+ * censoring any object key that happened to be named `0`. Falling back to the
+ * nearest name censors the whole `tokens` array, which is broader than the path
+ * and in the safe direction. The QUOTED form is left alone: `["0"]` is explicit
+ * key syntax, and an object key named `0` IS matched by the walk.
+ *
  * @internal Exported only for unit testing — its edge cases (a wildcard-only
  *   path, a trailing separator, bracket syntax) are invisible in a serialized
  *   line, so they are asserted directly. NOT re-exported by the package barrel.
  * @param path - A `fast-redact` path, dotted and/or bracketed.
- * @returns The last non-wildcard segment, or `undefined` for a path with none.
+ * @returns The last segment that names a field, or `undefined` for a path with
+ *   none (a wildcard- or index-only path).
  * @example
  *   leafNameOf('req.headers["x-api-key"]')  // 'x-api-key'
  *   leafNameOf('*.*.password')              // 'password'
+ *   leafNameOf('tokens[0]')                 // 'tokens' — the index is not a name
  *   leafNameOf('blob["social.security"]')   // 'social.security' — one name, dots included
  */
 export function leafNameOf(path: string): string | undefined {
   let leaf: string | undefined
   for (const match of path.matchAll(PATH_SEGMENT)) {
-    const name = match[1] ?? match[2]
+    const quoted = match[1]
+    const name =
+      quoted ?? (match[2] !== undefined && INDEX_SEGMENT.test(match[2]) ? undefined : match[2])
     // Stryker disable next-line ConditionalExpression: NOT equivalent, and not a coverage gap — the suite kills this mutant, verified by applying it by hand and watching three tests turn red (`leafNameOf yields no leaf for *`, `for *.*`, and the pass-through case in `resolveNameRedactor`). Stryker fails to attribute the killing tests to it under `perTest` coverage analysis, the same way it already does for `otel-detector.ts`. Recorded as what it is rather than mislabelled equivalent.
     if (name !== undefined && name !== '*') {
       leaf = name

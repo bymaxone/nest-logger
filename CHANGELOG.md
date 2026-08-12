@@ -29,9 +29,23 @@ shipped logging path **~50× faster**.
   They are now first-class field names, caught wherever they appear.
 - **The four-level nesting cap is gone, and what replaces it fails closed.** The previous wildcard
   expansion reached `*.*.*.*.field` and anything deeper was emitted in clear. The walk now reaches
-  100 levels, and past that a value is DROPPED rather than passed through — a traversal ceiling
+  100 levels, and past that a CONTAINER is DROPPED rather than passed through — a traversal ceiling
   exists only so a pathological self-similar structure cannot exhaust the call stack, and it can
-  never become a leak the way the old one was.
+  never become a leak the way the old one was. A primitive at the boundary is still emitted, and
+  that is not a gap: its key was matched by the parent at level 100, the last container walked.
+- **A `toJSON` can no longer rename a field around the matcher.** Only the method's OUTPUT was
+  inspected, so `{ password, toJSON: () => ({ value: this.password }) }` emitted the secret under
+  `value` — a name nobody declared sensitive. When the SOURCE carries a sensitive own key the
+  method is no longer trusted and the whole value is censored. This over-redacts an object that
+  holds a sensitive key AND correctly omits it, deliberately: the alternative — invoking `toJSON`
+  against a sanitized copy — throws on every method that reads an internal slot instead of an own
+  property, which is `Date`, `Decimal` and Luxon.
+- **A terminal array index in `redactPaths` no longer covers nothing.** `tokens[0]` fed the leaf
+  `0` to the walk, which compares NAMES and never array positions — so the element stayed raw
+  through the size-bounded `_preview`, while any object key literally named `0` was censored
+  instead. An unquoted numeric segment is now read as an index and skipped like a wildcard, so
+  `tokens[0]` covers `tokens`: broader than the path, in the safe direction. The quoted form
+  `["0"]` stays a name.
 - **Base bindings are redacted.** `service` is consumer-supplied and `applyDefaults` keeps whatever
   it was handed, so a `{ name, version, apiKey }` reached the sink in clear once base stopped going
   through the path expansion that had covered it via `*.*.apiKey`. Redacted at

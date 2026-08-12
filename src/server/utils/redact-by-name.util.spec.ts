@@ -205,6 +205,27 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
+   * The ceiling bounds RECURSION, so it applies to containers, not to leaves: a
+   * primitive one level PAST the limit is emitted rather than replaced by the
+   * sentinel. That is deliberate — its key was compared against the sensitive set
+   * by the parent at the limit, the last container the walk inspected, so it has
+   * already been through the matcher and dropping it would only destroy
+   * legitimate data. Asserted here because the prose claim ("deeper values are
+   * dropped") read as unconditional and was reported as a hole in the ceiling.
+   */
+  'should emit a primitive past the ceiling but still censor it by key', () => {
+    // The container sits exactly AT the limit, so it is walked; its primitive
+    // children land one level past it and are returned as-is.
+    const atLimit = { plain: 'PLAIN-LEAF', password: 'SECRET' }
+    const serialized = JSON.stringify(redact(nest(REDACT_MAX_TRAVERSAL_DEPTH, atLimit)))
+    expect(serialized).toContain('PLAIN-LEAF')
+    expect(serialized).not.toContain(REDACT_DEPTH_EXCEEDED)
+    // …and the matcher still governs them: the parent AT the limit checks the key.
+    expect(serialized).not.toContain('SECRET')
+    expect(serialized).toContain(CENSOR)
+  })
+
+  it(/*
    * A clean record round-trips to an equal — but NOT identical — value. Returning
    * it by reference was the allocation-free fast path, and it was traded away
    * deliberately: it left any accessor in the subtree to be evaluated a second
@@ -450,6 +471,55 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
+   * REGRESSION — a `toJSON` can RENAME the field it exposes, carrying the value
+   * around the matcher. Only the OUTPUT was walked, so the source key `password`
+   * was never seen and the secret was emitted under `value`. A source that
+   * carries a sensitive own key no longer has its method trusted.
+   */
+  'should censor a value whose toJSON renames a sensitive source field', () => {
+    const renaming = {
+      password: 'SECRET',
+      toJSON(): unknown {
+        return { value: this.password }
+      }
+    }
+    expect(JSON.stringify(redact({ creds: renaming }))).toBe(`{"creds":"${CENSOR}"}`)
+  })
+
+  it(/*
+   * The fail-closed check reads the SOURCE's own key names, so it fires even when
+   * the method omits the field correctly. That over-redacts, deliberately: the
+   * alternative — invoking `toJSON` against a sanitized copy, as the leak report
+   * proposed — throws on every method that reads an internal slot rather than an
+   * own property (`Date.prototype.toJSON.call({ ...date })` is
+   * `toISOString is not a function`), trading a narrow leak for a crash on the
+   * common case.
+   */
+  'should censor a sensitive-bearing source even when toJSON omits the field', () => {
+    const careful = {
+      password: 'SECRET',
+      id: 'u_1',
+      toJSON(): unknown {
+        return { id: this.id }
+      }
+    }
+    expect(JSON.stringify(redact({ user: careful }))).toBe(`{"user":"${CENSOR}"}`)
+  })
+
+  it(/*
+   * The converse guard: a source with NO sensitive own key keeps its `toJSON`
+   * honoured. Without this the check would swallow every `Date` / `Decimal` /
+   * Luxon value in a payload that merely sits near a secret.
+   */
+  'should honour toJSON when the source carries no sensitive key', () => {
+    const measure = {
+      units: 3,
+      toJSON: (): unknown => ({ units: 3 })
+    }
+    expect(JSON.stringify(redact({ measure }))).toBe('{"measure":{"units":3}}')
+  })
+
+  it(/*
    * Values whose JSON form comes from `toJSON` (Date, Decimal, Luxon, Prisma
    * types) must not be flattened to their own properties — the walk would
    * otherwise change what reaches the sink.
@@ -532,11 +602,16 @@ describe('createNameRedactor', () => {
    * that DOES carry own properties (a Decimal, a Luxon DateTime, a Prisma type)
    * is the real case: walking it would strip the `toJSON` on the copy and change
    * what reaches the sink from a scalar into an object.
+   *
+   * Its own properties are deliberately NON-sensitive here. A sensitive one
+   * changes the outcome — the method stops being trusted and the whole value is
+   * censored — which is its own pair of cases above; mixing the two into one
+   * fixture asserted the wrong rule.
    */
   'should not flatten a toJSON-bearing value that carries own properties', () => {
     const money = {
       units: 1299,
-      password: 'not-really-a-secret-here',
+      currency: 'BRL',
       toJSON(): string {
         return '12.99'
       }

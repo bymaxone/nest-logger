@@ -62,8 +62,16 @@ import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.cons
  * payloads are single-digit-deep, and the value it replaced was FOUR — but an
  * unbounded recursion over a pathological (or hostile) self-similar structure
  * would exhaust the call stack, and a logging concern must never crash its
- * caller. Past this depth the value is dropped, NOT passed through: failing
- * closed is the only safe direction for a redactor.
+ * caller. Past this depth a CONTAINER is dropped, NOT passed through: it is what
+ * could hide an uninspected sensitive key, and failing closed is the only safe
+ * direction for a redactor.
+ *
+ * A PRIMITIVE sitting exactly at the boundary is still emitted, and that is
+ * deliberate rather than a gap in the ceiling: its key was compared against the
+ * sensitive set by its parent — the last container the walk inspected — so it has
+ * already been through the matcher. Dropping it would destroy legitimate leaf
+ * data and buy no protection. The ceiling exists to bound RECURSION, and only a
+ * container recurses.
  */
 export const REDACT_MAX_TRAVERSAL_DEPTH = 100
 
@@ -323,6 +331,28 @@ function walk(
     // they keep it.
     const toJson = honorToJson ? readToJson(value) : undefined
     if (toJson !== undefined) {
+      // A `toJSON` can RENAME the field it exposes, carrying the value around the
+      // matcher: `{ password, toJSON() { return { value: this.password } } }`
+      // emitted the secret under `value`, because only the OUTPUT is walked and
+      // the source key `password` is never seen. So when the SOURCE itself
+      // carries a sensitive own key, the method is not trusted to preserve it and
+      // the whole value is censored — fail closed.
+      //
+      // The obvious alternative, calling `toJSON` against a sanitized copy, was
+      // rejected: it breaks every method that reads an internal slot rather than
+      // an own property. `Date.prototype.toJSON.call({ ...new Date() })` throws
+      // `toISOString is not a function`, and `Decimal` / Luxon behave the same —
+      // that would trade a narrow leak for a crash on the COMMON case.
+      //
+      // `Object.keys` reads names only; no getter is invoked, so the source is
+      // not observed twice. The check is shallow by design: a method that reaches
+      // into NESTED state (`this.inner.password`) to rename it is not caught, and
+      // cannot be — that is the same limitation as a caller writing
+      // `{ renamed: obj.inner.password }` by hand, which no name matcher sees.
+      // Documented in PINO-REDACTION-GUIDELINES.md under the engine's limits.
+      if (Object.keys(value).some((key) => sensitive.has(key.toLowerCase()))) {
+        return censor
+      }
       // The INSPECTED result is what gets returned, always — never the original
       // object. Returning the original when the probe came back clean left
       // `JSON.stringify` to call `toJSON()` a SECOND time (with the property key,
@@ -392,8 +422,9 @@ function walk(
  *
  * @param fieldNames - Sensitive field names, matched case-INSENSITIVELY so a
  *   header bag carrying `Authorization` is covered as well as `authorization`.
- *   Matching applies down to {@link REDACT_MAX_TRAVERSAL_DEPTH}; deeper values are
- *   dropped, not emitted.
+ *   Matching applies down to {@link REDACT_MAX_TRAVERSAL_DEPTH}; a container
+ *   deeper than that is dropped rather than emitted, while a primitive leaf at
+ *   the boundary is kept — its key was already matched one level up.
  * @param censor - Replacement written in place of a sensitive value.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example

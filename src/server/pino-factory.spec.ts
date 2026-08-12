@@ -495,7 +495,19 @@ describe('leafNameOf', () => {
     // length guard the leaf would be `''`, a name that matches nothing and
     // silently drops the consumer's declaration.
     ['user.', 'user'],
-    ['a..b', 'b']
+    ['a..b', 'b'],
+    // REGRESSION — an UNQUOTED numeric segment is an array index, not a field
+    // name. `tokens[0]` used to yield `0`, which covered nothing (the walk never
+    // compares array positions, so the element stayed raw through the size-bound
+    // preview) while censoring any object key literally named `0`. It now falls
+    // back to the nearest name, censoring the whole array.
+    ['tokens[0]', 'tokens'],
+    ['a.b[2].secret', 'secret'],
+    ['creds.0.password', 'password'],
+    ['sessions.0', 'sessions'],
+    // The QUOTED form is explicit key syntax, not an index, and an object key
+    // named `0` IS matched by the walk — so it stays a name.
+    ['obj["0"]', '0']
   ])(
     /*
      * The leaf is the last segment that names something: wildcards and empty
@@ -508,7 +520,7 @@ describe('leafNameOf', () => {
     }
   )
 
-  it.each([['*'], ['*.*'], ['.'], ['']])(
+  it.each([['*'], ['*.*'], ['.'], [''], ['[0]'], ['0.1']])(
     /*
      * A path with no nameable segment yields NO leaf — not the wildcard itself.
      * Returning `'*'` would put a name in the matcher that can never match, which

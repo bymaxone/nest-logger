@@ -22,7 +22,7 @@ The DEFAULT is a single recursive **snapshotting walk** keyed on FIELD NAME
 |                | path engine (legacy)                              | name walk (default)                                          |
 | -------------- | ------------------------------------------------- | ------------------------------------------------------------ |
 | Match on       | an exact path or wildcard shape                   | the KEY NAME, anywhere it appears                            |
-| Depth          | four levels; deeper LEAKED                        | 100 levels; deeper is DROPPED, never emitted                 |
+| Depth          | four levels; deeper LEAKED                        | 100 levels; a deeper CONTAINER is DROPPED, never emitted     |
 | Casing         | case-sensitive                                    | case-INSENSITIVE (HTTP headers are case-insensitive by spec) |
 | Cost           | grows with the PATH COUNT; ~107 µs/entry          | grows with the payload; ~3.6 µs/entry                        |
 | Adding a field | add it at every depth                             | add the name once to `REDACT_COMMON_FIELDS`                  |
@@ -41,8 +41,25 @@ serializer. Inspection cannot close that window; reading once and pinning the re
 - **Anything with `toJSON`** is inspected through that method's OUTPUT, because that is what
   reaches the log — EXCEPT at the root of a record, which Pino iterates rather than serializes.
   Honouring it there replaces the whole record and discards `logKey`, `msg` and everything else.
+  A method can also RENAME what it exposes (`{ password, toJSON: () => ({ value: this.password }) }`
+  emitted the secret under `value`), so when the SOURCE carries a sensitive own key the method is
+  not trusted and the whole value is censored. Calling `toJSON` against a sanitized copy instead —
+  the obvious fix — was rejected: it throws on every method that reads an internal slot rather than
+  an own property (`Date.prototype.toJSON.call({ ...date })` is `toISOString is not a function`).
 - **`ArrayBuffer` views** (`Buffer`, typed arrays) are returned untouched, as a cost bound:
   `Buffer` has a `toJSON` that would materialise a `{ type, data: number[] }` copy per entry.
+
+**What the name walk cannot catch, by construction.** It matches KEY NAMES, so a secret that
+arrives under a name nobody declared sensitive is emitted — and no amount of hardening changes
+that. Worth stating plainly, because two reported "leaks" were really this:
+
+- `logger.log('x', { renamed: user.password })` — the caller chose the key. `renamed` is not in
+  the set, so it is emitted. Identical in kind to a `toJSON` that renames NESTED state
+  (`() => ({ v: this.inner.password })`): the source-key check above is shallow and does not
+  see it. Cover the name, or do not put the value in the log.
+- A **primitive at the depth boundary** is emitted rather than replaced by the sentinel. That is
+  not a hole: its key was matched by the parent at level 100, the last container walked. The
+  ceiling bounds RECURSION, and only a container recurses.
 
 **Where redaction is applied** — four hooks, and each covers something the others cannot:
 
