@@ -209,11 +209,26 @@ function walkArray(
   depth: number,
   ancestors: Set<object>
 ): unknown[] {
-  // Snapshot for the same reason objects are — an index can be an accessor, and a
-  // clean array returned by reference would let `JSON.stringify` read it again.
+  // Indexed by NUMBER, not iterated. `for...of` runs the array's
+  // `Symbol.iterator`, which a caller can override — whereas `JSON.stringify`
+  // reads `length` and numeric indices. An overridden iterator that never
+  // returns `done` would hang the log call (the try/catch cannot catch a loop
+  // that does not end), and one that yields values unrelated to the indices
+  // would make the walk inspect something other than what the array holds.
+  // Reading the way the serializer reads removes both. `length` is read once and
+  // is a plain data property: `Array.isArray` guarantees a real array.
+  const length = value.length
+  // Not pre-sized with `new Array(length)`: the loop writes every index anyway,
+  // so the size hint buys nothing — and it would create a HOLEY array, which V8
+  // handles more slowly than the packed one that sequential writes produce.
   const copy: unknown[] = []
-  for (const current of value) {
-    copy.push(walk(current, sensitive, censor, depth + 1, ancestors))
+  for (let index = 0; index < length; index++) {
+    // `Reflect` keeps the dynamic read/write off the object-injection sink list.
+    Reflect.set(
+      copy,
+      index,
+      walk(Reflect.get(value, index), sensitive, censor, depth + 1, ancestors)
+    )
   }
   return copy
 }

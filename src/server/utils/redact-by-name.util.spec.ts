@@ -93,6 +93,58 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
+   * REGRESSION — arrays are indexed by NUMBER, not iterated. `for...of` runs the
+   * array's `Symbol.iterator`, which a caller can override, while
+   * `JSON.stringify` reads `length` and numeric indices. An iterator that never
+   * returns `done` hung the walk — a loop that does not end cannot be caught by
+   * the never-throw guard — and one yielding values unrelated to the indices made
+   * the walk inspect something the array does not hold.
+   */
+  'should index arrays numerically rather than run their iterator', () => {
+    const hostile = [{ password: 'SECRET' }]
+    Object.defineProperty(hostile, Symbol.iterator, {
+      value: function* (): Generator<unknown> {
+        for (;;) {
+          yield { decoy: 1 }
+        }
+      }
+    })
+
+    // Terminates, and censors the element the array actually holds rather than
+    // the fiction the iterator was yielding.
+    expect(JSON.stringify(redact({ list: hostile }))).toBe(`{"list":[{"password":"${CENSOR}"}]}`)
+  })
+
+  it(/*
+   * An empty array must stay empty — the copy starts from `[]` and the loop never
+   * runs, so nothing else may end up in it.
+   */
+  'should render an empty array as an empty array', () => {
+    expect(JSON.stringify(redact({ list: [] }))).toBe('{"list":[]}')
+  })
+
+  it(/*
+   * Holes must serialize exactly as the native serializer renders them, which is
+   * the other half of reading the way `JSON.stringify` reads.
+   */
+  'should render a sparse array the same as JSON.stringify does', () => {
+    const withInnerHoles: unknown[] = [1]
+    withInnerHoles[3] = 2
+    expect(JSON.stringify(redact({ s: withInnerHoles }))).toBe(
+      JSON.stringify({ s: withInnerHoles })
+    )
+
+    // TRAILING holes are the case that pins the pre-sized copy: nothing writes
+    // those indices, so only the constructor's length carries them through.
+    const withTrailingHoles: unknown[] = [1]
+    withTrailingHoles.length = 4
+    expect(JSON.stringify(redact({ s: withTrailingHoles }))).toBe('{"s":[1,null,null,null]}')
+    expect(JSON.stringify(redact({ s: withTrailingHoles }))).toBe(
+      JSON.stringify({ s: withTrailingHoles })
+    )
+  })
+
+  it(/*
    * Every changed element must land at its OWN index. With a single sensitive
    * element the write index is always 0, which hides an index-tracking bug — two
    * sensitive elements at different positions is the shape that exposes it.

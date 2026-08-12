@@ -53,6 +53,12 @@ shipped logging path **~50× faster**.
   `{ toJSON: () => ({ accessToken }) }` emit the token untouched. The walk now redacts the
   method's output, substituting it only when something was actually censored so a clean `Date` or
   `Decimal` is still passed through by reference.
+- **Arrays are indexed numerically rather than iterated.** `for...of` runs the array's
+  `Symbol.iterator`, which a caller can override, while `JSON.stringify` reads `length` and
+  numeric indices. An iterator that never returned `done` hung the log call — a loop that does not
+  end cannot be caught by the never-throw guard — and one yielding values unrelated to the indices
+  made the walk inspect something the array does not hold. Reading the way the serializer reads
+  also makes holes render identically to the native output.
 - **A callable carrying `toJSON` is inspected.** `JSON.stringify` applies a callable `toJSON` to a
   FUNCTION object too — the spec runs that step BEFORE the "callable serializes to undefined" rule
   — so `Object.assign(() => {}, { toJSON: () => ({ accessToken }) })` emitted its payload with
