@@ -29,8 +29,17 @@ import type { Redactor } from './utils/redact-by-name.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
-/** A `["quoted"]` / `['quoted']` path segment, as `fast-redact` spells it. */
-const BRACKET_SEGMENT = /\[\s*['"]([^'"]+)['"]\s*\]/g
+/**
+ * One path segment: either a `["quoted"]` / `['quoted']` bracket segment, whose
+ * contents are ONE name however many dots it holds, or a run of bare characters
+ * between the separators.
+ *
+ * Tokenizing rather than rewriting brackets into dotted text is load-bearing: a
+ * key may legitimately contain a dot, and `blob["social.security"]` rewritten as
+ * `blob.social.security` yields the leaf `security` — a name that does not exist
+ * in the payload, while the one that does goes uncovered.
+ */
+const PATH_SEGMENT = /\[\s*['"]([^'"]+)['"]\s*\]|([^.[\]]+)/g
 
 /**
  * The leaf field name of a `fast-redact` path.
@@ -52,16 +61,20 @@ const BRACKET_SEGMENT = /\[\s*['"]([^'"]+)['"]\s*\]/g
  * @param path - A `fast-redact` path, dotted and/or bracketed.
  * @returns The last non-wildcard segment, or `undefined` for a path with none.
  * @example
- *   leafNameOf('req.headers["x-api-key"]') // 'x-api-key'
- *   leafNameOf('*.*.password')             // 'password'
+ *   leafNameOf('req.headers["x-api-key"]')  // 'x-api-key'
+ *   leafNameOf('*.*.password')              // 'password'
+ *   leafNameOf('blob["social.security"]')   // 'social.security' — one name, dots included
  */
 export function leafNameOf(path: string): string | undefined {
-  // Bracket segments are rewritten as dot segments so one split handles both.
-  const segments = path
-    .replace(BRACKET_SEGMENT, (_match, name: string) => `.${name}`)
-    .split('.')
-    .filter((segment) => segment.length > 0 && segment !== '*')
-  return segments.at(-1)
+  let leaf: string | undefined
+  for (const match of path.matchAll(PATH_SEGMENT)) {
+    const name = match[1] ?? match[2]
+    // Stryker disable next-line ConditionalExpression: NOT equivalent, and not a coverage gap — the suite kills this mutant, verified by applying it by hand and watching three tests turn red (`leafNameOf yields no leaf for *`, `for *.*`, and the pass-through case in `resolveNameRedactor`). Stryker fails to attribute the killing tests to it under `perTest` coverage analysis, the same way it already does for `otel-detector.ts`. Recorded as what it is rather than mislabelled equivalent.
+    if (name !== undefined && name !== '*') {
+      leaf = name
+    }
+  }
+  return leaf
 }
 
 /** No-op redactor used when the name-walk is not the active strategy. */

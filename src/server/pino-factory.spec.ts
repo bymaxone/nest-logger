@@ -486,6 +486,11 @@ describe('leafNameOf', () => {
     ["req.headers['x-auth-token']", 'x-auth-token'],
     ['arr[*].secret', 'secret'],
     ['token', 'token'],
+    // A key may legitimately contain a dot. Rewriting the bracket into dotted
+    // text yielded `security` — a name that does not exist in the payload, while
+    // the one that does went uncovered.
+    ['blob["social.security"]', 'social.security'],
+    ['a["b.c"].d', 'd'],
     // A trailing separator leaves an EMPTY final segment. Without the
     // length guard the leaf would be `''`, a name that matches nothing and
     // silently drops the consumer's declaration.
@@ -629,6 +634,31 @@ it(/*
   expect(elsewhere['x-custom-token']).toBe('[REDACTED]')
 })
 
+it(/*
+ * REGRESSION — end to end for a dotted key: the consumer declares
+ * `blob["social.security"]` secret, and the walk must match that exact name, so
+ * the value stays out of an oversized field's truncation preview.
+ */
+'covers a bracketed key containing a dot', () => {
+  const capture = createCapture()
+  const logger = buildPinoInstance(
+    applyDefaults({
+      ...baseOptions,
+      maxEntrySizeBytes: 60,
+      redactPaths: ['blob["social.security"]'],
+      serializers: { blob: (value: unknown): unknown => value }
+    }),
+    new LogContextService(),
+    [capture.destination]
+  )
+
+  logger.info({ blob: { 'social.security': 'SECRET-123', filler: 'x'.repeat(400) } }, 'x')
+
+  const blob = capture.entries()[0]?.['blob'] as Record<string, unknown>
+  expect(blob['_truncated']).toBe(true)
+  expect(String(blob['_preview'])).toContain('[REDACTED]')
+  expect(String(blob['_preview'])).not.toContain('SECRET')
+})
 it(/*
  * With the defaults disabled, a consumer path's leaf name is still honoured —
  * the opt-out drops the library's set, not the consumer's own declaration.
