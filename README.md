@@ -43,7 +43,7 @@ The library has **zero direct dependencies** — all packages arrive as peer dep
 
 - **🎯 One module, the whole pipeline** — Logger service, HTTP interceptor, exception filter, context propagation, redaction, and destinations arrive in a single `forRoot()`. No gluing together `pino-http`, a redaction layer, and a transport by hand.
 - **🔌 Your sinks, your rules** — The library defines `ILogDestination`. You implement it for Loki, Postgres, a rolling file, or anything else. No vendor lock-in, no hidden transport dependencies.
-- **🔒 Redacted by default** — 32 sensitive field names are censored **at any depth**, covering passwords, tokens, PCI DSS card data, MFA secrets, LGPD documents and credential-bearing HTTP headers. One recursive walk per entry, not a path list. Domain-specific names are yours to add via `redactPaths`.
+- **🔒 Redacted by default** — 32 sensitive field names are censored **down to 100 levels of nesting**, covering passwords, tokens, PCI DSS card data, MFA secrets, LGPD documents and credential-bearing HTTP headers. One recursive walk per entry, not a path list. Domain-specific names are yours to add via `redactPaths`.
 - **⚡ On the hot path, so it stays cheap** — Singleton providers, one composed Pino mixin, and a single-pass redactor. No `Scope.REQUEST`, no path matching.
 - **🔭 Correlated when you need it** — When an OpenTelemetry span is active, `traceId`/`spanId`/`traceFlags` land in every entry. When the peer is absent, the mixin steps aside at zero cost.
 
@@ -65,7 +65,7 @@ pnpm add @bymax-one/nest-logger
 
 ### 🛡️ Security & Privacy
 
-- ✅ **PII Redaction by Default** — 32 field names censored wherever they appear, at unbounded nesting depth, in a single snapshotting walk
+- ✅ **PII Redaction by Default** — 32 field names censored wherever they appear, to a 100-level nesting ceiling past which values are dropped, in a single snapshotting walk
 - ✅ **PCI DSS & MFA Coverage** — card data and MFA secrets redacted out of the box, with common HTTP auth headers
 - ✅ **LGPD-Aware Paths** — CPF, CNPJ, and RG redacted by default for Brazilian workloads
 - ✅ **Append-Only Redact List** — `DEFAULT_REDACT_PATHS` never shrinks without a major version; extend it via `redactPaths`
@@ -631,13 +631,13 @@ Application Service
 
 ### Design Principles
 
-| Principle                     | Description                                                                                                                                                                                                             |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **🪶 Singleton Scope**        | `AsyncLocalStorage` delivers per-request context at zero latency overhead — NestJS `Scope.REQUEST` adds ~5% on the injection graph, unacceptable on a logger that runs for every request                                |
-| **🧬 One Composed Mixin**     | ALS context and OTel trace context merge into a single Pino mixin with a deterministic order: ALS first, then OTel — an active span is the authoritative trace identity, so it wins on conflicts                        |
-| **⚡ Single-pass Redaction**  | One recursive walk censors any value whose key name is in the sensitive set, at any depth — O(nodes), the same order the serializer already pays. Replaced 140 `fast-redact` wildcard paths that cost ~107 µs per entry |
-| **🔌 Interface-Driven Sinks** | `ILogDestination` is a contract — Loki, Postgres, rolling files, or anything else is a consumer implementation, never a dependency of this package                                                                      |
-| **🌳 Zero Runtime Deps**      | `"dependencies": {}` — every package arrives as a peer dependency, so consumers pin exact versions and the supply-chain surface stays theirs                                                                            |
+| Principle                     | Description                                                                                                                                                                                                                                                                         |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **🪶 Singleton Scope**        | `AsyncLocalStorage` delivers per-request context at zero latency overhead — NestJS `Scope.REQUEST` adds ~5% on the injection graph, unacceptable on a logger that runs for every request                                                                                            |
+| **🧬 One Composed Mixin**     | ALS context and OTel trace context merge into a single Pino mixin with a deterministic order: ALS first, then OTel — an active span is the authoritative trace identity, so it wins on conflicts                                                                                    |
+| **⚡ Single-pass Redaction**  | One recursive walk censors any value whose key name is in the sensitive set, to a 100-level ceiling past which values are dropped rather than emitted — O(nodes), the same order the serializer already pays. Replaced 140 `fast-redact` wildcard paths that cost ~107 µs per entry |
+| **🔌 Interface-Driven Sinks** | `ILogDestination` is a contract — Loki, Postgres, rolling files, or anything else is a consumer implementation, never a dependency of this package                                                                                                                                  |
+| **🌳 Zero Runtime Deps**      | `"dependencies": {}` — every package arrives as a peer dependency, so consumers pin exact versions and the supply-chain surface stays theirs                                                                                                                                        |
 
 ---
 
@@ -647,7 +647,7 @@ A logger sees every payload the application handles, so the security posture is 
 
 ### Redaction by default
 
-The library censors **32 sensitive field names** wherever they appear in a log record — at any nesting depth, inside arrays, and inside class instances. These cover:
+The library censors **32 sensitive field names** wherever they appear in a log record — down to 100 levels of nesting, inside arrays, and inside class instances. Past that ceiling a value is DROPPED rather than emitted, so the limit can never become a leak. These cover:
 
 | Category                  | Fields                                                                                                                                                                                                                                                    |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -667,12 +667,12 @@ Redaction is one **recursive, snapshotting walk** of the record: a value is cens
 
 Before `1.2.0` the same names were expanded into 140 `fast-redact` paths at wildcard depths 1–4 (`*.field`, `*.*.field`, …), because `fast-redact`'s `*` matches a single level and is not recursive. That approach had two problems, both measured:
 
-|                                  |                depth-1–4 paths (pre-`1.2.0`) | name walk (`1.2.0`) |
-| -------------------------------- | -------------------------------------------: | ------------------: |
-| Throughput, full production path |                             **9,311 logs/s** |  **274,227 logs/s** |
-| Cost per entry                   |                                      ~107 µs |             ~3.6 µs |
-| Nesting covered                  |                 4 levels — deeper **leaked** |           unbounded |
-| `{ headers: { authorization } }` | **leaked** (only `req.headers.*` was pinned) |            censored |
+|                                  |                depth-1–4 paths (pre-`1.2.0`) |         name walk (`1.2.0`) |
+| -------------------------------- | -------------------------------------------: | --------------------------: |
+| Throughput, full production path |                             **9,311 logs/s** |          **274,227 logs/s** |
+| Cost per entry                   |                                      ~107 µs |                     ~3.6 µs |
+| Nesting covered                  |                 4 levels — deeper **leaked** | 100 levels — deeper dropped |
+| `{ headers: { authorization } }` | **leaked** (only `req.headers.*` was pinned) |                    censored |
 
 `DEFAULT_REDACT_PATHS` is still exported at full fidelity, and `redactStrategy: 'paths'` still feeds it to `fast-redact` for anyone depending on exact path semantics — with the ceiling and the cost that implies. Expect that escape hatch to be removed in a future major.
 
@@ -692,6 +692,14 @@ BymaxLoggerModule.forRoot({
 ```
 
 The extra paths are **merged** with the defaults — never replacing them.
+
+> [!IMPORTANT]
+> A consumer path's LEAF NAME is also fed to the name walk, so `redactPaths: ['user.ssn']`
+> censors `ssn` wherever it appears, not only under `user`. That is broader than the path you
+> wrote, deliberately: consumer paths are applied by Pino's stringifier, which runs after the
+> per-field size bound, so without this a field covered only by a path could still surface inside
+> a truncation envelope's `_preview`. It errs toward redacting a name you have already declared
+> secret.
 
 ### Disabling defaults (not recommended)
 
@@ -740,7 +748,7 @@ When integrating `@bymax-one/nest-logger` in production, verify each of the foll
 | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | PII Redaction       | 32 field names censored at ANY depth in one snapshotting walk — ~3.6 µs/entry                                      |
 | Credentials         | `password`, `passwordHash`, `token`, `accessToken`, `refreshToken`, `apiKey`, `apiSecret`, `privateKey`            |
-| MFA Secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret` — redacted at any depth                                              |
+| MFA Secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret` — redacted to the 100-level ceiling                                  |
 | PCI DSS             | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                |
 | LGPD Documents      | `cpf`, `cnpj`, `rg`, plus `email` as a conservative default                                                        |
 | HTTP Headers        | `authorization`, `cookie`, `x-api-key`, `x-auth-token`, `set-cookie` — absolute paths on `req` / `res`             |

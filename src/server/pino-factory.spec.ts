@@ -1,7 +1,12 @@
 import { applyDefaults } from './config/default-options'
 import { DEFAULT_REDACT_PATHS } from './constants/default-redact-paths.constants'
 import type { ILogDestination } from './interfaces/log-destination.interface'
-import { buildPinoInstance, resolveNameRedactor, resolveRedactOption } from './pino-factory'
+import {
+  buildPinoInstance,
+  leafNameOf,
+  resolveNameRedactor,
+  resolveRedactOption
+} from './pino-factory'
 import { LogContextService } from './services/log-context.service'
 
 /** In-memory destination capturing each emitted NDJSON line as a parsed entry. */
@@ -350,6 +355,27 @@ describe('buildPinoInstance', () => {
   })
 
   it(/*
+   * The legacy `'paths'` strategy is the one configuration where Pino's own
+   * `redact` option is load-bearing: the name walk is off, so dropping the option
+   * would silence redaction entirely. Asserted here at unit level because that is
+   * what mutation testing can see.
+   */
+  'wires Pino redact so the legacy paths strategy still censors', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(
+      applyDefaults({ ...baseOptions, redactStrategy: 'paths' }),
+      new LogContextService(),
+      [capture.destination]
+    )
+
+    logger.info({ user: { password: 'secret' } }, 'x')
+
+    expect((capture.entries()[0]?.['user'] as Record<string, unknown>)['password']).toBe(
+      '[REDACTED]'
+    )
+  })
+
+  it(/*
    * A custom censor string must override the default so consumers can match
    * their own log-scrubbing conventions.
    */
@@ -451,6 +477,46 @@ describe('buildPinoInstance', () => {
   })
 })
 
+describe('leafNameOf', () => {
+  it.each([
+    ['user.ssn', 'ssn'],
+    ['*.password', 'password'],
+    ['*.*.*.*.password', 'password'],
+    ['req.headers["x-api-key"]', 'x-api-key'],
+    ["req.headers['x-auth-token']", 'x-auth-token'],
+    ['arr[*].secret', 'secret'],
+    ['token', 'token'],
+    // A trailing separator leaves an EMPTY final segment. Without the
+    // length guard the leaf would be `''`, a name that matches nothing and
+    // silently drops the consumer's declaration.
+    ['user.', 'user'],
+    ['a..b', 'b']
+  ])(
+    /*
+     * The leaf is the last segment that names something: wildcards and empty
+     * segments are not names, and bracket syntax spells a key that is not a bare
+     * identifier. Each case is a shape `fast-redact` actually accepts.
+     */
+    'reads the leaf name out of %s',
+    (path, expected) => {
+      expect(leafNameOf(path)).toBe(expected)
+    }
+  )
+
+  it.each([['*'], ['*.*'], ['.'], ['']])(
+    /*
+     * A path with no nameable segment yields NO leaf — not the wildcard itself.
+     * Returning `'*'` would put a name in the matcher that can never match, which
+     * is worse than nothing: it makes the set non-empty and buys a traversal that
+     * cannot censor anything.
+     */
+    'yields no leaf for %s',
+    (path) => {
+      expect(leafNameOf(path)).toBeUndefined()
+    }
+  )
+})
+
 describe('resolveNameRedactor', () => {
   /** Probe payload: a secret nested past the legacy four-level ceiling. */
   const deep = { l1: { l2: { l3: { l4: { l5: { password: 'secret' } } } } } }
@@ -490,6 +556,23 @@ describe('resolveNameRedactor', () => {
   })
 
   it(/*
+   * A path with no nameable segment yields no leaf, and with the defaults off
+   * that leaves nothing for the walk to match — so it must fall back to the
+   * pass-through rather than build an empty matcher and pay for the traversal.
+   */
+  'returns a pass-through when no path yields a leaf name and defaults are off', () => {
+    const redact = resolveNameRedactor(
+      applyDefaults({
+        ...baseOptions,
+        shouldDisableDefaultRedact: true,
+        redactPaths: ['*', '*.*']
+      })
+    )
+    const input = { password: 'kept' }
+    expect(redact(input)).toBe(input)
+  })
+
+  it(/*
    * Both switches off together must still be a pass-through — pins the OR, which
    * an AND mutant would turn into "walk stays on unless BOTH are set".
    */
@@ -499,6 +582,74 @@ describe('resolveNameRedactor', () => {
     )
     expect(redact(deep)).toBe(deep)
   })
+})
+
+it(/*
+ * REGRESSION — consumer `redactPaths` are applied by Pino's stringifier, which
+ * runs AFTER the serializer wrapper. A field covered only by a path was still
+ * raw when the size bound built its 200-character `_preview`, so an oversized
+ * value leaked its secret there. The path's LEAF NAME now reaches the walk.
+ */
+'keeps a consumer-path field out of an oversized value preview', () => {
+  const capture = createCapture()
+  const logger = buildPinoInstance(
+    applyDefaults({
+      ...baseOptions,
+      maxEntrySizeBytes: 60,
+      redactPaths: ['blob.ssn'],
+      serializers: { blob: (value: unknown): unknown => value }
+    }),
+    new LogContextService(),
+    [capture.destination]
+  )
+
+  logger.info({ blob: { ssn: 'SECRET-123', filler: 'x'.repeat(400) } }, 'x')
+
+  const blob = capture.entries()[0]?.['blob'] as Record<string, unknown>
+  expect(blob['_truncated']).toBe(true)
+  expect(String(blob['_preview'])).toContain('[REDACTED]')
+  expect(String(blob['_preview'])).not.toContain('SECRET')
+})
+
+it(/*
+ * The leaf name is taken from bracket syntax too, which is how `fast-redact`
+ * spells a key that is not a bare identifier.
+ */
+'reads the leaf name out of a bracketed consumer path', () => {
+  const capture = createCapture()
+  const logger = buildPinoInstance(
+    applyDefaults({ ...baseOptions, redactPaths: ['req.headers["x-custom-token"]'] }),
+    new LogContextService(),
+    [capture.destination]
+  )
+
+  logger.info({ elsewhere: { 'x-custom-token': 'secret' } }, 'x')
+
+  const elsewhere = capture.entries()[0]?.['elsewhere'] as Record<string, unknown>
+  expect(elsewhere['x-custom-token']).toBe('[REDACTED]')
+})
+
+it(/*
+ * With the defaults disabled, a consumer path's leaf name is still honoured —
+ * the opt-out drops the library's set, not the consumer's own declaration.
+ */
+'honors consumer path names when the default set is disabled', () => {
+  const capture = createCapture()
+  const logger = buildPinoInstance(
+    applyDefaults({
+      ...baseOptions,
+      shouldDisableDefaultRedact: true,
+      redactPaths: ['*.ssn']
+    }),
+    new LogContextService(),
+    [capture.destination]
+  )
+
+  logger.info({ user: { ssn: 'secret', password: 'by-design' } }, 'x')
+
+  const user = capture.entries()[0]?.['user'] as Record<string, unknown>
+  expect(user['ssn']).toBe('[REDACTED]')
+  expect(user['password']).toBe('by-design')
 })
 
 describe('resolveRedactOption', () => {

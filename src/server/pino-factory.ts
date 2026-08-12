@@ -29,6 +29,41 @@ import type { Redactor } from './utils/redact-by-name.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
+/** A `["quoted"]` / `['quoted']` path segment, as `fast-redact` spells it. */
+const BRACKET_SEGMENT = /\[\s*['"]([^'"]+)['"]\s*\]/g
+
+/**
+ * The leaf field name of a `fast-redact` path.
+ *
+ * Consumer `redactPaths` are applied by Pino's stringifier, which runs AFTER the
+ * serializer wrapper — so a field they cover was still raw when the size bound
+ * built its 200-character `_preview`, and an oversized value leaked its secret
+ * there. Feeding the leaf NAME to the walk closes that, and closes it for every
+ * other surface the walk reaches (base and child bindings) rather than only for
+ * the preview.
+ *
+ * The trade is deliberate and broader than the path: a consumer who writes
+ * `user.ssn` gets `ssn` censored wherever it appears, not only under `user`.
+ * That errs toward redacting a name the consumer has already declared secret.
+ *
+ * @internal Exported only for unit testing — its edge cases (a wildcard-only
+ *   path, a trailing separator, bracket syntax) are invisible in a serialized
+ *   line, so they are asserted directly. NOT re-exported by the package barrel.
+ * @param path - A `fast-redact` path, dotted and/or bracketed.
+ * @returns The last non-wildcard segment, or `undefined` for a path with none.
+ * @example
+ *   leafNameOf('req.headers["x-api-key"]') // 'x-api-key'
+ *   leafNameOf('*.*.password')             // 'password'
+ */
+export function leafNameOf(path: string): string | undefined {
+  // Bracket segments are rewritten as dot segments so one split handles both.
+  const segments = path
+    .replace(BRACKET_SEGMENT, (_match, name: string) => `.${name}`)
+    .split('.')
+    .filter((segment) => segment.length > 0 && segment !== '*')
+  return segments.at(-1)
+}
+
 /** No-op redactor used when the name-walk is not the active strategy. */
 const PASS_THROUGH: Redactor = (value: unknown): unknown => value
 
@@ -44,10 +79,17 @@ const PASS_THROUGH: Redactor = (value: unknown): unknown => value
  * @returns A redaction function; the identity function when the walk is off.
  */
 export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
-  if (options.redactStrategy !== 'names' || options.shouldDisableDefaultRedact) {
+  if (options.redactStrategy !== 'names') {
     return PASS_THROUGH
   }
-  return createNameRedactor(REDACT_COMMON_FIELDS, options.redactCensor)
+  const names = [
+    ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
+    ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
+  ]
+  if (names.length === 0) {
+    return PASS_THROUGH
+  }
+  return createNameRedactor(names, options.redactCensor)
 }
 
 /**

@@ -22,7 +22,7 @@ The DEFAULT is a single recursive **snapshotting walk** keyed on FIELD NAME
 |                | path engine (legacy)                              | name walk (default)                                          |
 | -------------- | ------------------------------------------------- | ------------------------------------------------------------ |
 | Match on       | an exact path or wildcard shape                   | the KEY NAME, anywhere it appears                            |
-| Depth          | four levels; deeper leaked                        | unbounded                                                    |
+| Depth          | four levels; deeper LEAKED                        | 100 levels; deeper is DROPPED, never emitted                 |
 | Casing         | case-sensitive                                    | case-INSENSITIVE (HTTP headers are case-insensitive by spec) |
 | Cost           | grows with the PATH COUNT; ~107 µs/entry          | grows with the payload; ~3.6 µs/entry                        |
 | Adding a field | add it at every depth                             | add the name once to `REDACT_COMMON_FIELDS`                  |
@@ -160,7 +160,8 @@ The lib applies this strategy by default — see §4.
 See the canonical file: [`src/server/constants/default-redact-paths.constants.ts`](../../src/server/constants/default-redact-paths.constants.ts).
 
 **Current coverage.** Under the default strategy the contract is the NAME LIST
-(`REDACT_COMMON_FIELDS`, 32 names), matched case-insensitively at any depth. The path
+(`REDACT_COMMON_FIELDS`, 32 names), matched case-insensitively down to 100 levels of nesting;
+past that a value is dropped rather than emitted. The path
 expansion below is what `DEFAULT_REDACT_PATHS` still produces for the legacy strategy —
 `fields × 5 + absolute`, derived rather than fixed:
 

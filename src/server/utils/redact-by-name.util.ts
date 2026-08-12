@@ -3,7 +3,7 @@
  *
  * Layer: server/utils — the engine behind the library's DEFAULT PII protection.
  * It walks a log record once and censors every value whose KEY NAME is in the
- * sensitive set, at any depth.
+ * sensitive set, to a bounded depth (see {@link REDACT_MAX_TRAVERSAL_DEPTH}).
  *
  * Why this replaced path matching. The previous default compiled 140
  * `fast-redact` paths, 108 of them multi-level wildcards (`*.password`,
@@ -15,8 +15,9 @@
  * byte-identical output on every payload the old paths covered.
  *
  * It is also STRICTLY SAFER than the paths it replaces:
- *   - unbounded depth (the wildcard list stopped at four levels; anything
- *     nested deeper leaked);
+ *   - depth 100 instead of four, and past it the value is DROPPED rather than
+ *     passed through, so the ceiling cannot become a leak the way the old one
+ *     was (anything below the wildcard list's fourth level was emitted in clear);
  *   - a sensitive key is caught wherever it appears, so a headers bag logged as
  *     `{ headers: { authorization } }` is covered, not only the exact
  *     `req.headers.authorization` shape the absolute paths pinned.
@@ -387,10 +388,12 @@ function walk(
 
 /**
  * Build a redactor that censors every value whose key name is in `fieldNames`,
- * at any depth, in a single snapshotting traversal.
+ * to {@link REDACT_MAX_TRAVERSAL_DEPTH}, in a single snapshotting traversal.
  *
  * @param fieldNames - Sensitive field names, matched case-INSENSITIVELY so a
  *   header bag carrying `Authorization` is covered as well as `authorization`.
+ *   Matching applies down to {@link REDACT_MAX_TRAVERSAL_DEPTH}; deeper values are
+ *   dropped, not emitted.
  * @param censor - Replacement written in place of a sensitive value.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example

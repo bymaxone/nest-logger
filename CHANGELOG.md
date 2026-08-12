@@ -27,8 +27,11 @@ shipped logging path **~50× faster**.
   `req.headers.*` / `res.headers.*`. A headers bag logged under any other key — for example
   `logger.info(key, msg, userId, { headers: req.headers })` — wrote the bearer token in clear.
   They are now first-class field names, caught wherever they appear.
-- **Redaction is no longer capped at four levels of nesting.** The previous wildcard expansion
-  reached `*.*.*.*.field`; anything deeper leaked silently. The new engine walks to any depth.
+- **The four-level nesting cap is gone, and what replaces it fails closed.** The previous wildcard
+  expansion reached `*.*.*.*.field` and anything deeper was emitted in clear. The walk now reaches
+  100 levels, and past that a value is DROPPED rather than passed through — a traversal ceiling
+  exists only so a pathological self-similar structure cannot exhaust the call stack, and it can
+  never become a leak the way the old one was.
 - **Base bindings are redacted.** `service` is consumer-supplied and `applyDefaults` keeps whatever
   it was handed, so a `{ name, version, apiKey }` reached the sink in clear once base stopped going
   through the path expansion that had covered it via `*.*.apiKey`. Redacted at
@@ -182,6 +185,12 @@ shipped logging path **~50× faster**.
   its own teardown (the authoritative contract remains `ILogDestination.onShutdown`, which MUST
   flush pending writes). It is the bookend to `LOGGER_BOOTSTRAP_OK`: its absence in a log
   stream is how an operator tells a graceful shutdown from a killed process.
+- **A consumer path's leaf name reaches the walk, so it cannot leak through a truncation preview.**
+  Consumer `redactPaths` are applied by Pino's stringifier, which runs AFTER the per-field size
+  bound — so a field covered only by a path was still raw when the 200-character `_preview` was
+  built. The leaf name is now matched by the walk as well, which closes that and covers the same
+  name on every other surface the walk reaches. Deliberately broader than the path itself:
+  `redactPaths: ['user.ssn']` censors `ssn` wherever it appears.
 - **An oversized field's truncation `_preview` is redacted.** Redaction now runs before the size
   bound, so the 200-character preview of a truncated value carries `[REDACTED]` instead of the
   head of a secret.
