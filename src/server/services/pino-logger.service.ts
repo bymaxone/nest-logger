@@ -23,6 +23,7 @@ import {
   LOGGER_PINO_INSTANCE_TOKEN,
   LOGGER_REDACTOR_TOKEN
 } from '../constants/injection-tokens.constants'
+import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
 import type { Redactor } from '../utils/redact-by-name.util'
 
 /** Pino level methods the NestJS-style variadic path dispatches to (error is handled separately). */
@@ -45,8 +46,17 @@ const OWNED_PAYLOAD_KEYS: readonly string[] = ['logKey', 'userId', 'context']
 /**
  * Copy `metadata` without the keys the structured payload owns.
  *
+ * A {@link PROTOTYPE_POLLUTING_KEYS} entry is dropped along with them. `__proto__`
+ * is an own key on anything that came from `JSON.parse`, and `Reflect.set` does
+ * NOT create an own property for it: the write walks the prototype chain, finds
+ * `Object.prototype`'s inherited `__proto__` SETTER and invokes it, so the field
+ * vanished from the entry AND the copy's prototype was swapped for the caller's
+ * value. Dropping it mirrors the guard the ALS path already enforced, from the
+ * same constant so the two cannot drift.
+ *
  * @param metadata - Caller-supplied structured fields, possibly `undefined`.
- * @returns A shallow copy with every {@link OWNED_PAYLOAD_KEYS} entry dropped.
+ * @returns A shallow copy with every {@link OWNED_PAYLOAD_KEYS} and
+ *   {@link PROTOTYPE_POLLUTING_KEYS} entry dropped.
  */
 function withoutOwnedKeys(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
   if (metadata === undefined) {
@@ -55,7 +65,7 @@ function withoutOwnedKeys(metadata: Record<string, unknown> | undefined): Record
   try {
     const safe: Record<string, unknown> = {}
     for (const key of Object.keys(metadata)) {
-      if (!OWNED_PAYLOAD_KEYS.includes(key)) {
+      if (!OWNED_PAYLOAD_KEYS.includes(key) && !PROTOTYPE_POLLUTING_KEYS.has(key)) {
         // `Reflect` keeps the dynamic read/write off the object-injection sink list.
         Reflect.set(safe, key, Reflect.get(metadata, key))
       }

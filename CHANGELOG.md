@@ -33,6 +33,14 @@ shipped logging path **~50× faster**.
   exists only so a pathological self-similar structure cannot exhaust the call stack, and it can
   never become a leak the way the old one was. A primitive at the boundary is still emitted, and
   that is not a gap: its key was matched by the parent at level 100, the last container walked.
+- **Prototype-polluting metadata keys are dropped instead of silently swapping the copy.** A log
+  call's `metadata` was copied with `Reflect.set`, which does NOT create an own property for
+  `__proto__` — the write walks the prototype chain, finds `Object.prototype`'s inherited setter
+  and invokes it. An own `__proto__` (what `JSON.parse` of an untrusted body produces) therefore
+  vanished from the entry AND swapped the copy's prototype for the caller's value. `__proto__`,
+  `constructor` and `prototype` are now dropped, from the same constant the ALS context path
+  already enforced, so the two guards cannot drift. `Object.prototype` itself was never reachable,
+  which is what kept this a correctness bug rather than a pollution vulnerability.
 - **A `toJSON` can no longer rename a field around the matcher.** Only the method's OUTPUT was
   inspected, so `{ password, toJSON: () => ({ value: this.password }) }` emitted the secret under
   `value` — a name nobody declared sensitive. When the SOURCE carries a sensitive own key the

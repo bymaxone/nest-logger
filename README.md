@@ -836,6 +836,13 @@ There are **two** APIs on this class, and they do not share a signature shape.
 | `warnStructured`  | `(logKey, msg, userId?, meta?)`   | Structured warn log — takes a **message string**                 |
 | `errorStructured` | `(logKey, error, userId?, meta?)` | Structured error log — takes an **`Error`**, serialized to `err` |
 
+> [!NOTE]
+> `meta` carries arbitrary fields, with two reserved groups dropped on the way in. `logKey`,
+> `userId` and `context` belong to the payload — the entry states who acted and where, read from
+> the authenticated ALS scope, so a metadata bag cannot forge them. `__proto__`, `constructor`
+> and `prototype` are dropped as well: they name a prototype chain rather than a field, and an
+> own `__proto__` (what `JSON.parse` of a request body produces) would otherwise be lost anyway.
+
 **NestJS `LoggerService` bridge** — the variadic contract NestJS itself calls, so `app.useLogger()` works. These take a message, not a log key.
 
 | Method    | Signature                              | Notes                                          |

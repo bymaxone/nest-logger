@@ -325,6 +325,35 @@ describe('PinoLoggerService', () => {
     })
 
     it(/*
+     * REGRESSION — an own `__proto__` key (which is what `JSON.parse` of an
+     * untrusted body produces) was copied with `Reflect.set`, and that does NOT
+     * create an own property for it: the write walks the prototype chain, finds
+     * `Object.prototype`'s inherited `__proto__` SETTER and invokes it. The field
+     * vanished from the entry AND the copy's prototype was swapped for whatever
+     * the caller sent. Dropped now, from the same constant the ALS path uses.
+     */
+    'drops prototype-polluting metadata keys without swapping the copy', () => {
+      const infoSpy = jest.spyOn(rawLogger, 'info')
+      const hostile = JSON.parse(
+        '{"__proto__":{"polluted":true},"constructor":"x","prototype":"y","safe":"kept"}'
+      ) as Record<string, unknown>
+
+      service.info('K_REAL_KEY', 'msg', undefined, hostile)
+
+      const payload = infoSpy.mock.calls[0]?.[0] as Record<string, unknown>
+      expect(payload['safe']).toBe('kept')
+      expect(Object.keys(payload)).not.toContain('__proto__')
+      expect(Object.keys(payload)).not.toContain('constructor')
+      expect(Object.keys(payload)).not.toContain('prototype')
+      // The payload must still be a plain object — the old `Reflect.set` swapped
+      // its prototype for the caller's value, which is the silent half of the bug.
+      expect(Object.getPrototypeOf(payload)).toBe(Object.prototype)
+      // …and nothing global was touched, which is what keeps this a correctness
+      // bug rather than a pollution vulnerability.
+      expect(({} as Record<string, unknown>)['polluted']).toBeUndefined()
+    })
+
+    it(/*
      * REGRESSION — the never-throw guarantee has to start at the FIRST read of
      * caller-controlled data, not at the formatter. `withoutOwnedKeys` runs
      * `Object.keys` (which fires a Proxy `ownKeys` trap) and `Reflect.get`
