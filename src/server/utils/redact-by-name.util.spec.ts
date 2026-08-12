@@ -489,6 +489,35 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
+   * REGRESSION — a shape test on the fast path was not enough. Checking "is a
+   * view AND has no OWN toJSON" still admitted a SUBCLASS that defines one on its
+   * own prototype, which is neither own nor canonical. The check is now an
+   * identity comparison against `Buffer.prototype.toJSON` itself, the one
+   * function known to produce a `{ type, data }` output that cannot carry a
+   * caller's key.
+   */
+  'should inspect a view subclass that overrides toJSON', () => {
+    class SecretView extends Uint8Array {
+      toJSON(): unknown {
+        return { password: 'SECRET' }
+      }
+    }
+
+    expect(JSON.stringify(redact({ v: new SecretView([1, 2]) }))).toBe(
+      `{"v":{"password":"${CENSOR}"}}`
+    )
+  })
+
+  it(/*
+   * The fast path must still hold for a real `Buffer`, by REFERENCE — that is
+   * what keeps a binary payload from being recursed over byte by byte.
+   */
+  'should return a pristine Buffer by reference', () => {
+    const buf = Buffer.from('hi')
+    expect((redact({ buf }) as Record<string, unknown>)['buf']).toBe(buf)
+  })
+
+  it(/*
    * A pristine view must still serialize exactly as the native serializer renders
    * it — the narrowing must not change what an ordinary binary payload looks like.
    */

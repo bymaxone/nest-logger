@@ -150,6 +150,14 @@ function cloneError(error: Error): Error {
 export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
 
 /**
+ * `Buffer.prototype.toJSON`, captured once for an identity comparison.
+ *
+ * Held as a reference rather than re-read per call so the fast-path check is a
+ * pointer compare, and so a later reassignment of the global cannot redirect it.
+ */
+const BUFFER_TO_JSON: unknown = Buffer.prototype.toJSON
+
+/**
  * Internal control-flow signal: a censor could not be written onto a copy.
  *
  * Thrown by {@link defineOwn} and caught by {@link createNameRedactor}, which
@@ -275,23 +283,21 @@ function walk(
   // `ArrayBuffer` views (`Buffer`, typed arrays) are indexed byte containers: a
   // key-name match is meaningless and a copy would be enormous. Checked BEFORE
   // `toJSON` because `Buffer` has one.
-  // Binary views get a fast path, but a NARROW one. `ArrayBuffer.isView` alone was
-  // too wide: it also matched views a caller had extended, and three shapes leaked
-  // through it — an own `toJSON` synthesizing a payload, and an enumerable
-  // property on a `Uint8Array` or `DataView`, neither of which has a `toJSON` to
-  // hide it (`JSON.stringify(new Uint8Array([1]))` is `{"0":1}`, so a custom key
-  // lands right beside the indices).
-  //
-  // What remains safe to skip is a view whose JSON form comes from a PROTOTYPE
-  // `toJSON` it did not define — `Buffer`, whose output is a canonical
-  // `{ type, data }` that cannot carry a caller's key at all. That is worth
-  // keeping: walking it would recurse over every byte and copy the lot.
-  // Everything else falls through and is inspected like any other value.
-  if (
-    !Object.hasOwn(value, 'toJSON') &&
-    ArrayBuffer.isView(value) &&
-    readToJson(value) !== undefined
-  ) {
+  // The ONE fast path for binary data, and it is an identity check rather than a
+  // shape test. Every looser formulation leaked:
+  //   - `ArrayBuffer.isView(value)` alone also matched extended views — an own
+  //     `toJSON` synthesizing a payload, or an enumerable property on a
+  //     `Uint8Array` / `DataView`, neither of which has a `toJSON` to hide it
+  //     (`JSON.stringify(new Uint8Array([1]))` is `{"0":1}`, so a custom key
+  //     lands right beside the indices);
+  //   - adding "and no OWN `toJSON`" still admitted a SUBCLASS that defines one
+  //     on its own prototype, e.g. `class V extends Uint8Array { toJSON() {…} }`.
+  // Only `Buffer.prototype.toJSON` ITSELF is known to produce a canonical
+  // `{ type, data }` that cannot carry a caller's key, so that exact function is
+  // what the check accepts. It is worth keeping: walking a binary payload
+  // recurses over every byte and copies the lot. Anything else — including any
+  // subclass that overrides it — falls through and is inspected.
+  if (readToJson(value) === BUFFER_TO_JSON) {
     return value
   }
 
