@@ -153,18 +153,42 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
-   * Copy-on-write: a record with nothing to redact must come back by REFERENCE.
-   * This is what keeps the clean path allocation-free, so it is asserted on
-   * identity, not equality.
+   * A clean record round-trips to an equal — but NOT identical — value. Returning
+   * it by reference was the allocation-free fast path, and it was traded away
+   * deliberately: it left any accessor in the subtree to be evaluated a second
+   * time by `JSON.stringify`, which a stateful getter can answer differently.
+   * Everything is snapshot now, so the output is what was inspected.
    */
-  'should return the same reference when nothing is sensitive', () => {
+  'should snapshot a clean record into an equal copy', () => {
     const input = { a: 1, nested: { b: [1, 2, { c: 3 }] } }
-    expect(redact(input)).toBe(input)
-    expect(redact(input.nested)).toBe(input.nested)
+    const result = redact(input)
+    expect(result).toEqual(input)
+    expect(result).not.toBe(input)
   })
 
   it(/*
-   * The other half of copy-on-write: the caller's object must NEVER be mutated.
+   * REGRESSION — the reason the reference fast path had to go. A getter on a
+   * NON-sensitive key answered clean to the walk and dirty to the serializer,
+   * and the clean answer was what got inspected while the dirty one was what got
+   * written. The record must now carry the inspected value.
+   */
+  'should not let a stateful getter differ between walk and serialization', () => {
+    let reads = 0
+    const input = {
+      get payload(): unknown {
+        reads += 1
+        return reads === 1 ? { ok: 1 } : { password: 'SECRET' }
+      }
+    }
+
+    const serialized = JSON.stringify(redact(input))
+
+    expect(serialized).toBe('{"payload":{"ok":1}}')
+    expect(serialized).not.toContain('SECRET')
+  })
+
+  it(/*
+   * The other half of the snapshot rule: the caller's object must NEVER be mutated.
    * A redactor that scrubbed in place would corrupt the application state that
    * produced the log.
    */
@@ -179,14 +203,15 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
-   * Only the branch that changed is copied; untouched siblings stay shared, so
-   * redacting one deep field does not clone the whole record.
+   * Untouched siblings are copied too, not shared. That is the cost of snapshotting
+   * — pinned here so the trade-off is visible rather than rediscovered.
    */
-  'should share untouched branches with the original', () => {
+  'should copy untouched branches rather than share them', () => {
     const untouched = { big: 'payload' }
     const input = { untouched, secrets: { password: 's' } }
     const result = redact(input) as Record<string, unknown>
-    expect(result['untouched']).toBe(untouched)
+    expect(result['untouched']).toEqual(untouched)
+    expect(result['untouched']).not.toBe(untouched)
   })
 
   it(/*
@@ -231,10 +256,11 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
-   * A clean Error is returned by reference like any other clean value — the
-   * copy-on-write rule applies to errors too.
+   * An Error with no own enumerable properties has nothing to snapshot, so it
+   * comes back by reference — the empty-key early return, which also keeps the
+   * common `logger.error({ err })` path allocation-free.
    */
-  'should return a clean Error by reference', () => {
+  'should return an Error with no own properties by reference', () => {
     const err = new Error('boom')
     const result = redact({ err }) as Record<string, unknown>
     expect(result['err']).toBe(err)
@@ -324,11 +350,16 @@ describe('createNameRedactor', () => {
    * types) must not be flattened to their own properties — the walk would
    * otherwise change what reaches the sink.
    */
-  'should leave toJSON-bearing values and binary views untouched', () => {
+  'should serialize toJSON-bearing values and leave binary views untouched', () => {
     const when = new Date('2020-01-01T00:00:00.000Z')
     const buf = Buffer.from('hi')
     const result = redact({ when, buf }) as Record<string, unknown>
-    expect(result['when']).toBe(when)
+    // The `toJSON` result is substituted rather than the object passed through:
+    // returning the original would let `JSON.stringify` call the method again.
+    // The emitted JSON is identical either way.
+    expect(result['when']).toBe('2020-01-01T00:00:00.000Z')
+    expect(JSON.stringify(result['when'])).toBe(JSON.stringify(when))
+    // A binary view has no key names worth matching and is returned untouched.
     expect(result['buf']).toBe(buf)
   })
 
@@ -348,7 +379,9 @@ describe('createNameRedactor', () => {
       }
     }
     const result = redact({ amount: money }) as Record<string, unknown>
-    expect(result['amount']).toBe(money)
+    // Its own properties are never inspected — the method decides the form — and
+    // the serialized output is unchanged.
+    expect(result['amount']).toBe('12.99')
     expect(JSON.stringify(result)).toBe('{"amount":"12.99"}')
   })
 
@@ -377,6 +410,29 @@ describe('createNameRedactor', () => {
     expect(Object.getPrototypeOf(result)).toBe(Object.prototype)
     expect(({} as Record<string, unknown>)['polluted']).toBeUndefined()
     expect(result['password']).toBe(CENSOR)
+  })
+
+  it(/*
+   * REGRESSION — `Reflect.defineProperty` reports failure by RETURNING `false`,
+   * it does not throw. An `Error` carrying a non-configurable enumerable secret
+   * keeps that descriptor through the clone, so writing the censor silently
+   * no-opped and the raw value survived into the log. A censor that cannot be
+   * written is a failed redaction, and a failed redaction must fail closed.
+   */
+  'should fail closed when the censor cannot be written', () => {
+    const err = new Error('boom')
+    Object.defineProperty(err, 'password', {
+      value: 'SECRET',
+      enumerable: true,
+      writable: false,
+      configurable: false
+    })
+
+    const result = redact({ err }) as Record<string, unknown>
+
+    expect(result['_redactionFailed']).toBe(true)
+    expect(result['_logKey']).toBe(RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED)
+    expect(JSON.stringify(result)).not.toContain('SECRET')
   })
 
   it(/*
@@ -447,6 +503,6 @@ describe('createNameRedactor', () => {
   'should pass everything through when the name set is empty', () => {
     const none = createNameRedactor([], CENSOR)
     const input = { password: 'kept' }
-    expect(none(input)).toBe(input)
+    expect(none(input)).toEqual(input)
   })
 })

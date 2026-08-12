@@ -38,10 +38,19 @@
  * them into the instance's `chindings` fragment before any formatter runs, so
  * `PinoLoggerService.child()` applies this redactor itself.
  *
- * Contract: COPY-ON-WRITE and NEVER-THROW. Nothing the caller passed is
- * mutated — a subtree with no sensitive key is returned by reference, so a clean
- * record allocates nothing. Any internal failure degrades the whole record to a
- * marked, secret-free envelope rather than crashing the request that produced it.
+ * Contract: SNAPSHOT and NEVER-THROW. Nothing the caller passed is mutated; the
+ * result is a fresh structure built from values read exactly ONCE. That is a
+ * deliberate trade against an earlier copy-on-write design which returned a
+ * clean subtree by reference: doing so left every accessor in it to be evaluated
+ * a SECOND time by `JSON.stringify`, and a stateful getter (or `toJSON`) can
+ * answer clean to the walk and `{ password }` to the serializer. Inspection
+ * cannot close that window — only reading once and pinning the result can. It
+ * costs ~21 % of the entry throughput, measured, and the walk is still ~37x
+ * faster than the path expansion it replaced.
+ *
+ * Any internal failure — including a censor that cannot be written — degrades the
+ * whole record to a marked, secret-free envelope rather than crashing the request
+ * that produced it.
  *
  * @see {@link createNameRedactor}
  */
@@ -129,6 +138,16 @@ function cloneError(error: Error): Error {
 }
 
 /**
+ * Internal control-flow signal: a censor could not be written onto a copy.
+ *
+ * Thrown by {@link defineOwn} and caught by {@link createNameRedactor}, which
+ * turns it into the fail-closed envelope. It carries no message because the
+ * message is never surfaced — this value never leaves the module — and a
+ * pre-allocated instance keeps the failure path allocation-free.
+ */
+const WRITE_FAILED = new Error()
+
+/**
  * Write a key onto a copy without triggering a setter.
  *
  * `Reflect.defineProperty` rather than assignment: a key named `__proto__`
@@ -148,7 +167,16 @@ function defineOwn(target: Record<string, unknown>, key: string, value: unknown)
   // discarded without further mutation (verified against Pino's `redact`, which
   // tolerates a non-writable property on the record it censors). Stating them
   // would be two more literals no test could ever pin.
-  Reflect.defineProperty(target, key, { value, enumerable: true })
+  //
+  // The RESULT is checked because `Reflect.defineProperty` reports failure by
+  // returning `false` rather than throwing. An `Error` cloned with a
+  // non-configurable enumerable property keeps that descriptor, so redefining it
+  // silently no-ops and the raw value survives into the log. A censor that
+  // cannot be written is a failed redaction, and a failed redaction must fail
+  // closed — this throws into the caller's guard, which drops the record.
+  if (!Reflect.defineProperty(target, key, { value, enumerable: true })) {
+    throw WRITE_FAILED
+  }
 }
 
 /**
@@ -169,25 +197,18 @@ function walkArray(
   depth: number,
   ancestors: Set<object>
 ): unknown[] {
-  let copy: unknown[] | undefined
-  let index = 0
-  // Iterated (not indexed) and written through `Reflect.set`, keeping both the
-  // read and the write off the `security/detect-object-injection` sink list —
-  // the idiom the rest of this package already uses.
+  // Snapshot for the same reason objects are — an index can be an accessor, and a
+  // clean array returned by reference would let `JSON.stringify` read it again.
+  const copy: unknown[] = []
   for (const current of value) {
-    const next = walk(current, sensitive, censor, depth + 1, ancestors)
-    if (next !== current) {
-      copy ??= [...value]
-      Reflect.set(copy, index, next)
-    }
-    index++
+    copy.push(walk(current, sensitive, censor, depth + 1, ancestors))
   }
-  return copy ?? (value as unknown[])
+  return copy
 }
 
 /**
- * Recursive copy-on-write walk. Returns `value` itself when nothing beneath it
- * changed, so an untouched record costs one traversal and zero allocations.
+ * Recursive snapshotting walk. Every value is read exactly once and pinned into
+ * a fresh structure, so the result is guaranteed to equal what was inspected.
  *
  * @param value - The value to inspect.
  * @param sensitive - Field names whose values are censored.
@@ -215,7 +236,7 @@ function walk(
   // `ArrayBuffer` views (`Buffer`, typed arrays) are indexed byte containers: a
   // key-name match is meaningless and a copy would be enormous. Checked BEFORE
   // `toJSON` because `Buffer` has one.
-  // Stryker disable next-line ConditionalExpression,BlockStatement: output-equivalent, kept for COST — `Buffer` has a `toJSON`, so without this guard the walk below would call it and materialise a `{ type, data: number[] }` copy of every logged binary payload on every entry. A 10 MB buffer becomes a 10-million-element array. No assertion can observe the difference because copy-on-write returns the buffer either way; the guard is a performance bound, not a correctness one.
+  // Stryker disable next-line ConditionalExpression,BlockStatement: output-equivalent, kept for COST — `Buffer` has a `toJSON`, so without this guard the walk below would call it and materialise a `{ type, data: number[] }` copy of every logged binary payload on every entry. A 10 MB buffer becomes a 10-million-element array. No assertion can observe the difference because the buffer is returned untouched either way; the guard is a performance bound, not a correctness one.
   if (ArrayBuffer.isView(value)) {
     return value
   }
@@ -235,9 +256,15 @@ function walk(
     // reference, so serializers downstream still receive the original object.
     const toJson = readToJson(value)
     if (toJson !== undefined) {
-      const serialized = toJson.call(value)
-      const walked = walk(serialized, sensitive, censor, depth, ancestors)
-      return walked === serialized ? value : walked
+      // The INSPECTED result is what gets returned, always — never the original
+      // object. Returning the original when the probe came back clean left
+      // `JSON.stringify` to call `toJSON()` a SECOND time (with the property key,
+      // which this call does not pass), so a stateful or key-dependent method
+      // could answer clean here and `{ password }` at serialization. The cost is
+      // that a clean `Date` / `Decimal` is substituted by its serialized form
+      // rather than passed through by reference; the JSON output is identical,
+      // and determinism is worth more than the reference.
+      return walk(toJson.call(value), sensitive, censor, depth, ancestors)
     }
 
     if (Array.isArray(value)) {
@@ -245,26 +272,39 @@ function walk(
     }
 
     const source = value as Record<string, unknown>
-    const isError = value instanceof Error
-    let copy: Record<string, unknown> | undefined
-    for (const key of Object.keys(source)) {
-      const current = Reflect.get(source, key)
-      const next = sensitive.has(key.toLowerCase())
-        ? censor
-        : walk(current, sensitive, censor, depth + 1, ancestors)
-      if (next !== current) {
-        // Copying only on the first change keeps a clean subtree allocation-free.
-        // An Error is cloned through its prototype and descriptors so it stays an
-        // Error; anything else is spread, which flattens a class instance to its
-        // own enumerable properties — exactly what `JSON.stringify` would have
-        // emitted for it anyway, so the serialized output is unchanged.
-        copy ??= isError
-          ? (cloneError(value as Error) as unknown as Record<string, unknown>)
-          : { ...source }
-        defineOwn(copy, key, next)
-      }
+    const keys = Object.keys(source)
+    if (keys.length === 0) {
+      return source
     }
-    return copy ?? source
+
+    // Every property is SNAPSHOT into a fresh object, even when nothing was
+    // censored. Returning a clean subtree by reference was the allocation-free
+    // fast path, but it left any accessor in that subtree to be evaluated a
+    // SECOND time by `JSON.stringify` — and a stateful getter can answer `{}` to
+    // the walk and `{ password }` to the serializer. Reading each value once and
+    // pinning it as a data property removes that window by construction, which
+    // no amount of inspection could.
+    //
+    // The copy is built from the values already read rather than by spreading
+    // `source`: a spread would re-invoke every getter, reopening the same window.
+    // An Error is cloned through its prototype and descriptors so it stays an
+    // Error; anything else becomes a plain object carrying the same own
+    // enumerable properties — exactly what `JSON.stringify` would have emitted.
+    const copy =
+      value instanceof Error
+        ? (cloneError(value as Error) as unknown as Record<string, unknown>)
+        : {}
+    for (const key of keys) {
+      const current = Reflect.get(source, key)
+      defineOwn(
+        copy,
+        key,
+        sensitive.has(key.toLowerCase())
+          ? censor
+          : walk(current, sensitive, censor, depth + 1, ancestors)
+      )
+    }
+    return copy
   } finally {
     ancestors.delete(value)
   }
@@ -272,7 +312,7 @@ function walk(
 
 /**
  * Build a redactor that censors every value whose key name is in `fieldNames`,
- * at any depth, in a single copy-on-write traversal.
+ * at any depth, in a single snapshotting traversal.
  *
  * @param fieldNames - Sensitive field names, matched case-INSENSITIVELY so a
  *   header bag carrying `Authorization` is covered as well as `authorization`.

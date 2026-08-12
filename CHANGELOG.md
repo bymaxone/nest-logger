@@ -53,6 +53,14 @@ shipped logging path **~50× faster**.
   `{ toJSON: () => ({ accessToken }) }` emit the token untouched. The walk now redacts the
   method's output, substituting it only when something was actually censored so a clean `Date` or
   `Decimal` is still passed through by reference.
+- **A censor that cannot be written fails closed.** `Reflect.defineProperty` reports failure by
+  returning `false` rather than throwing, so an `Error` carrying a non-configurable enumerable
+  secret kept its raw value while the redaction silently no-opped. A failed write is now a
+  traversal failure.
+- **A stateful `toJSON()` or getter cannot differ between inspection and serialization.** The walk
+  probed `toJSON()` once and, when the result was clean, returned the original object — leaving
+  `JSON.stringify` to call the method a second time (with the property key, which the probe does
+  not pass). The inspected result is now what gets serialized, and the same applies to accessors.
 - **Hostile metadata and hostile errors no longer crash the caller.** The never-throw guarantee
   now starts at the FIRST read of caller-controlled data: `Object.keys` fires a Proxy's `ownKeys`
   trap and `Reflect.get` fires a getter, both before anything reached the redaction pipeline, so
@@ -81,12 +89,16 @@ shipped logging path **~50× faster**.
 
 - **Default redaction is now a single name-based recursive walk** instead of 140 compiled
   `fast-redact` paths. A value is censored when its key name is in `REDACT_COMMON_FIELDS`, at any
-  depth, in one copy-on-write traversal that mutates nothing and allocates nothing when there is
-  nothing to censor. Circular references collapse to `[Circular]`; a record that cannot be walked
+  depth, in one snapshotting traversal that mutates nothing of the caller's and reads every value
+  exactly once.
+  Circular references collapse to `[Circular]`; a record that cannot be walked
   degrades to a marked, data-free envelope rather than being emitted unredacted.
 
   Measured on the full production path (`forRoot({ service })`, no other option set):
-  **9,311 → 462,208 logs/s**, ~107 µs → ~2 µs per entry.
+  **9,311 → 293,782 logs/s**, ~107 µs → ~3.4 µs per entry. Every value is read exactly once and
+  pinned into a fresh structure, so what reaches the sink is guaranteed to be what was inspected —
+  an earlier copy-on-write draft returned clean subtrees by reference and let `JSON.stringify`
+  re-evaluate their accessors, which a stateful getter can answer differently.
 
 - **`redactPaths` is unchanged** — consumer paths are still `fast-redact` paths, applied on top of
   the default coverage. `fast-redact` is now configured only when there are consumer paths to

@@ -44,7 +44,7 @@ The library has **zero direct dependencies** — all packages arrive as peer dep
 - **🎯 One module, the whole pipeline** — Logger service, HTTP interceptor, exception filter, context propagation, redaction, and destinations arrive in a single `forRoot()`. No gluing together `pino-http`, a redaction layer, and a transport by hand.
 - **🔌 Your sinks, your rules** — The library defines `ILogDestination`. You implement it for Loki, Postgres, a rolling file, or anything else. No vendor lock-in, no hidden transport dependencies.
 - **🔒 Redacted by default** — 32 sensitive field names are censored **at any depth**, covering passwords, tokens, PCI DSS card data, MFA secrets, LGPD documents and credential-bearing HTTP headers. One recursive walk per entry, not a path list. Domain-specific names are yours to add via `redactPaths`.
-- **⚡ On the hot path, so it stays cheap** — Singleton providers, one composed Pino mixin, and a single-pass redactor that allocates nothing when there is nothing to censor. No `Scope.REQUEST`, no path matching.
+- **⚡ On the hot path, so it stays cheap** — Singleton providers, one composed Pino mixin, and a single-pass redactor. No `Scope.REQUEST`, no path matching.
 - **🔭 Correlated when you need it** — When an OpenTelemetry span is active, `traceId`/`spanId`/`traceFlags` land in every entry. When the peer is absent, the mixin steps aside at zero cost.
 
 ```
@@ -65,7 +65,7 @@ pnpm add @bymax-one/nest-logger
 
 ### 🛡️ Security & Privacy
 
-- ✅ **PII Redaction by Default** — 32 field names censored wherever they appear, at unbounded nesting depth, in a single copy-on-write walk
+- ✅ **PII Redaction by Default** — 32 field names censored wherever they appear, at unbounded nesting depth, in a single snapshotting walk
 - ✅ **PCI DSS & MFA Coverage** — card data and MFA secrets redacted out of the box, with common HTTP auth headers
 - ✅ **LGPD-Aware Paths** — CPF, CNPJ, and RG redacted by default for Brazilian workloads
 - ✅ **Append-Only Redact List** — `DEFAULT_REDACT_PATHS` never shrinks without a major version; extend it via `redactPaths`
@@ -657,14 +657,14 @@ The library censors **32 sensitive field names** wherever they appear in a log r
 
 #### How it works, and why it changed in `1.2.0`
 
-Redaction is one **recursive, copy-on-write walk** of the record: a value is censored when its KEY NAME is in the set above, wherever that key sits. Nothing the caller passed is mutated, and a subtree with no sensitive key is returned by reference, so a clean record allocates nothing.
+Redaction is one **recursive, snapshotting walk** of the record: a value is censored when its KEY NAME is in the set above, wherever that key sits. Nothing the caller passed is mutated, and every value is read exactly once and pinned into a fresh structure — so what reaches the sink is guaranteed to be what was inspected, even when the payload carries accessors or a `toJSON` that could answer differently on a second read.
 
 Before `1.2.0` the same names were expanded into 140 `fast-redact` paths at wildcard depths 1–4 (`*.field`, `*.*.field`, …), because `fast-redact`'s `*` matches a single level and is not recursive. That approach had two problems, both measured:
 
 |                                  |                depth-1–4 paths (pre-`1.2.0`) | name walk (`1.2.0`) |
 | -------------------------------- | -------------------------------------------: | ------------------: |
-| Throughput, full production path |                             **9,311 logs/s** |  **462,208 logs/s** |
-| Cost per entry                   |                                      ~107 µs |               ~2 µs |
+| Throughput, full production path |                             **9,311 logs/s** |  **293,782 logs/s** |
+| Cost per entry                   |                                      ~107 µs |             ~3.4 µs |
 | Nesting covered                  |                 4 levels — deeper **leaked** |           unbounded |
 | `{ headers: { authorization } }` | **leaked** (only `req.headers.*` was pinned) |            censored |
 
@@ -732,7 +732,7 @@ When integrating `@bymax-one/nest-logger` in production, verify each of the foll
 
 | Layer               | Implementation                                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| PII Redaction       | 32 field names censored at ANY depth in one copy-on-write walk — ~2 µs/entry                                       |
+| PII Redaction       | 32 field names censored at ANY depth in one snapshotting walk — ~3.4 µs/entry                                      |
 | Credentials         | `password`, `passwordHash`, `token`, `accessToken`, `refreshToken`, `apiKey`, `apiSecret`, `privateKey`            |
 | MFA Secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret` — redacted at any depth                                              |
 | PCI DSS             | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                |
