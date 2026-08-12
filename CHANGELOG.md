@@ -53,6 +53,11 @@ shipped logging path **~50× faster**.
   `{ toJSON: () => ({ accessToken }) }` emit the token untouched. The walk now redacts the
   method's output, substituting it only when something was actually censored so a clean `Date` or
   `Decimal` is still passed through by reference.
+- **A callable carrying `toJSON` is inspected.** `JSON.stringify` applies a callable `toJSON` to a
+  FUNCTION object too — the spec runs that step BEFORE the "callable serializes to undefined" rule
+  — so `Object.assign(() => {}, { toJSON: () => ({ accessToken }) })` emitted its payload with
+  nothing having inspected it. An ordinary function is still handed back untouched, so it keeps
+  being omitted from the output rather than becoming `{}`.
 - **The root of a log record never honours `toJSON`.** Pino ITERATES that object rather than
   serializing it, so honouring the method replaced the whole record with its return value:
   `logger.info(key, msg, userId, { toJSON: () => 'x' })` emitted `{"0":"x"}` and lost `logKey`,

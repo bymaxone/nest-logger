@@ -1,9 +1,56 @@
 # Pino Redaction Guidelines — `@bymax-one/nest-logger`
 
-> **Version:** 1.0.0
-> **Last updated:** 2026-05-27
-> **Target:** Pino 10.x, fast-redact 3.x
-> **Related document:** `docs/technical_specification.md` §10, `src/server/constants/default-redact-paths.constants.ts`
+> **Version:** 2.0.0
+> **Last updated:** 2026-08-12
+> **Target:** Pino 10.x. `fast-redact` 3.x only for consumer `redactPaths` and the legacy strategy.
+> **Related documents:** `src/server/utils/redact-by-name.util.ts` (the engine),
+> `src/server/constants/default-redact-paths.constants.ts` (the name set),
+> `docs/observability_audit.md` (why it changed)
+
+---
+
+## ⚠️ Read this first — the default engine changed in `1.2.0`
+
+**`fast-redact` is no longer what redacts by default.** Sections 2, 3 and 8 below describe
+the path-matching engine, which now backs only two things: the consumer's own `redactPaths`
+option, and the opt-in `redactStrategy: 'paths'` escape hatch. They are kept because both are
+still supported and because the path syntax is still what `redactPaths` takes.
+
+The DEFAULT is a single recursive **snapshotting walk** keyed on FIELD NAME
+(`src/server/utils/redact-by-name.util.ts`). What it changes for anyone editing redaction:
+
+|                | path engine (legacy)                              | name walk (default)                                          |
+| -------------- | ------------------------------------------------- | ------------------------------------------------------------ |
+| Match on       | an exact path or wildcard shape                   | the KEY NAME, anywhere it appears                            |
+| Depth          | four levels; deeper leaked                        | unbounded                                                    |
+| Casing         | case-sensitive                                    | case-INSENSITIVE (HTTP headers are case-insensitive by spec) |
+| Cost           | grows with the PATH COUNT; ~107 µs/entry          | grows with the payload; ~3.6 µs/entry                        |
+| Adding a field | add it at every depth                             | add the name once to `REDACT_COMMON_FIELDS`                  |
+| Output         | the source object, censored in place at stringify | a snapshot — every value read exactly once                   |
+
+**Why a snapshot rather than the cheaper copy-on-write:** returning a clean subtree by
+reference left every accessor in it to be evaluated a SECOND time by `JSON.stringify`, and a
+stateful getter (or a `toJSON`) can answer clean to the walk and `{ password }` to the
+serializer. Inspection cannot close that window; reading once and pinning the result can.
+
+**Three shapes carry rules that are easy to break** — all three were live leaks found in review:
+
+- **`Error`** is cloned through its prototype and descriptors, so it stays an `Error` for Pino's
+  `err` serializer while its enumerable properties are censored. `message` / `stack` are own but
+  NON-enumerable, so a spread would drop them silently.
+- **Anything with `toJSON`** is inspected through that method's OUTPUT, because that is what
+  reaches the log — EXCEPT at the root of a record, which Pino iterates rather than serializes.
+  Honouring it there replaces the whole record and discards `logKey`, `msg` and everything else.
+- **`ArrayBuffer` views** (`Buffer`, typed arrays) are returned untouched, as a cost bound:
+  `Buffer` has a `toJSON` that would materialise a `{ type, data: number[] }` copy per entry.
+
+**Where redaction is applied** — three hooks, and each covers something the others cannot:
+
+| Hook                        | Covers                                    | Why the others miss it                                         |
+| --------------------------- | ----------------------------------------- | -------------------------------------------------------------- |
+| `formatters.log`            | the merged record (mixin + caller object) | —                                                              |
+| every serializer's output   | fields a serializer PRODUCES              | `formatters.log` runs BEFORE serializers                       |
+| `PinoLoggerService.child()` | child bindings                            | Pino pre-serializes them into `chindings` before any formatter |
 
 ---
 
@@ -111,7 +158,10 @@ The lib applies this strategy by default — see §4.
 
 See the canonical file: [`src/server/constants/default-redact-paths.constants.ts`](../../src/server/constants/default-redact-paths.constants.ts).
 
-**Current coverage (113 total paths — 108 via `depth()` + 5 absolute paths):**
+**Current coverage.** Under the default strategy the contract is the NAME LIST
+(`REDACT_COMMON_FIELDS`, 32 names), matched case-insensitively at any depth. The path
+expansion below is what `DEFAULT_REDACT_PATHS` still produces for the legacy strategy —
+`fields × 5 + absolute`, derived rather than fixed:
 
 | Category            | Fields (count)                                                                  | Depth | Generated paths |
 | ------------------- | ------------------------------------------------------------------------------- | ----- | --------------- |
@@ -249,7 +299,11 @@ Use in **E2E tests** to ensure the app provides the paths the domain requires.
 | 200-400 | 5-10%             | Audit — likely redundant paths                            |
 | > 400   | > 10%             | Refactor — use a custom serializer or group by sub-object |
 
-The lib default sits at 113 paths; throughput is governed by the `pnpm bench` gate (against the recalibrated v0.1 baseline), not a hard path-count budget.
+Under the default name walk the cost tracks the PAYLOAD, not a path count: ~3.6 µs/entry
+(~274 k logs/s on the shipped configuration) against ~107 µs/entry (~9.3 k logs/s) for the
+path expansion it replaced. Throughput is governed by the `pnpm bench` gate, which measures
+the configuration the package actually ships — see `bench/README.md` for the calibration
+history and the measured cost of each design.
 
 ---
 

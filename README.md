@@ -429,6 +429,12 @@ The following keys are used internally by the library — do not reuse them in a
 
 All reserved keys are exported as the `RESERVED_LOG_KEYS` constant from `@bymax-one/nest-logger/shared`.
 
+`HTTP_REQUEST_COMPLETED` is reserved but deliberately never emitted — the four status-specific
+terminal keys already carry the same `duration`, so a generic "completed" entry would double the
+access-log volume to say nothing new. The reserved-but-unwritten set is exported as
+`RESERVED_LOG_KEYS_NOT_EMITTED`, and a test asserts that every OTHER declared key has a writer in
+the source, so a key can no longer be documented as a signal and then silently never emitted.
+
 ---
 
 ## 🧩 Custom Destinations
@@ -844,6 +850,18 @@ There are **two** APIs on this class, and they do not share a signature shape.
 | `@InjectLogger(context?)`       | Constructor param | Injects `PinoLoggerService` pre-bound to the given context string                                                                                                  |
 | `@LogContext(name)`             | Class             | Records a context label as class metadata. ⚠️ Metadata only — it does NOT open a `logContext.run()` scope; use `@InjectLogger(MyClass.name)` for a per-class label |
 | `@LogPerformance(thresholdMs?)` | Method            | Logs `METHOD_EXECUTION` on completion; `METHOD_SLOW_EXECUTION` if duration exceeds threshold                                                                       |
+
+### Level maps (from `@bymax-one/nest-logger`)
+
+`LogEntry.level` is the Pino string LABEL, not the numeric code. A destination writing a numeric
+column converts with the exported maps instead of hard-coding them:
+
+```typescript
+import { PINO_LEVEL_NAMES, PINO_LEVEL_NUMBERS } from '@bymax-one/nest-logger'
+
+PINO_LEVEL_NUMBERS['info'] // 30   — label → numeric code
+PINO_LEVEL_NAMES[30] // 'info' — numeric code → label
+```
 
 ### Types (from `@bymax-one/nest-logger/shared`)
 

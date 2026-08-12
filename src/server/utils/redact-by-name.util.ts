@@ -237,7 +237,18 @@ function walk(
   ancestors: Set<object>,
   honorToJson = true
 ): unknown {
-  if (value === null || typeof value !== 'object') {
+  // Callables are admitted, not skipped as primitives. `JSON.stringify` invokes a
+  // callable `toJSON` on a FUNCTION object too — it applies that step before the
+  // "callable serializes to undefined" rule — so
+  // `Object.assign(() => {}, { toJSON: () => ({ accessToken }) })` emitted the
+  // token with nothing having inspected it. A function WITHOUT `toJSON` is
+  // returned untouched below, so it keeps being omitted from the output.
+  if (value === null) {
+    return value
+  }
+  // `typeof` is written inline rather than hoisted into a variable so TypeScript
+  // narrows `value` from `unknown` for the rest of the function.
+  if (typeof value !== 'object' && typeof value !== 'function') {
     return value
   }
   if (depth > REDACT_MAX_TRAVERSAL_DEPTH) {
@@ -284,6 +295,13 @@ function walk(
       // rather than passed through by reference; the JSON output is identical,
       // and determinism is worth more than the reference.
       return walk(toJson.call(value), sensitive, censor, depth, ancestors)
+    }
+
+    // A callable with no `toJSON` reaches here. It must be handed back as-is:
+    // walking it would replace it with a plain object, and `JSON.stringify`
+    // omits a bare function rather than emitting `{}`.
+    if (typeof value === 'function') {
+      return value
     }
 
     if (Array.isArray(value)) {

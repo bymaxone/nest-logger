@@ -351,6 +351,31 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
+   * REGRESSION — `JSON.stringify` applies a callable `toJSON` to a FUNCTION
+   * object too: the spec runs that step BEFORE the "callable serializes to
+   * undefined" rule. Treating every non-object as a primitive therefore let a
+   * function carrying a `toJSON` emit its synthesized payload with nothing
+   * having inspected it.
+   */
+  'should redact what a callable value synthesizes through toJSON', () => {
+    const callable = Object.assign(() => undefined, {
+      toJSON: (): unknown => ({ password: 'SECRET' })
+    })
+    expect(JSON.stringify(redact({ payload: callable }))).toBe(
+      `{"payload":{"password":"${CENSOR}"}}`
+    )
+  })
+
+  it(/*
+   * The converse: an ordinary function has no `toJSON`, and `JSON.stringify`
+   * OMITS it. It must be handed back untouched — walking it would replace it with
+   * a plain object and emit `{}` where the field used to disappear.
+   */
+  'should leave an ordinary function to be omitted by serialization', () => {
+    expect(JSON.stringify(redact({ handler: (): void => undefined, id: 'a1' }))).toBe('{"id":"a1"}')
+  })
+
+  it(/*
    * `toJSON` is only special when it is CALLABLE. A plain data property that
    * happens to be named `toJSON` must not be invoked — treating it as a method
    * would throw and collapse the whole record into the failure envelope.

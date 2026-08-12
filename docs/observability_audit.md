@@ -19,15 +19,18 @@
 | ----------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [S-1](#s-1) auth headers unredacted       |   ✅   | Header names added to `REDACT_COMMON_FIELDS`; caught at any position                                                                                      |
 | [S-2](#2-5-security--pii) depth-4 ceiling |   ✅   | Removed — the walk is depth-unbounded (fail-closed guard at 100 for stack safety)                                                                         |
-| [P-1](#p-1) redaction cost                |   ✅   | Name-walk engine. **9,311 → 462,208 logs/s** on the shipped config (49.6×)                                                                                |
+| [P-1](#p-1) redaction cost                |   ✅   | Name-walk engine, then hardened to a snapshotting walk after review. **9,311 → ~274,000 logs/s** on the shipped config (~29×)                             |
 | [C-1](#c-1) ALS `userId` dropped          |   ✅   | `assignIfDefined` — reserved fields written only when defined                                                                                             |
 | [C-2](#c-2) `LogEntry` type mismatch      |   ✅   | `level: LogLevel`, `time: string`; level maps exported; README examples fixed and executed by a test                                                      |
 | [D-1](#d-1) dead reserved keys            |   ✅   | `LOGGER_BOOTSTRAP_WARNING` + `LOGGER_SHUTDOWN_OK` emitted; `HTTP_REQUEST_COMPLETED` justified in `RESERVED_LOG_KEYS_NOT_EMITTED`; completeness test added |
 | [D-4](#d-4) README API table wrong        |   ✅   | Table rewritten to match the source; diagram corrected                                                                                                    |
 
-Every fix carries a regression test that reproduces the original defect, verified
-to fail against the pre-fix code. Coverage stayed at 100 % (387 tests); the bench
-floor and the bundle budget were recalibrated to the shipped artifact.
+Every fix carries a regression test that reproduces the original defect, verified to fail
+against the pre-fix code. Seven rounds of adversarial PR review followed, each finding more —
+child-logger bindings, `Error` values outside a serializer key, secrets synthesized by `toJSON`,
+header-name casing, hostile metadata crashing the caller, a time-of-check/time-of-use window
+between inspection and serialization, and callables carrying a `toJSON`. All are closed and
+covered; see the PR for the reproduction of each. Coverage 100 %, mutation 100 % on a cold run.
 
 **Found while implementing, NOT fixed (out of P0 scope):** `err.type` is always
 `"Object"` for anything logged through `errorStructured` — and therefore through
