@@ -29,6 +29,32 @@ shipped logging path **~50× faster**.
   They are now first-class field names, caught wherever they appear.
 - **Redaction is no longer capped at four levels of nesting.** The previous wildcard expansion
   reached `*.*.*.*.field`; anything deeper leaked silently. The new engine walks to any depth.
+- **Child-logger bindings are redacted.** `PinoLoggerService.child(bindings)` accepts any record,
+  and Pino pre-serializes child bindings into the instance's `chindings` fragment before any
+  formatter runs — so no factory hook can reach them. `logger.child({ password })` stamped the
+  value in clear on every entry that child emitted. Redaction is applied in `child()` itself.
+- **An `Error` is redacted wherever it is logged, not only under a key with a serializer.** The
+  walk skipped `Error` instances to preserve the instance Pino's `err` serializer keys off, and
+  the compensating serializer hook only fires for keys that actually have one — so
+  `{ failure: err }` carrying an `apiKey` reached the sink in clear. Errors are now cloned through
+  their prototype and descriptors, which censors the enumerable properties while keeping
+  `instanceof`, `message` and `stack` intact.
+- **A secret synthesized by `toJSON()` is redacted.** A value with `toJSON` decides its own
+  serialized form, so the walk cannot inspect its own properties — but skipping it let
+  `{ toJSON: () => ({ accessToken }) }` emit the token untouched. The walk now redacts the
+  method's output, substituting it only when something was actually censored so a clean `Date` or
+  `Decimal` is still passed through by reference.
+- **A throwing getter no longer crashes the log call.** Pino merges the mixin result with the
+  caller's object before `formatters.log` runs, and the default strategy's `Object.assign` invokes
+  every own getter — so a hostile getter threw before the redactor's fail-closed envelope could
+  apply. The factory now owns the merge, and the never-throw guarantee holds through the real
+  pipeline.
+- **Bootstrap entries are emitted after destination initialization.** They were written from an
+  eagerly instantiated provider factory, which runs before `DestinationRegistry.onModuleInit()` —
+  so a sink that only accepts writes once its own `onInit()` has run could drop them, including
+  `LOGGER_BOOTSTRAP_WARNING`. They now come from the registry that owns that initialization, which
+  makes the ordering structural. Note for test authors: `Test.createTestingModule().compile()`
+  builds the graph, `init()` runs the lifecycle hooks — the bootstrap entries appear after `init()`.
 - **`LOGGER_BOOTSTRAP_WARNING` is emitted when `shouldDisableDefaultRedact` is on.** The README
   has always described this entry as the audit trail proving when PII protection was
   intentionally reduced. It was never written, so a deployment running without redaction was
@@ -48,7 +74,7 @@ shipped logging path **~50× faster**.
 - **`redactPaths` is unchanged** — consumer paths are still `fast-redact` paths, applied on top of
   the default coverage. `fast-redact` is now configured only when there are consumer paths to
   apply.
-- **Bundle-size budget raised** 13.5 → 15.25 KiB brotli for the server subpath, and the benchmark's
+- **Bundle-size budget raised** 13.5 → 16.0 KiB brotli for the server subpath, and the benchmark's
   throughput floor raised 0.004 → 0.20; the old floor was calibrated to the wildcard engine and
   could no longer fail on anything short of a 100× regression.
 
@@ -85,7 +111,9 @@ shipped logging path **~50× faster**.
 - **`RESERVED_LOG_KEYS_NOT_EMITTED` is exported** from both subpaths, so the `{@link}` in
   `RESERVED_LOG_KEYS`'s documentation resolves in the published declarations.
 - **`LOGGER_SHUTDOWN_OK` is emitted** at the start of `onApplicationShutdown`, before the
-  destinations are torn down. It is the bookend to `LOGGER_BOOTSTRAP_OK`: its absence in a log
+  destinations are torn down, with an event-loop barrier so an async sink's write is not raced by
+  its own teardown (the authoritative contract remains `ILogDestination.onShutdown`, which MUST
+  flush pending writes). It is the bookend to `LOGGER_BOOTSTRAP_OK`: its absence in a log
   stream is how an operator tells a graceful shutdown from a killed process.
 - **An oversized field's truncation `_preview` is redacted.** Redaction now runs before the size
   bound, so the 200-character preview of a truncated value carries `[REDACTED]` instead of the

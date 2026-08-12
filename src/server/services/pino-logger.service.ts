@@ -18,7 +18,10 @@ import { Inject, Injectable } from '@nestjs/common'
 import type { LoggerService as NestLoggerService, OnApplicationShutdown } from '@nestjs/common'
 import type { Logger as PinoLogger } from 'pino'
 
-import { LOGGER_PINO_INSTANCE_TOKEN } from '../constants/injection-tokens.constants'
+import {
+  LOGGER_PINO_INSTANCE_TOKEN,
+  LOGGER_REDACTOR_TOKEN
+} from '../constants/injection-tokens.constants'
 
 /** Pino level methods the NestJS-style variadic path dispatches to (error is handled separately). */
 type PinoLevelMethod = 'info' | 'warn' | 'debug' | 'trace' | 'fatal'
@@ -109,7 +112,17 @@ function assignIfDefined(payload: Record<string, unknown>, key: string, value: u
 export class PinoLoggerService implements NestLoggerService, OnApplicationShutdown {
   private context?: string
 
-  constructor(@Inject(LOGGER_PINO_INSTANCE_TOKEN) private readonly pino: PinoLogger) {}
+  /**
+   * @param pino - The wrapped Pino instance.
+   * @param redact - The DEFAULT-coverage redactor, applied to `child()` bindings.
+   *   Defaults to the identity so a hand-built instance (benchmarks, unit tests)
+   *   still works; the module always injects the configured one.
+   */
+  constructor(
+    @Inject(LOGGER_PINO_INSTANCE_TOKEN) private readonly pino: PinoLogger,
+    @Inject(LOGGER_REDACTOR_TOKEN)
+    private readonly redact: (value: unknown) => unknown = (value) => value
+  ) {}
 
   // ─── NestJS LoggerService variadic interface ──────────────────────────────
 
@@ -287,7 +300,13 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * @returns A new `PinoLoggerService` wrapping the Pino child.
    */
   child(bindings: Record<string, unknown>): PinoLoggerService {
-    const childService = new PinoLoggerService(this.pino.child(bindings))
+    // Bindings are redacted HERE, not by the factory's `formatters.log` hook:
+    // Pino pre-serializes child bindings into the instance's `chindings`
+    // fragment at `child()` time, so that hook never sees them. Without this,
+    // `logger.child({ password })` wrote the value in clear on every entry the
+    // child emitted.
+    const safeBindings = this.redact(bindings) as Record<string, unknown>
+    const childService = new PinoLoggerService(this.pino.child(safeBindings), this.redact)
     if (this.context !== undefined) {
       childService.setContext(this.context)
     }

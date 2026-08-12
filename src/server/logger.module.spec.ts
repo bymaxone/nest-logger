@@ -145,6 +145,10 @@ describe('BymaxLoggerModule.forRoot', () => {
       const ref = await Test.createTestingModule({
         imports: [BymaxLoggerModule.forRoot({ service })]
       }).compile()
+      // The bootstrap entries are emitted from `DestinationRegistry.onModuleInit`
+      // so they cannot precede destination initialization — `compile()` builds the
+      // graph, `init()` is what runs the lifecycle hooks.
+      await ref.init()
       const bootstrapCalls = infoSpy.mock.calls.filter(
         (call: unknown[]) => call[0] === RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK
       )
@@ -175,6 +179,7 @@ describe('BymaxLoggerModule.forRoot', () => {
           })
         ]
       }).compile()
+      await ref.init()
 
       const warnCalls = warnSpy.mock.calls.filter(
         (call: unknown[]) => call[0] === RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_WARNING
@@ -198,12 +203,50 @@ describe('BymaxLoggerModule.forRoot', () => {
       const ref = await Test.createTestingModule({
         imports: [BymaxLoggerModule.forRoot({ service })]
       }).compile()
+      await ref.init()
 
       expect(
         warnSpy.mock.calls.filter(
           (call: unknown[]) => call[0] === RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_WARNING
         )
       ).toHaveLength(0)
+      await ref.close()
+    })
+  })
+
+  describe('child-binding redaction', () => {
+    it(/*
+     * REGRESSION — the module must wire the configured redactor into
+     * `PinoLoggerService`, because `child()` is the only place child bindings can
+     * be scrubbed: Pino pre-serializes them into the instance's `chindings`
+     * fragment before any formatter runs. Asserted through the COMPILED module,
+     * not a hand-built service, so a provider that resolves to nothing (or to the
+     * identity) fails here rather than silently leaking in production.
+     */
+    'wires the configured redactor into PinoLoggerService.child()', async () => {
+      infoSpy.mockRestore()
+      const written: string[] = []
+      const sink: ILogDestination = {
+        name: 'capture',
+        write: (payload: string): void => {
+          written.push(payload)
+        }
+      }
+      const ref = await Test.createTestingModule({
+        imports: [BymaxLoggerModule.forRoot({ service, destinations: [sink] })]
+      }).compile()
+      await ref.init()
+
+      ref
+        .get(PinoLoggerService, { strict: false })
+        .child({ password: 'LEAKED', tenantId: 't_1' })
+        .info('CHILD_PROBE', 'probe')
+
+      const entry = written
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .find((candidate) => candidate['logKey'] === 'CHILD_PROBE')
+      expect(entry?.['password']).toBe('[REDACTED]')
+      expect(entry?.['tenantId']).toBe('t_1')
       await ref.close()
     })
   })

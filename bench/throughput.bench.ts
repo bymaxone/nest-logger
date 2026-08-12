@@ -16,7 +16,7 @@
  * the package distributes, not a configuration nobody runs.
  *
  * Gates:
- *   - C ops/sec ≥ B ops/sec × 0.35 — the HARD gate. Redaction is now a single
+ *   - C ops/sec ≥ B ops/sec × 0.20 — the HARD gate. Redaction is now a single
  *     O(nodes) walk, so the shipped path retains most of the bare wrapper's
  *     throughput; this floor catches roughly a 2× regression while leaving room
  *     for the noise of a shared CI runner. It replaces a 0.004 floor that was

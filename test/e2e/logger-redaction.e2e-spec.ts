@@ -298,6 +298,65 @@ describe('Logger E2E — redaction', () => {
   })
 
   it(/*
+   * REGRESSION — `PinoLoggerService.child(bindings)` is public API that accepts
+   * any record, and Pino pre-serializes child bindings into the instance's
+   * `chindings` fragment BEFORE `formatters.log` runs. The factory's hook can
+   * therefore never see them, so `logger.child({ password })` stamped the value
+   * in clear on every entry that child emitted. Redaction for bindings lives in
+   * `child()` itself.
+   */
+  'redacts sensitive child-logger bindings', async () => {
+    const logger = await bootLogger({})
+
+    const child = logger.child({ password: 'LEAKED', tenantId: 't_1' })
+    child.info('REDACT_CHILD', 'probe')
+
+    const entry = findEntry('REDACT_CHILD')
+    expect(entry?.['password']).toBe('[REDACTED]')
+    // A non-sensitive binding is untouched — the fix must not scrub everything.
+    expect(entry?.['tenantId']).toBe('t_1')
+    expect(JSON.stringify(entry)).not.toContain('LEAKED')
+  })
+
+  it(/*
+   * REGRESSION — an `Error` under a key with no Pino serializer was skipped by
+   * the walk and then JSON-serialized directly, so its own enumerable properties
+   * reached the sink in clear. It must be censored, and the value must remain an
+   * Error so the `err` serializer still recognises it where one applies.
+   */
+  'redacts an Error stored under a key that has no serializer', async () => {
+    const logger = await bootLogger({})
+
+    logger.info('REDACT_NESTED_ERR', 'probe', undefined, {
+      failure: Object.assign(new Error('boom'), { apiKey: 'LEAKED' })
+    })
+
+    const failure = findEntry('REDACT_NESTED_ERR')?.['failure'] as Record<string, unknown>
+    expect(failure['apiKey']).toBe('[REDACTED]')
+    expect(JSON.stringify(findEntry('REDACT_NESTED_ERR'))).not.toContain('LEAKED')
+  })
+
+  it(/*
+   * REGRESSION — a value with `toJSON()` decides its own serialized form, so the
+   * walk cannot inspect its own properties. Skipping it outright let the method
+   * SYNTHESIZE a secret straight into the output. The walk now redacts what
+   * `toJSON()` returns, while leaving a clean value (a `Date`) by reference.
+   */
+  'redacts a secret synthesized by toJSON without disturbing clean values', async () => {
+    const logger = await bootLogger({})
+
+    logger.info('REDACT_TOJSON', 'probe', undefined, {
+      credential: { toJSON: (): unknown => ({ accessToken: 'LEAKED' }) },
+      when: new Date('2020-01-01T00:00:00.000Z')
+    })
+
+    const entry = findEntry('REDACT_TOJSON')
+    expect((entry?.['credential'] as Record<string, unknown>)['accessToken']).toBe('[REDACTED]')
+    expect(entry?.['when']).toBe('2020-01-01T00:00:00.000Z')
+    expect(JSON.stringify(entry)).not.toContain('LEAKED')
+  })
+
+  it(/*
    * The legacy engine stays reachable behind `redactStrategy: 'paths'` for a
    * consumer depending on exact `fast-redact` path semantics — including its
    * four-level ceiling, which is asserted here so the escape hatch is documented

@@ -11,7 +11,8 @@
  * every log call, so the cost grew with the PATH COUNT, not with the payload:
  * measured at ~107 µs per entry (≈9.3 k logs/s) against ~0.9 µs with redaction
  * off. A single traversal is O(nodes) — the same order Pino's serializer already
- * pays — and benchmarks at ~943 k logs/s for byte-identical output.
+ * pays. The shipped configuration measures 462 k logs/s against 9.3 k, for
+ * byte-identical output on every payload the old paths covered.
  *
  * It is also STRICTLY SAFER than the paths it replaces:
  *   - unbounded depth (the wildcard list stopped at four levels; anything
@@ -19,6 +20,23 @@
  *   - a sensitive key is caught wherever it appears, so a headers bag logged as
  *     `{ headers: { authorization } }` is covered, not only the exact
  *     `req.headers.authorization` shape the absolute paths pinned.
+ *
+ * Three value kinds need special handling, and getting any of them wrong is a
+ * leak rather than a cosmetic issue:
+ *   - `Error` — copied through its prototype and descriptors, so it stays an
+ *     `Error` (Pino's `err` serializer keys off the instance, and `message` /
+ *     `stack` are own but NON-enumerable). Skipping errors entirely left an
+ *     error under any key WITHOUT a serializer serializing its own enumerable
+ *     properties in clear.
+ *   - anything carrying `toJSON` (`Date`, `Decimal`, Luxon, Prisma types) — the
+ *     method decides the serialized form, so the walk inspects its OUTPUT.
+ *     Skipping these let a `toJSON` SYNTHESIZE a secret straight past both hooks.
+ *   - `ArrayBuffer` views (`Buffer`, typed arrays) — indexed byte containers,
+ *     returned untouched.
+ *
+ * What this file cannot reach: bindings passed to `child()`. Pino pre-serializes
+ * them into the instance's `chindings` fragment before any formatter runs, so
+ * `PinoLoggerService.child()` applies this redactor itself.
  *
  * Contract: COPY-ON-WRITE and NEVER-THROW. Nothing the caller passed is
  * mutated — a subtree with no sensitive key is returned by reference, so a clean
@@ -67,35 +85,47 @@ export interface RedactionFailedEnvelope {
 }
 
 /**
- * Whether a value's children should be walked.
- *
- * Plain objects and arrays traverse. Excluded, and why each exclusion is safe
- * rather than a hole:
- *   - `Error` — the copy would be a plain object, and Pino's `err` serializer
- *     keys off the instance. Errors are covered on the other side instead: the
- *     factory redacts every SERIALIZER'S OUTPUT, which is where an error's own
- *     enumerable properties actually surface.
- *   - `ArrayBuffer` views (`Buffer`, typed arrays) — indexed byte containers; a
- *     key-name match is meaningless and the copy would be enormous.
- *   - anything carrying `toJSON` (`Date`, `Decimal`, Luxon, Prisma types) — its
- *     serialized form is produced by that method, so the own properties this
- *     walk would see are not what reaches the log.
- *
- * `Map` / `Set` / `RegExp` need no special case: they expose no own enumerable
- * keys, so the walk returns them by reference anyway.
+ * Read a `toJSON` method off a value, if it has a callable one.
  *
  * @param value - A non-null object.
- * @returns `true` when the walk should descend into `value`.
+ * @returns The bound-callable method, or `undefined`.
  */
-function isTraversable(value: object): boolean {
-  if (value instanceof Error || ArrayBuffer.isView(value)) {
-    return false
+function readToJson(value: object): (() => unknown) | undefined {
+  const candidate = (value as { toJSON?: unknown }).toJSON
+  return typeof candidate === 'function' ? (candidate as () => unknown) : undefined
+}
+
+/**
+ * Clone an `Error` preserving what makes it an Error.
+ *
+ * The walk cannot flatten an error into a plain object: Pino's `err` serializer
+ * keys off the instance, and `message` / `stack` are own but NON-enumerable, so
+ * a spread would silently drop them. Copying the prototype and the full
+ * descriptor set keeps `instanceof`, the message and the stack intact while the
+ * caller redefines the enumerable properties it censored.
+ *
+ * @param error - The error to clone.
+ * @returns A structurally identical error with its own descriptors copied.
+ */
+function cloneError(error: Error): Error {
+  const clone = Object.create(
+    Object.getPrototypeOf(error) as object,
+    Object.getOwnPropertyDescriptors(error)
+  ) as Error
+  // V8 exposes `stack` as an own ACCESSOR bound to the original error's internal
+  // state, so copying the descriptor hands the clone a getter that resolves to a
+  // near-empty string. Pin the already-resolved trace as a plain data property —
+  // without this the redacted error reaches the sink with its stack erased,
+  // which is worse than the leak the clone exists to close.
+  const { stack } = error
+  if (typeof stack === 'string') {
+    // `enumerable: false` matches how a real Error carries its stack — making it
+    // enumerable would push the whole trace into `JSON.stringify` output for every
+    // redacted error. `writable` / `configurable` are left at their `false`
+    // defaults: nothing downstream rewrites or deletes a stack.
+    Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false })
   }
-  // No `Array.isArray` fast path: a plain array carries no `toJSON`, so it
-  // already answers `true` here. Adding the early return would be dead logic
-  // AND would make an exotic `class extends Array { toJSON() {…} }` traversable,
-  // flattening away the very method that decides its serialized form.
-  return typeof (value as { toJSON?: unknown }).toJSON !== 'function'
+  return clone
 }
 
 /**
@@ -182,7 +212,11 @@ function walk(
   if (ancestors.has(value)) {
     return REDACT_CIRCULAR
   }
-  if (!isTraversable(value)) {
+  // `ArrayBuffer` views (`Buffer`, typed arrays) are indexed byte containers: a
+  // key-name match is meaningless and a copy would be enormous. Checked BEFORE
+  // `toJSON` because `Buffer` has one.
+  // Stryker disable next-line ConditionalExpression,BlockStatement: output-equivalent, kept for COST — `Buffer` has a `toJSON`, so without this guard the walk below would call it and materialise a `{ type, data: number[] }` copy of every logged binary payload on every entry. A 10 MB buffer becomes a 10-million-element array. No assertion can observe the difference because copy-on-write returns the buffer either way; the guard is a performance bound, not a correctness one.
+  if (ArrayBuffer.isView(value)) {
     return value
   }
 
@@ -192,7 +226,22 @@ function walk(
       return walkArray(value, sensitive, censor, depth, ancestors)
     }
 
+    // A value with `toJSON` decides its own serialized form, so walking its own
+    // properties would inspect something that never reaches the log — while
+    // skipping it entirely leaves whatever the method SYNTHESIZES unredacted
+    // (`{ toJSON: () => ({ accessToken }) }` emitted the token in clear). Walk
+    // the method's output instead, and substitute it only when something was
+    // actually censored: a clean `Date` / `Decimal` / Luxon value is returned by
+    // reference, so serializers downstream still receive the original object.
+    const toJson = readToJson(value)
+    if (toJson !== undefined) {
+      const serialized = toJson.call(value)
+      const walked = walk(serialized, sensitive, censor, depth, ancestors)
+      return walked === serialized ? value : walked
+    }
+
     const source = value as Record<string, unknown>
+    const isError = value instanceof Error
     let copy: Record<string, unknown> | undefined
     for (const key of Object.keys(source)) {
       const current = Reflect.get(source, key)
@@ -200,11 +249,14 @@ function walk(
         ? censor
         : walk(current, sensitive, censor, depth + 1, ancestors)
       if (next !== current) {
-        // Spreading only on the first change keeps a clean subtree allocation-free.
-        // The spread also flattens a class instance to its own enumerable
-        // properties — which is exactly what `JSON.stringify` would have emitted
-        // for it anyway, so the serialized output is unchanged.
-        copy ??= { ...source }
+        // Copying only on the first change keeps a clean subtree allocation-free.
+        // An Error is cloned through its prototype and descriptors so it stays an
+        // Error; anything else is spread, which flattens a class instance to its
+        // own enumerable properties — exactly what `JSON.stringify` would have
+        // emitted for it anyway, so the serialized output is unchanged.
+        copy ??= isError
+          ? (cloneError(value as Error) as unknown as Record<string, unknown>)
+          : { ...source }
         defineOwn(copy, key, next)
       }
     }

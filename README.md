@@ -663,8 +663,8 @@ Before `1.2.0` the same names were expanded into 140 `fast-redact` paths at wild
 
 |                                  |                depth-1–4 paths (pre-`1.2.0`) | name walk (`1.2.0`) |
 | -------------------------------- | -------------------------------------------: | ------------------: |
-| Throughput, full production path |                             **9,311 logs/s** | **~943,000 logs/s** |
-| Cost per entry                   |                                      ~107 µs |               ~1 µs |
+| Throughput, full production path |                             **9,311 logs/s** |  **462,208 logs/s** |
+| Cost per entry                   |                                      ~107 µs |               ~2 µs |
 | Nesting covered                  |                 4 levels — deeper **leaked** |           unbounded |
 | `{ headers: { authorization } }` | **leaked** (only `req.headers.*` was pinned) |            censored |
 
@@ -732,7 +732,7 @@ When integrating `@bymax-one/nest-logger` in production, verify each of the foll
 
 | Layer               | Implementation                                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| PII Redaction       | 32 field names censored at ANY depth in one copy-on-write walk — ~1 µs/entry                                       |
+| PII Redaction       | 32 field names censored at ANY depth in one copy-on-write walk — ~2 µs/entry                                       |
 | Credentials         | `password`, `passwordHash`, `token`, `accessToken`, `refreshToken`, `apiKey`, `apiSecret`, `privateKey`            |
 | MFA Secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret` — redacted at any depth                                              |
 | PCI DSS             | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                |

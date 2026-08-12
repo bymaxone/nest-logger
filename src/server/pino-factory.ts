@@ -26,6 +26,7 @@ import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { destinationToStream } from './utils/destination-to-stream'
 import { createNameRedactor } from './utils/redact-by-name.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
+import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
 /** No-op redactor used when the name-walk is not the active strategy. */
 const PASS_THROUGH = (value: unknown): unknown => value
@@ -148,7 +149,26 @@ export function buildPinoInstance(
       log: (record) => redact(record) as Record<string, unknown>
     },
     serializers,
-    mixin: createTraceContextMixin(logContext, options.otel)
+    mixin: createTraceContextMixin(logContext, options.otel),
+    // `formatters.log` is NOT the first code to touch the caller's object: Pino
+    // merges the mixin result with it first, and the default strategy's
+    // `Object.assign` invokes every own getter. A throwing getter therefore
+    // crashed the log call before the redactor could return its fail-closed
+    // envelope. Owning the merge moves that boundary inside the guarantee.
+    mixinMergeStrategy: (mergeObject: object, mixinObject: object): object => {
+      try {
+        return Object.assign(mixinObject, mergeObject)
+      } catch {
+        // The caller's object cannot be read, so it cannot be proven safe and is
+        // dropped whole. The mixin's own ambient context (requestId, trace ids)
+        // is library-produced and still safe to keep.
+        return {
+          ...mixinObject,
+          _redactionFailed: true,
+          _logKey: RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
+        }
+      }
+    }
   }
 
   const streams = destinations.map((destination) => ({

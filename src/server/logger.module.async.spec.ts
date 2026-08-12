@@ -52,6 +52,9 @@ describe('BymaxLoggerModule.forRootAsync', () => {
     const ref = await Test.createTestingModule({
       imports: [BymaxLoggerModule.forRootAsync({ useFactory: () => ({ service }) })]
     }).compile()
+    // Bootstrap entries come from `DestinationRegistry.onModuleInit`, so they are
+    // emitted by `init()` (which runs the lifecycle hooks), not by `compile()`.
+    await ref.init()
 
     expect(ref.get(PinoLoggerService, { strict: false })).toBeInstanceOf(PinoLoggerService)
     expect(ref.get(LogContextService, { strict: false })).toBeInstanceOf(LogContextService)

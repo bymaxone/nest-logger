@@ -228,15 +228,92 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
-   * An `Error` is deliberately not descended into — copying it to a plain object
-   * would break the instance Pino's `err` serializer keys off. The factory
-   * redacts the serializer's OUTPUT instead; here we only pin that the instance
-   * survives by reference.
+   * A clean Error is returned by reference like any other clean value — the
+   * copy-on-write rule applies to errors too.
    */
-  'should leave an Error instance untouched', () => {
-    const err = Object.assign(new Error('boom'), { password: 'SECRET' })
+  'should return a clean Error by reference', () => {
+    const err = new Error('boom')
     const result = redact({ err }) as Record<string, unknown>
     expect(result['err']).toBe(err)
+  })
+
+  it(/*
+   * REGRESSION — an Error carrying a sensitive own enumerable property used to be
+   * skipped entirely, so `{ failure: err }` (any key without a Pino serializer)
+   * reached the sink with the value in clear. It must now be censored — and the
+   * copy must STILL be an Error, because Pino's `err` serializer keys off the
+   * instance, and `message` / `stack` are own but NON-enumerable so a plain
+   * spread would silently drop them.
+   */
+  'should redact an Error while keeping it an Error', () => {
+    const err = Object.assign(new Error('boom'), { password: 'SECRET', code: 'E_X' })
+    const result = redact({ err }) as Record<string, Error & Record<string, unknown>>
+    const redacted = result['err'] as Error & Record<string, unknown>
+
+    expect(redacted).not.toBe(err)
+    expect(redacted).toBeInstanceOf(Error)
+    expect(redacted.message).toBe('boom')
+    expect(redacted.stack).toBe(err.stack)
+    expect(redacted.stack).toContain('Error: boom')
+    expect(redacted['password']).toBe(CENSOR)
+    expect(redacted['code']).toBe('E_X')
+    // The caller's error is untouched.
+    expect(err.password).toBe('SECRET')
+  })
+
+  it(/*
+   * An error can reach the logger without a string stack — `Error.captureStackTrace`
+   * was suppressed, `stackTraceLimit` is 0, or the value came off the wire. The
+   * clone must simply carry no stack rather than pinning `undefined` as one.
+   */
+  'should redact a stackless Error without inventing a stack', () => {
+    const err = Object.assign(new Error('boom'), { password: 'SECRET' })
+    Reflect.deleteProperty(err, 'stack')
+
+    const redacted = (redact({ err }) as Record<string, Error & Record<string, unknown>>)['err']
+
+    expect(redacted).toBeInstanceOf(Error)
+    expect(redacted?.message).toBe('boom')
+    expect(redacted?.['password']).toBe(CENSOR)
+    // No own `stack` is fabricated: the clone must not gain a property the
+    // original never had.
+    expect(Object.hasOwn(redacted as object, 'stack')).toBe(false)
+  })
+
+  it(/*
+   * A real Error keeps its stack NON-enumerable, so `JSON.stringify` omits it.
+   * The clone must match: an enumerable stack would push the whole trace into
+   * every serialized entry that carries a redacted error.
+   */
+  'should keep the cloned stack non-enumerable', () => {
+    const err = Object.assign(new Error('boom'), { password: 'SECRET' })
+    const redacted = (redact({ err }) as Record<string, Error>)['err'] as Error
+
+    expect(redacted.stack).toBe(err.stack)
+    expect(JSON.stringify(redacted)).not.toContain('Error: boom')
+    expect(JSON.parse(JSON.stringify(redacted))).toEqual({ password: CENSOR })
+  })
+
+  it(/*
+   * `toJSON` is only special when it is CALLABLE. A plain data property that
+   * happens to be named `toJSON` must not be invoked — treating it as a method
+   * would throw and collapse the whole record into the failure envelope.
+   */
+  'should ignore a non-callable toJSON property', () => {
+    const result = redact({ payload: { toJSON: 'not-a-function', password: 'SECRET' } })
+    expect(JSON.stringify(result)).toBe(
+      `{"payload":{"toJSON":"not-a-function","password":"${CENSOR}"}}`
+    )
+  })
+
+  it(/*
+   * REGRESSION — a value whose `toJSON()` SYNTHESIZES a sensitive field was
+   * skipped by the walk and then serialized by `JSON.stringify` through that very
+   * method, emitting the secret. The walk must inspect the method's output.
+   */
+  'should redact what toJSON synthesizes', () => {
+    const result = redact({ token: { toJSON: (): unknown => ({ password: 'SECRET' }) } })
+    expect(JSON.stringify(result)).toBe(`{"token":{"password":"${CENSOR}"}}`)
   })
 
   it(/*

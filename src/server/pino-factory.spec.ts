@@ -134,13 +134,17 @@ describe('buildPinoInstance', () => {
   })
 
   it(/*
-   * The name walk runs at `formatters.log`, which does NOT see `base` or child
-   * bindings. That is load-bearing: those are library-owned (`service`, the
-   * `@InjectLogger` context) and must reach the sink untouched. Pinning it here
-   * means a future change that starts walking them fails a test instead of
-   * silently mangling every entry's service identity.
+   * `base` bindings are library-owned (`service`) and must reach the sink
+   * untouched, while the record itself is still walked.
+   *
+   * Note what this does NOT cover: bindings passed to the RAW Pino logger's
+   * `child()`. Pino pre-serializes those into the instance's `chindings` fragment
+   * before `formatters.log` ever runs, so no factory hook can reach them —
+   * redaction for child bindings lives in `PinoLoggerService.child()`, which is
+   * the API consumers actually use, and is pinned in that service's spec.
+   * `getRawLogger()` is the documented escape hatch and keeps raw semantics.
    */
-  'leaves library-owned base and child bindings out of the walk', () => {
+  'leaves the library-owned service base out of the walk', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       capture.destination
@@ -150,6 +154,36 @@ describe('buildPinoInstance', () => {
     expect(entry?.['service']).toEqual({ name: 'app', version: '1.0.0' })
     expect(entry?.['context']).toBe('UsersService')
     expect(entry?.['password']).toBe('[REDACTED]')
+  })
+
+  it(/*
+   * REGRESSION — `formatters.log` is not the first code to read the caller's
+   * object: Pino merges the mixin result with it first, and the default strategy's
+   * `Object.assign` invokes every own getter. A throwing getter therefore crashed
+   * the log call before the redactor could return its fail-closed envelope. The
+   * factory now owns the merge so the guarantee actually holds through the real
+   * pipeline.
+   */
+  'contains a throwing getter on the caller object instead of crashing', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
+      capture.destination
+    ])
+
+    expect(() =>
+      logger.info(
+        {
+          get boom(): never {
+            throw new Error('hostile getter')
+          }
+        },
+        'x'
+      )
+    ).not.toThrow()
+
+    const [entry] = capture.entries()
+    expect(entry?.['_redactionFailed']).toBe(true)
+    expect(entry?.['msg']).toBe('x')
   })
 
   it(/*

@@ -16,7 +16,8 @@ import {
   LOG_CONTEXT_TOKEN,
   LOGGER_DESTINATIONS_TOKEN,
   LOGGER_OPTIONS_TOKEN,
-  LOGGER_PINO_INSTANCE_TOKEN
+  LOGGER_PINO_INSTANCE_TOKEN,
+  LOGGER_REDACTOR_TOKEN
 } from './constants/injection-tokens.constants'
 import {
   collectContextLoggerProviders,
@@ -33,14 +34,10 @@ import type {
 } from './interfaces/logger-module-options.interface'
 import { BymaxLoggerModuleBase, BUILDER_OPTIONS_TOKEN } from './logger.module.builder'
 import type { ASYNC_OPTIONS_TYPE, OPTIONS_TYPE } from './logger.module.builder'
-import { buildPinoInstance } from './pino-factory'
+import { buildPinoInstance, resolveNameRedactor } from './pino-factory'
 import { DestinationRegistry } from './services/destination-registry.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
-import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
-
-/** Internal token whose eager instantiation emits the one-shot bootstrap log. */
-const LOGGER_BOOTSTRAP_TOKEN: unique symbol = Symbol('BYMAX_LOGGER_BOOTSTRAP')
 
 /**
  * Pick the active destinations: the consumer's list, or the default stdout sink
@@ -53,39 +50,6 @@ function resolveDestinations(
   options: ResolvedBymaxLoggerModuleOptions
 ): readonly ILogDestination[] {
   return options.destinations.length > 0 ? options.destinations : [new DefaultStdoutDestination()]
-}
-
-/**
- * Provider whose factory emits the one-shot bootstrap entries, when NestJS
- * eagerly instantiates the module's providers.
- *
- * Emits `LOGGER_BOOTSTRAP_OK` always, and `LOGGER_BOOTSTRAP_WARNING` when the
- * consumer turned the default PII protection off. That warning is the audit
- * trail the security documentation has always promised — a deployment that
- * disabled redaction must say so in its own logs, where a review can find it,
- * rather than being indistinguishable from a protected one.
- *
- * @returns The bootstrap provider.
- */
-function bootstrapProvider(): Provider {
-  return {
-    provide: LOGGER_BOOTSTRAP_TOKEN,
-    useFactory: (logger: PinoLoggerService, options: ResolvedBymaxLoggerModuleOptions): boolean => {
-      logger.info(RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK, 'BymaxLoggerModule initialized')
-      if (options.shouldDisableDefaultRedact) {
-        logger.warnStructured(
-          RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_WARNING,
-          'Default PII redaction is DISABLED — sensitive fields will be logged verbatim ' +
-            'unless every one of them is listed in options.redactPaths',
-          undefined,
-          { shouldDisableDefaultRedact: true, redactPathCount: options.redactPaths.length }
-        )
-      }
-      // Stryker disable next-line BooleanLiteral: equivalent — this value is stored as the `LOGGER_BOOTSTRAP_TOKEN` injectable, which nothing in the module or in consumer code reads. Flipping it to `false` is observable only by inspecting the DI container directly, never through any behaviour the library exposes.
-      return true
-    },
-    inject: [PinoLoggerService, LOGGER_OPTIONS_TOKEN]
-  }
 }
 
 /**
@@ -102,6 +66,15 @@ function buildCommonProviders(): Provider[] {
   return [
     LogContextService,
     { provide: LOG_CONTEXT_TOKEN, useExisting: LogContextService },
+    {
+      // The DEFAULT-coverage redactor, shared by the Pino factory's hooks and by
+      // `PinoLoggerService.child()`. The latter needs it as a provider because
+      // Pino pre-serializes child bindings before `formatters.log` can see them.
+      provide: LOGGER_REDACTOR_TOKEN,
+      useFactory: (options: ResolvedBymaxLoggerModuleOptions): ((value: unknown) => unknown) =>
+        resolveNameRedactor(options),
+      inject: [LOGGER_OPTIONS_TOKEN]
+    },
     {
       provide: LOGGER_PINO_INSTANCE_TOKEN,
       useFactory: (
@@ -122,8 +95,7 @@ function buildCommonProviders(): Provider[] {
     // exported — consumers never inject it directly.
     DestinationRegistry,
     // One child-logger provider per context discovered from @InjectLogger(context).
-    ...collectContextLoggerProviders(),
-    bootstrapProvider()
+    ...collectContextLoggerProviders()
   ]
 }
 
@@ -175,6 +147,7 @@ export function augmentLoggerModule(base: DynamicModule, providers: Provider[]):
       LOGGER_OPTIONS_TOKEN,
       LOGGER_PINO_INSTANCE_TOKEN,
       LOGGER_DESTINATIONS_TOKEN,
+      LOGGER_REDACTOR_TOKEN,
       LOG_CONTEXT_TOKEN,
       LogContextService,
       PinoLoggerService,

@@ -3,6 +3,8 @@ import pino from 'pino'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 
+import { applyDefaults } from '../config/default-options'
+
 import { DestinationRegistry } from './destination-registry.service'
 import { PinoLoggerService } from './pino-logger.service'
 
@@ -18,6 +20,7 @@ function makeDestination(
 }
 
 describe('DestinationRegistry', () => {
+  const options = applyDefaults({ service: { name: 'app', version: '1.0.0' } })
   let logger: PinoLoggerService
   let errorSpy: jest.SpyInstance
   let infoSpy: jest.SpyInstance
@@ -37,7 +40,7 @@ describe('DestinationRegistry', () => {
     'initializes every destination and marks them active', async () => {
       const withHook = makeDestination('with-hook', { onInit: jest.fn() })
       const hookless = makeDestination('hookless')
-      const registry = new DestinationRegistry([withHook, hookless], logger)
+      const registry = new DestinationRegistry([withHook, hookless], logger, options)
 
       await registry.onModuleInit()
 
@@ -55,7 +58,7 @@ describe('DestinationRegistry', () => {
         onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
       })
       const healthy = makeDestination('healthy', { onInit: jest.fn() })
-      const registry = new DestinationRegistry([boom, healthy], logger)
+      const registry = new DestinationRegistry([boom, healthy], logger, options)
 
       await registry.onModuleInit()
 
@@ -76,7 +79,7 @@ describe('DestinationRegistry', () => {
       const weird = makeDestination('weird', {
         onInit: jest.fn().mockRejectedValue('string-failure')
       })
-      const registry = new DestinationRegistry([weird], logger)
+      const registry = new DestinationRegistry([weird], logger, options)
 
       await registry.onModuleInit()
 
@@ -103,7 +106,7 @@ describe('DestinationRegistry', () => {
           seenAtShutdown.push(infoSpy.mock.calls.length)
         })
       })
-      const registry = new DestinationRegistry([destination], logger)
+      const registry = new DestinationRegistry([destination], logger, options)
       await registry.onModuleInit()
 
       await registry.onApplicationShutdown()
@@ -114,8 +117,10 @@ describe('DestinationRegistry', () => {
         undefined,
         { destinations: 1 }
       )
-      // The sink observed the entry already emitted when its own teardown ran.
-      expect(seenAtShutdown).toEqual([1])
+      // Two info calls by then: the bootstrap announcement from onModuleInit and
+      // the shutdown entry — the sink observed the latter already emitted when
+      // its own teardown ran.
+      expect(seenAtShutdown).toEqual([2])
     })
 
     it(/*
@@ -136,7 +141,7 @@ describe('DestinationRegistry', () => {
           order.push('second')
         })
       })
-      const registry = new DestinationRegistry([first, second], logger)
+      const registry = new DestinationRegistry([first, second], logger, options)
       await registry.onModuleInit()
 
       await registry.onApplicationShutdown()
@@ -149,7 +154,7 @@ describe('DestinationRegistry', () => {
      */
     'tolerates a destination without an onShutdown hook', async () => {
       const hookless = makeDestination('hookless', { onInit: jest.fn() })
-      const registry = new DestinationRegistry([hookless], logger)
+      const registry = new DestinationRegistry([hookless], logger, options)
       await registry.onModuleInit()
 
       await expect(registry.onApplicationShutdown()).resolves.toBeUndefined()
@@ -165,7 +170,7 @@ describe('DestinationRegistry', () => {
         onInit: jest.fn(),
         onShutdown: jest.fn().mockRejectedValue(new Error('shutdown-fail'))
       })
-      const registry = new DestinationRegistry([boom], logger)
+      const registry = new DestinationRegistry([boom], logger, options)
       await registry.onModuleInit()
 
       await registry.onApplicationShutdown()
@@ -184,7 +189,7 @@ describe('DestinationRegistry', () => {
         onInit: jest.fn(),
         onShutdown: jest.fn().mockRejectedValue('non-error-string')
       })
-      const registry = new DestinationRegistry([boom], logger)
+      const registry = new DestinationRegistry([boom], logger, options)
       await registry.onModuleInit()
 
       await registry.onApplicationShutdown()
@@ -205,7 +210,7 @@ describe('DestinationRegistry', () => {
         onInit: jest.fn(),
         onShutdown: jest.fn().mockRejectedValue(stacklessError)
       })
-      const registry = new DestinationRegistry([boom], logger)
+      const registry = new DestinationRegistry([boom], logger, options)
       await registry.onModuleInit()
 
       await registry.onApplicationShutdown()
@@ -221,7 +226,7 @@ describe('DestinationRegistry', () => {
      * list) — nothing is "active" until it has successfully initialized.
      */
     'returns an empty list before initialization', () => {
-      const registry = new DestinationRegistry([makeDestination('a')], logger)
+      const registry = new DestinationRegistry([makeDestination('a')], logger, options)
       expect(registry.getActive()).toEqual([])
     })
   })

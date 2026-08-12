@@ -33,7 +33,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-08-12 — server: 14.54 KiB real -> 15.25 KiB budget (~4.9% headroom).
+//   - 2026-08-12 — server: 15.29 KiB real -> 16.0 KiB budget (~4.6% headroom).
 //     The +0.79 KiB over the prior 13.5 KiB is the P0 audit remediation, and it
 //     is feature surface rather than bloat: the name-based redaction engine
 //     (`redact-by-name.util.ts` — a recursive copy-on-write walk replacing 108
@@ -46,14 +46,20 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     bundle ships unminified with its JSDoc, and that JSDoc is a meaningful
 //     share of the delta — the new util documents the measurements behind the
 //     engine change at the seam where a future reader would otherwise undo it.
-//     Walked up and back down across the code review of that same change: 15.0
-//     at first; 15.5 once the review added `withoutOwnedKeys` (restoring the
-//     reserved-field invariant), split `walkArray` out to stay inside the
-//     nesting limit, and made `RESERVED_LOG_KEYS_NOT_EMITTED` public, leaving
-//     15.0 with 0.18 KiB — a tripwire that fires on the next JSDoc line rather
-//     than on bloat; then down to 15.25 when dropping four redundant Stryker
-//     suppression comments took 0.28 KiB back out. Per rule 2, a budget is
-//     retightened when the artifact shrinks, not left loose.
+//     Walked across the reviews of that same change: 15.0 at first; 15.5 once
+//     the code review added `withoutOwnedKeys` (restoring the reserved-field
+//     invariant), split `walkArray` out to stay inside the nesting limit, and
+//     made `RESERVED_LOG_KEYS_NOT_EMITTED` public; back to 15.25 when dropping
+//     four redundant Stryker suppressions returned 0.28 KiB. Then to 16.25 for
+//     the PR-review remediation, which closed three verified leaks the first
+//     design had: child bindings (redacted in `PinoLoggerService.child()`,
+//     because Pino pre-serializes them past every formatter), `Error` values
+//     under a key with no serializer (cloned through prototype + descriptors so
+//     they stay Errors), and secrets synthesized by `toJSON()` (its output is
+//     now walked). Plus a `mixinMergeStrategy` so a hostile getter cannot crash
+//     the log call ahead of the fail-closed envelope. Per rule 2, retighten when
+//     the artifact shrinks — this one grew, and every kilobyte of it is a leak
+//     that used to be open.
 //   - 2026-06-16 — server: 12.84 KiB real -> 13.5 KiB budget (~5% headroom).
 //     The +0.34 KiB over the prior 12.5 KiB is legitimate audit-hardening
 //     surface — fail-soft destination containment, query-string stripping in the
@@ -67,7 +73,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 15.25 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 16.0 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 
