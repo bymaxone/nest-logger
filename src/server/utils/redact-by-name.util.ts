@@ -45,7 +45,7 @@
  * a SECOND time by `JSON.stringify`, and a stateful getter (or `toJSON`) can
  * answer clean to the walk and `{ password }` to the serializer. Inspection
  * cannot close that window — only reading once and pinning the result can. It
- * costs ~21 % of the entry throughput, measured, and the walk is still ~37x
+ * costs ~26 % of the entry throughput, measured, and the walk is still ~36x
  * faster than the path expansion it replaced.
  *
  * Any internal failure — including a censor that cannot be written — degrades the
@@ -138,6 +138,18 @@ function cloneError(error: Error): Error {
 }
 
 /**
+ * A configured redactor.
+ *
+ * @param value - The value to redact.
+ * @param isRecordRoot - `true` when `value` is the ROOT of a log record — the
+ *   object Pino iterates rather than serializes. A root must not honour a
+ *   `toJSON` method, because doing so would replace the entire record with that
+ *   method's return value; nested values and serializer outputs do reach
+ *   `JSON.stringify` and keep it.
+ */
+export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
+
+/**
  * Internal control-flow signal: a censor could not be written onto a copy.
  *
  * Thrown by {@link defineOwn} and caught by {@link createNameRedactor}, which
@@ -222,7 +234,8 @@ function walk(
   sensitive: ReadonlySet<string>,
   censor: string,
   depth: number,
-  ancestors: Set<object>
+  ancestors: Set<object>,
+  honorToJson = true
 ): unknown {
   if (value === null || typeof value !== 'object') {
     return value
@@ -254,7 +267,13 @@ function walk(
     // Walk the method's output instead, and substitute it only when something was
     // actually censored: a clean `Date` / `Decimal` / Luxon value is returned by
     // reference, so serializers downstream still receive the original object.
-    const toJson = readToJson(value)
+    // `honorToJson` is false for exactly one caller: the ROOT of a log record.
+    // Pino ITERATES that object — it never calls `toJSON` on it — so honouring the
+    // method there would replace the whole record with the method's return value
+    // and discard `logKey`, `msg` and every other field. Nested values and
+    // serializer outputs DO reach `JSON.stringify`, which honours `toJSON`, so
+    // they keep it.
+    const toJson = honorToJson ? readToJson(value) : undefined
     if (toJson !== undefined) {
       // The INSPECTED result is what gets returned, always — never the original
       // object. Returning the original when the probe came back clean left
@@ -272,10 +291,12 @@ function walk(
     }
 
     const source = value as Record<string, unknown>
+    // No fast path for an empty key list. Returning the original would reopen the
+    // very window the snapshot closes: a Proxy can answer `[]` to this
+    // `Object.keys` and expose an enumerable `password` when Pino serializes the
+    // reference afterwards. An empty object costs one allocation; the alternative
+    // costs the guarantee.
     const keys = Object.keys(source)
-    if (keys.length === 0) {
-      return source
-    }
 
     // Every property is SNAPSHOT into a fresh object, even when nothing was
     // censored. Returning a clean subtree by reference was the allocation-free
@@ -323,10 +344,7 @@ function walk(
  *   redact({ user: { deep: { password: 's' } } })
  *   // → { user: { deep: { password: '[REDACTED]' } } }
  */
-export function createNameRedactor(
-  fieldNames: readonly string[],
-  censor: string
-): (value: unknown) => unknown {
+export function createNameRedactor(fieldNames: readonly string[], censor: string): Redactor {
   // Matched case-INSENSITIVELY. HTTP header names are case-insensitive by spec,
   // and only INBOUND Node headers arrive lower-cased — a hand-built or outbound
   // bag routinely carries `Authorization`, `Cookie`, `X-API-Key`, which a
@@ -335,9 +353,9 @@ export function createNameRedactor(
   // `toLowerCase()` per key (~4 % of an entry, measured) and errs toward
   // redacting `Password` / `Email` too, which is the safe direction.
   const sensitive: ReadonlySet<string> = new Set(fieldNames.map((name) => name.toLowerCase()))
-  return (value: unknown): unknown => {
+  return (value: unknown, isRecordRoot = false): unknown => {
     try {
-      return walk(value, sensitive, censor, 0, new Set<object>())
+      return walk(value, sensitive, censor, 0, new Set<object>(), !isRecordRoot)
     } catch {
       // The record resisted traversal (a throwing getter, a hostile proxy). It
       // cannot be proven safe, so nothing from it is emitted — a redactor must

@@ -157,6 +157,71 @@ describe('buildPinoInstance', () => {
   })
 
   it(/*
+   * REGRESSION — the ROOT of a log record must never honour a `toJSON` method.
+   * Pino ITERATES that object rather than serializing it, so returning the
+   * method's result replaced the entire record: `logger.info(key, msg, userId,
+   * { toJSON: () => 'x' })` emitted `{"0":"x"}` and lost logKey, userId and
+   * every other field. Nested values keep `toJSON`, because those DO reach
+   * `JSON.stringify`.
+   */
+  'keeps the record intact when caller metadata carries a toJSON', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
+      capture.destination
+    ])
+
+    logger.info({ toJSON: (): string => 'x', logKey: 'REAL_KEY', orderId: 'o_1' }, 'msg')
+
+    const [entry] = capture.entries()
+    expect(entry?.['logKey']).toBe('REAL_KEY')
+    expect(entry?.['orderId']).toBe('o_1')
+    expect(entry?.['msg']).toBe('msg')
+    expect(entry).not.toHaveProperty('0')
+  })
+
+  it(/*
+   * The root exception must NOT leak into the serializer hook. A serializer's
+   * output does reach `JSON.stringify`, so a `toJSON` on it is honoured — and a
+   * serializer that synthesizes such an object is the one shape where skipping
+   * it would emit the secret verbatim.
+   */
+  'honors toJSON on a serializer output', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(
+      applyDefaults({
+        ...baseOptions,
+        serializers: {
+          account: (): unknown => ({ toJSON: (): unknown => ({ password: 'secret' }) })
+        }
+      }),
+      new LogContextService(),
+      [capture.destination]
+    )
+
+    logger.info({ account: { id: 'a1' } }, 'msg')
+
+    const account = capture.entries()[0]?.['account'] as Record<string, unknown>
+    expect(account['password']).toBe('[REDACTED]')
+  })
+
+  it(/*
+   * The converse, so the root exception stays surgical: a NESTED value with a
+   * `toJSON` is still inspected through that method, because `JSON.stringify`
+   * will call it.
+   */
+  'still redacts through toJSON on a nested value', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
+      capture.destination
+    ])
+
+    logger.info({ nested: { toJSON: (): unknown => ({ password: 'secret' }) } }, 'msg')
+
+    const nested = capture.entries()[0]?.['nested'] as Record<string, unknown>
+    expect(nested['password']).toBe('[REDACTED]')
+  })
+
+  it(/*
    * REGRESSION — `formatters.log` is not the first code to read the caller's
    * object: Pino merges the mixin result with it first, and the default strategy's
    * `Object.assign` invokes every own getter. A throwing getter therefore crashed

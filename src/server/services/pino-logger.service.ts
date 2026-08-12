@@ -23,6 +23,7 @@ import {
   LOGGER_PINO_INSTANCE_TOKEN,
   LOGGER_REDACTOR_TOKEN
 } from '../constants/injection-tokens.constants'
+import type { Redactor } from '../utils/redact-by-name.util'
 
 /** Pino level methods the NestJS-style variadic path dispatches to (error is handled separately). */
 type PinoLevelMethod = 'info' | 'warn' | 'debug' | 'trace' | 'fatal'
@@ -154,7 +155,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   constructor(
     @Inject(LOGGER_PINO_INSTANCE_TOKEN) private readonly pino: PinoLogger,
     @Inject(LOGGER_REDACTOR_TOKEN)
-    private readonly redact: (value: unknown) => unknown = (value) => value
+    private readonly redact: Redactor = (value) => value
   ) {}
 
   // ─── NestJS LoggerService variadic interface ──────────────────────────────
@@ -338,7 +339,9 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     // fragment at `child()` time, so that hook never sees them. Without this,
     // `logger.child({ password })` wrote the value in clear on every entry the
     // child emitted.
-    const safeBindings = this.redact(bindings) as Record<string, unknown>
+    // `true`: bindings are a record root — Pino iterates them into `chindings`
+    // rather than serializing them, so a `toJSON` on the bag must not replace it.
+    const safeBindings = this.redact(bindings, true) as Record<string, unknown>
     const childService = new PinoLoggerService(this.pino.child(safeBindings), this.redact)
     if (this.context !== undefined) {
       childService.setContext(this.context)

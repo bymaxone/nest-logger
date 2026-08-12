@@ -53,6 +53,14 @@ shipped logging path **~50× faster**.
   `{ toJSON: () => ({ accessToken }) }` emit the token untouched. The walk now redacts the
   method's output, substituting it only when something was actually censored so a clean `Date` or
   `Decimal` is still passed through by reference.
+- **The root of a log record never honours `toJSON`.** Pino ITERATES that object rather than
+  serializing it, so honouring the method replaced the whole record with its return value:
+  `logger.info(key, msg, userId, { toJSON: () => 'x' })` emitted `{"0":"x"}` and lost `logKey`,
+  `userId` and every other field. Nested values and serializer outputs do reach `JSON.stringify`
+  and keep it. The same applies to `child()` bindings, which Pino also iterates.
+- **An object that reports no keys is snapshot, not passed through.** The empty-key fast path
+  returned the original reference, which a Proxy exploits: answer `[]` to the walk's
+  `Object.keys`, then expose an enumerable secret when Pino serializes the reference.
 - **A censor that cannot be written fails closed.** `Reflect.defineProperty` reports failure by
   returning `false` rather than throwing, so an `Error` carrying a non-configurable enumerable
   secret kept its raw value while the redaction silently no-opped. A failed write is now a
@@ -95,7 +103,7 @@ shipped logging path **~50× faster**.
   degrades to a marked, data-free envelope rather than being emitted unredacted.
 
   Measured on the full production path (`forRoot({ service })`, no other option set):
-  **9,311 → 293,782 logs/s**, ~107 µs → ~3.4 µs per entry. Every value is read exactly once and
+  **9,311 → ~274,000 logs/s**, ~107 µs → ~3.6 µs per entry. Every value is read exactly once and
   pinned into a fresh structure, so what reaches the sink is guaranteed to be what was inspected —
   an earlier copy-on-write draft returned clean subtrees by reference and let `JSON.stringify`
   re-evaluate their accessors, which a stateful getter can answer differently.

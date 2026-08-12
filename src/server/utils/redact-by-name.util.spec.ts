@@ -256,14 +256,41 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
-   * An Error with no own enumerable properties has nothing to snapshot, so it
-   * comes back by reference — the empty-key early return, which also keeps the
-   * common `logger.error({ err })` path allocation-free.
+   * An Error with no own enumerable properties is still snapshot — the empty-key
+   * fast path was removed because a Proxy can answer `[]` to `Object.keys` and
+   * expose a property when Pino serializes the reference afterwards. The clone
+   * must remain an Error and keep its message and stack.
    */
-  'should return an Error with no own properties by reference', () => {
+  'should snapshot an Error with no own properties, keeping it an Error', () => {
     const err = new Error('boom')
-    const result = redact({ err }) as Record<string, unknown>
-    expect(result['err']).toBe(err)
+    const result = redact({ err }) as Record<string, Error>
+    const cloned = result['err'] as Error
+
+    expect(cloned).not.toBe(err)
+    expect(cloned).toBeInstanceOf(Error)
+    expect(cloned.message).toBe('boom')
+    expect(cloned.stack).toBe(err.stack)
+  })
+
+  it(/*
+   * REGRESSION — the empty-key fast path returned the ORIGINAL object, which a
+   * stateful Proxy exploits: answer no keys to the walk, then expose an
+   * enumerable secret when Pino serializes the reference it was handed back.
+   */
+  'should snapshot an object that reports no keys during the walk', () => {
+    let reads = 0
+    const target: Record<string, unknown> = { password: 'SECRET' }
+    const sneaky = new Proxy(target, {
+      ownKeys(inner): ArrayLike<string | symbol> {
+        reads += 1
+        return reads === 1 ? [] : Reflect.ownKeys(inner)
+      }
+    })
+
+    const serialized = JSON.stringify(redact({ payload: sneaky }))
+
+    expect(serialized).toBe('{"payload":{}}')
+    expect(serialized).not.toContain('SECRET')
   })
 
   it(/*

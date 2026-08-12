@@ -25,7 +25,7 @@ even though absolute ops/sec vary. They are calibrated to the **latest measured
 baseline** (see Calibration history), not to aspirational targets:
 
 - **Throughput (HARD gate):** `C.opsPerSec ≥ B.opsPerSec × 0.20`. The shipped
-  path measures **0.356×** of the bare wrapper, so the floor sits ~1.9× below the
+  path measures **0.345×** of the bare wrapper, so the floor sits ~1.9× below the
   measurement — enough to survive runner noise, tight enough to fail on a real
   ~2× regression. This is the only budget that fails CI.
 - **Scenario D is printed, never gated.** It keeps the legacy strategy's cost
@@ -59,7 +59,7 @@ wildcard depth:
 | + depths 1–4 (the shipped default) |   9,286 |
 
 Each wildcard level cost ~2.5×. Replacing the path list with a single
-walk keyed on field NAME made the shipped path **~31× faster** (9,311 → 293,782)
+walk keyed on field NAME made the shipped path **~29× faster** (9,311 → ~274,000)
 and removed the four-level ceiling that had been leaking anything nested deeper.
 The tax was in the strategy, not in redaction.
 
@@ -70,8 +70,8 @@ The tax was in the strategy, not in redaction.
   short of a 100× regression. Then PR review found a time-of-check/time-of-use
   window — a clean subtree returned by reference let `JSON.stringify` re-evaluate
   its accessors, and a stateful getter can answer differently the second time.
-  Closing it means snapshotting every value instead: **C settles at 293,782 ops/s**
-  (0.356× retention), a ~21 % trade for an output that is guaranteed to be what
+  Closing it means snapshotting every value instead: **C settles at ~274,000 ops/s**
+  (0.345× retention), a ~21 % trade for an output that is guaranteed to be what
   was inspected. Still ~37× the legacy `'paths'` engine (7,927 ops/s).
 - **v0.1** — original baseline. The spec's budgets (10 % allocation / 5 %
   throughput) assumed redaction was cheap; the bench disproved it and the floor

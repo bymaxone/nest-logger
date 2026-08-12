@@ -25,11 +25,12 @@ import type { LogContextService } from './services/log-context.service'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { destinationToStream } from './utils/destination-to-stream'
 import { createNameRedactor } from './utils/redact-by-name.util'
+import type { Redactor } from './utils/redact-by-name.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
 /** No-op redactor used when the name-walk is not the active strategy. */
-const PASS_THROUGH = (value: unknown): unknown => value
+const PASS_THROUGH: Redactor = (value: unknown): unknown => value
 
 /**
  * Resolve the name-walk redactor for the active configuration, or a pass-through
@@ -42,9 +43,7 @@ const PASS_THROUGH = (value: unknown): unknown => value
  * @param options - Fully-defaulted module options.
  * @returns A redaction function; the identity function when the walk is off.
  */
-export function resolveNameRedactor(
-  options: ResolvedBymaxLoggerModuleOptions
-): (value: unknown) => unknown {
+export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
   if (options.redactStrategy !== 'names' || options.shouldDisableDefaultRedact) {
     return PASS_THROUGH
   }
@@ -146,7 +145,7 @@ export function buildPinoInstance(
       // `base` and child bindings are NOT visible at this hook — they are
       // library-owned (`service`, the `@InjectLogger` context) and carry nothing
       // sensitive, which `pino-factory.spec.ts` pins.
-      log: (record) => redact(record) as Record<string, unknown>
+      log: (record) => redact(record, true) as Record<string, unknown>
     },
     serializers,
     mixin: createTraceContextMixin(logContext, options.otel),
