@@ -183,6 +183,11 @@ shipped logging path **~50× faster**.
   already failing at runtime — but it can newly fail to compile. Convert with the now-exported
   `PINO_LEVEL_NUMBERS` and `Date.parse`.
 
+  Shipped as a minor rather than a major deliberately: the library has no consumers yet, and
+  SemVer's major exists to protect the consumers a break would reach. Breaks are documented here
+  under this heading with their migration path, which is what carries the signal while the version
+  number does not.
+
 ## [1.1.0] - 2026-08-11
 
 Coordinated ecosystem release aligning every `@bymax-one/*` package after the ioredis 6 /
