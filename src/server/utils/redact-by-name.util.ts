@@ -275,8 +275,23 @@ function walk(
   // `ArrayBuffer` views (`Buffer`, typed arrays) are indexed byte containers: a
   // key-name match is meaningless and a copy would be enormous. Checked BEFORE
   // `toJSON` because `Buffer` has one.
-  // Stryker disable next-line ConditionalExpression,BlockStatement: output-equivalent, kept for COST — `Buffer` has a `toJSON`, so without this guard the walk below would call it and materialise a `{ type, data: number[] }` copy of every logged binary payload on every entry. A 10 MB buffer becomes a 10-million-element array. No assertion can observe the difference because the buffer is returned untouched either way; the guard is a performance bound, not a correctness one.
-  if (ArrayBuffer.isView(value)) {
+  // Binary views get a fast path, but a NARROW one. `ArrayBuffer.isView` alone was
+  // too wide: it also matched views a caller had extended, and three shapes leaked
+  // through it — an own `toJSON` synthesizing a payload, and an enumerable
+  // property on a `Uint8Array` or `DataView`, neither of which has a `toJSON` to
+  // hide it (`JSON.stringify(new Uint8Array([1]))` is `{"0":1}`, so a custom key
+  // lands right beside the indices).
+  //
+  // What remains safe to skip is a view whose JSON form comes from a PROTOTYPE
+  // `toJSON` it did not define — `Buffer`, whose output is a canonical
+  // `{ type, data }` that cannot carry a caller's key at all. That is worth
+  // keeping: walking it would recurse over every byte and copy the lot.
+  // Everything else falls through and is inspected like any other value.
+  if (
+    !Object.hasOwn(value, 'toJSON') &&
+    ArrayBuffer.isView(value) &&
+    readToJson(value) !== undefined
+  ) {
     return value
   }
 

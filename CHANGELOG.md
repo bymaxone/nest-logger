@@ -53,6 +53,12 @@ shipped logging path **~50× faster**.
   `{ toJSON: () => ({ accessToken }) }` emit the token untouched. The walk now redacts the
   method's output, substituting it only when something was actually censored so a clean `Date` or
   `Decimal` is still passed through by reference.
+- **Binary views a caller has extended are inspected.** `ArrayBuffer.isView` was too wide a fast
+  path: it also matched extended views, and three shapes went straight through both hooks — an own
+  `toJSON` synthesizing a payload, and an enumerable property on a `Uint8Array` or `DataView`,
+  neither of which has a `toJSON` to hide it. The fast path now covers only a view whose JSON form
+  comes from a PROTOTYPE `toJSON` it did not define (`Buffer`, whose `{ type, data }` output cannot
+  carry a caller's key), which keeps a binary payload from being walked byte by byte.
 - **Arrays are indexed numerically rather than iterated.** `for...of` runs the array's
   `Symbol.iterator`, which a caller can override, while `JSON.stringify` reads `length` and
   numeric indices. An iterator that never returned `done` hung the log call — a loop that does not

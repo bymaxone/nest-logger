@@ -463,8 +463,38 @@ describe('createNameRedactor', () => {
     // The emitted JSON is identical either way.
     expect(result['when']).toBe('2020-01-01T00:00:00.000Z')
     expect(JSON.stringify(result['when'])).toBe(JSON.stringify(when))
-    // A binary view has no key names worth matching and is returned untouched.
+    // A pristine `Buffer` keeps the fast path: its JSON form comes from a
+    // PROTOTYPE `toJSON` that cannot carry a caller's key.
     expect(result['buf']).toBe(buf)
+  })
+
+  it(/*
+   * REGRESSION — `ArrayBuffer.isView` alone was too wide a fast path. It also
+   * matched views a caller had extended, and three shapes leaked straight through
+   * both redaction hooks. Each is asserted against what `JSON.stringify` produces
+   * natively, so the walk cannot drift from the serializer.
+   */
+  'should inspect binary views a caller has extended', () => {
+    const withOwnToJson = Object.assign(Buffer.from('hi'), {
+      toJSON: (): unknown => ({ password: 'SECRET' })
+    })
+    const typedArray = Object.assign(new Uint8Array([1, 2]), { password: 'SECRET' })
+    const dataView = Object.assign(new DataView(new ArrayBuffer(2)), { password: 'SECRET' })
+
+    expect(JSON.stringify(redact({ b: withOwnToJson }))).toBe(`{"b":{"password":"${CENSOR}"}}`)
+    expect(JSON.stringify(redact({ u: typedArray }))).toBe(
+      `{"u":{"0":1,"1":2,"password":"${CENSOR}"}}`
+    )
+    expect(JSON.stringify(redact({ d: dataView }))).toBe(`{"d":{"password":"${CENSOR}"}}`)
+  })
+
+  it(/*
+   * A pristine view must still serialize exactly as the native serializer renders
+   * it — the narrowing must not change what an ordinary binary payload looks like.
+   */
+  'should render pristine binary views exactly as JSON.stringify does', () => {
+    const pristine = { b: Buffer.from('hi'), u: new Uint8Array([1, 2]) }
+    expect(JSON.stringify(redact(pristine))).toBe(JSON.stringify(pristine))
   })
 
   it(/*
