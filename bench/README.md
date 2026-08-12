@@ -6,43 +6,72 @@ throughput regression**, so a PR cannot silently degrade logging performance.
 
 ## Scenarios
 
-All three write to a no-op sink, so only the logging **pipeline** cost is
+All four write to a no-op sink, so only the logging **pipeline** cost is
 measured — never disk or TTY I/O.
 
-| #     | Scenario                                                                                          | What it isolates     |
-| ----- | ------------------------------------------------------------------------------------------------- | -------------------- |
-| **A** | bare Pino 10                                                                                      | baseline             |
-| **B** | `PinoLoggerService` (no redact, no mixin)                                                         | wrapper overhead     |
-| **C** | `PinoLoggerService` + 97 redact paths + composed ALS/OTel mixin, inside an active request context | full production path |
+| #     | Scenario                                                                                                                                                      | What it isolates            |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| **A** | bare Pino 10                                                                                                                                                  | baseline                    |
+| **B** | `PinoLoggerService` (no redact, no mixin)                                                                                                                     | wrapper overhead            |
+| **C** | **the shipped configuration** — `forRoot({ service })` with nothing else set: name-walk redaction + composed ALS/OTel mixin, inside an active request context | what consumers actually run |
+| **D** | the same under the legacy `redactStrategy: 'paths'` escape hatch                                                                                              | cost of the old engine      |
+
+Scenario **C** is the one that matters: it is what `BymaxLoggerModule.forRoot({ service })` builds with no option set. A gate that measured a configuration nobody runs would not be a gate.
 
 ## Budgets
 
 Budgets are **relative** (scenario-vs-scenario), so they hold across machines
-even though absolute ops/sec vary. They are calibrated to the **measured v0.1
-baseline**, not to aspirational targets:
+even though absolute ops/sec vary. They are calibrated to the **latest measured
+baseline** (see Calibration history), not to aspirational targets:
 
-- **Throughput (HARD gate):** `C.opsPerSec ≥ B.opsPerSec × 0.004`. The full prod
-  path runs at ≈ 0.8 % of the bare wrapper, so the floor catches a further ~2×
-  regression. This is the only budget that fails CI.
+- **Throughput (HARD gate):** `C.opsPerSec ≥ B.opsPerSec × 0.20`. The shipped
+  path measures **0.385×** of the bare wrapper, so the floor sits ~1.9× below the
+  measurement — enough to survive runner noise, tight enough to fail on a real
+  ~2× regression. This is the only budget that fails CI.
+- **Scenario D is printed, never gated.** It keeps the legacy strategy's cost
+  visible and reproducible (the README quotes the comparison); constraining it
+  would be constraining an escape hatch nobody should be reaching for.
 - **Allocation (ADVISORY only):** `B.bytesPerOp ≤ A.bytesPerOp × 2.0`. The wrapper
   allocates ≈ 1.2× bare Pino locally, but `heapUsed` deltas are dominated by GC
   timing on shared CI runners (observed > 40× for identical code — pure noise),
   so allocation is **printed but never fails CI**.
 
-### Why the prod path is ~100× slower than the wrapper
+### The redaction cliff, and why it is gone
 
-This was the key finding when the bench was first run. **`pino.multistream` is
-NOT a bottleneck** — it benchmarks as fast as bare Pino. The throughput cliff is
-**wildcard PII redaction**: the 97 default redact paths include multi-level
-wildcards (`*.password`, `*.*.password`, …), and `fast-redact` must walk every
-key at each level on every log. That costs ≈ 30 µs/op (≈ 33 k logs/s) versus
-≈ 0.5 µs/op (≈ 2 M logs/s) with redaction off. This is the **security tax**, not
-a defect — apps that need more throughput can trim `redactPaths` or reduce the
-wildcard depth. The wrapper overhead itself (B vs A) is negligible.
+When this bench was first run it showed the production path at **≈ 0.8 %** of the
+bare wrapper, and the conclusion recorded here was that this was "the security
+tax, not a defect". That conclusion was wrong, and the numbers are what showed it.
 
-The original spec budgets (10 % allocation / 5 % throughput) assumed redaction
-was cheap; the bench proved otherwise, so the budgets were recalibrated to the
-measured baseline. Tighten them in `v0.2` once a multi-week trend exists.
+**`pino.multistream` was never the bottleneck** (it benchmarks as fast as bare
+Pino) and the composed mixin costs ~14 %. The entire cliff was **path-based**
+redaction: the default set expanded 27 field names into 108 multi-level
+`fast-redact` wildcards, and `fast-redact` walks every key at every listed level
+on every log. Cost grew with the PATH COUNT, not the payload — measured per
+wildcard depth:
+
+| default set                        |   ops/s |
+| ---------------------------------- | ------: |
+| no redaction, no mixin             | 662,967 |
+| mixin only                         | 572,380 |
+| exact paths only, no wildcards     | 551,974 |
+| + wildcard depth 1                 |  54,317 |
+| + depths 1–2                       |  22,302 |
+| + depths 1–4 (the shipped default) |   9,286 |
+
+Each wildcard level cost ~2.5×. Replacing the path list with a single
+copy-on-write walk keyed on field NAME made the shipped path **~50× faster** and
+removed the four-level ceiling that had been leaking anything nested deeper. The
+tax was in the strategy, not in redaction.
+
+### Calibration history
+
+- **2026-08-12** — name-walk redactor lands. C: 9,311 → **462,208 ops/s**
+  (49.6×). D (legacy `'paths'`): 7,484 ops/s. Throughput floor raised
+  0.004 → **0.20** against a measured 0.385×; the old floor could no longer fail
+  on anything short of a 100× regression.
+- **v0.1** — original baseline. The spec's budgets (10 % allocation / 5 %
+  throughput) assumed redaction was cheap; the bench disproved it and the floor
+  was dropped to 0.004 to match the wildcard engine.
 
 ## Running locally
 

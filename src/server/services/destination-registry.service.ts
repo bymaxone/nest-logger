@@ -80,6 +80,16 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * point in the shutdown sequence.
    */
   async onApplicationShutdown(): Promise<void> {
+    // Emitted BEFORE the sinks are torn down — a shutdown entry written after
+    // the destinations closed would have nowhere to go. It is the bookend to
+    // `LOGGER_BOOTSTRAP_OK`: its absence in a log stream is how an operator
+    // tells a graceful shutdown from a killed process.
+    this.logger.info(
+      RESERVED_LOG_KEYS.LOGGER_SHUTDOWN_OK,
+      'BymaxLoggerModule shutting down',
+      undefined,
+      { destinations: this.active.length }
+    )
     for (const destination of [...this.active].reverse()) {
       try {
         await destination.onShutdown?.()

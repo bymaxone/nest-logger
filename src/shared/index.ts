@@ -5,5 +5,8 @@ export type { ServiceMetadata } from './types/service-metadata.type'
 
 // Constants
 export { LOG_KEYS_CONVENTION_REGEX } from './constants/log-keys-convention.constants'
-export { RESERVED_LOG_KEYS } from './constants/reserved-log-keys.constants'
+export {
+  RESERVED_LOG_KEYS,
+  RESERVED_LOG_KEYS_NOT_EMITTED
+} from './constants/reserved-log-keys.constants'
 export type { ReservedLogKey } from './constants/reserved-log-keys.constants'

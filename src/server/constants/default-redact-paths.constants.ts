@@ -1,8 +1,20 @@
 /**
- * Default Pino `redact.paths` applied automatically by the library.
+ * The library's default PII/credential coverage, in two forms.
  *
- * These paths cover commonly-leaked PII and credentials. Consumers can:
- *   - Add more via the `redactPaths` option (merged with these defaults).
+ * {@link REDACT_COMMON_FIELDS} is the CANONICAL form: a flat list of sensitive
+ * field NAMES. Under the default `redactStrategy: 'names'` it becomes the set a
+ * single recursive walk matches against, catching each name at ANY depth and in
+ * any position (see `redact-by-name.util.ts`).
+ *
+ * {@link DEFAULT_REDACT_PATHS} is the LEGACY form: the same names expanded into
+ * `fast-redact` paths at wildcard depths 1–4. It is still exported (public API,
+ * append-only by contract) and is still what feeds Pino under the opt-in
+ * `redactStrategy: 'paths'`, but it is no longer the default engine — it costs
+ * ~107 µs per log entry and stops at four levels of nesting.
+ *
+ * Consumers can:
+ *   - Add more via the `redactPaths` option (always `fast-redact` path syntax,
+ *     applied on top of whichever strategy is active).
  *   - Disable all via `shouldDisableDefaultRedact: true` (NOT recommended).
  *
  * Path syntax follows `fast-redact` conventions (engine behind `pino.redact`):
@@ -55,8 +67,16 @@ export const depth = (field: string): readonly string[] =>
   WILDCARD_PREFIXES.map((prefix) => `${prefix}.${field}`)
 
 /**
- * Fields covered by every depth-1-to-4 wildcard. Centralized so the spec can
- * compute the expected length without hard-coding 113.
+ * The canonical sensitive-field-name set.
+ *
+ * Under the default `redactStrategy: 'names'` this list IS the redaction
+ * contract: a value is censored when its key name appears here, at any depth.
+ * Under the legacy `'paths'` strategy the same names are expanded to depths 1–4
+ * by {@link depth} to build {@link DEFAULT_REDACT_PATHS}.
+ *
+ * Append-only: a name may be added in a minor release; removing one requires a
+ * major, because a field that silently stopped being redacted is a leak no
+ * consumer would notice.
  */
 export const REDACT_COMMON_FIELDS: readonly string[] = [
   // Passwords (5)
@@ -92,7 +112,20 @@ export const REDACT_COMMON_FIELDS: readonly string[] = [
   'signingSecret',
   'privateKey',
   // Conservative PII (1) — consumer can disable if logging email is justified
-  'email'
+  'email',
+  // Credential-bearing HTTP header names (5). These also appear in
+  // {@link REDACT_ABSOLUTE_PATHS}, pinned to the `req.headers` / `res.headers`
+  // shapes — which covered ONLY those two shapes. A headers bag logged under any
+  // other key (`logger.info(k, m, u, { headers: req.headers })`, one of the most
+  // common things written while debugging an integration) wrote the bearer token
+  // in clear. Listed here as bare names, they are caught wherever they appear.
+  // Node lower-cases inbound header names, so the lower-case spelling is the one
+  // that can actually reach a log.
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+  'x-auth-token'
 ] as const
 
 /**
@@ -108,9 +141,12 @@ export const REDACT_ABSOLUTE_PATHS: readonly string[] = [
 ] as const
 
 /**
- * Canonical list of redact paths merged into Pino's `redact.paths` option by
- * default. Expected length: 27 root fields + 27 common fields × 4 depths + 5
- * absolute = **140**.
+ * The legacy `fast-redact` path expansion of {@link REDACT_COMMON_FIELDS}:
+ * every name at the record root plus wildcard depths 1–4, followed by the
+ * absolute header paths. Length is derived, not fixed — `fields × 5 + absolute`.
+ *
+ * Fed to Pino only under the opt-in `redactStrategy: 'paths'`. Kept exported at
+ * full fidelity because it is public API and append-only by contract.
  *
  * The bare field names come first, at depth 0 — the log record's own root.
  * `emitStructured` spreads caller metadata there (`{ ...metadata, logKey, ... }`),

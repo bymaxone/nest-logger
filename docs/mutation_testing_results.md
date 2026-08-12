@@ -1,28 +1,62 @@
 # Mutation Testing Results
 
-> **Last run:** 2026-06-18
-> **Command:** `pnpm mutation` (Stryker 9, jest runner, `coverageAnalysis: perTest`, `ignoreStatic: true`)
+> **Last run:** 2026-08-12 (`pnpm mutation:full` — cold, baseline deleted)
+> **Command:** Stryker 9, jest runner, `coverageAnalysis: perTest`, `ignoreStatic: true`
 > **Report:** [`reports/mutation/mutation.html`](../reports/mutation/mutation.html)
 
 ## Summary
 
-| Metric                                                 | Value                                              |
-| ------------------------------------------------------ | -------------------------------------------------- |
-| **Global mutation score**                              | **97.42 %**                                        |
-| Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅                        |
-| Aspirational target (`thresholds.high`)                | 99 % → not reached (equivalent mutants, see below) |
-| Killed                                                 | 373                                                |
-| Survived                                               | 10                                                 |
-| Timeout (counts as detected)                           | 5                                                  |
-| Compile/runtime errors (type-system-guarded, excluded) | 261                                                |
+| Metric                                                 | Value                       |
+| ------------------------------------------------------ | --------------------------- |
+| **Global mutation score**                              | **100.00 %**                |
+| Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅ |
+| Aspirational target (`thresholds.high`)                | 99 % → **reached**          |
+| Killed                                                 | 448                         |
+| Survived                                               | **0**                       |
+| Timeout (counts as detected)                           | 5                           |
+| Ignored via documented `// Stryker disable`            | 103                         |
+| Compile/runtime errors (type-system-guarded, excluded) | 313                         |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `378 / 388 = 97.42 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `453 / 453 = 100.00 %`.
 
-Up from the **86 %** first baseline and **95.93 %** at v0.1.0 preparation. `pnpm mutation` passes its break gate (exit 0). The remaining 10 survivors are all equivalent mutants (documented below) — this is the theoretical maximum without `// Stryker disable` comments.
+### 2026-08-12 — the P0 remediation, and what it cost before it paid
 
-> Inline `// Stryker disable` comments are NOT used — they ship in the deliberately
-> unminified `.mjs` bundle and push the server subpath past its 13.5 KiB size budget.
-> Equivalents are documented here instead.
+The audit-remediation release (`1.2.0`) initially DROPPED the score to **93.71 %** — 29
+survivors concentrated in the new code. The cause is worth recording, because it is a
+property of this repo's setup rather than of the change:
+
+**Stryker runs the UNIT suite only** (`jest.stryker.config.ts` wraps `jest.config.ts`, not
+`jest.e2e.config.ts`). Several of the new regression tests — the bootstrap warning, the
+redaction strategies, the shutdown entry — were written as e2e specs, where they exercise the
+real booted module but are invisible to mutation testing. Sixteen of the 29 survivors were
+plain `NoCoverage`.
+
+The fix was not to move those tests. An e2e test that boots the module is the right test for
+"does the wired pipeline emit this" — so each gained a UNIT counterpart asserting the same
+behaviour one layer down, and two pure helpers in `pino-factory.ts` (`resolveNameRedactor`,
+`resolveRedactOption`) were exported `@internal` so their branches could be asserted directly.
+That last one mattered for a reason the score alone does not show: the difference between
+"`fast-redact` not configured" and "`fast-redact` configured with the full default expansion"
+is a ~100× throughput difference that produces **identical log output**. No output-level
+assertion can see it. Only a direct assertion on the resolved option can.
+
+Three genuine equivalents were then removed rather than suppressed:
+
+- Two came from an `Array.isArray` fast path in `isTraversable` that was **dead logic** — a
+  plain array carries no `toJSON`, so it already answered `true` on the fall-through. Deleting
+  the branch killed both mutants AND fixed a latent bug: the fast path would have traversed an
+  exotic `class extends Array { toJSON() {…} }`, flattening away the method that decides its
+  serialized form.
+- One was an off-by-one in the TEST, not the source: the traversal-ceiling boundary case placed
+  its leaf at `MAX − 1`, where `depth > MAX` and `depth >= MAX` behave identically. Moving it to
+  exactly `MAX` — the only input that separates them — killed it.
+
+The change added **no** new suppressions. Four were introduced during the remediation, on
+`writable: true` / `configurable: true` property descriptors, and were then removed by the
+code review of that change rather than accepted: the descriptors are written once and never
+redefined, so the flags were unnecessary and the two `Reflect.defineProperty` calls now pass
+`{ value, enumerable: true }` alone. Deleting a redundant literal beats documenting why no
+test can kill it. The suppressions still in `src/` all predate this release.
 
 ## Hardening performed
 

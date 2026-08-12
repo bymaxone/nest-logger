@@ -11,6 +11,108 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-12
+
+Remediation of the P0 findings from the observability audit
+([`docs/observability_audit.md`](./docs/observability_audit.md)): a credential leak in the
+default redaction set, a correlation field silently dropped from every structured entry, a
+published type that never matched the runtime, and reserved log keys that were documented as
+signals but never written. The redaction engine was replaced in the process, which made the
+shipped logging path **~50× faster**.
+
+### Security
+
+- **Credential-bearing HTTP headers are redacted by name.** `authorization`, `cookie`,
+  `set-cookie`, `x-api-key` and `x-auth-token` were covered ONLY by the absolute paths
+  `req.headers.*` / `res.headers.*`. A headers bag logged under any other key — for example
+  `logger.info(key, msg, userId, { headers: req.headers })` — wrote the bearer token in clear.
+  They are now first-class field names, caught wherever they appear.
+- **Redaction is no longer capped at four levels of nesting.** The previous wildcard expansion
+  reached `*.*.*.*.field`; anything deeper leaked silently. The new engine walks to any depth.
+- **`LOGGER_BOOTSTRAP_WARNING` is emitted when `shouldDisableDefaultRedact` is on.** The README
+  has always described this entry as the audit trail proving when PII protection was
+  intentionally reduced. It was never written, so a deployment running without redaction was
+  indistinguishable from a protected one.
+
+### Changed
+
+- **Default redaction is now a single name-based recursive walk** instead of 140 compiled
+  `fast-redact` paths. A value is censored when its key name is in `REDACT_COMMON_FIELDS`, at any
+  depth, in one copy-on-write traversal that mutates nothing and allocates nothing when there is
+  nothing to censor. Circular references collapse to `[Circular]`; a record that cannot be walked
+  degrades to a marked, data-free envelope rather than being emitted unredacted.
+
+  Measured on the full production path (`forRoot({ service })`, no other option set):
+  **9,311 → 462,208 logs/s**, ~107 µs → ~2 µs per entry.
+
+- **`redactPaths` is unchanged** — consumer paths are still `fast-redact` paths, applied on top of
+  the default coverage. `fast-redact` is now configured only when there are consumer paths to
+  apply.
+- **Bundle-size budget raised** 13.5 → 15.25 KiB brotli for the server subpath, and the benchmark's
+  throughput floor raised 0.004 → 0.20; the old floor was calibrated to the wildcard engine and
+  could no longer fail on anything short of a 100× regression.
+
+### Added
+
+- **`redactStrategy: 'names' | 'paths'`** (default `'names'`). `'paths'` restores the pre-1.2
+  engine for a consumer depending on exact `fast-redact` path semantics — with its four-level
+  ceiling and its cost. Expect it to be removed in a future major.
+- **`PINO_LEVEL_NUMBERS` / `PINO_LEVEL_NAMES` are exported** from the server subpath, so a
+  destination writing a numeric level column can convert the string label without hard-coding the
+  mapping.
+- **`RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED`** — the marker on the envelope substituted for a
+  record whose traversal threw.
+- **`RESERVED_LOG_KEYS_NOT_EMITTED`** — the keys that are reserved but intentionally never
+  written, each with its reason. A unit test now asserts that every other declared key has a
+  writer in production source, so a key can no longer be declared, documented as a signal, and
+  silently never emitted.
+
+### Fixed
+
+- **AsyncLocalStorage context reaches structured entries.** `emitStructured` / `errorStructured` /
+  the NestJS-variadic path wrote `userId` and `context` as own properties even when they were
+  `undefined`, and Pino's default `mixinMergeStrategy` (`Object.assign(mixinResult, mergeObject)`)
+  let that `undefined` overwrite the value the trace mixin had just read from the ALS store. The
+  key then vanished during serialization, so `logContext.set('userId', …)` — the documented way to
+  attach the authenticated user once per request — never reached a log unless every call site
+  repeated it. `requestId` and `tenantId` only ever survived because those names are not written
+  by this class. Precedence is now explicit argument > ALS store > field absent.
+- **A caller's `metadata` can never occupy `logKey`, `userId` or `context`.** The invariant was
+  previously enforced by overwriting those fields after the spread — the same unconditional write
+  that clobbered the ALS context. Now that they are written only when defined, the owned names are
+  stripped from `metadata` on the way in, so a metadata bag cannot forge the acting user that the
+  mixin read from the authenticated request scope.
+- **`RESERVED_LOG_KEYS_NOT_EMITTED` is exported** from both subpaths, so the `{@link}` in
+  `RESERVED_LOG_KEYS`'s documentation resolves in the published declarations.
+- **`LOGGER_SHUTDOWN_OK` is emitted** at the start of `onApplicationShutdown`, before the
+  destinations are torn down. It is the bookend to `LOGGER_BOOTSTRAP_OK`: its absence in a log
+  stream is how an operator tells a graceful shutdown from a killed process.
+- **An oversized field's truncation `_preview` is redacted.** Redaction now runs before the size
+  bound, so the 200-character preview of a truncated value carries `[REDACTED]` instead of the
+  head of a secret.
+
+### Documentation
+
+- **`README.md` API reference corrected.** The table described `warn` / `debug` / `error` / `fatal`
+  as structured methods taking a log key — they are the NestJS variadic bridge — documented a
+  `fatalStructured` that does not exist, labelled the structured API's third parameter `context`
+  when it is `userId`, and described `@LogContext` as a method decorator that opens a
+  `logContext.run()` scope when it is a class decorator that only records metadata.
+- **The Loki and Prisma destination examples now run.** The Loki example called
+  `BigInt(entry.time)` on an ISO 8601 string, which throws; the Prisma example wrote the string
+  level label into a numeric column. Both conversions are now correct and are exercised by
+  `test/e2e/log-entry-contract.e2e-spec.ts`.
+- **The architecture diagram no longer inverts the pipeline** — `RequestIdMiddleware` runs before
+  `HttpLoggingInterceptor`, which is why the interceptor's entries carry a `requestId` at all.
+
+### Breaking
+
+- **`LogEntry.level` is `LogLevel` (a string) and `LogEntry.time` is `string`.** They were declared
+  `number` and `string | number`; the runtime has always emitted the Pino string label and an ISO
+  8601 string. This is a **type-level** break only — code relying on the old declaration was
+  already failing at runtime — but it can newly fail to compile. Convert with the now-exported
+  `PINO_LEVEL_NUMBERS` and `Date.parse`.
+
 ## [1.1.0] - 2026-08-11
 
 Coordinated ecosystem release aligning every `@bymax-one/*` package after the ioredis 6 /
@@ -350,7 +452,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/bymaxone/nest-logger/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/bymaxone/nest-logger/compare/v1.0.8...v1.1.0
 [1.0.8]: https://github.com/bymaxone/nest-logger/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/bymaxone/nest-logger/compare/v1.0.6...v1.0.7

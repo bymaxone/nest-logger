@@ -24,6 +24,72 @@ import { LOGGER_PINO_INSTANCE_TOKEN } from '../constants/injection-tokens.consta
 type PinoLevelMethod = 'info' | 'warn' | 'debug' | 'trace' | 'fatal'
 
 /**
+ * Field names the structured payload OWNS. A caller's `metadata` may never
+ * occupy one: `userId` and `context` identify who acted and where, so a metadata
+ * bag that could land in them would let a call site forge the attribution the
+ * mixin reads from the authenticated AsyncLocalStorage scope — Pino merges the
+ * caller's object OVER the mixin's, so a forged `userId` would win.
+ *
+ * This invariant used to be enforced by writing the reserved fields
+ * unconditionally after the spread, which also wrote `undefined` and clobbered
+ * the ALS value. Now the fields are written only when defined, so the invariant
+ * has to be enforced on the way in instead.
+ */
+const OWNED_PAYLOAD_KEYS: readonly string[] = ['logKey', 'userId', 'context']
+
+/**
+ * Copy `metadata` without the keys the structured payload owns.
+ *
+ * @param metadata - Caller-supplied structured fields, possibly `undefined`.
+ * @returns A shallow copy with every {@link OWNED_PAYLOAD_KEYS} entry dropped.
+ */
+function withoutOwnedKeys(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (metadata === undefined) {
+    return {}
+  }
+  const safe: Record<string, unknown> = {}
+  for (const key of Object.keys(metadata)) {
+    if (!OWNED_PAYLOAD_KEYS.includes(key)) {
+      // `Reflect` keeps the dynamic read/write off the object-injection sink list.
+      Reflect.set(safe, key, Reflect.get(metadata, key))
+    }
+  }
+  return safe
+}
+
+/**
+ * Write a reserved field onto a log payload ONLY when it has a value.
+ *
+ * This is load-bearing, not tidiness. Pino's default `mixinMergeStrategy` is
+ * `Object.assign(mixinResult, mergeObject)`, so an OWN property whose value is
+ * `undefined` still overwrites what the trace-context mixin read from the
+ * AsyncLocalStorage store — and the key then vanishes during serialization.
+ * Writing `userId: undefined` on every call where the argument was omitted is
+ * what silently dropped the ambient `userId` from every structured entry, so a
+ * `logContext.set('userId', …)` never reached a log unless each call site
+ * repeated it. `requestId` / `tenantId` only ever survived because this class
+ * does not name them.
+ *
+ * Precedence is therefore: explicit argument > ALS store > field absent.
+ *
+ * `Reflect.defineProperty` rather than assignment keeps the dynamic write off
+ * the `security/detect-object-injection` sink list.
+ *
+ * @param payload - The log payload under construction.
+ * @param key - Reserved field name.
+ * @param value - Candidate value; the field is skipped when `undefined`.
+ */
+function assignIfDefined(payload: Record<string, unknown>, key: string, value: unknown): void {
+  if (value !== undefined) {
+    // Only `enumerable` is specified — see the equivalent note in
+    // `redact-by-name.util.ts`. The payload goes straight to Pino, each reserved
+    // key is written at most once, and nothing downstream re-assigns or deletes
+    // it, so the remaining descriptor defaults are unobservable.
+    Reflect.defineProperty(payload, key, { value, enumerable: true })
+  }
+}
+
+/**
  * Pino-backed implementation of the NestJS `LoggerService` contract plus the
  * structured `MODULE_ACTION_RESULT` API.
  *
@@ -68,10 +134,9 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    */
   error(message: unknown, ...optionalParams: unknown[]): void {
     if (message instanceof Error) {
-      this.pino.error(
-        { context: this.resolveContext(optionalParams), err: this.serializeError(message) },
-        message.message
-      )
+      const payload: Record<string, unknown> = { err: this.serializeError(message) }
+      assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
+      this.pino.error(payload, message.message)
       return
     }
     // NestJS variadic contract is `error(message, stack?, context?)`: the stack
@@ -80,10 +145,9 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     // keeps the instance context instead of mistaking the stack for it.
     const stack = typeof optionalParams[0] === 'string' ? optionalParams[0] : undefined
     const context = typeof optionalParams[1] === 'string' ? optionalParams[1] : this.context
-    const payload: Record<string, unknown> = { context }
-    if (stack !== undefined) {
-      payload['stack'] = stack
-    }
+    const payload: Record<string, unknown> = {}
+    assignIfDefined(payload, 'context', context)
+    assignIfDefined(payload, 'stack', stack)
     this.pino.error(payload, typeof message === 'string' ? message : String(message))
   }
 
@@ -176,12 +240,17 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     userId?: string,
     metadata?: Record<string, unknown>
   ): void {
-    // Reserved fields are written AFTER metadata so a caller-supplied `metadata`
-    // key cannot clobber logKey / userId / context / err.
-    this.pino.error(
-      { ...metadata, logKey, userId, context: this.context, err: this.serializeError(error) },
-      error.message
-    )
+    // The owned keys are stripped from `metadata` (not overwritten after the
+    // spread) because `userId` / `context` are now written only when defined —
+    // see OWNED_PAYLOAD_KEYS. `err` is still written unconditionally below.
+    const payload: Record<string, unknown> = {
+      ...withoutOwnedKeys(metadata),
+      logKey,
+      err: this.serializeError(error)
+    }
+    assignIfDefined(payload, 'userId', userId)
+    assignIfDefined(payload, 'context', this.context)
+    this.pino.error(payload, error.message)
   }
 
   // ─── Helpers / escape hatches ─────────────────────────────────────────────
@@ -265,14 +334,12 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     userId?: string,
     metadata?: Record<string, unknown>
   ): void {
-    // Reserved fields are spread AFTER metadata so a caller-supplied key in
-    // `metadata` (e.g. `logKey`) can never clobber the structured contract.
-    const payload: Record<string, unknown> = {
-      ...metadata,
-      logKey,
-      userId,
-      context: this.context
-    }
+    // The owned keys are stripped from `metadata` (not overwritten after the
+    // spread) because `userId` / `context` are now written only when defined —
+    // see OWNED_PAYLOAD_KEYS.
+    const payload: Record<string, unknown> = { ...withoutOwnedKeys(metadata), logKey }
+    assignIfDefined(payload, 'userId', userId)
+    assignIfDefined(payload, 'context', this.context)
     if (level === 'info') {
       this.pino.info(payload, message)
     } else {
@@ -282,7 +349,8 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
 
   /** Emit a NestJS-style variadic log, dispatching by level without computed indexing. */
   private emitNestStyle(level: PinoLevelMethod, message: unknown, optionalParams: unknown[]): void {
-    const payload: Record<string, unknown> = { context: this.resolveContext(optionalParams) }
+    const payload: Record<string, unknown> = {}
+    assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
     const msg = typeof message === 'string' ? message : String(message)
     switch (level) {
       case 'info':

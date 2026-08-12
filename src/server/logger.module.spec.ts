@@ -21,9 +21,13 @@ describe('BymaxLoggerModule.forRoot', () => {
   // Silence the bootstrap log (and capture its calls) across the whole suite;
   // `restoreMocks: true` resets the spy between tests.
   let infoSpy: ReturnType<typeof jest.spyOn>
+  let warnSpy: ReturnType<typeof jest.spyOn>
 
   beforeEach(() => {
     infoSpy = jest.spyOn(PinoLoggerService.prototype, 'info').mockImplementation(() => undefined)
+    warnSpy = jest
+      .spyOn(PinoLoggerService.prototype, 'warnStructured')
+      .mockImplementation(() => undefined)
   })
 
   it(/*
@@ -149,6 +153,57 @@ describe('BymaxLoggerModule.forRoot', () => {
         RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK,
         'BymaxLoggerModule initialized'
       ])
+      await ref.close()
+    })
+
+    it(/*
+     * REGRESSION — audit finding D-1. The README has always described
+     * LOGGER_BOOTSTRAP_WARNING as the audit trail proving when PII protection
+     * was intentionally reduced ("so security reviews can audit when PII
+     * protection was intentionally reduced"). The key was declared and never
+     * written, so a deployment running without redaction looked exactly like a
+     * protected one. The message and the metadata are asserted, not just the
+     * key: a security signal that says nothing is barely better than silence.
+     */
+    'warns at bootstrap when default redaction is disabled', async () => {
+      const ref = await Test.createTestingModule({
+        imports: [
+          BymaxLoggerModule.forRoot({
+            service,
+            shouldDisableDefaultRedact: true,
+            redactPaths: ['*.password', '*.token']
+          })
+        ]
+      }).compile()
+
+      const warnCalls = warnSpy.mock.calls.filter(
+        (call: unknown[]) => call[0] === RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_WARNING
+      )
+      expect(warnCalls).toHaveLength(1)
+      expect(warnCalls[0]?.[1]).toContain('Default PII redaction is DISABLED')
+      expect(warnCalls[0]?.[1]).toContain('options.redactPaths')
+      expect(warnCalls[0]?.[3]).toEqual({
+        shouldDisableDefaultRedact: true,
+        redactPathCount: 2
+      })
+      await ref.close()
+    })
+
+    it(/*
+     * The converse, and the reason the branch is a branch: a normally-configured
+     * module must NOT warn. A signal that fires on every boot is noise, and a
+     * security review learns to ignore it.
+     */
+    'does not warn at bootstrap under the default configuration', async () => {
+      const ref = await Test.createTestingModule({
+        imports: [BymaxLoggerModule.forRoot({ service })]
+      }).compile()
+
+      expect(
+        warnSpy.mock.calls.filter(
+          (call: unknown[]) => call[0] === RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_WARNING
+        )
+      ).toHaveLength(0)
       await ref.close()
     })
   })

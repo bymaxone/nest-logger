@@ -28,6 +28,7 @@ describe('applyDefaults', () => {
     expect(result.isGlobal).toBe(true)
     expect(result.shouldUseAsNestLogger).toBe(true)
     expect(result.redactPaths).toEqual([])
+    expect(result.redactStrategy).toBe('names')
     expect(result.redactCensor).toBe('[REDACTED]')
     expect(result.shouldDisableDefaultRedact).toBe(false)
     expect(result.destinations).toEqual([])

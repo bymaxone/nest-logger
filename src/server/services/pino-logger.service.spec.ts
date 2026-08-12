@@ -259,10 +259,82 @@ describe('PinoLoggerService', () => {
       const spy = jest.spyOn(rawLogger, 'info')
       service.setContext('Svc')
       service.info('K_DONE', 'done')
-      expect(spy).toHaveBeenCalledWith(
-        { logKey: 'K_DONE', userId: undefined, context: 'Svc' },
-        'done'
-      )
+      expect(spy).toHaveBeenCalledWith({ logKey: 'K_DONE', context: 'Svc' }, 'done')
+      // Asserted on key PRESENCE, not on `undefined`: Jest's recursive equality
+      // treats `{ userId: undefined }` and `{}` as equal, so the object literal
+      // above cannot distinguish "omitted" from "written as undefined" — and
+      // that distinction is the whole point of the ALS clobber fix.
+      expect(spy.mock.calls[0]?.[0]).not.toHaveProperty('userId')
+    })
+
+    it(/*
+     * REGRESSION — audit finding C-1, on the error path. `errorStructured` built
+     * its payload the same way, so an omitted `userId` was written as `undefined`
+     * and clobbered the ALS value. The context must still be attached, and the
+     * omitted user must leave NO key behind for the mixin's value to be
+     * overwritten by.
+     */
+    'attaches the context to errorStructured and omits an absent userId', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      service.setContext('PaymentsService')
+      service.errorStructured('K_PAY_FAILED', new Error('boom'), undefined, { orderId: 'o1' })
+
+      const [payload] = spy.mock.calls[0] ?? []
+      expect(payload).toMatchObject({
+        logKey: 'K_PAY_FAILED',
+        context: 'PaymentsService',
+        orderId: 'o1'
+      })
+      expect(payload).not.toHaveProperty('userId')
+    })
+
+    it(/*
+     * An explicit userId on the error path must still be written — the fix must
+     * not trade a clobbered value for a dropped one.
+     */
+    'writes an explicit userId on errorStructured', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      service.errorStructured('K_PAY_FAILED', new Error('boom'), 'u_9')
+      expect(spy.mock.calls[0]?.[0]).toMatchObject({ userId: 'u_9' })
+    })
+
+    it(/*
+     * REGRESSION — caller `metadata` must never occupy a field the payload owns.
+     * `userId` and `context` say who acted and where, and Pino merges the
+     * caller's object OVER the mixin's, so a metadata bag that could land in them
+     * would let a call site forge the attribution the mixin read from the
+     * authenticated ALS scope. Writing the reserved fields only-when-defined
+     * (the ALS clobber fix) removed the unconditional overwrite that used to
+     * enforce this, so it is enforced on the way in and pinned here.
+     */
+    'refuses caller metadata in the fields the payload owns', () => {
+      const infoSpy = jest.spyOn(rawLogger, 'info')
+      const errorSpy = jest.spyOn(rawLogger, 'error')
+      const forged = { userId: 'FORGED', context: 'FORGED', logKey: 'FORGED', safe: 'kept' }
+
+      service.info('K_REAL_KEY', 'msg', undefined, forged)
+      service.errorStructured('K_REAL_FAIL', new Error('boom'), undefined, forged)
+
+      for (const spy of [infoSpy, errorSpy]) {
+        const payload = spy.mock.calls[0]?.[0] as Record<string, unknown>
+        expect(payload).not.toHaveProperty('userId')
+        expect(payload).not.toHaveProperty('context')
+        expect(payload['logKey']).not.toBe('FORGED')
+        expect(payload['safe']).toBe('kept')
+      }
+    })
+
+    it(/*
+     * The strip must be surgical: a metadata key the payload does NOT own passes
+     * through untouched. `err` in particular is a documented metadata field on the
+     * info path (it routes through Pino's `err` serializer), so stripping it would
+     * break a working pattern.
+     */
+    'passes through metadata keys the payload does not own', () => {
+      const spy = jest.spyOn(rawLogger, 'info')
+      const error = new Error('boom')
+      service.info('K_A_B', 'msg', undefined, { err: error, orderId: 'o1' })
+      expect(spy.mock.calls[0]?.[0]).toMatchObject({ err: error, orderId: 'o1' })
     })
 
     it(/*

@@ -20,11 +20,13 @@ function makeDestination(
 describe('DestinationRegistry', () => {
   let logger: PinoLoggerService
   let errorSpy: jest.SpyInstance
+  let infoSpy: jest.SpyInstance
 
   beforeEach(() => {
     // A real but silent Pino instance avoids fabricating a Logger mock (cast-free).
     logger = new PinoLoggerService(pino({ enabled: false }))
     errorSpy = jest.spyOn(logger, 'errorStructured').mockImplementation(() => undefined)
+    infoSpy = jest.spyOn(logger, 'info').mockImplementation(() => undefined)
   })
 
   describe('onModuleInit', () => {
@@ -85,6 +87,37 @@ describe('DestinationRegistry', () => {
   })
 
   describe('onApplicationShutdown', () => {
+    it(/*
+     * REGRESSION — audit finding D-1. `LOGGER_SHUTDOWN_OK` was declared in the
+     * reserved catalog and never written. It is the bookend to
+     * `LOGGER_BOOTSTRAP_OK`: its absence in a log stream is how an operator
+     * tells a graceful shutdown from a killed process. Message and metadata are
+     * asserted, and the emission must happen BEFORE any sink is torn down —
+     * an entry written after the destinations closed would have nowhere to go.
+     */
+    'emits LOGGER_SHUTDOWN_OK before tearing any destination down', async () => {
+      const seenAtShutdown: number[] = []
+      const destination = makeDestination('sink', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn(() => {
+          seenAtShutdown.push(infoSpy.mock.calls.length)
+        })
+      })
+      const registry = new DestinationRegistry([destination], logger)
+      await registry.onModuleInit()
+
+      await registry.onApplicationShutdown()
+
+      expect(infoSpy).toHaveBeenCalledWith(
+        RESERVED_LOG_KEYS.LOGGER_SHUTDOWN_OK,
+        'BymaxLoggerModule shutting down',
+        undefined,
+        { destinations: 1 }
+      )
+      // The sink observed the entry already emitted when its own teardown ran.
+      expect(seenAtShutdown).toEqual([1])
+    })
+
     it(/*
      * Destinations must shut down in REVERSE registration order so the
      * first-registered sink (typically stdout) closes last.

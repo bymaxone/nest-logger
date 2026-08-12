@@ -44,4 +44,15 @@ export function validateOptions(options: BymaxLoggerModuleOptions): void {
   if (options.maxEntrySizeBytes !== undefined && options.maxEntrySizeBytes <= 0) {
     throw new Error('[BymaxLoggerModule] options.maxEntrySizeBytes must be > 0')
   }
+  if (
+    options.redactStrategy !== undefined &&
+    options.redactStrategy !== 'names' &&
+    options.redactStrategy !== 'paths'
+  ) {
+    throw new Error(
+      `[BymaxLoggerModule] options.redactStrategy must be 'names' or 'paths'. Got: ${String(
+        options.redactStrategy
+      )}`
+    )
+  }
 }

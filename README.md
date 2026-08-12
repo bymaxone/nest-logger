@@ -43,8 +43,8 @@ The library has **zero direct dependencies** — all packages arrive as peer dep
 
 - **🎯 One module, the whole pipeline** — Logger service, HTTP interceptor, exception filter, context propagation, redaction, and destinations arrive in a single `forRoot()`. No gluing together `pino-http`, a redaction layer, and a transport by hand.
 - **🔌 Your sinks, your rules** — The library defines `ILogDestination`. You implement it for Loki, Postgres, a rolling file, or anything else. No vendor lock-in, no hidden transport dependencies.
-- **🔒 Redacted by default** — 140 redact paths compile at bootstrap covering the standard set: passwords, tokens, PCI DSS card data, MFA secrets, and LGPD documents. Domain-specific field names are yours to add via `redactPaths`.
-- **⚡ On the hot path, so it stays cheap** — Singleton providers, one composed Pino mixin, and a pre-compiled redactor. No `Scope.REQUEST`, no per-log regex matching.
+- **🔒 Redacted by default** — 32 sensitive field names are censored **at any depth**, covering passwords, tokens, PCI DSS card data, MFA secrets, LGPD documents and credential-bearing HTTP headers. One recursive walk per entry, not a path list. Domain-specific names are yours to add via `redactPaths`.
+- **⚡ On the hot path, so it stays cheap** — Singleton providers, one composed Pino mixin, and a single-pass redactor that allocates nothing when there is nothing to censor. No `Scope.REQUEST`, no path matching.
 - **🔭 Correlated when you need it** — When an OpenTelemetry span is active, `traceId`/`spanId`/`traceFlags` land in every entry. When the peer is absent, the mixin steps aside at zero cost.
 
 ```
@@ -65,7 +65,7 @@ pnpm add @bymax-one/nest-logger
 
 ### 🛡️ Security & Privacy
 
-- ✅ **PII Redaction by Default** — 140 paths covering passwords, tokens, and generic secrets — powered by `fast-redact`
+- ✅ **PII Redaction by Default** — 32 field names censored wherever they appear, at unbounded nesting depth, in a single copy-on-write walk
 - ✅ **PCI DSS & MFA Coverage** — card data and MFA secrets redacted out of the box, with common HTTP auth headers
 - ✅ **LGPD-Aware Paths** — CPF, CNPJ, and RG redacted by default for Brazilian workloads
 - ✅ **Append-Only Redact List** — `DEFAULT_REDACT_PATHS` never shrinks without a major version; extend it via `redactPaths`
@@ -245,7 +245,7 @@ Output (JSON, production):
 
 ```json
 {
-  "level": 30,
+  "level": "info",
   "time": "2026-05-28T10:12:44.512Z",
   "service": { "name": "my-app", "version": "abc123" },
   "logKey": "PAYMENT_REFUND_SUCCESS",
@@ -367,17 +367,18 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
 ### Top-level options
 
-| Option                       | Type                | Default         | Description                                                                                                              |
-| ---------------------------- | ------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `service.name`               | `string`            | **Required**    | Service name emitted in every log entry                                                                                  |
-| `service.version`            | `string`            | **Required**    | Release version/SHA emitted in every log entry                                                                           |
-| `level`                      | `LogLevel`          | `'info'`        | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                             |
-| `isPretty`                   | `boolean`           | `!isProduction` | ⚠️ Reserved — not auto-wired. For pretty output add `new PrettyDevDestination()` to `destinations` (needs `pino-pretty`) |
-| `redactPaths`                | `string[]`          | `[]`            | Additional `fast-redact` paths merged with the defaults                                                                  |
-| `shouldDisableDefaultRedact` | `boolean`           | `false`         | Skip the 140 default PII paths. ⚠️ Emits a bootstrap warning — document why                                              |
-| `redactCensor`               | `string`            | `'[REDACTED]'`  | Replacement value written in place of every redacted field                                                               |
-| `maxEntrySizeBytes`          | `number`            | `65536`         | UTF-8 byte ceiling per serialized field (`err` + any custom serializer); over it the value becomes a truncation envelope |
-| `destinations`               | `ILogDestination[]` | `[]`            | Additional sinks (Loki, Postgres, rolling file, …) alongside default stdout                                              |
+| Option                       | Type                 | Default         | Description                                                                                                              |
+| ---------------------------- | -------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `service.name`               | `string`             | **Required**    | Service name emitted in every log entry                                                                                  |
+| `service.version`            | `string`             | **Required**    | Release version/SHA emitted in every log entry                                                                           |
+| `level`                      | `LogLevel`           | `'info'`        | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                             |
+| `isPretty`                   | `boolean`            | `!isProduction` | ⚠️ Reserved — not auto-wired. For pretty output add `new PrettyDevDestination()` to `destinations` (needs `pino-pretty`) |
+| `redactPaths`                | `string[]`           | `[]`            | Additional `fast-redact` paths, applied on top of the default coverage                                                   |
+| `redactStrategy`             | `'names' \| 'paths'` | `'names'`       | Engine behind the DEFAULT set. `'paths'` restores the pre-1.2 `fast-redact` expansion (four-level ceiling, ~100× slower) |
+| `shouldDisableDefaultRedact` | `boolean`            | `false`         | Skip the default PII coverage entirely. ⚠️ Emits `LOGGER_BOOTSTRAP_WARNING` at startup — document why                    |
+| `redactCensor`               | `string`             | `'[REDACTED]'`  | Replacement value written in place of every redacted field                                                               |
+| `maxEntrySizeBytes`          | `number`             | `65536`         | UTF-8 byte ceiling per serialized field (`err` + any custom serializer); over it the value becomes a truncation envelope |
+| `destinations`               | `ILogDestination[]`  | `[]`            | Additional sinks (Loki, Postgres, rolling file, …) alongside default stdout                                              |
 
 ### `http` options
 
@@ -424,7 +425,7 @@ function assertValidLogKey(key: string) {
 
 The following keys are used internally by the library — do not reuse them in application code:
 
-`LOGGER_BOOTSTRAP_OK` · `LOGGER_BOOTSTRAP_WARNING` · `LOGGER_SHUTDOWN_OK` · `HTTP_REQUEST_START` · `HTTP_REQUEST_SUCCESS` · `HTTP_REQUEST_REDIRECT` · `HTTP_REQUEST_CLIENT_ERROR` · `HTTP_REQUEST_SERVER_ERROR` · `HTTP_REQUEST_COMPLETED` · `HTTP_EXCEPTION_HANDLED` · `HTTP_EXCEPTION_UNHANDLED` · `METHOD_EXECUTION` · `METHOD_SLOW_EXECUTION` · `LOGGER_DESTINATION_INIT_FAILED` · `LOGGER_DESTINATION_WRITE_FAILED` · `LOGGER_ENTRY_TRUNCATED`
+`LOGGER_BOOTSTRAP_OK` · `LOGGER_BOOTSTRAP_WARNING` · `LOGGER_SHUTDOWN_OK` · `HTTP_REQUEST_START` · `HTTP_REQUEST_SUCCESS` · `HTTP_REQUEST_REDIRECT` · `HTTP_REQUEST_CLIENT_ERROR` · `HTTP_REQUEST_SERVER_ERROR` · `HTTP_REQUEST_COMPLETED` · `HTTP_EXCEPTION_HANDLED` · `HTTP_EXCEPTION_UNHANDLED` · `METHOD_EXECUTION` · `METHOD_SLOW_EXECUTION` · `LOGGER_DESTINATION_INIT_FAILED` · `LOGGER_DESTINATION_WRITE_FAILED` · `LOGGER_ENTRY_TRUNCATED` · `LOGGER_REDACTION_FAILED`
 
 All reserved keys are exported as the `RESERVED_LOG_KEYS` constant from `@bymax-one/nest-logger/shared`.
 
@@ -488,7 +489,9 @@ export class LokiDestination implements ILogDestination {
         {
           stream: this.labels,
           values: batch.map((line) => [
-            String(BigInt((JSON.parse(line) as LogEntry).time) * 1_000_000n),
+            // `time` is an ISO 8601 string — parse it to epoch ms, then scale to
+            // the nanoseconds Loki expects. `BigInt(entry.time)` throws on an ISO string.
+            String(BigInt(Date.parse((JSON.parse(line) as LogEntry).time)) * 1_000_000n),
             line.trimEnd()
           ])
         }
@@ -522,6 +525,7 @@ BymaxLoggerModule.forRootAsync({
 ### Postgres destination (Prisma)
 
 ```typescript
+import { PINO_LEVEL_NUMBERS } from '@bymax-one/nest-logger'
 import type { ILogDestination } from '@bymax-one/nest-logger'
 import type { LogEntry } from '@bymax-one/nest-logger/shared'
 import type { PrismaClient } from '@prisma/client'
@@ -538,7 +542,8 @@ export class PrismaLogDestination implements ILogDestination {
     const entry = JSON.parse(payload) as LogEntry
     void this.prisma.applicationLog.create({
       data: {
-        level: entry.level,
+        // `entry.level` is the Pino LABEL ('info'). Map it when the column is numeric.
+        level: PINO_LEVEL_NUMBERS[entry.level],
         logKey: entry.logKey,
         message: entry.msg,
         payload: entry,
@@ -587,11 +592,13 @@ export class RollingFileDestination implements ILogDestination {
 HTTP Request
     │
     ▼
-HttpLoggingInterceptor          ← emits HTTP_REQUEST_START
-    │
-    ▼
-RequestIdMiddleware             ← opens AsyncLocalStorage scope
+RequestIdMiddleware             ← runs FIRST (NestJS middleware precedes
+    │                              interceptors) and opens the
+    │                              AsyncLocalStorage scope
     │                              { requestId, tenantId, userId }
+    ▼
+HttpLoggingInterceptor          ← emits HTTP_REQUEST_START, already inside the scope
+    │
     ▼
 Application Service
     │
@@ -605,7 +612,7 @@ Application Service
               └── OTel span      → { traceId, spanId, traceFlags }
               │
               ▼
-         fast-redact             ← compiled redact function (140 paths)
+         name redactor           ← one recursive walk, any depth
               │
               ▼
     ┌─────────────────────────────┐
@@ -618,13 +625,13 @@ Application Service
 
 ### Design Principles
 
-| Principle                     | Description                                                                                                                                                                                      |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **🪶 Singleton Scope**        | `AsyncLocalStorage` delivers per-request context at zero latency overhead — NestJS `Scope.REQUEST` adds ~5% on the injection graph, unacceptable on a logger that runs for every request         |
-| **🧬 One Composed Mixin**     | ALS context and OTel trace context merge into a single Pino mixin with a deterministic order: ALS first, then OTel — an active span is the authoritative trace identity, so it wins on conflicts |
-| **⚡ Compiled Redaction**     | 140 `fast-redact` paths compile once at module bootstrap into a specialized function; no per-log regex matching, under 3% throughput impact                                                      |
-| **🔌 Interface-Driven Sinks** | `ILogDestination` is a contract — Loki, Postgres, rolling files, or anything else is a consumer implementation, never a dependency of this package                                               |
-| **🌳 Zero Runtime Deps**      | `"dependencies": {}` — every package arrives as a peer dependency, so consumers pin exact versions and the supply-chain surface stays theirs                                                     |
+| Principle                     | Description                                                                                                                                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **🪶 Singleton Scope**        | `AsyncLocalStorage` delivers per-request context at zero latency overhead — NestJS `Scope.REQUEST` adds ~5% on the injection graph, unacceptable on a logger that runs for every request                                |
+| **🧬 One Composed Mixin**     | ALS context and OTel trace context merge into a single Pino mixin with a deterministic order: ALS first, then OTel — an active span is the authoritative trace identity, so it wins on conflicts                        |
+| **⚡ Single-pass Redaction**  | One recursive walk censors any value whose key name is in the sensitive set, at any depth — O(nodes), the same order the serializer already pays. Replaced 140 `fast-redact` wildcard paths that cost ~107 µs per entry |
+| **🔌 Interface-Driven Sinks** | `ILogDestination` is a contract — Loki, Postgres, rolling files, or anything else is a consumer implementation, never a dependency of this package                                                                      |
+| **🌳 Zero Runtime Deps**      | `"dependencies": {}` — every package arrives as a peer dependency, so consumers pin exact versions and the supply-chain surface stays theirs                                                                            |
 
 ---
 
@@ -634,20 +641,36 @@ A logger sees every payload the application handles, so the security posture is 
 
 ### Redaction by default
 
-The library ships **140 redact paths** compiled at initialization into a single `fast-redact` function (< 3% throughput impact). These cover:
+The library censors **32 sensitive field names** wherever they appear in a log record — at any nesting depth, inside arrays, and inside class instances. These cover:
 
-| Category                  | Fields                                                                                                                                    |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Passwords                 | `password`, `passwordHash`, `passwordConfirm`, `newPassword`, `oldPassword`                                                               |
-| Tokens                    | `token`, `accessToken`, `refreshToken`, `idToken`, `apiKey`, `apiSecret`                                                                  |
-| MFA                       | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret`                                                                                             |
-| Generic secrets           | `secret`, `clientSecret`, `signingSecret`, `privateKey`                                                                                   |
-| Payment / PCI DSS         | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                                       |
-| Personal documents (LGPD) | `cpf`, `cnpj`, `rg`                                                                                                                       |
-| Conservative PII          | `email`                                                                                                                                   |
-| HTTP headers (absolute)   | `req.headers.authorization`, `req.headers.cookie`, `req.headers["x-api-key"]`, `req.headers["x-auth-token"]`, `res.headers["set-cookie"]` |
+| Category                  | Fields                                                                                                                                                                                                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HTTP auth headers         | `authorization`, `cookie`, `set-cookie`, `x-api-key`, `x-auth-token`                                                                                                                                                                                      |
+| Passwords                 | `password`, `passwordHash`, `passwordConfirm`, `newPassword`, `oldPassword`                                                                                                                                                                               |
+| Tokens                    | `token`, `accessToken`, `refreshToken`, `idToken`, `apiKey`, `apiSecret`                                                                                                                                                                                  |
+| MFA                       | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret`                                                                                                                                                                                                             |
+| Generic secrets           | `secret`, `clientSecret`, `signingSecret`, `privateKey`                                                                                                                                                                                                   |
+| Payment / PCI DSS         | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                                                                                                                                                       |
+| Personal documents (LGPD) | `cpf`, `cnpj`, `rg`                                                                                                                                                                                                                                       |
+| Conservative PII          | `email`                                                                                                                                                                                                                                                   |
+| HTTP headers (absolute)   | `req.headers.authorization`, `req.headers.cookie`, `req.headers["x-api-key"]`, `req.headers["x-auth-token"]`, `res.headers["set-cookie"]` — retained for the legacy `'paths'` strategy; the by-name row above already covers these shapes and every other |
 
-Every field is listed at wildcard depths 1–4 (`*.field`, `*.*.field`, `*.*.*.field`, `*.*.*.*.field`) because `fast-redact`'s `*` matches a single level only — not recursive.
+#### How it works, and why it changed in `1.2.0`
+
+Redaction is one **recursive, copy-on-write walk** of the record: a value is censored when its KEY NAME is in the set above, wherever that key sits. Nothing the caller passed is mutated, and a subtree with no sensitive key is returned by reference, so a clean record allocates nothing.
+
+Before `1.2.0` the same names were expanded into 140 `fast-redact` paths at wildcard depths 1–4 (`*.field`, `*.*.field`, …), because `fast-redact`'s `*` matches a single level and is not recursive. That approach had two problems, both measured:
+
+|                                  |                depth-1–4 paths (pre-`1.2.0`) | name walk (`1.2.0`) |
+| -------------------------------- | -------------------------------------------: | ------------------: |
+| Throughput, full production path |                             **9,311 logs/s** | **~943,000 logs/s** |
+| Cost per entry                   |                                      ~107 µs |               ~1 µs |
+| Nesting covered                  |                 4 levels — deeper **leaked** |           unbounded |
+| `{ headers: { authorization } }` | **leaked** (only `req.headers.*` was pinned) |            censored |
+
+`DEFAULT_REDACT_PATHS` is still exported at full fidelity, and `redactStrategy: 'paths'` still feeds it to `fast-redact` for anyone depending on exact path semantics — with the ceiling and the cost that implies. Expect that escape hatch to be removed in a future major.
+
+**Not covered, by design:** a secret interpolated into the message STRING (`logger.info(key, \`token=${t}\`)`) — redaction works on structured fields, and no field-based mechanism can scrub a substring. Keep secrets out of `msg`.
 
 ### Extending the defaults
 
@@ -699,7 +722,7 @@ When integrating `@bymax-one/nest-logger` in production, verify each of the foll
 - `shouldDisableDefaultRedact` stays `false` — if it is on, the `LOGGER_BOOTSTRAP_WARNING` must be justified in a security review
 - Every custom field carrying a secret or personal document is added to `redactPaths` at the depths it actually appears
 - `http.excludePaths` regexes are anchored and linear-time — an unbounded pattern runs on every request URL (ReDoS)
-- Custom destinations never re-serialize the raw request object; they receive the already-redacted `LogEntry`
+- Custom destinations never re-serialize the raw request object; they receive the already-redacted, already-serialized NDJSON line
 - Destination credentials (Loki, Postgres, OTLP) come from the environment, never from values written into module options in source control
 - Log retention at the sink matches your data-retention policy — redaction bounds what is stored, not how long
 
@@ -709,9 +732,9 @@ When integrating `@bymax-one/nest-logger` in production, verify each of the foll
 
 | Layer               | Implementation                                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| PII Redaction       | 140 `fast-redact` paths compiled once at bootstrap — no per-log regex matching                                     |
+| PII Redaction       | 32 field names censored at ANY depth in one copy-on-write walk — ~1 µs/entry                                       |
 | Credentials         | `password`, `passwordHash`, `token`, `accessToken`, `refreshToken`, `apiKey`, `apiSecret`, `privateKey`            |
-| MFA Secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret` — redacted at wildcard depths 1–4                                    |
+| MFA Secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret` — redacted at any depth                                              |
 | PCI DSS             | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                |
 | LGPD Documents      | `cpf`, `cnpj`, `rg`, plus `email` as a conservative default                                                        |
 | HTTP Headers        | `authorization`, `cookie`, `x-api-key`, `x-auth-token`, `set-cookie` — absolute paths on `req` / `res`             |
@@ -745,11 +768,11 @@ When integrating `@bymax-one/nest-logger` in production, verify each of the foll
 A logger runs on every request of every service that installs it, so the suite is held to a bar beyond "it runs" — every behavior is pinned so that a regression **fails a test**.
 
 - ✅ **100% line coverage** — statements, branches, functions, and lines, enforced as a release gate across unit + e2e
-- ✅ **100% mutation score** — verified with [Stryker](https://stryker-mutator.io/) against a
-  `break` threshold of 95. The ten mutants no test can kill each carry their reason on the line
-  they apply to; a rule against those comments was retired once their cost was measured at
-  **+0.10 kB brotli** against 0.66 kB of headroom, roughly a tenth of what it had been assumed
-  to be (see the [report](./docs/mutation_testing_results.md))
+- ✅ **100% mutation score** — verified with [Stryker](https://stryker-mutator.io/) on a cold run
+  against a `break` threshold of 95, with **zero** surviving mutants. The handful that no test can
+  kill are suppressed on the line they apply to and each carries its reason; a rule against those
+  comments was retired once their cost was measured at **+0.10 kB brotli**, roughly a tenth of
+  what it had been assumed to be (see the [report](./docs/mutation_testing_results.md))
 - ✅ **Every suppression carries its reason** — each `// Stryker disable` names, after the `:` Stryker reads it from, why the mutant it silences cannot be observed; one of them is recorded as what it is, a mutant the suite kills but Stryker fails to attribute, rather than mislabelled an equivalent. `check:mutants` proves those reasons parse, so they reach the report rather than the `Ignored using a comment` fallback, and the score stays an accounting rather than a number
 - ✅ **No real I/O in unit tests** — the Pino instance and every destination are mocked; e2e tests exercise the wired module through `@nestjs/testing` and supertest
 
@@ -774,34 +797,53 @@ pnpm lint              # ESLint
 
 Implements NestJS `LoggerService`. All methods are available via `@InjectLogger()`.
 
-| Method            | Signature                          | Notes                                  |
-| ----------------- | ---------------------------------- | -------------------------------------- |
-| `info`            | `(logKey, msg, context?, meta?)`   | Structured info log                    |
-| `warn`            | `(logKey, msg, context?, meta?)`   | Structured warn log                    |
-| `debug`           | `(logKey, msg, context?, meta?)`   | Structured debug log                   |
-| `error`           | `(logKey, msg, context?, meta?)`   | Structured error log (string message)  |
-| `fatal`           | `(logKey, msg, context?, meta?)`   | Structured fatal log                   |
-| `warnStructured`  | `(logKey, error, context?, meta?)` | Warn with `Error` object (serialized)  |
-| `errorStructured` | `(logKey, error, context?, meta?)` | Error with `Error` object (serialized) |
-| `fatalStructured` | `(logKey, error, context?, meta?)` | Fatal with `Error` object (serialized) |
-| `log`             | `(msg, context?)`                  | NestJS `LoggerService` bridge → `info` |
-| `verbose`         | `(msg, context?)`                  | NestJS bridge → `trace`                |
+There are **two** APIs on this class, and they do not share a signature shape.
+
+**Structured API** — the `MODULE_ACTION_RESULT` convention. The third parameter is the acting **`userId`**, not a context label (the context comes from `@InjectLogger(ctx)`), and it may be omitted: when it is, an ambient `userId` from the `LogContextService` scope is used.
+
+| Method            | Signature                         | Notes                                                            |
+| ----------------- | --------------------------------- | ---------------------------------------------------------------- |
+| `info`            | `(logKey, msg, userId?, meta?)`   | Structured info log                                              |
+| `warnStructured`  | `(logKey, msg, userId?, meta?)`   | Structured warn log — takes a **message string**                 |
+| `errorStructured` | `(logKey, error, userId?, meta?)` | Structured error log — takes an **`Error`**, serialized to `err` |
+
+**NestJS `LoggerService` bridge** — the variadic contract NestJS itself calls, so `app.useLogger()` works. These take a message, not a log key.
+
+| Method    | Signature                              | Notes                                          |
+| --------- | -------------------------------------- | ---------------------------------------------- |
+| `log`     | `(message, ...optionalParams)`         | → Pino `info`; trailing string is the context  |
+| `warn`    | `(message, ...optionalParams)`         | → Pino `warn`                                  |
+| `debug`   | `(message, ...optionalParams)`         | → Pino `debug`                                 |
+| `verbose` | `(message, ...optionalParams)`         | → Pino `trace`                                 |
+| `fatal`   | `(message, ...optionalParams)`         | → Pino `fatal`                                 |
+| `error`   | `(message \| Error, stack?, context?)` | An `Error` routes to the serialized `err` path |
+
+**Helpers**
+
+| Method         | Signature    | Notes                                                             |
+| -------------- | ------------ | ----------------------------------------------------------------- |
+| `child`        | `(bindings)` | New `PinoLoggerService` over a Pino child logger                  |
+| `setContext`   | `(context)`  | Global label — ⚠️ singleton; prefer `@InjectLogger(MyClass.name)` |
+| `getRawLogger` | `()`         | The underlying Pino instance                                      |
+
+> [!NOTE]
+> There is no `fatalStructured` / `debugStructured`. Structured `fatal` and `debug` helpers are out of scope until a consumer needs them; use `getRawLogger()` in the meantime.
 
 ### `LogContextService`
 
-| Method     | Signature           | Description                                                                 |
-| ---------- | ------------------- | --------------------------------------------------------------------------- |
-| `run`      | `(store, callback)` | Opens an ALS scope. Any log inside `callback` carries `store` fields        |
-| `set`      | `(key, value)`      | Adds/updates a field in the current scope. Throws if called outside `run()` |
-| `getStore` | `()`                | Returns current scope or `undefined` outside a `run()` call                 |
+| Method     | Signature           | Description                                                                                                                          |
+| ---------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `run`      | `(store, callback)` | Opens an ALS scope. Any log inside `callback` carries `store` fields                                                                 |
+| `set`      | `(key, value)`      | Adds/updates a field in the current scope. Throws if called outside `run()`. Fields set here reach every subsequent log in the scope |
+| `getStore` | `()`                | Returns current scope or `undefined` outside a `run()` call                                                                          |
 
 ### Decorators
 
-| Decorator                       | Target            | Description                                                                                   |
-| ------------------------------- | ----------------- | --------------------------------------------------------------------------------------------- |
-| `@InjectLogger(context?)`       | Constructor param | Injects `PinoLoggerService` pre-bound to the given context string                             |
-| `@LogContext(store)`            | Method            | Wraps the method in `logContext.run(store, ...)` — all downstream logs carry the given fields |
-| `@LogPerformance(thresholdMs?)` | Method            | Logs `METHOD_EXECUTION` on completion; `METHOD_SLOW_EXECUTION` if duration exceeds threshold  |
+| Decorator                       | Target            | Description                                                                                                                                                        |
+| ------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@InjectLogger(context?)`       | Constructor param | Injects `PinoLoggerService` pre-bound to the given context string                                                                                                  |
+| `@LogContext(name)`             | Class             | Records a context label as class metadata. ⚠️ Metadata only — it does NOT open a `logContext.run()` scope; use `@InjectLogger(MyClass.name)` for a per-class label |
+| `@LogPerformance(thresholdMs?)` | Method            | Logs `METHOD_EXECUTION` on completion; `METHOD_SLOW_EXECUTION` if duration exceeds threshold                                                                       |
 
 ### Types (from `@bymax-one/nest-logger/shared`)
 
@@ -811,11 +853,19 @@ type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace'
 type ServiceMetadata = { name: string; version: string }
 
 type LogEntry = {
-  level: number
-  time: number
-  service: ServiceMetadata
-  logKey: string
+  /** Pino string label — `'info'`, not `30`. Convert with `PINO_LEVEL_NUMBERS`. */
+  level: LogLevel
+  /** ISO 8601 UTC string — `Date.parse(entry.time)` for epoch milliseconds. */
+  time: string
   msg: string
+  logKey?: string
+  service?: ServiceMetadata
+  context?: string
+  requestId?: string
+  tenantId?: string
+  userId?: string
+  traceId?: string
+  spanId?: string
   [key: string]: unknown
 }
 ```

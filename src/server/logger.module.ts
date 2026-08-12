@@ -56,20 +56,35 @@ function resolveDestinations(
 }
 
 /**
- * Provider whose factory emits the `LOGGER_BOOTSTRAP_OK` log exactly once, when
- * NestJS eagerly instantiates the module's providers.
+ * Provider whose factory emits the one-shot bootstrap entries, when NestJS
+ * eagerly instantiates the module's providers.
+ *
+ * Emits `LOGGER_BOOTSTRAP_OK` always, and `LOGGER_BOOTSTRAP_WARNING` when the
+ * consumer turned the default PII protection off. That warning is the audit
+ * trail the security documentation has always promised — a deployment that
+ * disabled redaction must say so in its own logs, where a review can find it,
+ * rather than being indistinguishable from a protected one.
  *
  * @returns The bootstrap provider.
  */
 function bootstrapProvider(): Provider {
   return {
     provide: LOGGER_BOOTSTRAP_TOKEN,
-    useFactory: (logger: PinoLoggerService): boolean => {
+    useFactory: (logger: PinoLoggerService, options: ResolvedBymaxLoggerModuleOptions): boolean => {
       logger.info(RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK, 'BymaxLoggerModule initialized')
+      if (options.shouldDisableDefaultRedact) {
+        logger.warnStructured(
+          RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_WARNING,
+          'Default PII redaction is DISABLED — sensitive fields will be logged verbatim ' +
+            'unless every one of them is listed in options.redactPaths',
+          undefined,
+          { shouldDisableDefaultRedact: true, redactPathCount: options.redactPaths.length }
+        )
+      }
       // Stryker disable next-line BooleanLiteral: equivalent — this value is stored as the `LOGGER_BOOTSTRAP_TOKEN` injectable, which nothing in the module or in consumer code reads. Flipping it to `false` is observable only by inspecting the DI container directly, never through any behaviour the library exposes.
       return true
     },
-    inject: [PinoLoggerService]
+    inject: [PinoLoggerService, LOGGER_OPTIONS_TOKEN]
   }
 }
 
