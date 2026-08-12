@@ -252,6 +252,38 @@ describe('buildPinoInstance', () => {
   })
 
   it(/*
+   * REGRESSION — the record is dropped WHOLE, not up to the property that threw.
+   * `Object.assign` copies key by key, so merging into the mixin's own object left
+   * everything read before the hostile getter already written into it, and the
+   * failure path then emitted that prefix. The field used here is deliberately
+   * NOT a sensitive name: the name walk would have censored one that was, which
+   * is exactly what made the prefix easy to miss.
+   */
+  'drops the whole record when a getter throws, not just the failing property', () => {
+    const capture = createCapture()
+    const logContext = new LogContextService()
+    const logger = buildPinoInstance(applyDefaults(baseOptions), logContext, [capture.destination])
+
+    logContext.run({ requestId: 'r_1' }, () => {
+      logger.info(
+        {
+          apiToken: 'must-not-appear',
+          get boom(): never {
+            throw new Error('hostile getter')
+          }
+        },
+        'x'
+      )
+    })
+
+    const [entry] = capture.entries()
+    expect(entry).not.toHaveProperty('apiToken')
+    expect(entry?.['_redactionFailed']).toBe(true)
+    // The mixin's own ambient context is library-produced and survives.
+    expect(entry?.['requestId']).toBe('r_1')
+  })
+
+  it(/*
    * Consumer `redactPaths` are always `fast-redact` paths and must keep working
    * alongside the name walk — the walk owns the DEFAULT set, not the consumer's
    * own entries. Both must land in the same record.

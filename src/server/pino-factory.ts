@@ -156,11 +156,17 @@ export function buildPinoInstance(
     // envelope. Owning the merge moves that boundary inside the guarantee.
     mixinMergeStrategy: (mergeObject: object, mixinObject: object): object => {
       try {
-        return Object.assign(mixinObject, mergeObject)
+        // Merged into a FRESH target rather than into `mixinObject`. `Object.assign`
+        // copies key by key, so a getter that throws part-way leaves everything
+        // read before it already written into the target — and the catch below
+        // would then emit that prefix, contradicting the sentence it is written
+        // under. A disposable target keeps the partial writes in the value that
+        // is about to be discarded.
+        return Object.assign({}, mixinObject, mergeObject)
       } catch {
         // The caller's object cannot be read, so it cannot be proven safe and is
-        // dropped whole. The mixin's own ambient context (requestId, trace ids)
-        // is library-produced and still safe to keep.
+        // dropped WHOLE — not up to the property that threw. The mixin's own
+        // ambient context (requestId, trace ids) is library-produced and kept.
         return {
           ...mixinObject,
           _redactionFailed: true,

@@ -96,6 +96,11 @@ shipped logging path **~50× faster**.
   `logKey`, message and correlation ids. The same guard covers the error path — `name`, `message`
   and `stack` are ordinary properties a caller can redefine as throwing accessors, and `message`
   is read outside the serializer.
+- **A record whose getter throws is dropped WHOLE, not up to the failing property.** The mixin
+  merge used `Object.assign` on the mixin's own object, which copies key by key — so everything
+  read before the hostile getter was already written into it, and the failure path emitted that
+  prefix while claiming to drop the record. Merging into a disposable target keeps the partial
+  writes in the value that is discarded.
 - **A throwing getter no longer crashes the log call.** Pino merges the mixin result with the
   caller's object before `formatters.log` runs, and the default strategy's `Object.assign` invokes
   every own getter — so a hostile getter threw before the redactor's fail-closed envelope could
