@@ -357,6 +357,72 @@ describe('Logger E2E — redaction', () => {
   })
 
   it(/*
+   * REGRESSION — HTTP header names are case-insensitive by spec, and only
+   * INBOUND Node headers arrive lower-cased. A hand-built or outbound bag
+   * routinely carries `Authorization` / `Cookie` / `X-API-Key`, and a
+   * case-sensitive name set left every one of them in clear while the docs
+   * claimed header coverage.
+   */
+  'redacts auth headers regardless of their casing', async () => {
+    const logger = await bootLogger({})
+
+    logger.info('REDACT_HEADER_CASE', 'probe', undefined, {
+      headers: {
+        Authorization: 'Bearer LEAKED',
+        Cookie: 'sid=LEAKED',
+        'X-API-Key': 'LEAKED',
+        'Content-Type': 'application/json'
+      }
+    })
+
+    const headers = findEntry('REDACT_HEADER_CASE')?.['headers'] as Record<string, unknown>
+    expect(headers['Authorization']).toBe('[REDACTED]')
+    expect(headers['Cookie']).toBe('[REDACTED]')
+    expect(headers['X-API-Key']).toBe('[REDACTED]')
+    expect(headers['Content-Type']).toBe('application/json')
+    expect(JSON.stringify(findEntry('REDACT_HEADER_CASE'))).not.toContain('LEAKED')
+  })
+
+  it(/*
+   * REGRESSION — `JSON.stringify` gives `toJSON` precedence over array
+   * serialization. With the array branch running first, an array whose
+   * `toJSON()` synthesized a secret was walked as an ordinary array — finding
+   * nothing in its elements — and then emitted the secret at serialization time.
+   */
+  'redacts what an array with a custom toJSON synthesizes', async () => {
+    const logger = await bootLogger({})
+
+    logger.info('REDACT_ARRAY_TOJSON', 'probe', undefined, {
+      list: Object.assign([], { toJSON: (): unknown => ({ accessToken: 'LEAKED' }) }),
+      plain: [{ password: 'LEAKED' }]
+    })
+
+    const entry = findEntry('REDACT_ARRAY_TOJSON')
+    expect((entry?.['list'] as Record<string, unknown>)['accessToken']).toBe('[REDACTED]')
+    // An ordinary array must still serialize as an array.
+    expect(Array.isArray(entry?.['plain'])).toBe(true)
+    expect(JSON.stringify(entry)).not.toContain('LEAKED')
+  })
+
+  it(/*
+   * `PinoLoggerService.child()` applies the DEFAULT-set redactor, which is the
+   * identity under `redactStrategy: 'paths'`. Bindings stay covered there anyway
+   * because that strategy configures `fast-redact` on the Pino instance, and Pino
+   * runs it over child bindings as it builds them. That is a real coupling
+   * between two independent mechanisms, so it is pinned here rather than assumed
+   * — if either side changes, this fails instead of leaking silently.
+   */
+  'keeps child bindings covered under the legacy paths strategy', async () => {
+    const logger = await bootLogger({ redactStrategy: 'paths' })
+
+    logger.child({ password: 'LEAKED', tenantId: 't_1' }).info('REDACT_CHILD_PATHS', 'probe')
+
+    const entry = findEntry('REDACT_CHILD_PATHS')
+    expect(entry?.['password']).toBe('[REDACTED]')
+    expect(entry?.['tenantId']).toBe('t_1')
+  })
+
+  it(/*
    * The legacy engine stays reachable behind `redactStrategy: 'paths'` for a
    * consumer depending on exact `fast-redact` path semantics — including its
    * four-level ceiling, which is asserted here so the escape hatch is documented

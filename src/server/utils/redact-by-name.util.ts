@@ -222,15 +222,15 @@ function walk(
 
   ancestors.add(value)
   try {
-    if (Array.isArray(value)) {
-      return walkArray(value, sensitive, censor, depth, ancestors)
-    }
-
+    // `toJSON` is checked BEFORE the array branch, because `JSON.stringify` gives
+    // the method precedence over array serialization too — an `Array` subclass
+    // with a `toJSON()` that returns `{ accessToken }` would otherwise be walked
+    // as an ordinary array (finding nothing) and then emit the token in clear.
+    //
     // A value with `toJSON` decides its own serialized form, so walking its own
     // properties would inspect something that never reaches the log — while
-    // skipping it entirely leaves whatever the method SYNTHESIZES unredacted
-    // (`{ toJSON: () => ({ accessToken }) }` emitted the token in clear). Walk
-    // the method's output instead, and substitute it only when something was
+    // skipping it entirely leaves whatever the method SYNTHESIZES unredacted.
+    // Walk the method's output instead, and substitute it only when something was
     // actually censored: a clean `Date` / `Decimal` / Luxon value is returned by
     // reference, so serializers downstream still receive the original object.
     const toJson = readToJson(value)
@@ -240,12 +240,16 @@ function walk(
       return walked === serialized ? value : walked
     }
 
+    if (Array.isArray(value)) {
+      return walkArray(value, sensitive, censor, depth, ancestors)
+    }
+
     const source = value as Record<string, unknown>
     const isError = value instanceof Error
     let copy: Record<string, unknown> | undefined
     for (const key of Object.keys(source)) {
       const current = Reflect.get(source, key)
-      const next = sensitive.has(key)
+      const next = sensitive.has(key.toLowerCase())
         ? censor
         : walk(current, sensitive, censor, depth + 1, ancestors)
       if (next !== current) {
@@ -270,9 +274,8 @@ function walk(
  * Build a redactor that censors every value whose key name is in `fieldNames`,
  * at any depth, in a single copy-on-write traversal.
  *
- * @param fieldNames - Sensitive field names, matched case-sensitively (the same
- *   semantics `fast-redact` applied, so the default set behaves as it always has;
- *   Node lower-cases inbound HTTP header names before they can reach a log).
+ * @param fieldNames - Sensitive field names, matched case-INSENSITIVELY so a
+ *   header bag carrying `Authorization` is covered as well as `authorization`.
  * @param censor - Replacement written in place of a sensitive value.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
@@ -284,7 +287,14 @@ export function createNameRedactor(
   fieldNames: readonly string[],
   censor: string
 ): (value: unknown) => unknown {
-  const sensitive: ReadonlySet<string> = new Set(fieldNames)
+  // Matched case-INSENSITIVELY. HTTP header names are case-insensitive by spec,
+  // and only INBOUND Node headers arrive lower-cased — a hand-built or outbound
+  // bag routinely carries `Authorization`, `Cookie`, `X-API-Key`, which a
+  // case-sensitive set left in clear despite the documented header coverage.
+  // Applying it to every name rather than only to headers costs one
+  // `toLowerCase()` per key (~4 % of an entry, measured) and errs toward
+  // redacting `Password` / `Email` too, which is the safe direction.
+  const sensitive: ReadonlySet<string> = new Set(fieldNames.map((name) => name.toLowerCase()))
   return (value: unknown): unknown => {
     try {
       return walk(value, sensitive, censor, 0, new Set<object>())

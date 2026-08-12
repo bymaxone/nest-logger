@@ -7,7 +7,10 @@ import {
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 const CENSOR = '[REDACTED]'
-const redact = createNameRedactor(['password', 'authorization', 'set-cookie'], CENSOR)
+const redact = createNameRedactor(
+  ['password', 'authorization', 'set-cookie', 'x-api-key', 'accessToken'],
+  CENSOR
+)
 
 /** Build a `{ a: { a: { … { password } } } }` chain `levels` deep. */
 function nest(levels: number, leaf: Record<string, unknown>): Record<string, unknown> {
@@ -403,14 +406,38 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
-   * Matching is case-sensitive, mirroring `fast-redact` — the semantics the
-   * default set has always had. Node lower-cases inbound header names, so the
-   * lower-case spelling is the one that can reach a log.
+   * REGRESSION — matching is case-INSENSITIVE. HTTP header names are
+   * case-insensitive by spec, and only INBOUND Node headers arrive lower-cased;
+   * a hand-built or outbound bag routinely carries `Authorization` / `Cookie` /
+   * `X-API-Key`, and a case-sensitive set left every one of them in clear
+   * despite the documented header coverage.
    */
-  'should match field names case-sensitively', () => {
-    const result = redact({ Password: 'kept', password: 's' }) as Record<string, unknown>
-    expect(result['Password']).toBe('kept')
+  'should match field names case-insensitively', () => {
+    const result = redact({
+      Authorization: 'Bearer SECRET',
+      'X-API-KEY': 'SECRET',
+      Password: 'SECRET',
+      password: 'SECRET',
+      userName: 'kept'
+    }) as Record<string, unknown>
+
+    expect(result['Authorization']).toBe(CENSOR)
+    expect(result['X-API-KEY']).toBe(CENSOR)
+    expect(result['Password']).toBe(CENSOR)
     expect(result['password']).toBe(CENSOR)
+    expect(result['userName']).toBe('kept')
+  })
+
+  it(/*
+   * REGRESSION — `JSON.stringify` gives `toJSON` precedence over array
+   * serialization, so the array branch must not run first: an array whose
+   * `toJSON()` synthesizes a secret was walked as an ordinary array (finding
+   * nothing in its elements) and then emitted the secret during serialization.
+   */
+  'should redact what an array-with-toJSON synthesizes', () => {
+    const list = Object.assign([], { toJSON: (): unknown => ({ accessToken: 'SECRET' }) })
+    const result = redact({ list })
+    expect(JSON.stringify(result)).toBe(`{"list":{"accessToken":"${CENSOR}"}}`)
   })
 
   it(/*

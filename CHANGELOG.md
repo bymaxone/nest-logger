@@ -39,6 +39,15 @@ shipped logging path **~50× faster**.
   `{ failure: err }` carrying an `apiKey` reached the sink in clear. Errors are now cloned through
   their prototype and descriptors, which censors the enumerable properties while keeping
   `instanceof`, `message` and `stack` intact.
+- **Sensitive field names are matched case-insensitively.** HTTP header names are
+  case-insensitive by spec, and only INBOUND Node headers arrive lower-cased — a hand-built or
+  outbound bag carrying `Authorization`, `Cookie` or `X-API-Key` was left in clear while the
+  documentation claimed header coverage. Matching now lower-cases the key, which also covers
+  `Password` / `Email` and errs toward redacting.
+- **An array with a custom `toJSON()` is redacted.** `JSON.stringify` gives the method precedence
+  over array serialization, so an array whose `toJSON()` synthesized a secret was walked as an
+  ordinary array — finding nothing in its elements — and then emitted the secret. The `toJSON`
+  branch now runs before the array branch.
 - **A secret synthesized by `toJSON()` is redacted.** A value with `toJSON` decides its own
   serialized form, so the walk cannot inspect its own properties — but skipping it let
   `{ toJSON: () => ({ accessToken }) }` emit the token untouched. The walk now redacts the
