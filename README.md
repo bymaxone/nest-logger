@@ -65,7 +65,7 @@ pnpm add @bymax-one/nest-logger
 
 ### 🛡️ Security & Privacy
 
-- ✅ **PII Redaction by Default** — 32 field names censored wherever they appear, to a 100-level nesting ceiling past which values are dropped, in a single snapshotting walk
+- ✅ **PII Redaction by Default** — 32 field names censored wherever they appear, to a 100-level nesting ceiling past which nested objects are dropped, in a single snapshotting walk
 - ✅ **PCI DSS & MFA Coverage** — card data and MFA secrets redacted out of the box, with common HTTP auth headers
 - ✅ **LGPD-Aware Paths** — CPF, CNPJ, and RG redacted by default for Brazilian workloads
 - ✅ **Append-Only Redact List** — `DEFAULT_REDACT_PATHS` never shrinks without a major version; extend it via `redactPaths`
@@ -631,13 +631,13 @@ Application Service
 
 ### Design Principles
 
-| Principle                     | Description                                                                                                                                                                                                                                                                         |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **🪶 Singleton Scope**        | `AsyncLocalStorage` delivers per-request context at zero latency overhead — NestJS `Scope.REQUEST` adds ~5% on the injection graph, unacceptable on a logger that runs for every request                                                                                            |
-| **🧬 One Composed Mixin**     | ALS context and OTel trace context merge into a single Pino mixin with a deterministic order: ALS first, then OTel — an active span is the authoritative trace identity, so it wins on conflicts                                                                                    |
-| **⚡ Single-pass Redaction**  | One recursive walk censors any value whose key name is in the sensitive set, to a 100-level ceiling past which values are dropped rather than emitted — O(nodes), the same order the serializer already pays. Replaced 140 `fast-redact` wildcard paths that cost ~107 µs per entry |
-| **🔌 Interface-Driven Sinks** | `ILogDestination` is a contract — Loki, Postgres, rolling files, or anything else is a consumer implementation, never a dependency of this package                                                                                                                                  |
-| **🌳 Zero Runtime Deps**      | `"dependencies": {}` — every package arrives as a peer dependency, so consumers pin exact versions and the supply-chain surface stays theirs                                                                                                                                        |
+| Principle                     | Description                                                                                                                                                                                                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **🪶 Singleton Scope**        | `AsyncLocalStorage` delivers per-request context at zero latency overhead — NestJS `Scope.REQUEST` adds ~5% on the injection graph, unacceptable on a logger that runs for every request                                                                                                    |
+| **🧬 One Composed Mixin**     | ALS context and OTel trace context merge into a single Pino mixin with a deterministic order: ALS first, then OTel — an active span is the authoritative trace identity, so it wins on conflicts                                                                                            |
+| **⚡ Single-pass Redaction**  | One recursive walk censors any value whose key name is in the sensitive set, to a 100-level ceiling past which nested objects are dropped rather than emitted — O(nodes), the same order the serializer already pays. Replaced 140 `fast-redact` wildcard paths that cost ~107 µs per entry |
+| **🔌 Interface-Driven Sinks** | `ILogDestination` is a contract — Loki, Postgres, rolling files, or anything else is a consumer implementation, never a dependency of this package                                                                                                                                          |
+| **🌳 Zero Runtime Deps**      | `"dependencies": {}` — every package arrives as a peer dependency, so consumers pin exact versions and the supply-chain surface stays theirs                                                                                                                                                |
 
 ---
 
@@ -647,7 +647,7 @@ A logger sees every payload the application handles, so the security posture is 
 
 ### Redaction by default
 
-The library censors **32 sensitive field names** wherever they appear in a log record — down to 100 levels of nesting, inside arrays, and inside class instances. Past that ceiling a value is DROPPED rather than emitted, so the limit can never become a leak. These cover:
+The library censors **32 sensitive field names** wherever they appear in a log record — down to 100 levels of nesting, inside arrays, and inside class instances. Past that ceiling a nested OBJECT is DROPPED rather than emitted, so the limit can never become a leak. (A primitive sitting at the boundary is still emitted: its key was matched by the container at level 100, the last one walked, so it has already been through the matcher.) These cover:
 
 | Category                  | Fields                                                                                                                                                                                                                                                    |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -665,14 +665,23 @@ The library censors **32 sensitive field names** wherever they appear in a log r
 
 Redaction is one **recursive, snapshotting walk** of the record: a value is censored when its KEY NAME is in the set above, wherever that key sits. Nothing the caller passed is mutated, and every value is read exactly once and pinned into a fresh structure — so what reaches the sink is guaranteed to be what was inspected, even when the payload carries accessors or a `toJSON` that could answer differently on a second read.
 
+A value with a `toJSON` is inspected through that method's output, because that is what reaches the log. A method can also **rename** what it exposes — `{ password, toJSON: () => ({ value: this.password }) }` would emit the secret under a name nobody declared sensitive — so when the source object itself carries a sensitive key, the method is not trusted and the whole value is censored. This deliberately over-redacts an object that holds a sensitive key and correctly omits it; the alternative (running `toJSON` against a sanitized copy) throws on every method that reads an internal slot rather than an own property, which is `Date`, `Decimal` and Luxon.
+
+> [!WARNING]
+> Redaction matches **key names**. A secret placed under a name you have not declared sensitive is
+> emitted — `logger.log(key, msg, userId, { renamed: user.password })` writes it in clear, and so
+> does a `toJSON` that renames nested state. That is a property of name-based redaction, not a
+> defect: no name matcher can follow a value through a rename. Declare the name, or keep the value
+> out of the log.
+
 Before `1.2.0` the same names were expanded into 140 `fast-redact` paths at wildcard depths 1–4 (`*.field`, `*.*.field`, …), because `fast-redact`'s `*` matches a single level and is not recursive. That approach had two problems, both measured:
 
-|                                  |                depth-1–4 paths (pre-`1.2.0`) |         name walk (`1.2.0`) |
-| -------------------------------- | -------------------------------------------: | --------------------------: |
-| Throughput, full production path |                             **9,311 logs/s** |          **274,227 logs/s** |
-| Cost per entry                   |                                      ~107 µs |                     ~3.6 µs |
-| Nesting covered                  |                 4 levels — deeper **leaked** | 100 levels — deeper dropped |
-| `{ headers: { authorization } }` | **leaked** (only `req.headers.*` was pinned) |                    censored |
+|                                  |                depth-1–4 paths (pre-`1.2.0`) |                 name walk (`1.2.0`) |
+| -------------------------------- | -------------------------------------------: | ----------------------------------: |
+| Throughput, full production path |                             **9,311 logs/s** |                  **274,227 logs/s** |
+| Cost per entry                   |                                      ~107 µs |                             ~3.6 µs |
+| Nesting covered                  |                 4 levels — deeper **leaked** | 100 levels — deeper objects dropped |
+| `{ headers: { authorization } }` | **leaked** (only `req.headers.*` was pinned) |                            censored |
 
 `DEFAULT_REDACT_PATHS` is still exported at full fidelity, and `redactStrategy: 'paths'` still feeds it to `fast-redact` for anyone depending on exact path semantics — with the ceiling and the cost that implies. Expect that escape hatch to be removed in a future major.
 
@@ -700,6 +709,12 @@ The extra paths are **merged** with the defaults — never replacing them.
 > per-field size bound, so without this a field covered only by a path could still surface inside
 > a truncation envelope's `_preview`. It errs toward redacting a name you have already declared
 > secret.
+>
+> An **array index is not a name**, so an unquoted numeric segment is skipped and the path falls
+> back to the nearest name: `redactPaths: ['tokens[0]']` censors the whole `tokens` array. The
+> walk matches key names and never array positions, so feeding it `0` would cover nothing while
+> censoring any object key literally named `0`. The quoted form `['obj["0"]']` stays a name,
+> since an object key named `0` IS matched by the walk.
 
 ### Disabling defaults (not recommended)
 
