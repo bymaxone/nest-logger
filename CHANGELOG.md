@@ -29,6 +29,12 @@ shipped logging path **~50× faster**.
   They are now first-class field names, caught wherever they appear.
 - **Redaction is no longer capped at four levels of nesting.** The previous wildcard expansion
   reached `*.*.*.*.field`; anything deeper leaked silently. The new engine walks to any depth.
+- **Base bindings are redacted.** `service` is consumer-supplied and `applyDefaults` keeps whatever
+  it was handed, so a `{ name, version, apiKey }` reached the sink in clear once base stopped going
+  through the path expansion that had covered it via `*.*.apiKey`. Redacted at
+  `formatters.bindings`, which runs once at logger construction — no per-entry cost — and which
+  preserves a consumer's extra non-sensitive metadata rather than trimming base to the two declared
+  fields.
 - **Child-logger bindings are redacted.** `PinoLoggerService.child(bindings)` accepts any record,
   and Pino pre-serializes child bindings into the instance's `chindings` fragment before any
   formatter runs — so no factory hook can reach them. `logger.child({ password })` stamped the

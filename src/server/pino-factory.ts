@@ -140,6 +140,16 @@ export function buildPinoInstance(
       // for log aggregators. Trace context is injected via `mixin`, never via
       // `formatters.log` (which cannot see ambient ALS / OTel state).
       level: (label) => ({ level: label }),
+      // `base` bindings never reach `formatters.log` — Pino pre-serializes them
+      // into the instance's `chindings`, the same reason `child()` has to redact
+      // its own. That matters because `service` is CONSUMER-supplied and
+      // `applyDefaults` keeps whatever it was given: a `{ name, version, apiKey }`
+      // went out in clear, where the path expansion had covered it via `*.*.apiKey`.
+      // Redacting here rather than trimming to the two declared fields keeps a
+      // consumer's extra metadata instead of silently dropping it. Runs ONCE, at
+      // logger construction — no per-entry cost. `true`: bindings are a record
+      // root, iterated rather than serialized.
+      bindings: (bindings) => redact(bindings, true) as Record<string, unknown>,
       // The name-walk redactor runs here, on the merged record (mixin output +
       // the caller's object), which is exactly the surface a caller controls.
       // `base` and child bindings are NOT visible at this hook — they are

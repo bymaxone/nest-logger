@@ -134,17 +134,64 @@ describe('buildPinoInstance', () => {
   })
 
   it(/*
-   * `base` bindings are library-owned (`service`) and must reach the sink
-   * untouched, while the record itself is still walked.
+   * REGRESSION — `service` is CONSUMER-supplied and `applyDefaults` keeps whatever
+   * it was handed, so a `{ name, version, apiKey }` reached the sink in clear once
+   * base bindings stopped going through the path expansion that had covered it
+   * via `*.*.apiKey`. Redacted at `formatters.bindings`, which is where Pino
+   * hands base over — once, at construction.
+   */
+  'redacts a sensitive field a consumer put on service metadata', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(
+      applyDefaults({
+        service: { name: 'app', version: '1.0.0', apiKey: 'secret' }
+      } as unknown as Parameters<typeof applyDefaults>[0]),
+      new LogContextService(),
+      [capture.destination]
+    )
+
+    logger.info({}, 'x')
+
+    const service = capture.entries()[0]?.['service'] as Record<string, unknown>
+    expect(service['apiKey']).toBe('[REDACTED]')
+    expect(service['name']).toBe('app')
+    expect(service['version']).toBe('1.0.0')
+  })
+
+  it(/*
+   * Redacting base rather than trimming it to the two declared fields is a
+   * deliberate choice: a consumer's extra, non-sensitive metadata must survive
+   * rather than be silently dropped.
+   */
+  'keeps non-sensitive extra service metadata', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(
+      applyDefaults({
+        service: { name: 'app', version: '1.0.0', region: 'sa-east-1' }
+      } as unknown as Parameters<typeof applyDefaults>[0]),
+      new LogContextService(),
+      [capture.destination]
+    )
+
+    logger.info({}, 'x')
+
+    expect((capture.entries()[0]?.['service'] as Record<string, unknown>)['region']).toBe(
+      'sa-east-1'
+    )
+  })
+
+  it(/*
+   * The three binding surfaces reach the sink together, each redacted by its own
+   * hook: `base` at `formatters.bindings`, the record at `formatters.log`, and
+   * child bindings inside `PinoLoggerService.child()` — Pino pre-serializes the
+   * last two into `chindings`, so no factory hook can reach them.
    *
    * Note what this does NOT cover: bindings passed to the RAW Pino logger's
-   * `child()`. Pino pre-serializes those into the instance's `chindings` fragment
-   * before `formatters.log` ever runs, so no factory hook can reach them —
-   * redaction for child bindings lives in `PinoLoggerService.child()`, which is
-   * the API consumers actually use, and is pinned in that service's spec.
-   * `getRawLogger()` is the documented escape hatch and keeps raw semantics.
+   * `child()`. `getRawLogger()` is the documented escape hatch and keeps raw
+   * semantics; the redacted path is `PinoLoggerService.child()`, pinned in that
+   * service's spec.
    */
-  'leaves the library-owned service base out of the walk', () => {
+  'carries base, child and record fields through together', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       capture.destination
