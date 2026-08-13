@@ -505,3 +505,44 @@ describe('PinoLoggerService', () => {
     })
   })
 })
+
+describe('safeErrorMessage — log-forging neutralization', () => {
+  /** Self-contained: a silent Pino instance with a spied error method. */
+  function makeService(): { service: PinoLoggerService; spy: jest.SpyInstance } {
+    const raw = pino({ enabled: false })
+    const spy = jest.spyOn(raw, 'error').mockImplementation()
+    return { service: new PinoLoggerService(raw), spy }
+  }
+
+  it(/*
+   * SECURITY (CodeQL js/log-injection, alert #61) — the error message can carry
+   * user-provided text, and it becomes Pino's MESSAGE argument. On the NDJSON
+   * transport JSON escaping already neutralizes an embedded line break, but
+   * `pino-pretty` and any destination that re-renders the parsed message print
+   * real newlines — where a break forges what looks like a separate entry. The
+   * message is pinned to one line at the sink.
+   */
+  'replaces every line separator in the message argument', () => {
+    const { service, spy } = makeService()
+    service.errorStructured('K_A_B', new Error('fail\nFORGED\rmore\u2028ls\u2029ps'))
+
+    const [, message] = spy.mock.calls[0] ?? []
+    expect(message).toBe('fail\\nFORGED\\nmore\\nls\\nps')
+    expect(String(message)).not.toMatch(/[\r\n\u2028\u2029]/)
+  })
+
+  it(/*
+   * No information is lost: the structured `err` field keeps the raw error, so
+   * its verbatim message reaches the serializer — only the human-readable
+   * message line is sanitized.
+   */
+  'keeps the structured err verbatim', () => {
+    const { service, spy } = makeService()
+    const error = new Error('fail\nsecond line')
+    service.errorStructured('K_A_B', error)
+
+    const [payload] = spy.mock.calls[0] ?? []
+    expect((payload as Record<string, unknown>)['err']).toBe(error)
+    expect(error.message).toBe('fail\nsecond line')
+  })
+})

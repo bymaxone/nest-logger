@@ -98,7 +98,17 @@ function withoutOwnedKeys(metadata: Record<string, unknown> | undefined): Record
  */
 function safeErrorMessage(error: Error): string {
   try {
-    return String(error.message)
+    // Line and paragraph separators are replaced with the literal two-character
+    // sequence `\n` (CodeQL js/log-injection, alert #61). The error message can
+    // carry user-provided text — a thrown value recorded off an HTTP request —
+    // and this string becomes Pino's MESSAGE argument. On the NDJSON transport
+    // that is harmless (JSON escaping already neutralizes a forged-record
+    // payload; measured), but `pino-pretty` and any destination that re-renders
+    // the parsed message print real newlines, where an embedded line break
+    // forges what looks like a separate log entry. The structured `err.message`
+    // field keeps the original text verbatim, so no information is lost — only
+    // the human-readable message line is pinned to one line.
+    return String(error.message).replace(/[\r\n\u2028\u2029]/g, '\\n')
   } catch {
     return 'Unreadable error message'
   }

@@ -13,6 +13,17 @@ heading here.
 
 ## [1.3.0] - 2026-08-13
 
+### Security
+
+- **An error message can no longer forge log lines in re-rendered output** (CodeQL
+  `js/log-injection`, alert #61). The message argument handed to Pino can carry user-provided text
+  — a thrown value recorded off an HTTP request — and while the NDJSON transport already
+  neutralizes an embedded line break through JSON escaping (measured), `pino-pretty` and any
+  destination that re-renders the parsed message print real newlines, where a break forges what
+  looks like a separate entry. Line and paragraph separators in the message argument are now
+  replaced with the literal `\n` sequence. The structured `err.message` field keeps the verbatim
+  text, so no information is lost.
+
 P1 of the observability audit ([`docs/observability_audit.md`](./docs/observability_audit.md)):
 stable OpenTelemetry resource identity, robust trace correlation, semconv-aligned error fields and
 machine-readable event names. Every convention adopted here was verified **Stable** against
