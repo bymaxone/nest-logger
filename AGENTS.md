@@ -169,7 +169,7 @@ The threat is log forging in a re-rendering destination, not in NDJSON — JSON 
 keeps the record on one line. `pino-pretty`, which this library ships as `PrettyDevDestination`,
 writes the parsed text straight to the terminal, so a raw `\n` **or** an ANSI sequence like
 `ESC E` (next line) prints something indistinguishable from a genuine entry. Line terminators
-become the literal `\n`; every other terminal-driving control character becomes `\xNN`.
+become the literal `\n`; every other terminal-driving control character becomes `\uXXXX`.
 
 Two rules when touching this:
 

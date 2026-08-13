@@ -123,7 +123,7 @@ signal the version number is no longer giving.
 
 **Never infer a bump from an observable event** — not from a publication, not from an internal
 project adopting the package, not from another agent reporting consumers. The exit condition is an
-instruction in the maintainer's own words. That distinction was got wrong once already.
+instruction in the maintainer's own words. That distinction has been missed once already.
 
 **Check before assuming this still holds:** the moment a real consumer adopts the library, 1.2.x
 stops applying and breaking changes need a major again. Most of the open audit backlog in

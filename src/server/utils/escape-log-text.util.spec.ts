@@ -46,7 +46,7 @@ describe('escape-log-text util', () => {
      */
     'disarms ANSI escape sequences', () => {
       expect(toSingleLineMessage(`fail${ESC}E[12:00:00.000] INFO: FORGED`)).toBe(
-        'fail\\x1bE[12:00:00.000] INFO: FORGED'
+        'fail\\u001bE[12:00:00.000] INFO: FORGED'
       )
     })
 
@@ -56,7 +56,7 @@ describe('escape-log-text util', () => {
      */
     'escapes the other cursor-moving control characters', () => {
       expect(toSingleLineMessage(`${NUL}${BACKSPACE}${VTAB}${FORM_FEED}${DEL}${C1_TOP}`)).toBe(
-        '\\x00\\x08\\x0b\\x0c\\x7f\\x9f'
+        '\\u0000\\u0008\\u000b\\u000c\\u007f\\u009f'
       )
     })
 
@@ -95,7 +95,7 @@ describe('escape-log-text util', () => {
      */
     'keeps newlines and escapes control characters', () => {
       expect(escapeControlCharacters(`Error: boom${ESC}[2J\n    at app (/srv/a.ts:1:1)`)).toBe(
-        'Error: boom\\x1b[2J\n    at app (/srv/a.ts:1:1)'
+        'Error: boom\\u001b[2J\n    at app (/srv/a.ts:1:1)'
       )
     })
 
@@ -105,7 +105,21 @@ describe('escape-log-text util', () => {
      * legitimate line break here.
      */
     'escapes a carriage return', () => {
-      expect(escapeControlCharacters('a\rb')).toBe('a\\x0db')
+      expect(escapeControlCharacters('a\rb')).toBe('a\\u000db')
+    })
+
+    it(/*
+     * Every escaped range of the multiline set, asserted separately. Stryker
+     * ignores static initializers, so a range deleted from this regex would
+     * otherwise leave the suite green — verified by removing them by hand.
+     */
+    'escapes each range of the multiline set', () => {
+      expect(escapeControlCharacters(`${NUL}${BACKSPACE}`)).toBe('\\u0000\\u0008')
+      expect(escapeControlCharacters(`${VTAB}${ESC}`)).toBe('\\u000b\\u001b')
+      expect(escapeControlCharacters(`${DEL}${C1_NEL}${C1_TOP}`)).toBe('\\u007f\\u0085\\u009f')
+      expect(escapeControlCharacters(`${LINE_SEPARATOR}${PARAGRAPH_SEPARATOR}`)).toBe(
+        '\\u2028\\u2029'
+      )
     })
 
     it(/*

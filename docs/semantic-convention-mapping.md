@@ -43,7 +43,7 @@ There is **no OpenTelemetry attribute for a cause chain.** `err.cause` and `err.
 and stay namespaced under `err` rather than inventing an `exception.cause` the spec does not define.
 
 Both stack fields carry the SAME text, and that text is escaped as well as scrubbed: control
-characters become `\xNN`, newlines stay. The escaping is not cosmetic — `pino-pretty` prints a stack
+characters become `\uXXXX`, newlines stay. The escaping is not cosmetic — `pino-pretty` prints a stack
 raw rather than as a JSON string, and a stack's first line repeats the error message, so an
 attacker-supplied message would otherwise reach the terminal through the stack of the same entry.
 A consumer parsing `exception.stacktrace` sees frames unchanged; only control bytes differ.

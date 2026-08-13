@@ -41,20 +41,26 @@ const UNSAFE_IN_SINGLE_LINE = /[\u0000-\u0008\u000A-\u001F\u007F-\u009F\u2028\u2
 const UNSAFE_IN_MULTILINE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029]/g
 
 /**
- * Render a control character as its readable `\xNN` escape.
+ * Render a control character as its readable `\uXXXX` escape.
+ *
+ * One form for every character, always four hex digits — the same shape JSON
+ * uses for control characters, so the pretty rendering and the NDJSON line show
+ * a given byte the same way. A two-digit `\xNN` form was rejected: `\x` takes
+ * exactly two digits, so U+2028 would render as `\x2028`, which reads as `\x20`
+ * followed by the text `28` — a space, not a separator.
  *
  * @param char - A single control character.
- * @returns The two-digit lowercase hex escape, e.g. `\x1b` for ESC.
+ * @returns The four-digit lowercase escape, e.g. `\u001b` for ESC.
  */
-function toHexEscape(char: string): string {
-  return `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`
+function toEscapeSequence(char: string): string {
+  return `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
 }
 
 /**
  * Pin text to a single rendered line, keeping it readable.
  *
  * Line terminators become the literal `\n`; every other unsafe control
- * character becomes its `\xNN` escape, which is what disarms ANSI sequences —
+ * character becomes its `\uXXXX` escape, which is what disarms ANSI sequences —
  * `ESC E` (next line) and `ESC [` (control sequence introducer) stop being
  * control input the moment the ESC byte is no longer a byte.
  *
@@ -62,11 +68,11 @@ function toHexEscape(char: string): string {
  * @returns The same text with every line-forging character neutralized.
  * @example
  *   toSingleLineMessage('fail\nFORGED')      // → 'fail\\nFORGED'  (one line)
- *   toSingleLineMessage('fail\x1bE FORGED')  // → 'fail\\x1bE FORGED'  (ESC disarmed)
+ *   toSingleLineMessage('fail\x1bE FORGED')  // → 'fail\\u001bE FORGED'  (ESC disarmed)
  */
 export function toSingleLineMessage(text: string): string {
   return text.replace(UNSAFE_IN_SINGLE_LINE, (char) =>
-    LINE_TERMINATORS.has(char) ? '\\n' : toHexEscape(char)
+    LINE_TERMINATORS.has(char) ? '\\n' : toEscapeSequence(char)
   )
 }
 
@@ -81,7 +87,10 @@ export function toSingleLineMessage(text: string): string {
  *
  * @param text - Multi-line text (a stack trace).
  * @returns The text with control characters escaped and newlines preserved.
+ * @example
+ *   escapeControlCharacters('Error: boom\x1b[2J\n    at app (/srv/a.ts:1:1)')
+ *   // → 'Error: boom\\u001b[2J\n    at app (/srv/a.ts:1:1)'  (LF kept, ESC escaped)
  */
 export function escapeControlCharacters(text: string): string {
-  return text.replace(UNSAFE_IN_MULTILINE, toHexEscape)
+  return text.replace(UNSAFE_IN_MULTILINE, toEscapeSequence)
 }

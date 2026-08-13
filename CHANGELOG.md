@@ -32,7 +32,9 @@ heading here.
   sequence, and vertical tab, form feed and C1 NEL (U+0085) all move the cursor. Measured on the
   built bundle — the raw `ESC` byte reached the terminal through `pino-pretty` and forged a line
   exactly like a newline did. Every C0 control except TAB, plus DEL and the C1 range, is now
-  rendered as its readable `\\xNN` escape, which disarms every sequence built on the ESC byte.
+  rendered as its readable `\uXXXX` escape — one form for every character, the same shape JSON
+  already uses for control bytes, so the pretty rendering and the NDJSON line agree. Escaping the
+  ESC byte is what disarms every sequence built on it, rather than chasing sequences one by one.
 - **The scrubbed stack is escaped too.** `pino-pretty` prints `err.stack` RAW rather than as a JSON
   string, and a stack's first line repeats the error message — so escaping only `msg` left the
   identical attack working through `err.stack` and `exception.stacktrace`. Control characters in

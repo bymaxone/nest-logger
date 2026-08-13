@@ -312,7 +312,7 @@ describe('sanitizeError — terminal control characters in the stack', () => {
 
     const { stack } = sanitizeError(error)
 
-    expect(stack).toContain('boom\\x1b[2J')
+    expect(stack).toContain('boom\\u001b[2J')
     expect(stack).not.toContain(ESC)
   })
 
