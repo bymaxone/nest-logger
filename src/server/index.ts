@@ -69,7 +69,17 @@ export { DEFAULT_REDACT_PATHS } from './constants/default-redact-paths.constants
 export { PINO_LEVEL_NAMES, PINO_LEVEL_NUMBERS } from './constants/log-levels.constants'
 
 // Shared re-exports (convenience)
-export type { LogLevel, LogEntry, ServiceMetadata } from '../shared'
+// Every shared type is re-exported, not a subset. `LogEntry` is here, so the
+// types of its own properties have to be nameable from the same entry point —
+// otherwise a consumer can hold `entry.service` but cannot write its type.
+export type {
+  EmittedDeploymentResource,
+  EmittedServiceResource,
+  LogEntry,
+  LogLevel,
+  ResolvedServiceMetadata,
+  ServiceMetadata
+} from '../shared'
 export {
   LOG_KEYS_CONVENTION_REGEX,
   RESERVED_LOG_KEYS,

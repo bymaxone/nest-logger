@@ -27,7 +27,9 @@ Variadic NestJS bridge calls (`logger.log(…)`) carry `msg` but no `logKey` and
 The published `LogEntry` type describes the **emitted** record. Configuration shapes
 (`ServiceMetadata`) and emitted shapes (`EmittedServiceResource`, `EmittedDeploymentResource`) are
 deliberately distinct types — reusing one as the other is how this library shipped a lying type
-twice, and it will not do so a third time.
+twice, and it will not do so a third time. All of them are exported from
+`@bymax-one/nest-logger/shared` and reexported from the server subpath: a type that describes a
+property of a public type has to be nameable, or the distinction above is unusable in practice.
 
 ## Context contract
 
