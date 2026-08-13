@@ -24,28 +24,64 @@ export interface OtelTraceApi {
 }
 
 /**
- * Lazily resolve the `@opentelemetry/api` `trace` namespace.
+ * Load `@opentelemetry/api` through a resolver anchored at `anchor()`.
  *
- * Resolution is anchored to `process.cwd()` rather than `import.meta.url`: the
- * latter fails to compile under the CommonJS test transform (TS1343), while
- * `process.cwd()` keeps one source compiling cleanly across ESM, the test
- * transform, and both tsup bundle formats. Node walks up from the working
- * directory to find the optional peer dependency in the consumer's
- * `node_modules`.
+ * The anchor is a THUNK, not a string, so it is evaluated inside this try. A
+ * bundler that emits neither `__filename` nor a shim makes that reference throw
+ * `ReferenceError`, and evaluating it at module scope would throw at LOAD time —
+ * before any caller could catch it, taking the application down over an optional
+ * peer dependency. Deferring it turns that case into the same "unresolvable"
+ * outcome as a missing module.
  *
- * @returns The OTel `trace` API when installed, otherwise `undefined`.
+ * @param anchor - Produces the absolute path resolution walks up from.
+ * @returns The OTel `trace` namespace, or `undefined` when unresolvable.
  */
-export function detectOtelTraceApi(): OtelTraceApi | undefined {
+function loadTraceApiFrom(anchor: () => string): OtelTraceApi | undefined {
   try {
-    // Stryker disable next-line StringLiteral: NOT equivalent, and not a coverage gap — the suite kills this mutant, verified by applying the mutation by hand and watching the suite turn red. Stryker fails to attribute the killing test to it under `perTest` coverage analysis, on a full run as well as a scoped one, so it reports as surviving. Ignored on that ground rather than reclassified as equivalent, which would be false.
-    const requireFromCwd = createRequire(join(process.cwd(), 'noop.cjs'))
-    const mod = requireFromCwd('@opentelemetry/api')
+    const requireFrom = createRequire(anchor())
+    const mod = requireFrom('@opentelemetry/api')
     // No optional chaining: a missing module throws (caught below) and a falsy
     // module makes `mod.trace` throw into the same catch — both yield undefined.
     return mod.trace as OtelTraceApi | undefined
   } catch {
     return undefined
   }
+}
+
+/**
+ * Lazily resolve the `@opentelemetry/api` `trace` namespace.
+ *
+ * Resolution is anchored to THIS MODULE first, and only falls back to
+ * `process.cwd()`.
+ *
+ * The order matters, and the previous cwd-only order was a real defect. A
+ * library installed at `<app>/node_modules/@bymax-one/nest-logger/dist/...`
+ * resolves its optional peer by walking up from its own location — which is how
+ * Node resolution is defined and how every other dependency in the process is
+ * found. Anchoring at the working directory instead asks a different question:
+ * "is the peer reachable from wherever the operator happened to launch the
+ * process". Those answers diverge under a Docker `WORKDIR` that is not the app
+ * root, a pnpm/Yarn workspace whose `node_modules` is hoisted to the repo root,
+ * a monorepo started from the repository root, and a serverless bundle. The
+ * failure was silent: trace correlation simply switched off, with no error and
+ * no warning, so `traceId` was missing exactly where distributed tracing was
+ * most likely to be configured.
+ *
+ * The `process.cwd()` fallback is kept deliberately: in a bundled application
+ * this module's path is the bundle's, which may sit outside any `node_modules`
+ * tree, and there the working directory is the better guess. Trying both costs
+ * one extra resolution attempt, once, at Pino-instance construction.
+ *
+ * `__filename` is native in CommonJS — both the `.cjs` bundle and the test
+ * transform — and tsup's `shims` option injects an `import.meta.url`-derived
+ * equivalent into the `.mjs` bundle.
+ *
+ * @returns The OTel `trace` API when installed, otherwise `undefined`.
+ */
+export function detectOtelTraceApi(): OtelTraceApi | undefined {
+  return (
+    loadTraceApiFrom(() => __filename) ?? loadTraceApiFrom(() => join(process.cwd(), 'noop.cjs'))
+  )
 }
 
 /**

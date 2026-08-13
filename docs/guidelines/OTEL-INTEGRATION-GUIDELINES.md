@@ -39,28 +39,74 @@ The lib **does not initialize** the OTel SDK. It only detects whether OTel is ac
 
 ## 2. Optional detection
 
-`@opentelemetry/api` is an **optional** peer dependency. The lib uses `createRequire` to attempt resolution at runtime without breaking the build if it is not installed:
+`@opentelemetry/api` is an **optional** peer dependency, and it is the ONLY OpenTelemetry package
+this library touches. No SDK, no exporter, no instrumentation, no Collector client. Verified
+2026-08-13: `@opentelemetry/api` is at `1.9.1` — a stable 1.x contract — while
+`@opentelemetry/api-logs` is at `0.221.0` and is deliberately **not** adopted.
+
+Resolution happens once, at Pino-instance construction:
 
 ```typescript
 // src/server/utils/otel-detector.ts
 import { createRequire } from 'node:module'
+import { join } from 'node:path'
 
-export function detectOtelTraceApi(): OtelTraceApi | undefined {
+function loadTraceApiFrom(anchor: () => string): OtelTraceApi | undefined {
   try {
-    const requireFromHere = createRequire(import.meta.url)
-    const mod = requireFromHere('@opentelemetry/api') as { trace?: OtelTraceApi }
+    const requireFrom = createRequire(anchor())
+    const mod = requireFrom('@opentelemetry/api') as { trace?: OtelTraceApi }
     return mod.trace
   } catch {
     return undefined
   }
 }
+
+export function detectOtelTraceApi(): OtelTraceApi | undefined {
+  return (
+    loadTraceApiFrom(() => __filename) ?? loadTraceApiFrom(() => join(process.cwd(), 'noop.cjs'))
+  )
+}
 ```
 
-Works in **ESM** (via `import.meta.url`) and **CJS** (tsup injects a shim).
+### Why the module path comes first
 
-> ⚠️ **Bundlers (esbuild, webpack)** may omit the `require` if there is no static reference. Solution: declare the peer dep in `package.json` (`@opentelemetry/api: ^1.9.0` in `peerDependenciesMeta` as `optional`) — bundlers recognize this and preserve the lookup.
->
-> If you bundle (esbuild, rollup, webpack), add `@opentelemetry/api` to `external` explicitly — the runtime peer-dep optional check only works for non-bundled imports.
+Anchoring resolution at `process.cwd()` — which earlier versions did, and did _only_ — asks the
+wrong question. It asks "is the peer reachable from wherever the operator launched this process",
+when the question is "is the peer reachable from this library". Those answers diverge in ordinary
+deployments:
+
+| Deployment shape                              | `process.cwd()` anchor | Module anchor |
+| --------------------------------------------- | :--------------------: | :-----------: |
+| App started from its own root                 |           ✅           |      ✅       |
+| Docker `WORKDIR` above/below the app root     |           ❌           |      ✅       |
+| pnpm / Yarn workspace, hoisted `node_modules` |           ❌           |      ✅       |
+| Monorepo started from the repository root     |           ❌           |      ✅       |
+| Serverless bundle                             |        depends         |    depends    |
+
+Measured with `cwd = /`: the cwd anchor fails to resolve, the module anchor succeeds. The failure
+was **silent** — trace correlation simply stopped, and a missing `traceId` reads as "no active
+span".
+
+The `process.cwd()` fallback is retained on purpose: in a bundled application this module's path is
+the bundle's, which may sit outside any `node_modules` tree, and there the working directory is the
+better guess.
+
+The anchor is a **thunk**, not a string, so `__filename` is evaluated inside the `try`. A bundler
+emitting neither `__filename` nor a shim would otherwise throw `ReferenceError` at module load —
+before any caller could catch it — taking the application down over an _optional_ dependency.
+`tsup` is configured with `shims: true` so the `.mjs` bundle carries an `import.meta.url`-derived
+`__filename`; CommonJS has it natively.
+
+### The failure is now visible
+
+When `otel.shouldAutoInjectTraceContext` is enabled **and** resolution fails, the module emits one
+`LOGGER_BOOTSTRAP_WARNING` at boot with `reason: 'OTEL_API_UNAVAILABLE'`. Nothing is emitted when
+auto-injection is off — a logger that was never asked to correlate is not missing anything.
+
+> ⚠️ **Bundlers (esbuild, webpack)** may omit the `require` if there is no static reference. Declare
+> the peer dep in `package.json` (`@opentelemetry/api` in `peerDependenciesMeta` as `optional`) —
+> bundlers recognize this and preserve the lookup. If you bundle, add `@opentelemetry/api` to
+> `external` explicitly.
 
 ---
 

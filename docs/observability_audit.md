@@ -800,6 +800,38 @@ Every item below is scoped as: problem → current → desired → files → com
 
 ### P1 — Important
 
+> **Status: SHIPPED.** P1-1, P1-6 and P1-7 landed with the P0 remediation (PR #82). P1-2, P1-3,
+> P1-4 and P1-5 landed in the P1 release. Design rationale:
+> [ADR 0001](./adr/0001-resource-identity-and-otel-correlation.md). Field inventory:
+> [`semantic-convention-mapping.md`](./semantic-convention-mapping.md).
+>
+> | Item                                   | Status | Note                                         |
+> | -------------------------------------- | :----: | -------------------------------------------- |
+> | P1-1 `LogEntry` type + README examples |   ✅   | Shipped in 1.2.0                             |
+> | P1-2 stable resource attributes        |   ✅   | With one correction below                    |
+> | P1-3 `event.name`                      |   ✅   | With one correction below                    |
+> | P1-4 semconv errors + cause chain      |   ✅   | Plus a second layer of the `err.type` defect |
+> | P1-5 robust OTel detection             |   ✅   | Measured against a hostile CWD               |
+> | P1-6 reserved keys emitted             |   ✅   | Shipped in 1.2.0                             |
+> | P1-7 README API reference              |   ✅   | Shipped in 1.2.0                             |
+>
+> **Two things this audit got wrong**, found by verifying against the specification on 2026-08-13
+> rather than trusting the plan:
+>
+> 1. **There is no `OTEL_SERVICE_VERSION` environment variable.** P1-2 below prescribes reading it.
+>    The specification defines `OTEL_SERVICE_NAME` only; version comes from
+>    `OTEL_RESOURCE_ATTRIBUTES`. Implemented accordingly.
+> 2. **The `event.name` attribute is Deprecated.** P1-3 below prescribes emitting it as an
+>    attribute. Semantic Conventions now require the value to be set as the LogRecord's top-level
+>    `EventName` field. The implementation emits a configurable JSON key documented as the carrier
+>    for that mapping, never as an OTLP attribute.
+>
+> A third correction is about the audit's own method: the HTTP findings that P0 missed (guard
+> rejections unlogged, aborted requests logged as successes) were defects of POSITION in the
+> pipeline, not of any component's contract. This audit reviewed components against their own
+> contracts. A pass asking "what does the pipeline as a whole never emit" is what would have caught
+> them.
+
 ---
 
 #### P1-1 · Correct the published `LogEntry` type and the README examples

@@ -1,9 +1,15 @@
+jest.mock('../utils/otel-detector', () => ({
+  ...jest.requireActual<typeof import('../utils/otel-detector')>('../utils/otel-detector'),
+  detectOtelTraceApi: jest.fn()
+}))
+
 import pino from 'pino'
 
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 
 import { applyDefaults } from '../config/default-options'
+import { detectOtelTraceApi } from '../utils/otel-detector'
 
 import { DestinationRegistry } from './destination-registry.service'
 import { PinoLoggerService } from './pino-logger.service'
@@ -229,5 +235,78 @@ describe('DestinationRegistry', () => {
       const registry = new DestinationRegistry([makeDestination('a')], logger, options)
       expect(registry.getActive()).toEqual([])
     })
+  })
+})
+
+describe('DestinationRegistry — OTel availability warning', () => {
+  const mockedDetect = jest.mocked(detectOtelTraceApi)
+  let logger: PinoLoggerService
+  let warnSpy: jest.SpyInstance
+
+  /** Boot a registry with the given options and capture its structured warnings. */
+  async function boot(overrides: Parameters<typeof applyDefaults>[0]): Promise<void> {
+    logger = new PinoLoggerService(pino({ enabled: false }))
+    warnSpy = jest.spyOn(logger, 'warnStructured').mockImplementation()
+    const registry = new DestinationRegistry([], logger, applyDefaults(overrides))
+    await registry.onModuleInit()
+  }
+
+  /** Warnings whose metadata names the OTel reason. */
+  const otelWarnings = (): unknown[] =>
+    warnSpy.mock.calls.filter(
+      (call) => (call[3] as { reason?: string } | undefined)?.reason === 'OTEL_API_UNAVAILABLE'
+    )
+
+  it(/*
+   * REGRESSION — a missing `@opentelemetry/api` used to be indistinguishable from
+   * "no active span": both produce entries with no `traceId`. The consumer asked
+   * for auto-injection, so the failure to deliver it has to be visible at boot,
+   * exactly once, or the misconfiguration is invisible for the life of the
+   * process.
+   */
+  'warns once when auto-injection is on and the OTel API is unavailable', async () => {
+    mockedDetect.mockReturnValue(undefined)
+
+    await boot({ service: { name: 'app', version: '1.0.0' } })
+
+    expect(otelWarnings()).toHaveLength(1)
+    // The whole message and the whole metadata object, not a fragment: this line
+    // is the only signal that correlation was asked for and cannot be delivered,
+    // and half of it going missing would still read as a warning while saying
+    // nothing actionable.
+    expect(warnSpy).toHaveBeenCalledWith(
+      RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_WARNING,
+      'Trace-context auto-injection is enabled but @opentelemetry/api could not be ' +
+        'resolved — traceId and spanId will be absent from every entry',
+      undefined,
+      { reason: 'OTEL_API_UNAVAILABLE', shouldAutoInjectTraceContext: true }
+    )
+  })
+
+  it(/*
+   * Nothing was asked for, so nothing is missing. A logger with auto-injection
+   * off must not nag about an optional peer it was never going to use.
+   */
+  'stays silent when auto-injection is disabled', async () => {
+    mockedDetect.mockReturnValue(undefined)
+
+    await boot({
+      service: { name: 'app', version: '1.0.0' },
+      otel: { shouldAutoInjectTraceContext: false }
+    })
+
+    expect(otelWarnings()).toHaveLength(0)
+  })
+
+  it(/*
+   * The peer resolves, so auto-injection will work — warning here would train
+   * consumers to ignore the signal.
+   */
+  'stays silent when the OTel API resolves', async () => {
+    mockedDetect.mockReturnValue({ getActiveSpan: () => undefined })
+
+    await boot({ service: { name: 'app', version: '1.0.0' } })
+
+    expect(otelWarnings()).toHaveLength(0)
   })
 })

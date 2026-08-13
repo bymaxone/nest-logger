@@ -253,3 +253,47 @@ describe('sanitizeError', () => {
     })
   })
 })
+
+describe('sanitizeError — error-like detection', () => {
+  it(/*
+   * REGRESSION — `instanceof Error` alone was too narrow, and the gap was live.
+   * An error already normalized into a plain `{ name, message, stack }` — what
+   * `HttpExceptionFilter` hands over, and what any error crossing a worker
+   * boundary becomes — was reported as `UnknownError` with the whole object
+   * stringified into the message. The real type was lost.
+   */
+  'reads a plain error-like object as an error', () => {
+    const sanitized = sanitizeError({ name: 'ForbiddenException', message: 'denied' })
+
+    expect(sanitized.name).toBe('ForbiddenException')
+    expect(sanitized.message).toBe('denied')
+  })
+
+  it('still reads a real Error instance', () => {
+    expect(sanitizeError(new TypeError('bad type')).name).toBe('TypeError')
+  })
+
+  it.each<[unknown, string]>([
+    [{ name: 'OnlyName' }, 'message missing'],
+    [{ message: 'only message' }, 'name missing'],
+    [{ name: 42, message: 'numeric name' }, 'name not a string'],
+    [{ name: 'X', message: 42 }, 'message not a string']
+  ])(
+    /*
+     * The bar is deliberately narrow — string `name` AND string `message` — so an
+     * arbitrary object is not mistaken for an error and silently reduced to the
+     * `{ name, message, stack }` shape, losing every other field it carried.
+     */
+    'treats %p as a non-error (%s)',
+    (value) => {
+      expect(sanitizeError(value).name).toBe('UnknownError')
+    }
+  )
+
+  it.each<[unknown]>([['a string'], [42], [null], [undefined]])(
+    'treats the non-object %p as a non-error',
+    (value) => {
+      expect(sanitizeError(value).name).toBe('UnknownError')
+    }
+  )
+})

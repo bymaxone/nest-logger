@@ -11,6 +11,91 @@ heading here.
 
 ## [Unreleased]
 
+P1 of the observability audit ([`docs/observability_audit.md`](./docs/observability_audit.md)):
+stable OpenTelemetry resource identity, robust trace correlation, semconv-aligned error fields and
+machine-readable event names. Every convention adopted here was verified **Stable** against
+Semantic Conventions **v1.44.0** on 2026-08-13; nothing Development or Experimental is emitted by
+default, and no runtime dependency was added.
+
+Design rationale is in [ADR 0001](./docs/adr/0001-resource-identity-and-otel-correlation.md); the
+complete field inventory is in
+[`docs/semantic-convention-mapping.md`](./docs/semantic-convention-mapping.md).
+
+### Fixed
+
+- **Trace correlation no longer switches off because of the working directory.** `@opentelemetry/api`
+  was resolved from `process.cwd()` alone, so a Docker `WORKDIR` that is not the app root, a
+  pnpm/Yarn workspace with hoisted `node_modules`, a monorepo launched from the repository root or a
+  serverless bundle silently disabled ALL trace correlation. Measured with `cwd = /`: the old anchor
+  fails to resolve, the new one succeeds. Resolution is now anchored at the library's own module
+  path, falling back to the working directory.
+- **`err.type` is no longer `"Object"` for a typed exception.** `pino.stdSerializers.err` derives
+  the type from the value's CONSTRUCTOR, so an error already normalized into a plain object — which
+  is exactly what `HttpExceptionFilter` produces — was reported as `Object`. The fix is
+  architectural: nothing pre-serializes any more and the `err` serializer reads the real type. A
+  second layer of the same defect is fixed too — `sanitizeError` only accepted `instanceof Error`,
+  so the same plain object came out as `UnknownError`.
+- **`Error.cause` chains reach the log.** `sanitizeError` computed the chain and the service
+  discarded it, so modern JavaScript error chaining was invisible. `AggregateError` members are
+  carried as `err.errors`. Both are depth- and width-bounded, circular-safe, and redacted.
+
+### Added
+
+- **Stable resource identity.** `service.namespace`, `service.instanceId` and `service.environment`
+  options, emitted as `service.namespace`, `service.instance.id` and `deployment.environment.name`.
+  Resolution precedence is deterministic: explicit options → `OTEL_SERVICE_NAME` →
+  `OTEL_RESOURCE_ATTRIBUTES` → `NODE_ENV`. The order of the two OTel variables is required by the
+  specification, so the logger and the SDK reading the same environment agree by construction.
+  `service.instance.id` is **never generated** — a UUID minted here would be the logger's rather
+  than the OTel Resource's, and would change on every restart while looking authoritative.
+- **`resourceFormat: 'nested' | 'flat'`** (default `'nested'`). `'flat'` emits the dotted attribute
+  names verbatim, which a collector maps onto resource attributes directly.
+- **`errorFormat: 'pino' | 'semconv' | 'both'`** (default `'pino'`). Adds the Stable
+  `exception.type` / `exception.message` / `exception.stacktrace` and a low-cardinality
+  `error.type`. `'both'` is the migration path; `'semconv'` replaces the legacy `err` object and is
+  an explicit choice, never a default.
+- **`eventNameField`** (default `'event.name'`). Derives an OTel-conforming event name from
+  `logKey` — `PAYMENT_FAILED` → `payment.failed` — following the naming rules. `logKey` is never
+  renamed or removed. `false` disables it.
+- **`LOGGER_BOOTSTRAP_WARNING` for an unavailable OTel API.** When trace injection is enabled and
+  `@opentelemetry/api` cannot be resolved, one warning naming `OTEL_API_UNAVAILABLE` is emitted at
+  boot. A missing `traceId` used to be indistinguishable from "no active span".
+- **`ResolvedServiceMetadata`** exported from `@bymax-one/nest-logger/shared` — the identity after
+  precedence, and the contract a future `@bymax-one/nest-observability` consumes.
+
+### Changed
+
+- An error's own enumerable properties (`code`, `statusCode`, domain fields) are still carried onto
+  the serialized `err`, as Pino's standard serializer did — with the fields the serializer derives
+  itself excluded, so a plain error-like object no longer emits `name` beside the `type` derived
+  from it.
+- `deployment.environment.name` is emitted from `NODE_ENV` when nothing else supplies it, so most
+  applications gain the attribute without configuration. The **deprecated** `deployment.environment`
+  spelling is never emitted.
+
+### Performance
+
+Measured on the same machine as the 1.2.0 figures, shipped configuration:
+
+| Path                                        |           1.2.0 |             P1 | Delta |
+| ------------------------------------------- | --------------: | -------------: | ----: |
+| Shipped config throughput                   | ~278,000 logs/s | 263,768 logs/s |   −5% |
+| Retention vs. bare service (budget ≥ 0.20×) |          0.349× |         0.323× |   −7% |
+
+The cost is almost entirely `event.name` derivation: 949,560 vs 1,089,561 ops/sec on the info path
+(~13% there, ~7% of the full path). Resource identity costs ~2%, because it is resolved once and
+precomputed into Pino's `base`. `errorFormat: 'semconv'` is **faster** than the legacy shape
+(330,289 vs 245,463 ops/sec) since it emits flat strings instead of walking a cause chain. Set
+`eventNameField: false` to pay none of it.
+
+### Not adopted
+
+- **`@opentelemetry/api-logs`** — still `0.221.0`. A 0.x package will not become a dependency of a
+  library that ships `"dependencies": {}`.
+- **`event.name` as an OTLP attribute** — the attribute is Deprecated; the value belongs in the
+  LogRecord `EventName` field, and the emitted key is the JSON carrier for that mapping.
+- **`deployment.id` / `.name` / `.status`** — Development stability.
+
 ## [1.2.0] - 2026-08-13
 
 Remediation of the P0 findings from the observability audit

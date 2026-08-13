@@ -191,7 +191,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    */
   error(message: unknown, ...optionalParams: unknown[]): void {
     if (message instanceof Error) {
-      const payload: Record<string, unknown> = { err: this.serializeError(message) }
+      const payload: Record<string, unknown> = { err: message }
       assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
       this.pino.error(payload, safeErrorMessage(message))
       return
@@ -303,7 +303,12 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const payload: Record<string, unknown> = {
       ...withoutOwnedKeys(metadata),
       logKey,
-      err: this.serializeError(error)
+      // The RAW value, not a pre-serialized copy. Pre-serializing was what let
+      // Pino's standard `err` serializer re-derive `type` from the resulting
+      // plain object's constructor and emit `"Object"` for every typed
+      // exception — and it discarded the cause chain on the way. The configured
+      // serializer owns the shape now.
+      err: error
     }
     assignIfDefined(payload, 'userId', userId)
     assignIfDefined(payload, 'context', this.context)
@@ -370,28 +375,6 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   }
 
   // ─── Private ──────────────────────────────────────────────────────────────
-
-  /**
-   * Serialize an Error into a plain, log-safe object matching Pino's built-in
-   * `err` serializer shape (`type`, `message`, `stack`).
-   *
-   * Reads `error.name` (NOT `error.constructor.name`) for `type`: native
-   * subclasses set `name` to their class name, and a sanitized plain-object error
-   * (from `sanitizeError`) carries the real class name on `name` — whereas its
-   * `constructor.name` would be the unhelpful `'Object'`, breaking `err.type`
-   * dashboards for every exception logged through `HttpExceptionFilter`.
-   */
-  private serializeError(error: Error): Record<string, unknown> {
-    try {
-      return { type: error.name, message: error.message, stack: error.stack }
-    } catch {
-      // `name` / `message` / `stack` are ordinary properties a caller can
-      // redefine as throwing accessors — V8 already exposes `stack` as an
-      // accessor. Degrading here keeps the never-throw contract on the path most
-      // likely to receive a hostile object: the one handling a thrown value.
-      return { type: 'SanitizeFailed', message: 'Failed to read the thrown value' }
-    }
-  }
 
   /** Resolve the context: last string param wins, else the instance context. */
   private resolveContext(optionalParams: unknown[]): string | undefined {

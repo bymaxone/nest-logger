@@ -26,6 +26,12 @@ import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { destinationToStream } from './utils/destination-to-stream'
 import { createNameRedactor } from './utils/redact-by-name.util'
 import type { Redactor } from './utils/redact-by-name.util'
+import {
+  buildResourceBindings,
+  extraServiceFields,
+  resolveServiceMetadata
+} from './utils/resolve-resource.util'
+import { sanitizeError, scrubStack } from './utils/sanitize-error.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
@@ -90,6 +96,256 @@ export function leafNameOf(path: string): string | undefined {
     }
   }
   return leaf
+}
+
+/**
+ * Fields the serializer derives itself, excluded from the own-property copy.
+ *
+ * A real `Error` keeps `name` / `message` / `stack` non-enumerable, so they never
+ * reach the copy loop. An error-LIKE plain object — what `HttpExceptionFilter`
+ * produces, and what any error crossing a worker boundary becomes — carries them
+ * as ordinary own keys, and copying them would emit `name` beside the `type`
+ * derived from it: the same value under two names, one of which no consumer
+ * queries.
+ */
+const DERIVED_ERROR_FIELDS: ReadonlySet<string> = new Set([
+  'name',
+  'message',
+  'stack',
+  'cause',
+  'errors'
+])
+
+/**
+ * The `err` serializer, replacing `pino.stdSerializers.err`.
+ *
+ * Two defects made the standard serializer the wrong tool here.
+ *
+ * It CLOBBERS the type. `stdSerializers.err` derives `type` from the value's
+ * constructor, so anything that reached it already normalized into a plain
+ * object came out as `type: "Object"` — every `ForbiddenException`, every
+ * `HttpException`, every error the service had pre-serialized. The fix is
+ * architectural rather than a special case: nothing pre-serializes any more, and
+ * the type is read from the error itself.
+ *
+ * It DROPS the cause chain. `sanitizeError` already walks `cause` and
+ * `AggregateError.errors` — depth- and width-bounded, circular-safe, and unable
+ * to throw — and that work was being computed on one path and discarded on
+ * another. Reusing it is both more correct and cheaper than re-serializing.
+ *
+ * The output keeps the LEGACY key names (`type`, `message`, `stack`) so every
+ * existing query, dashboard and alert keeps working. `cause` and `errors` are
+ * additive.
+ *
+ * @internal Exported only for unit testing. These hooks write fields whose
+ *   absence is invisible in a serialized line — `JSON.stringify` drops a key
+ *   holding `undefined` — so asserting them through the sink cannot tell an
+ *   omitted field from one written as `undefined`. Mutation testing found that
+ *   gap. NOT re-exported by the package barrel.
+ * @param value_ - The thrown value, in whatever shape it reached the log call.
+ * @returns A JSON-safe error object.
+ */
+export function serializeErrorValue(value_: unknown): Record<string, unknown> {
+  const sanitized = sanitizeError(value_)
+  const serialized: Record<string, unknown> = {
+    // `type` rather than `name`: the field consumers already query.
+    type: sanitized.name,
+    message: sanitized.message
+  }
+  if (sanitized.stack !== undefined) {
+    serialized['stack'] = sanitized.stack
+  }
+  if (sanitized.cause !== undefined) {
+    serialized['cause'] = sanitized.cause
+  }
+  if (sanitized.errors !== undefined) {
+    serialized['errors'] = sanitized.errors
+  }
+  // An error's OWN enumerable properties are part of the contract. Node puts
+  // `code` on system errors, HTTP layers put `statusCode`, and application code
+  // attaches domain fields — `pino.stdSerializers.err` copied all of them, so
+  // dropping them here would have been a silent compatibility loss. They are
+  // copied only where they do not shadow a field this serializer owns, and they
+  // pass through the same redaction and size bound as any other serializer
+  // output, which is what keeps a secret attached to an error from escaping.
+  try {
+    for (const [key, value] of Object.entries(value_ as Record<string, unknown>)) {
+      if (!Object.hasOwn(serialized, key) && !DERIVED_ERROR_FIELDS.has(key)) {
+        // `Reflect` keeps the dynamic write off the object-injection sink list.
+        Reflect.set(serialized, key, value)
+      }
+    }
+  } catch {
+    // A hostile own-property enumeration degrades to the fields already read
+    // rather than failing the entry: something is better than nothing, and the
+    // never-throw contract on this path is absolute.
+  }
+  return serialized
+}
+
+/**
+ * Add the Stable OpenTelemetry exception attributes alongside (or instead of)
+ * the legacy `err` object.
+ *
+ * **Stability, verified 2026-08-13 against SemConv v1.44.0.** `exception.type`,
+ * `exception.message` and `exception.stacktrace` are **Stable** on log records;
+ * the spec requires at least one of `type` / `message` to be present, which is
+ * satisfied here because both are derived from the same value. `error.type` is
+ * **Stable** and must be low cardinality — it carries the error's CLASS NAME,
+ * which is bounded by the number of exception types a codebase defines, never a
+ * message or an identifier.
+ *
+ * `error.type` and `exception.type` are not redundant even when they hold the
+ * same string: `exception.type` describes the thrown object, while `error.type`
+ * is the classification a consumer aggregates on. Emitting both is what lets a
+ * dashboard group by failure class without parsing the exception.
+ *
+ * Runs at `formatters.log`, so the value read here is the REDACTED copy the walk
+ * produced — a cloned `Error` with resolved properties, never the caller's live
+ * object. A hostile getter has already been dealt with by the fail-closed guard
+ * upstream; the try/catch is the belt to that braces, because this hook must not
+ * be the thing that throws inside a log call.
+ *
+ * @internal Exported only for unit testing. These hooks write fields whose
+ *   absence is invisible in a serialized line — `JSON.stringify` drops a key
+ *   holding `undefined` — so asserting them through the sink cannot tell an
+ *   omitted field from one written as `undefined`. Mutation testing found that
+ *   gap. NOT re-exported by the package barrel.
+ * @param record - The redacted record about to be serialized.
+ * @param format - `'pino'` keeps only `err`; `'semconv'` replaces it; `'both'`
+ *   emits each.
+ * @returns The record, with the exception attributes applied.
+ */
+export function withSemconvException(
+  record: Record<string, unknown>,
+  format: 'pino' | 'semconv' | 'both'
+): Record<string, unknown> {
+  if (format === 'pino') {
+    return record
+  }
+  try {
+    // Optional chaining rather than a type guard: a `null` or primitive `err`
+    // yields `undefined` for every field and adds nothing, which is exactly what
+    // a guard would have produced. A guard whose presence no input can
+    // distinguish is not a check, it is untested code.
+    const candidate = record['err'] as
+      { name?: unknown; message?: unknown; stack?: unknown } | undefined
+    if (typeof candidate?.name === 'string') {
+      record['exception.type'] = candidate.name
+      record['error.type'] = candidate.name
+    }
+    if (typeof candidate?.message === 'string') {
+      record['exception.message'] = candidate.message
+    }
+    if (typeof candidate?.stack === 'string') {
+      // Same scrubbing the legacy `err.stack` gets. Without it, a consumer moving
+      // to `errorFormat: 'semconv'` would silently start seeing dependency frames
+      // that the shape they migrated FROM had filtered out.
+      record['exception.stacktrace'] = scrubStack(candidate.stack)
+    }
+    if (format === 'semconv') {
+      // Explicitly opted out of the legacy shape. Kept as a deliberate choice
+      // rather than a default: `err.*` is what every existing query reads, and
+      // dropping it silently would break dashboards that never asked to migrate.
+      //
+      // Rebuilt rather than deleted: the redaction walk defines every property
+      // of its snapshot as non-configurable, so `delete` throws `TypeError` here
+      // — silently, into the catch below, leaving `err` in place. Adding keys
+      // still works because the object itself is extensible; only the existing
+      // properties are pinned. Measured, not assumed.
+      const withoutErr: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(record)) {
+        if (key !== 'err') {
+          Reflect.set(withoutErr, key, value)
+        }
+      }
+      return withoutErr
+    }
+  } catch {
+    // A value that resists reading leaves the legacy `err` untouched rather than
+    // half-populated attributes. Partial semconv fields would be worse than
+    // none: a consumer cannot tell an absent attribute from a failed read.
+  }
+  return record
+}
+
+/**
+ * Derive an OTel-conforming event name from a `MODULE_ACTION_RESULT` log key.
+ *
+ * `logKey` and the event name are deliberately NOT the same string. OTel's
+ * naming rules call for lowercase, dot-namespaced names; `PAYMENT_FAILED` is
+ * neither, and emitting it verbatim would produce a non-conforming event name —
+ * defeating the point of carrying the field at all. The mapping is lowercase
+ * plus `_` → `.`, which is exactly reversible for the convention this library
+ * already enforces on log keys:
+ *
+ *   `PAYMENT_FAILED`             → `payment.failed`
+ *   `USER_AUTHENTICATION_FAILED` → `user.authentication.failed`
+ *
+ * `logKey` itself is untouched, so every existing query keeps working.
+ *
+ * Deliberately NOT memoized, and the cost is real rather than hypothetical:
+ * measured at 949,560 vs 1,089,561 ops/sec on the info path (~13%), which is
+ * ~7% of the full shipped configuration once the redaction walk is in the
+ * picture. A cache would recover most of it, at the price of module-level
+ * mutable state plus an arbitrary size bound — caller-controlled keys make an
+ * unbounded one a memory leak. Two allocations per entry is the honest price of
+ * a standards-conforming event name, and a consumer who does not want to pay it
+ * sets `eventNameField: false` and pays nothing.
+ *
+ * @param logKey - The structured log key.
+ * @returns The derived, lowercase dot-separated event name.
+ */
+function toEventName(logKey: string): string {
+  return logKey.toLowerCase().replaceAll('_', '.')
+}
+
+/**
+ * Derive the configured event-name field from `logKey`.
+ *
+ * **On the semantic convention, verified 2026-08-13 against SemConv v1.44.0.**
+ * The `event.name` *attribute* is **Deprecated**: "The value of this attribute
+ * MUST now be set as the value of the EventName field on the LogRecord to
+ * indicate that the LogRecord represents an Event." `EventName` is a **top-level
+ * field of the LogRecord** in the Stable Logs Data Model — not an attribute.
+ *
+ * A Pino line is JSON, and JSON has no notion of "top-level LogRecord field"
+ * distinct from "attribute": every key is just a key. So this emits the value
+ * under a key a bridge maps ONTO `EventName`, and the field name is configurable
+ * precisely so a pipeline expecting a different key can say so. What must not
+ * happen is the value being carried through into an OTLP *attributes* map under
+ * the deprecated name; that is a mapping decision, documented in the OTel
+ * integration guidelines, not something this library can enforce.
+ *
+ * Applied AFTER redaction: the value is a copy of `logKey`, which the walk has
+ * already inspected, so re-walking it would cost a traversal to reach the same
+ * answer.
+ *
+ * Only structured calls carry a `logKey`. The NestJS variadic bridge (`log`,
+ * `warn`, `error`…) has none, and those entries correctly get no event name —
+ * an ordinary diagnostic line is not an Event.
+ *
+ * @internal Exported only for unit testing. These hooks write fields whose
+ *   absence is invisible in a serialized line — `JSON.stringify` drops a key
+ *   holding `undefined` — so asserting them through the sink cannot tell an
+ *   omitted field from one written as `undefined`. Mutation testing found that
+ *   gap. NOT re-exported by the package barrel.
+ * @param record - The redacted record about to be serialized.
+ * @param field - The field name, or `false` to emit nothing.
+ * @returns The same record, with the event name added when applicable.
+ */
+export function withEventName(
+  record: Record<string, unknown>,
+  field: string | false
+): Record<string, unknown> {
+  if (field === false) {
+    return record
+  }
+  const logKey: unknown = record['logKey']
+  if (typeof logKey === 'string' && logKey.length > 0) {
+    Reflect.set(record, field, toEventName(logKey))
+  }
+  return record
 }
 
 /** No-op redactor used when the name-walk is not the active strategy. */
@@ -190,7 +446,7 @@ export function buildPinoInstance(
   const bound = <T>(serializer: (input: T) => unknown): ((input: T) => unknown) =>
     createSizeBoundedSerializer((input: T) => redact(serializer(input)), maxBytes)
   const serializers = {
-    err: bound(pino.stdSerializers.err),
+    err: bound(serializeErrorValue),
     ...Object.fromEntries(
       Object.entries(options.serializers).map(
         ([key, serializer]): [string, (input: unknown) => unknown] => [key, bound(serializer)]
@@ -202,7 +458,14 @@ export function buildPinoInstance(
   const pinoOptions: LoggerOptions = {
     level: options.level,
     ...(redactOption === undefined ? {} : { redact: redactOption }),
-    base: { service: options.service },
+    // Resource identity, resolved ONCE here rather than per entry: Pino
+    // pre-serializes `base` into the instance's chindings, so the cost of the
+    // extra attributes is one string built at construction, not work per log.
+    base: buildResourceBindings(
+      resolveServiceMetadata(options.service),
+      options.resourceFormat,
+      extraServiceFields(options.service)
+    ),
     // Pino requires the timestamp fn to emit the `,"time":"..."` fragment.
     timestamp: () => `,"time":"${options.timestamp()}"`,
     formatters: {
@@ -225,7 +488,11 @@ export function buildPinoInstance(
       // `base` and child bindings are NOT visible at this hook — they are
       // library-owned (`service`, the `@InjectLogger` context) and carry nothing
       // sensitive, which `pino-factory.spec.ts` pins.
-      log: (record) => redact(record, true) as Record<string, unknown>
+      log: (record) =>
+        withSemconvException(
+          withEventName(redact(record, true) as Record<string, unknown>, options.eventNameField),
+          options.errorFormat
+        )
     },
     serializers,
     mixin: createTraceContextMixin(logContext, options.otel),

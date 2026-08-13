@@ -104,6 +104,41 @@ export function sanitizeError(err: unknown, options?: SanitizeErrorOptions): San
 }
 
 /**
+ * Whether a value can be read as an error.
+ *
+ * `instanceof Error` alone was too narrow, and the gap was a live defect. An
+ * error that has ALREADY been normalized into a plain `{ name, message, stack }`
+ * — which is exactly what `HttpExceptionFilter` hands to `errorStructured`, and
+ * what any error crossing a process or worker boundary becomes — is not an
+ * `Error` instance, so it was reported as `UnknownError` with the whole object
+ * stringified into the message. The real type was lost either way: first as
+ * `"Object"` from Pino's constructor-derived type, then as `"UnknownError"`
+ * here.
+ *
+ * Structural detection also covers errors from another realm (a `vm` context, a
+ * worker thread), where `instanceof` fails for reasons that have nothing to do
+ * with the value being an error.
+ *
+ * The bar is deliberately narrow — string `name` AND string `message` — so an
+ * arbitrary object does not get mistaken for an error and silently lose its
+ * fields to the `{ name, message, stack }` shape.
+ *
+ * @param value - The candidate value.
+ * @returns `true` when the value carries a readable error shape.
+ */
+function isErrorLike(value: unknown): value is Error {
+  // No `instanceof Error` fast path. Every real `Error` carries string `name` and
+  // `message` through its prototype, so the structural test below already
+  // accepts one — the fast path decided nothing the structural test would not
+  // have decided identically, which made it untestable code rather than a check.
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const candidate = value as { name?: unknown; message?: unknown }
+  return typeof candidate.name === 'string' && typeof candidate.message === 'string'
+}
+
+/**
  * Build a full {@link SanitizedError} for one node of the error graph. Wrapped in
  * a try/catch at every level so a hostile getter degrades only its own node
  * (to `SanitizeFailed`) instead of crashing the whole serialization.
@@ -121,7 +156,7 @@ function toSanitizedError(
   maxDepth: number
 ): SanitizedError {
   try {
-    if (!(value instanceof Error)) {
+    if (!isErrorLike(value)) {
       return { name: 'UnknownError', message: String(value) }
     }
 
@@ -196,10 +231,14 @@ function readAggregatedErrors(value: Error): unknown[] | undefined {
 /**
  * Remove `node_modules/` frames from a stack trace so logs surface app code.
  *
+ * @internal Exported so the semconv `exception.stacktrace` attribute carries the
+ *   SAME scrubbed stack as the legacy `err.stack`. Emitting one scrubbed and one
+ *   raw would mean a consumer switching to `errorFormat: 'semconv'` silently
+ *   lost the scrubbing they had. NOT re-exported by the package barrel.
  * @param stack - The raw stack trace.
  * @returns The stack with dependency frames stripped.
  */
-function scrubStack(stack: string): string {
+export function scrubStack(stack: string): string {
   return stack
     .split('\n')
     .filter((line) => !line.includes('node_modules'))
