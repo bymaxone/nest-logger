@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-13
+
 P1 of the observability audit ([`docs/observability_audit.md`](./docs/observability_audit.md)):
 stable OpenTelemetry resource identity, robust trace correlation, semconv-aligned error fields and
 machine-readable event names. Every convention adopted here was verified **Stable** against
@@ -755,7 +757,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/bymaxone/nest-logger/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/bymaxone/nest-logger/compare/v1.0.8...v1.1.0
 [1.0.8]: https://github.com/bymaxone/nest-logger/compare/v1.0.7...v1.0.8
