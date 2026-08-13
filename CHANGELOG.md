@@ -20,6 +20,68 @@ published type that never matched the runtime, and reserved log keys that were d
 signals but never written. The redaction engine was replaced in the process, which made the
 shipped logging path **~50× faster**.
 
+A second pass moved the HTTP access log from an interceptor to middleware, because an interceptor
+cannot see a request a guard rejected: 401, 403, 429 and 404 produced no log line at all.
+
+### Security
+
+- **Guard rejections and unmatched routes are logged.** NestJS runs
+  middleware → guards → interceptors → handler, so the interceptor-based access log never observed
+  a request rejected by a guard or one that matched no route. Measured against a real backend over
+  20 minutes of traffic: lines existed for 200/201/400, and **zero** for 401 — brute force,
+  credential stuffing and route enumeration were invisible, and invisible without a `requestId` to
+  correlate them by. `HttpAccessLogMiddleware` now records the access log before guards run, so
+  every request produces `HTTP_REQUEST_START` and a terminal entry carrying `ip`, `userAgent` and
+  the correlation context.
+- **The correlation scope no longer skips the prefixed root route.** `applyRequestIdMiddleware`
+  defaulted to the route pattern `'*'`, and under NestJS 11 (Express 5 / path-to-regexp v8) a
+  wildcard is a named parameter with segment-count semantics. Measured: both `'*'` and `'{*splat}'`
+  stop matching once the app calls `setGlobalPrefix`, so `GET /api` silently had no correlation
+  scope and, with the change above, no access log either. The default is now `'/'`, which MOUNTS at
+  the root rather than matching a pattern. The failure mode was absence — no error, just a request
+  that never appeared.
+
+### Fixed
+
+- **An aborted request is no longer logged as a success.** Destroying the socket does not cancel
+  the handler: it runs to completion, writes to a dead connection, the observable completes, and
+  the interceptor reported the `200` it intended. Delivery is now reported on its own axis —
+  `HTTP_REQUEST_ABORTED`, emitted from the response's `'close'` event when `writableFinished` is
+  false — while the status stays whatever the server produced. Inventing one was rejected: nginx's
+  `499` is not an HTTP status (IANA leaves 452–499 unassigned), so recording it would assert a code
+  the protocol has no name for and break any consumer grouping by class. The limit is stated in the
+  README: a fast handler whose client hangs up after the bytes were flushed is still reported as
+  the success it was, because the server cannot know whether the peer read them.
+
+### Breaking
+
+- **`HttpAccessLogMiddleware` must be wired for the new coverage.** It is registered by
+  `applyRequestIdMiddleware(consumer)`, which most consumers already call — no code change needed
+  for them. A consumer who never wired that helper keeps the previous interceptor-based behaviour
+  (including its blind spot) rather than losing HTTP logs. **Migration:** call
+  `applyRequestIdMiddleware(consumer)` in your module's `configure()` hook.
+- **The default middleware route changed from `'*'` to `'/'`.** A consumer passing an explicit
+  route is unaffected. One relying on the default now also gets the prefixed root route, which is
+  the fix. **Migration:** none; if you deliberately excluded the root, pass an explicit route.
+- **`LoggableResponse` gained `writableFinished` and `on('close', …)`.** An Express response
+  satisfies both already. **Migration:** only a consumer who hand-implements the interface — for a
+  test double, say — needs to add them.
+- **`HTTP_REQUEST_START` no longer carries `userId`.** The entry is now emitted before guards run,
+  which is the whole point of the change — and authentication runs in a guard, so at that moment
+  there is no principal to read. The previous interceptor-based START ran after guards and did
+  include it. The acting user is still logged: it is read at the terminal entry
+  (`HTTP_REQUEST_SUCCESS` / `_REDIRECT` / `_CLIENT_ERROR` / `_SERVER_ERROR` / `_ABORTED`), where
+  the guard has populated it. **Migration:** query the terminal entry for `userId`, not START. A
+  dashboard joining on START's `userId` should join on `requestId` instead, which both entries
+  carry.
+- **The logged URL now includes the app's global prefix.** The middleware is mounted, and a mounted
+  middleware sees `url` relative to its mount point, so the entry is built from `originalUrl`.
+  Under `setGlobalPrefix('api')` a request for `/api/users/7` used to be logged by the interceptor
+  as `/api/users/:id`; that is preserved. **Migration:** none — this keeps the previous value. An
+  `excludePaths` pattern is likewise matched against the full path, as before.
+- **New reserved log key `HTTP_REQUEST_ABORTED`.** A consumer asserting an exhaustive list of
+  `RESERVED_LOG_KEYS` must add it. **Migration:** add the key to the assertion.
+
 ### Security
 
 - **Credential-bearing HTTP headers are redacted by name.** `authorization`, `cookie`,

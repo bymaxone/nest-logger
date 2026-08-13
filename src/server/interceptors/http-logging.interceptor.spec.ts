@@ -9,12 +9,13 @@ import {
 import type { CallHandler, ExecutionContext, INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import type { NextFunction, Request, Response } from 'express'
-import { of } from 'rxjs'
+import { of, throwError } from 'rxjs'
 import request from 'supertest'
 
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import { BymaxLoggerModule } from '../logger.module'
 import { PinoLoggerService } from '../services/pino-logger.service'
+import { markRecorderActive, readRecordedError } from '../utils/http-log-state.util'
 
 import { HttpLoggingInterceptor } from './http-logging.interceptor'
 
@@ -445,5 +446,80 @@ describe('HttpLoggingInterceptor unit', () => {
     expect(keys).toContain(RESERVED_LOG_KEYS.HTTP_REQUEST_START)
     expect(keys).not.toContain(RESERVED_LOG_KEYS.HTTP_REQUEST_SUCCESS)
     expect(keys).not.toContain(RESERVED_LOG_KEYS.HTTP_REQUEST_REDIRECT)
+  })
+
+  /** Context whose request the access-log middleware already claimed. */
+  function makeClaimedCtx(req: object): ExecutionContext {
+    markRecorderActive(req)
+    return {
+      switchToHttp: () => ({
+        getRequest: () => req,
+        getResponse: () => ({ statusCode: 200 })
+      })
+    } as never
+  }
+
+  it(/*
+   * REGRESSION — when the middleware owns the lifecycle the interceptor must not
+   * emit anything. Both observe an ordinary request, so emitting here too would
+   * double every START and terminal line while still leaving the requests only
+   * the middleware sees uncovered.
+   */
+  'emits nothing when the access-log middleware claimed the request', async () => {
+    const infoSpy = jest.fn()
+    const interceptor = makeInterceptor(infoSpy)
+    const callHandler: CallHandler = { handle: () => of(undefined) }
+    const req = { method: 'GET', url: '/probe', ip: '127.0.0.1', headers: {} }
+
+    await new Promise<void>((resolve, reject) => {
+      interceptor
+        .intercept(makeClaimedCtx(req), callHandler)
+        .subscribe({ complete: resolve, error: reject })
+    })
+
+    expect(infoSpy).not.toHaveBeenCalled()
+  })
+
+  it(/*
+   * What the interceptor uniquely has is the thrown value: the middleware's
+   * `'close'` handler sees only a status code, so without this hand-off a 5xx
+   * terminal entry would lose its stack. The exception must still propagate —
+   * the interceptor observes, it never swallows.
+   */
+  'records the thrown error for the middleware and re-throws it', async () => {
+    const interceptor = makeInterceptor(jest.fn())
+    const thrown = new Error('handler exploded')
+    const callHandler: CallHandler = { handle: () => throwError(() => thrown) }
+    const req = { method: 'GET', url: '/probe', ip: '127.0.0.1', headers: {} }
+
+    const propagated = await new Promise<unknown>((resolve) => {
+      interceptor.intercept(makeClaimedCtx(req), callHandler).subscribe({
+        error: resolve,
+        complete: () => resolve(undefined)
+      })
+    })
+
+    expect(propagated).toBe(thrown)
+    expect(readRecordedError(req)?.error).toBe(thrown)
+  })
+
+  it(/*
+   * A `throw` can carry anything. The recorded value is normalized to an `Error`
+   * so the terminal entry's serializer has a message and a stack to work with.
+   */
+  'normalizes a non-Error throw before recording it', async () => {
+    const interceptor = makeInterceptor(jest.fn())
+    const callHandler: CallHandler = { handle: () => throwError(() => 'plain string') }
+    const req = { method: 'GET', url: '/probe', ip: '127.0.0.1', headers: {} }
+
+    await new Promise<void>((resolve) => {
+      interceptor
+        .intercept(makeClaimedCtx(req), callHandler)
+        .subscribe({ error: () => resolve(), complete: () => resolve() })
+    })
+
+    const recorded = readRecordedError(req)?.error
+    expect(recorded).toBeInstanceOf(Error)
+    expect(recorded?.message).toBe('plain string')
   })
 })

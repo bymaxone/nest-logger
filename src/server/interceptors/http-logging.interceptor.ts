@@ -24,19 +24,20 @@ import { LOGGER_OPTIONS_TOKEN } from '../constants/injection-tokens.constants'
 import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { PinoLoggerService } from '../services/pino-logger.service'
+import {
+  HTTP_CLIENT_ERROR_MIN,
+  HTTP_REDIRECT_MIN,
+  HTTP_SERVER_ERROR_MIN,
+  isRecorderActive,
+  readUserAgent,
+  readUserId,
+  recordError,
+  toError
+} from '../utils/http-log-state.util'
 import { normalizeUrl, stripQueryString } from '../utils/normalize-url.util'
 
 /** Lower bound of the HTTP success (2xx) range. */
 const HTTP_SUCCESS_MIN = 200
-/** Lower bound of the HTTP redirect (3xx) range. */
-const HTTP_REDIRECT_MIN = 300
-/** Lower bound of the HTTP client-error (4xx) range. */
-const HTTP_CLIENT_ERROR_MIN = 400
-/** Lower bound of the HTTP server-error (5xx) range. */
-const HTTP_SERVER_ERROR_MIN = 500
-
-/** Fallback user-agent when the header is absent or malformed. */
-const UNKNOWN_USER_AGENT = 'unknown'
 
 /**
  * Logs the full HTTP request lifecycle through a Pino-backed logger.
@@ -83,6 +84,14 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     const req = http.getRequest<LoggableRequest>()
     const res = http.getResponse<LoggableResponse>()
 
+    // The middleware runs before guards and already claimed this request, so it
+    // emits START and the terminal entry. Emitting here too would double every
+    // line for the requests BOTH can see, while still leaving the ones only the
+    // middleware sees uncovered.
+    if (isRecorderActive(req)) {
+      return this.recordOnly(req, next)
+    }
+
     const { method, url, ip } = req
 
     // Excluded paths (health checks, metrics) bypass logging entirely — no START
@@ -91,11 +100,8 @@ export class HttpLoggingInterceptor implements NestInterceptor {
       return next.handle()
     }
 
-    const rawUserAgent = req.headers['user-agent']
-    const userAgent = typeof rawUserAgent === 'string' ? rawUserAgent : UNKNOWN_USER_AGENT
-    // `id` for an ORM-style principal, `sub` for a JWT one (every nest-auth token).
-    // Reading only `id` dropped the user field for every JWT-authenticated request.
-    const userId = req.user?.sub ?? req.user?.id
+    const userAgent = readUserAgent(req)
+    const userId = readUserId(req)
     const normalizedUrl = normalizeUrl(url)
     const start = Date.now()
 
@@ -116,6 +122,29 @@ export class HttpLoggingInterceptor implements NestInterceptor {
       }),
       catchError((err: unknown) => {
         this.logError(err, method, normalizedUrl, userId, Date.now() - start)
+        return throwError(() => err)
+      })
+    )
+  }
+
+  /**
+   * Hand the lifecycle to the access-log middleware, recording only the thrown
+   * error for its terminal entry.
+   *
+   * The interceptor cannot be the recorder: it never runs for a request a guard
+   * rejected or one that matched no route. It also cannot judge DELIVERY — at the
+   * moment it completes, the response has not been flushed yet, which is why an
+   * aborted request used to be logged as the 200 the handler intended. What it
+   * uniquely has is the thrown value, so that is all it contributes.
+   *
+   * @param req - The request whose lifecycle the middleware owns.
+   * @param next - The downstream call handler.
+   * @returns The response stream, unmodified and with exceptions re-thrown.
+   */
+  private recordOnly(req: LoggableRequest, next: CallHandler): Observable<unknown> {
+    return next.handle().pipe(
+      catchError((err: unknown) => {
+        recordError(req, toError(err))
         return throwError(() => err)
       })
     )
@@ -194,11 +223,11 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     }
 
     // A non-HttpException never carries a status, so it is always a 500.
-    this.logger.errorStructured(
-      RESERVED_LOG_KEYS.HTTP_REQUEST_SERVER_ERROR,
-      err instanceof Error ? err : new Error(String(err)),
-      userId,
-      { method, url, statusCode: HttpStatus.INTERNAL_SERVER_ERROR, duration }
-    )
+    this.logger.errorStructured(RESERVED_LOG_KEYS.HTTP_REQUEST_SERVER_ERROR, toError(err), userId, {
+      method,
+      url,
+      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      duration
+    })
   }
 }

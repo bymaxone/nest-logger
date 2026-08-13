@@ -39,6 +39,18 @@ export interface LoggableRequest {
   readonly method: string
   /** Request target, normalized and query-stripped before it reaches a log. */
   readonly url: string
+  /**
+   * The request target as it arrived, before any mount point was stripped.
+   *
+   * Middleware mounted at a path sees `url` RELATIVE to that mount: measured
+   * under `setGlobalPrefix('api')`, a request for `/api/users/7` reaches a
+   * root-mounted middleware as `url = '/users/7'` and
+   * `originalUrl = '/api/users/7'`, and `/api` itself arrives as `url = '/'`.
+   * Logging `url` there would drop the prefix from every entry and make an
+   * `excludePaths` pattern written against the real path stop matching. Absent
+   * on adapters that do not provide it, in which case `url` is already whole.
+   */
+  readonly originalUrl?: string | undefined
   /** Client address when the adapter resolves one. */
   readonly ip?: string | undefined
   /**
@@ -58,10 +70,24 @@ export interface LoggableRequest {
 export interface LoggableResponse {
   /** Status code, read when logging the completed request. */
   readonly statusCode: number
+  /**
+   * `true` once every byte has been flushed to the socket. Read in the `'close'`
+   * handler to tell a delivered response from one the client never received:
+   * `'close'` fires for both, and `'finish'` never fires for an aborted request
+   * at all. It is what keeps an aborted request from being logged as the success
+   * the handler intended.
+   */
+  readonly writableFinished: boolean
   /** Sets a response header (used for the correlation id). */
   setHeader(name: string, value: string): void
   /** Selects the status code and returns the chainable body writer. */
   status(code: number): { json(body: unknown): unknown }
+  /**
+   * Registers a lifecycle listener. Only `'close'` is used: it fires exactly
+   * once whether the response completed or the connection died early, where
+   * `'finish'` is blind to the aborted case.
+   */
+  on(event: 'close', listener: () => void): unknown
 }
 
 /** Continuation passed to a middleware; invoked with no arguments here. */
