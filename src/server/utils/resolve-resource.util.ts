@@ -91,10 +91,18 @@ export function parseResourceAttributes(raw: string | undefined): Readonly<Recor
       // far more likely than a deliberate escape, and the value is still useful.
       value = rawValue
     }
-    // `enumerable` is the only flag that matters — the map is read, never
-    // rewritten — and `defineProperty` is what keeps an attribute literally named
-    // `__proto__` from reaching the prototype chain.
-    Object.defineProperty(parsed, key, { value, enumerable: true })
+    // `defineProperty` rather than assignment: it is what keeps an attribute
+    // literally named `__proto__` from reaching the prototype chain.
+    //
+    // `configurable: true` is load-bearing, and its absence was a real defect: a
+    // REPEATED key (`service.name=a,service.name=b`) calls this twice, and
+    // redefining a non-configurable property throws `TypeError`. That exception
+    // escaped `resolveServiceMetadata` and aborted module construction —
+    // precisely the "a stray character must never stop an application from
+    // booting" contract this parser exists to keep. Last occurrence wins, which
+    // matches how an operator reading left-to-right would expect an override to
+    // behave.
+    Object.defineProperty(parsed, key, { value, enumerable: true, configurable: true })
   }
   return parsed
 }

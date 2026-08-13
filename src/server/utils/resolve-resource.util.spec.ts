@@ -81,6 +81,42 @@ describe('parseResourceAttributes', () => {
     })
   })
 
+  it(/*
+   * REGRESSION — a repeated key calls `defineProperty` twice for the same name,
+   * and redefining a non-configurable property throws `TypeError`. That exception
+   * escaped `resolveServiceMetadata` and aborted MODULE CONSTRUCTION, which is
+   * the one thing this parser promises never to do: an environment variable is
+   * not allowed to stop an application from booting.
+   *
+   * Last occurrence wins, matching how an operator reading the list
+   * left-to-right would expect an override to behave.
+   */
+  'lets a repeated key override rather than throw', () => {
+    expect(() => parseResourceAttributes('service.name=a,service.name=b')).not.toThrow()
+    expect(parseResourceAttributes('service.name=a,service.name=b')).toStrictEqual({
+      'service.name': 'b'
+    })
+  })
+
+  it(/*
+   * The same input reaching the resolver — the path that actually runs during
+   * module construction — must not throw either.
+   */
+  'resolves a duplicated attribute without aborting the boot', () => {
+    expect(() =>
+      resolveServiceMetadata(
+        { name: '', version: '' },
+        { OTEL_RESOURCE_ATTRIBUTES: 'service.name=a,service.name=b' }
+      )
+    ).not.toThrow()
+    expect(
+      resolveServiceMetadata(
+        { name: '', version: '' },
+        { OTEL_RESOURCE_ATTRIBUTES: 'service.name=a,service.name=b' }
+      ).name
+    ).toBe('b')
+  })
+
   it('yields nothing for an absent variable', () => {
     expect(parseResourceAttributes(undefined)).toEqual({})
   })
