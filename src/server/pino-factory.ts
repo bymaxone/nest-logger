@@ -173,7 +173,18 @@ export function serializeErrorValue(value_: unknown): Record<string, unknown> {
   // pass through the same redaction and size bound as any other serializer
   // output, which is what keeps a secret attached to an error from escaping.
   try {
-    for (const [key, value] of Object.entries(value_ as Record<string, unknown>)) {
+    // Own properties are copied only off a PLAIN object. `Object.entries` on a
+    // thrown STRING spreads its characters as indexed keys — a real record
+    // carried `{"0":"a","1":" ",…}` beside the UnknownError envelope — and on a
+    // thrown ARRAY it spreads the elements the same way. Neither is an
+    // error-like value with fields worth preserving; both are already fully
+    // represented by the envelope's stringified message.
+    const source =
+      // Stryker disable next-line ConditionalExpression: equivalent BY CONSTRUCTION, not untested — the never-throw catch below makes the mutant observationally identical: with the null check flipped to true, `Object.entries(null)` throws, the catch swallows it, and the emitted envelope is byte-for-byte the same. The guard stays because routing the ordinary null case through exception control flow would trade an explicit branch for a hidden one.
+      typeof value_ === 'object' && value_ !== null && !Array.isArray(value_)
+        ? (value_ as Record<string, unknown>)
+        : {}
+    for (const [key, value] of Object.entries(source)) {
       if (!Object.hasOwn(serialized, key) && !DERIVED_ERROR_FIELDS.has(key)) {
         // `Reflect` keeps the dynamic write off the object-injection sink list.
         Reflect.set(serialized, key, value)

@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-13
+
 P1 of the observability audit ([`docs/observability_audit.md`](./docs/observability_audit.md)):
 stable OpenTelemetry resource identity, robust trace correlation, semconv-aligned error fields and
 machine-readable event names. Every convention adopted here was verified **Stable** against
@@ -23,6 +25,19 @@ complete field inventory is in
 
 ### Fixed
 
+- **The HTTP terminal entry is emitted in the live async context when one exists.** The `'close'`
+  listener used `AsyncResource.bind` alone, which captures the context at REGISTRATION time — so
+  when instrumentation opened a span downstream of the middleware, the terminal entry was
+  attributed to the wrong span, silently, because a plausible trace id was still present. Measured
+  (and confirmed independently against a real OTel ContextManager): the live read covers the
+  normal path, the bound context covers the aborted path, and neither alone covers both. The
+  listener now reads live-first with the bound context as fallback; the ALS store doubles as the
+  liveness probe.
+- **A thrown non-object no longer spreads into the `err` object.** The serializer's own-property
+  copy ran on any value, and `Object.entries` on a thrown STRING spreads its characters as indexed
+  keys — a record carried `err: {"0":"t","1":"h",…}` beside the `UnknownError` envelope; a thrown
+  array spread its elements the same way. Own properties are now copied only off a plain
+  non-array object.
 - **Trace correlation no longer switches off because of the working directory.** `@opentelemetry/api`
   was resolved from `process.cwd()` alone, so a Docker `WORKDIR` that is not the app root, a
   pnpm/Yarn workspace with hoisted `node_modules`, a monorepo launched from the repository root or a
@@ -742,7 +757,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/bymaxone/nest-logger/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/bymaxone/nest-logger/compare/v1.0.8...v1.1.0
 [1.0.8]: https://github.com/bymaxone/nest-logger/compare/v1.0.7...v1.0.8
