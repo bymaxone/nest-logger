@@ -13,6 +13,21 @@ heading here.
 
 ## [1.3.0] - 2026-08-13
 
+### Security
+
+- **A log message can no longer forge log lines in re-rendered output** (CodeQL
+  `js/log-injection`, alert #61). Every message argument handed to Pino can carry caller- or
+  user-provided text — a thrown value recorded off an HTTP request, a variadic NestJS line, a
+  structured message — and while the NDJSON transport already neutralizes an embedded line break
+  through JSON escaping (measured), `pino-pretty` — shipped here as `PrettyDevDestination` — and
+  any destination that re-renders the parsed message print real newlines, where a break forges what
+  looks like a separate entry (also measured: the forged line is indistinguishable from a genuine
+  one). Line and paragraph separators (`\r`, `\n`, U+2028, U+2029) are now replaced with the
+  literal `\n` sequence on **every** message sink: `error()` for both the `Error` and the string
+  path, the structured `info`/`warn` calls, and the NestJS variadic bridge. Structured fields are
+  untouched — `err.message` keeps the verbatim text — so no information is lost, only the
+  human-readable `msg` is pinned to one line.
+
 P1 of the observability audit ([`docs/observability_audit.md`](./docs/observability_audit.md)):
 stable OpenTelemetry resource identity, robust trace correlation, semconv-aligned error fields and
 machine-readable event names. Every convention adopted here was verified **Stable** against
