@@ -86,6 +86,14 @@ export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxL
     shouldUseAsNestLogger: options.shouldUseAsNestLogger ?? true,
     redactPaths: Object.freeze([...(options.redactPaths ?? [])]),
     redactStrategy: options.redactStrategy ?? 'names',
+    // `'nested'` keeps the shape every existing consumer already queries.
+    resourceFormat: options.resourceFormat ?? 'nested',
+    // `??` rather than `||`: `false` is a meaningful value here (emit nothing)
+    // and `||` would silently replace it with the default.
+    eventNameField: options.eventNameField ?? 'event.name',
+    // `'pino'` by default: the semconv attributes are additive value, but the
+    // legacy shape is what existing dashboards and alerts already query.
+    errorFormat: options.errorFormat ?? 'pino',
     redactCensor: options.redactCensor ?? '[REDACTED]',
     shouldDisableDefaultRedact: options.shouldDisableDefaultRedact ?? false,
     destinations: Object.freeze([...(options.destinations ?? [])]),

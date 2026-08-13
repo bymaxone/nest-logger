@@ -55,4 +55,46 @@ export function validateOptions(options: BymaxLoggerModuleOptions): void {
       )}`
     )
   }
+  // The three options below are CLOSED sets, and an unvalidated one fails
+  // silently rather than loudly: an unrecognised `resourceFormat` falls through
+  // to the nested branch, an unrecognised `errorFormat` behaves as `'both'`
+  // because only `'pino'` short-circuits, and an EMPTY `eventNameField` writes a
+  // field named `''` onto every structured entry. A typo in a config file would
+  // ship to production looking like it worked.
+  if (
+    options.resourceFormat !== undefined &&
+    options.resourceFormat !== 'nested' &&
+    options.resourceFormat !== 'flat'
+  ) {
+    throw new Error(
+      `[BymaxLoggerModule] options.resourceFormat must be 'nested' or 'flat'. Got: ${String(
+        options.resourceFormat
+      )}`
+    )
+  }
+  if (
+    options.errorFormat !== undefined &&
+    options.errorFormat !== 'pino' &&
+    options.errorFormat !== 'semconv' &&
+    options.errorFormat !== 'both'
+  ) {
+    throw new Error(
+      `[BymaxLoggerModule] options.errorFormat must be 'pino', 'semconv' or 'both'. Got: ${String(
+        options.errorFormat
+      )}`
+    )
+  }
+  // `false` is a valid value (emit nothing); a non-empty string names the field.
+  // Anything else — including `''` and `true` — is a misconfiguration.
+  if (
+    options.eventNameField !== undefined &&
+    options.eventNameField !== false &&
+    (typeof options.eventNameField !== 'string' || options.eventNameField.length === 0)
+  ) {
+    throw new Error(
+      `[BymaxLoggerModule] options.eventNameField must be a non-empty string or false. Got: ${String(
+        options.eventNameField
+      )}`
+    )
+  }
 }

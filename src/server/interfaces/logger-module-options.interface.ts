@@ -98,6 +98,52 @@ export interface BymaxLoggerModuleOptions {
    *     path-matching semantics; expect it to be removed in a future major.
    */
   redactStrategy?: 'names' | 'paths'
+  /**
+   * Shape of the resource/service identity on every entry. Default `'nested'`.
+   *
+   *   - `'nested'` — `{ service: { name, version, namespace, instance: { id } },
+   *     deployment: { environment: { name } } }`. The historical shape, extended;
+   *     no existing query breaks.
+   *   - `'flat'` — the dotted OTel attribute names verbatim (`service.name`,
+   *     `service.instance.id`, `deployment.environment.name`), which is what a
+   *     collector mapping log fields onto resource attributes reads directly.
+   *
+   * Both carry the same values; only the key shape differs.
+   */
+  resourceFormat?: 'nested' | 'flat'
+  /**
+   * Field carrying the machine-readable event name, mirroring `logKey`.
+   * Default `'event.name'`; `false` emits nothing.
+   *
+   * `logKey` stays exactly as it is — this is additive, never a rename.
+   *
+   * The value is meant to be mapped onto the **`EventName`** field of the
+   * OpenTelemetry LogRecord, which is Stable in the Logs Data Model. Note that
+   * the same-named `event.name` *attribute* is Deprecated in the semantic
+   * conventions precisely because the value belongs in that top-level field
+   * instead; the key here is the JSON carrier, not an OTLP attribute. The name is
+   * configurable so a pipeline that maps a different key can use it.
+   *
+   * Keep event names LOW cardinality — `payment.failed`, not
+   * `payment.failed.918231781`. Identifiers belong in their own fields.
+   */
+  eventNameField?: string | false
+  /**
+   * Shape of the error fields on an entry. Default `'pino'`.
+   *
+   *   - `'pino'`   — only the legacy `err` object (`type`, `message`, `stack`,
+   *     plus the `cause` chain). What every existing query reads.
+   *   - `'semconv'` — only the OpenTelemetry attributes: `exception.type`,
+   *     `exception.message`, `exception.stacktrace` and `error.type`. The `err`
+   *     object is removed, so this is an explicit migration, never a default.
+   *   - `'both'`    — both shapes on the same entry. Recommended while moving
+   *     dashboards over: nothing breaks, and the new fields are already there.
+   *
+   * All four attributes are **Stable** in Semantic Conventions v1.44.0.
+   * `error.type` carries the error's class name and is LOW cardinality by
+   * construction — never a message, never an identifier.
+   */
+  errorFormat?: 'pino' | 'semconv' | 'both'
   /** Censor string written in place of redacted values. Default: `[REDACTED]`. */
   redactCensor?: string
   /** Disable default redact paths (use with caution). Default: false. */

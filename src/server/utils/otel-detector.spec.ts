@@ -33,13 +33,78 @@ describe('detectOtelTraceApi', () => {
 
   it(/*
    * Resolution failure must be swallowed and reported as undefined so a missing
-   * optional peer dependency never crashes the host app.
+   * optional peer dependency never crashes the host app. BOTH anchors have to
+   * fail — the detector tries its own module location and then the working
+   * directory — so the mock throws for every call rather than once.
    */
-  'returns undefined when resolution throws', () => {
-    mockedCreateRequire.mockImplementationOnce(() => {
+  'returns undefined when every anchor fails to resolve', () => {
+    mockedCreateRequire.mockImplementation(() => {
       throw new Error('Cannot find module @opentelemetry/api')
     })
     expect(detectOtelTraceApi()).toBeUndefined()
+  })
+
+  it(/*
+   * REGRESSION — resolution used to be anchored at `process.cwd()` alone, and
+   * that silently disabled ALL trace correlation whenever the working directory
+   * was not the application root: a Docker `WORKDIR`, a pnpm/Yarn workspace with
+   * hoisted `node_modules`, a monorepo started from the repo root, a serverless
+   * bundle. No error, no warning — `traceId` just stopped appearing, precisely
+   * where distributed tracing was most likely to be configured.
+   *
+   * The FIRST anchor must be this module's own path, which is how Node
+   * resolution is defined and what every other dependency in the process uses.
+   */
+  'anchors resolution at its own module path before the working directory', () => {
+    const anchors: string[] = []
+    mockedCreateRequire.mockImplementation((from) => {
+      anchors.push(String(from))
+      throw new Error('Cannot find module @opentelemetry/api')
+    })
+
+    detectOtelTraceApi()
+
+    // The detector's OWN file, not the spec's and not the working directory.
+    expect(anchors[0]).toMatch(/otel-detector\.ts$/)
+    expect(anchors[0]).not.toContain('noop.cjs')
+  })
+
+  it(/*
+   * The working directory remains the SECOND anchor, deliberately: in a bundled
+   * application this module's path is the bundle's, which may sit outside any
+   * `node_modules` tree, and there the working directory is the better guess.
+   */
+  'falls back to the working directory when the module anchor fails', () => {
+    const anchors: string[] = []
+    mockedCreateRequire.mockImplementation((from) => {
+      anchors.push(String(from))
+      throw new Error('Cannot find module @opentelemetry/api')
+    })
+
+    detectOtelTraceApi()
+
+    expect(anchors).toHaveLength(2)
+    expect(anchors[1]).toContain('noop.cjs')
+    expect(anchors[1]).toContain(process.cwd())
+  })
+
+  it(/*
+   * The behaviour the regression is really about: with a working directory that
+   * has no `node_modules` anywhere above it, detection must STILL succeed,
+   * because the module anchor does not care where the process was launched.
+   */
+  'still resolves under a working directory that cannot reach node_modules', () => {
+    // Real resolver, so the assertion is about anchoring rather than about the mock.
+    mockedCreateRequire.mockImplementation(
+      jest.requireActual<typeof import('node:module')>('node:module').createRequire
+    )
+    const cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue('/')
+
+    const api = detectOtelTraceApi()
+
+    expect(api).toBeDefined()
+    expect(typeof api?.getActiveSpan).toBe('function')
+    cwdSpy.mockRestore()
   })
 })
 

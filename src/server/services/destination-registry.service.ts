@@ -22,6 +22,7 @@ import {
 } from '../constants/injection-tokens.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
+import { detectOtelTraceApi } from '../utils/otel-detector'
 
 /**
  * Coordinates destination initialization and graceful shutdown.
@@ -105,6 +106,22 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
           shouldDisableDefaultRedact: true,
           redactPathCount: this.options.redactPaths.length
         }
+      )
+    }
+    // Trace correlation was ASKED FOR and cannot be delivered. Without this line
+    // the failure is invisible: `traceId` is simply absent from every entry, and
+    // absence reads as "no active span" rather than "the peer is not installed".
+    // That ambiguity cost the previous implementation its correlation silently
+    // whenever the working directory was not the app root. Only warned when the
+    // consumer opted in — a logger with auto-injection off is not missing
+    // anything.
+    if (this.options.otel.shouldAutoInjectTraceContext && detectOtelTraceApi() === undefined) {
+      this.logger.warnStructured(
+        RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_WARNING,
+        'Trace-context auto-injection is enabled but @opentelemetry/api could not be ' +
+          'resolved — traceId and spanId will be absent from every entry',
+        undefined,
+        { reason: 'OTEL_API_UNAVAILABLE', shouldAutoInjectTraceContext: true }
       )
     }
   }

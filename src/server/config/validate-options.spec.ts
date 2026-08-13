@@ -123,3 +123,66 @@ describe('validateOptions', () => {
     expect(() => validateOptions(validOpts)).not.toThrow()
   })
 })
+
+describe('validateOptions — P1 closed-set options', () => {
+  const base = { service: { name: 'svc', version: '1.0.0' } }
+
+  it.each([['nested' as const], ['flat' as const]])(
+    'accepts resourceFormat %s',
+    (resourceFormat) => {
+      expect(() => validateOptions({ ...base, resourceFormat })).not.toThrow()
+    }
+  )
+
+  it(/*
+   * An unrecognised value falls through to the nested branch and SHIPS, so a
+   * typo in a config file would look like it worked while emitting a shape the
+   * consumer did not ask for.
+   */
+  'rejects an unrecognised resourceFormat', () => {
+    expect(() => validateOptions({ ...base, resourceFormat: 'nested ' as never })).toThrow(
+      /resourceFormat must be 'nested' or 'flat'/
+    )
+  })
+
+  it.each([['pino' as const], ['semconv' as const], ['both' as const]])(
+    'accepts errorFormat %s',
+    (errorFormat) => {
+      expect(() => validateOptions({ ...base, errorFormat })).not.toThrow()
+    }
+  )
+
+  it(/*
+   * Only `'pino'` short-circuits, so an unrecognised value behaves as `'both'` —
+   * silently adding attributes the consumer never enabled.
+   */
+  'rejects an unrecognised errorFormat', () => {
+    expect(() => validateOptions({ ...base, errorFormat: 'semconv2' as never })).toThrow(
+      /errorFormat must be 'pino', 'semconv' or 'both'/
+    )
+  })
+
+  it.each([['event.name'], ['otel.event_name']])('accepts eventNameField %p', (eventNameField) => {
+    expect(() => validateOptions({ ...base, eventNameField })).not.toThrow()
+  })
+
+  it('accepts eventNameField false, which means emit nothing', () => {
+    expect(() => validateOptions({ ...base, eventNameField: false })).not.toThrow()
+  })
+
+  it(/*
+   * An empty field name would write a key called `''` onto every structured
+   * entry — valid JSON, unqueryable, and impossible to notice in a dashboard.
+   */
+  'rejects an empty eventNameField', () => {
+    expect(() => validateOptions({ ...base, eventNameField: '' })).toThrow(
+      /eventNameField must be a non-empty string or false/
+    )
+  })
+
+  it.each([[true], [42], [null]])('rejects a non-string eventNameField (%p)', (eventNameField) => {
+    expect(() => validateOptions({ ...base, eventNameField: eventNameField as never })).toThrow(
+      /eventNameField must be a non-empty string or false/
+    )
+  })
+})

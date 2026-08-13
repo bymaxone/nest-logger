@@ -44,20 +44,21 @@ describe('PinoLoggerService', () => {
     })
 
     it(/*
-     * errorStructured() must serialize the Error into type/message/stack,
-     * matching Pino's built-in err serializer shape.
+     * REGRESSION — the service hands Pino the RAW thrown value and lets the
+     * configured `err` serializer own the shape. Pre-serializing here is what
+     * let Pino's standard serializer re-derive `type` from the resulting plain
+     * object's constructor and emit `"Object"` for every typed exception, and it
+     * discarded the cause chain on the way. The emitted shape is asserted where
+     * it is now produced, in `pino-factory.spec.ts`.
      */
-    'emits a structured error entry with a serialized err', () => {
+    'hands the raw error to Pino rather than a pre-serialized copy', () => {
       const spy = jest.spyOn(rawLogger, 'error')
-      service.errorStructured('PAYMENT_FAILED', new Error('boom'), 'u_1', { amount: 10 })
+      const error = new Error('boom')
+      service.errorStructured('PAYMENT_FAILED', error, 'u_1', { amount: 10 })
       const [payload, message] = spy.mock.calls[0] ?? []
       expect(message).toBe('boom')
-      expect(payload).toMatchObject({
-        logKey: 'PAYMENT_FAILED',
-        userId: 'u_1',
-        amount: 10,
-        err: { type: 'Error', message: 'boom' }
-      })
+      expect(payload).toMatchObject({ logKey: 'PAYMENT_FAILED', userId: 'u_1', amount: 10 })
+      expect((payload as Record<string, unknown>)['err']).toBe(error)
     })
 
     it(/*
@@ -77,7 +78,10 @@ describe('PinoLoggerService', () => {
       }
       service.errorStructured('HTTP_EXCEPTION_HANDLED', sanitized)
       const [payload] = spy.mock.calls[0] ?? []
-      expect(payload).toMatchObject({ err: { type: 'ForbiddenException', message: 'denied' } })
+      // Handed through untouched. That the SERIALIZER then reports
+      // `type: 'ForbiddenException'` rather than `'Object'` is the actual
+      // regression, asserted end-to-end in `pino-factory.spec.ts`.
+      expect((payload as Record<string, unknown>)['err']).toBe(sanitized)
     })
 
     it(/*
@@ -108,11 +112,9 @@ describe('PinoLoggerService', () => {
       const spy = jest.spyOn(rawLogger, 'error')
       service.errorStructured('REAL_ERR', new Error('boom'), 'u_1', { logKey: 'EVIL', err: 'EVIL' })
       const [payload] = spy.mock.calls[0] ?? []
-      expect(payload).toMatchObject({
-        logKey: 'REAL_ERR',
-        userId: 'u_1',
-        err: { type: 'Error', message: 'boom' }
-      })
+      expect(payload).toMatchObject({ logKey: 'REAL_ERR', userId: 'u_1' })
+      // `err` holds the real thrown value, not the caller's `'EVIL'` string.
+      expect((payload as Record<string, unknown>)['err']).toBeInstanceOf(Error)
     })
   })
 
@@ -234,10 +236,7 @@ describe('PinoLoggerService', () => {
       service.error(new Error('kaboom'))
       const [payload, message] = spy.mock.calls[0] ?? []
       expect(message).toBe('kaboom')
-      expect(payload).toEqual({
-        context: 'Boot',
-        err: { type: 'Error', message: 'kaboom', stack: expect.any(String) }
-      })
+      expect(payload).toEqual({ context: 'Boot', err: expect.any(Error) })
     })
 
     it(/*
@@ -422,15 +421,12 @@ describe('PinoLoggerService', () => {
       expect(() => service.error(hostileStack)).not.toThrow()
 
       const [payload, message] = errorSpy.mock.calls[0] ?? []
-      expect((payload as Record<string, Record<string, unknown>>)['err']).toEqual({
-        type: 'SanitizeFailed',
-        message: 'Failed to read the thrown value'
-      })
-      // Asserted on CONTENT, not just on type: an empty stand-in would make the
-      // entry indistinguishable from a genuinely empty message, and this record
-      // is the only trace that a hostile value was handled at all. The two cases
-      // differ, which is the point — the guard is targeted, not blanket: a
-      // readable message survives even when the STACK is the hostile part.
+      // The value is handed through untouched — degrading it is the SERIALIZER's
+      // job now, and `pino-factory.spec.ts` asserts it degrades to the
+      // `SanitizeFailed` envelope rather than throwing or emitting an empty one.
+      expect((payload as Record<string, unknown>)['err']).toBe(hostileStack)
+      // The guard here is targeted, not blanket: a readable message survives even
+      // when the STACK is the hostile part, which is why the two cases differ.
       const [, fromHostileMessage] = errorSpy.mock.calls[1] ?? []
       expect(message).toBe('boom')
       expect(fromHostileMessage).toBe('Unreadable error message')

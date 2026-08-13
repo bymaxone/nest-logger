@@ -267,10 +267,10 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
 4. ConfigurationFactory builds Pino options:
    - level
    - redact { paths, censor }
-   - serializers { err } (defaults `pino.stdSerializers.err`; `req`/`res` opt-in only if the HTTP interceptor is active)
+   - serializers { err } (a library serializer built on `sanitizeError` — NOT `pino.stdSerializers.err`, which derived `type` from the value's constructor and reported `"Object"` for a normalized error; `req`/`res` opt-in only if the HTTP interceptor is active)
    - mixin → `TraceContextMixin` injects `traceId`/`spanId` (from OTel active span) + `LogContextService` fields into **every** log
    - ISO 8601 timestamp
-   - base { service: { name, version } } from options →
+   - base { service: { name, version, namespace?, instance: { id }? }, deployment: { environment: { name } }? } — the resolved resource identity, or the flat dotted attribute names under `resourceFormat: 'flat'` →
 5. The root Pino is created with multi-stream transport:
    - stdout JSON (always, unless overridden)
    - pretty stream (if NODE_ENV !== 'production' or option.isPretty) →
@@ -496,7 +496,7 @@ export { DEFAULT_REDACT_PATHS } from './constants/default-redact-paths.constants
 ```typescript
 export type { LogLevel } from './types/log-level.type'
 export type { LogEntry } from './types/log-entry.type'
-export type { ServiceMetadata } from './types/service-metadata.type'
+export type { ResolvedServiceMetadata, ServiceMetadata } from './types/service-metadata.type'
 export { RESERVED_LOG_KEYS } from './constants/reserved-log-keys.constants'
 export { LOG_KEYS_CONVENTION_REGEX } from './constants/log-keys-convention.constants'
 ```

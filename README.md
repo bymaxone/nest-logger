@@ -73,7 +73,10 @@ pnpm add @bymax-one/nest-logger
 
 ### 🔍 Observability & Context
 
-- ✅ **OpenTelemetry Correlation** — optional `@opentelemetry/api` peer; injects `traceId`/`spanId`/`traceFlags` into every log via a Pino mixin when an active span is detected
+- ✅ **OpenTelemetry Correlation** — optional `@opentelemetry/api` peer; injects `traceId`/`spanId`/`traceFlags` into every log via a Pino mixin when an active span is detected. Resolution is anchored at the library's own module path, so a Docker `WORKDIR`, a pnpm workspace or a monorepo launched from the repo root cannot silently switch correlation off
+- ✅ **Stable Resource Identity** — `service.name`/`.namespace`/`.version`/`.instance.id` and `deployment.environment.name`, all **Stable** in Semantic Conventions v1.44.0, resolved from one deterministic precedence shared with the OTel SDK
+- ✅ **Semconv Error Fields** — opt-in `exception.type`/`.message`/`.stacktrace` and low-cardinality `error.type`, additive beside the legacy `err.*`, with full `Error.cause` chains
+- ✅ **Machine-Readable Event Names** — `event.name` derived from `logKey` following OTel naming rules
 - ✅ **AsyncLocalStorage Context** — `requestId`, `tenantId`, `userId` flow automatically through the request lifecycle without prop drilling
 - ✅ **HTTP Access Log, before guards** — logs every request including the ones an interceptor cannot see (401/403/429 guard rejections, 404 unmatched routes), with URL normalization (UUIDs and numeric IDs replaced by `:id`) and the query string stripped
 - ✅ **Exception Filter** — captures NestJS `HttpException` and unexpected errors with structured output
@@ -361,6 +364,153 @@ void bootstrap()
 
 Once active, every log entry automatically carries `traceId`, `spanId`, and `traceFlags`. Click the `traceId` in Grafana to jump directly to the correlated span in Tempo or Honeycomb.
 
+**Without OpenTelemetry installed, everything above simply does not happen** — no error, no warning
+on every log, no crash. The peer is optional and the logger is fully usable on its own. The one
+case that _is_ reported is a misconfiguration: if trace injection is enabled and
+`@opentelemetry/api` cannot be resolved, a single `LOGGER_BOOTSTRAP_WARNING` naming
+`OTEL_API_UNAVAILABLE` is emitted at startup. Absence of `traceId` would otherwise be
+indistinguishable from "no active span".
+
+The logger **observes** the trace context; it never creates spans, installs a context manager, or
+parses `traceparent` by hand. When the API is present but no span is active, no identifiers are
+emitted — none are invented.
+
+> [!NOTE]
+> Resolution of the optional peer is anchored at the **library's own module path**, falling back to
+> `process.cwd()`. Anchoring only at the working directory — as versions before this did — silently
+> disabled correlation whenever the process was launched from somewhere other than the application
+> root: a Docker `WORKDIR`, a pnpm/Yarn workspace with hoisted `node_modules`, a monorepo started at
+> the repository root, a serverless bundle.
+
+### 6b. Resource identity
+
+Every entry carries the service identity, using attributes that are **Stable** in Semantic
+Conventions v1.44.0:
+
+```typescript
+BymaxLoggerModule.forRoot({
+  service: {
+    name: 'checkout-api', // service.name
+    version: '2.14.3', // service.version
+    namespace: 'payments', // service.namespace
+    instanceId: process.env.POD_UID, // service.instance.id
+    environment: 'production' // deployment.environment.name
+  }
+})
+```
+
+```json
+{
+  "level": "info",
+  "time": "2026-08-13T10:00:00.000Z",
+  "service": {
+    "name": "checkout-api",
+    "version": "2.14.3",
+    "namespace": "payments",
+    "instance": { "id": "pod-7f3a" }
+  },
+  "deployment": { "environment": { "name": "production" } },
+  "logKey": "PAYMENT_FAILED",
+  "event.name": "payment.failed",
+  "msg": "Payment failed"
+}
+```
+
+Set `resourceFormat: 'flat'` to emit the dotted attribute names verbatim
+(`"service.instance.id": "pod-7f3a"`), which is what a collector mapping log fields onto resource
+attributes reads directly.
+
+#### Precedence
+
+Resolved once at startup, in this order:
+
+1. **explicit `service` options**
+2. **`OTEL_SERVICE_NAME`** (name only)
+3. **`OTEL_RESOURCE_ATTRIBUTES`** (`service.namespace=payments,service.version=2.14.3,…`)
+4. **`NODE_ENV`** (environment only)
+
+Explicit configuration wins because it is the most specific statement you can make. The order of
+the two OpenTelemetry variables is required by the specification, not chosen: _"If `service.name` is
+also provided in `OTEL_RESOURCE_ATTRIBUTES`, then `OTEL_SERVICE_NAME` takes precedence."_
+
+Reading the same variables the SDK reads is what makes **logs and traces agree** without the logger
+depending on the SDK. Configure the environment once and both signals describe the same service.
+
+> [!IMPORTANT]
+> **`service.instance.id` is never generated.** The specification requires the triplet
+> (`service.namespace`, `service.name`, `service.instance.id`) to be globally unique and recommends
+> a random UUID — but a UUID minted by the logger would be the _logger's_, not the OpenTelemetry
+> Resource's, so logs and traces would claim different instances of the same process. It would also
+> change on every restart while looking authoritative. Supply it from the platform (Kubernetes pod
+> UID, ECS task ARN, VM instance id) or through `OTEL_RESOURCE_ATTRIBUTES`. Omitted is honest;
+> plausible-but-wrong is not.
+>
+> There is **no `OTEL_SERVICE_VERSION`** variable in the specification. Version comes from
+> configuration or from `OTEL_RESOURCE_ATTRIBUTES`.
+
+The deprecated `deployment.environment` spelling is **never** emitted, in any mode.
+
+### 6c. Event names
+
+Structured entries carry a machine-readable event name derived from `logKey`, following OTel naming
+rules — lowercase, dot-namespaced:
+
+| `logKey`                     | `event.name`                 |
+| ---------------------------- | ---------------------------- |
+| `PAYMENT_FAILED`             | `payment.failed`             |
+| `USER_AUTHENTICATION_FAILED` | `user.authentication.failed` |
+
+`logKey` is **never renamed or removed** — this is additive. Calls through the NestJS variadic
+bridge (`logger.log`, `logger.warn`, …) carry no log key and correctly get no event name: an
+ordinary diagnostic line is not an Event.
+
+Keep event names **low cardinality**. `payment.failed` is an event; `payment.failed.918231781` is an
+identifier wearing an event's clothes and will multiply your series count. Identifiers belong in
+their own fields.
+
+> [!NOTE]
+> The value is meant to be mapped onto the **`EventName`** field of the OpenTelemetry LogRecord,
+> which is Stable in the Logs Data Model. The same-named `event.name` **attribute** is _Deprecated_
+> precisely because the value belongs in that top-level field instead. A JSON log line has no way to
+> express that distinction — every key is just a key — so the carrier key is configurable via
+> `eventNameField`, and your collector decides where it lands. What it must not do is carry it into
+> an OTLP _attributes_ map under the deprecated name.
+
+Set `eventNameField: false` to emit nothing.
+
+### 6d. Error fields
+
+`errorFormat` controls the shape:
+
+```json
+// errorFormat: 'pino'  (default — unchanged from 1.2.0)
+{ "err": { "type": "PaymentDeclined", "message": "card declined", "stack": "…",
+           "cause": { "name": "Error", "message": "gateway timeout" } } }
+
+// errorFormat: 'both'  (recommended while migrating)
+{ "err": { "type": "PaymentDeclined", … },
+  "exception.type": "PaymentDeclined",
+  "exception.message": "card declined",
+  "exception.stacktrace": "…",
+  "error.type": "PaymentDeclined" }
+
+// errorFormat: 'semconv'  (explicit migration — err is removed)
+{ "exception.type": "PaymentDeclined", "exception.message": "card declined",
+  "exception.stacktrace": "…", "error.type": "PaymentDeclined" }
+```
+
+All four attributes are **Stable**. `error.type` carries the **class name** and is low cardinality
+by construction — never a message, never an identifier — because the spec requires it to be
+aggregatable.
+
+**`Error.cause` chains are preserved**, depth- and width-bounded, circular-safe, and redacted like
+any other field. `AggregateError` members reach the entry as `err.errors`. There is no
+OpenTelemetry attribute for a cause chain, so these stay namespaced under `err` rather than
+inventing an `exception.cause` the spec does not define.
+
+An error's own enumerable properties (`code`, `statusCode`, domain fields) are carried through, as
+Pino's standard serializer did.
+
 ### 7. Context propagation with `LogContextService`
 
 ```typescript
@@ -396,18 +546,24 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
 ### Top-level options
 
-| Option                       | Type                 | Default         | Description                                                                                                              |
-| ---------------------------- | -------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `service.name`               | `string`             | **Required**    | Service name emitted in every log entry                                                                                  |
-| `service.version`            | `string`             | **Required**    | Release version/SHA emitted in every log entry                                                                           |
-| `level`                      | `LogLevel`           | `'info'`        | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                             |
-| `isPretty`                   | `boolean`            | `!isProduction` | ⚠️ Reserved — not auto-wired. For pretty output add `new PrettyDevDestination()` to `destinations` (needs `pino-pretty`) |
-| `redactPaths`                | `string[]`           | `[]`            | Additional `fast-redact` paths, applied on top of the default coverage                                                   |
-| `redactStrategy`             | `'names' \| 'paths'` | `'names'`       | Engine behind the DEFAULT set. `'paths'` restores the pre-1.2 `fast-redact` expansion (four-level ceiling, ~100× slower) |
-| `shouldDisableDefaultRedact` | `boolean`            | `false`         | Skip the default PII coverage entirely. ⚠️ Emits `LOGGER_BOOTSTRAP_WARNING` at startup — document why                    |
-| `redactCensor`               | `string`             | `'[REDACTED]'`  | Replacement value written in place of every redacted field                                                               |
-| `maxEntrySizeBytes`          | `number`             | `65536`         | UTF-8 byte ceiling per serialized field (`err` + any custom serializer); over it the value becomes a truncation envelope |
-| `destinations`               | `ILogDestination[]`  | `[]`            | Additional sinks (Loki, Postgres, rolling file, …) alongside default stdout                                              |
+| Option                       | Type                            | Default         | Description                                                                                                                                |
+| ---------------------------- | ------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `service.name`               | `string`                        | **Required**    | Service name emitted in every log entry                                                                                                    |
+| `service.version`            | `string`                        | **Required**    | Release version/SHA emitted in every log entry                                                                                             |
+| `service.namespace`          | `string`                        | —               | OTel `service.namespace` (**Stable**) — the group the service belongs to                                                                   |
+| `service.instanceId`         | `string`                        | —               | OTel `service.instance.id` (**Stable**). **Never generated** — supply it from the platform. See [Resource identity](#6b-resource-identity) |
+| `service.environment`        | `string`                        | `NODE_ENV`      | OTel `deployment.environment.name` (**Stable**). The deprecated `deployment.environment` is never emitted                                  |
+| `resourceFormat`             | `'nested' \| 'flat'`            | `'nested'`      | Shape of the identity fields. `'flat'` emits the dotted attribute names verbatim                                                           |
+| `eventNameField`             | `string \| false`               | `'event.name'`  | Field carrying the derived event name (`PAYMENT_FAILED` → `payment.failed`). `false` disables it                                           |
+| `errorFormat`                | `'pino' \| 'semconv' \| 'both'` | `'pino'`        | `'both'` adds `exception.*` and `error.type` beside `err.*`; `'semconv'` replaces them                                                     |
+| `level`                      | `LogLevel`                      | `'info'`        | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                                               |
+| `isPretty`                   | `boolean`                       | `!isProduction` | ⚠️ Reserved — not auto-wired. For pretty output add `new PrettyDevDestination()` to `destinations` (needs `pino-pretty`)                   |
+| `redactPaths`                | `string[]`                      | `[]`            | Additional `fast-redact` paths, applied on top of the default coverage                                                                     |
+| `redactStrategy`             | `'names' \| 'paths'`            | `'names'`       | Engine behind the DEFAULT set. `'paths'` restores the pre-1.2 `fast-redact` expansion (four-level ceiling, ~100× slower)                   |
+| `shouldDisableDefaultRedact` | `boolean`                       | `false`         | Skip the default PII coverage entirely. ⚠️ Emits `LOGGER_BOOTSTRAP_WARNING` at startup — document why                                      |
+| `redactCensor`               | `string`                        | `'[REDACTED]'`  | Replacement value written in place of every redacted field                                                                                 |
+| `maxEntrySizeBytes`          | `number`                        | `65536`         | UTF-8 byte ceiling per serialized field (`err` + any custom serializer); over it the value becomes a truncation envelope                   |
+| `destinations`               | `ILogDestination[]`             | `[]`            | Additional sinks (Loki, Postgres, rolling file, …) alongside default stdout                                                                |
 
 ### `http` options
 
