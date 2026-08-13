@@ -135,6 +135,18 @@ export default [
     }
   },
 
+  // Terminal-escaping utility — the one file whose REASON to exist is matching
+  // control characters. `no-control-regex` catches them as accidents; here they
+  // are the specification, and the ranges are covered by boundary tests. The
+  // rule is turned off in config rather than with inline disable comments, per
+  // the repository's zero-tolerance policy on scattered suppressions.
+  {
+    files: ['src/server/utils/escape-log-text.util.ts'],
+    rules: {
+      'no-control-regex': 'off'
+    }
+  },
+
   // Node.js scripts — plain ESM, no TypeScript parser needed
   {
     files: ['scripts/**/*.mjs', 'scripts/**/*.js'],

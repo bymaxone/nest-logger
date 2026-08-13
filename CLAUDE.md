@@ -104,20 +104,26 @@ mutation testing to `prepublishOnly` or the per-PR CI — it runs automatically 
 
 Files outside `files` — `scripts/`, `.github/`, `docs/`, `CLAUDE.md`, config — do not ship and do not justify a release on their own.
 
-### Version is frozen at `1.2.0` — do not bump it
+### The version stays on the `1.2.x` line — do not leave it
 
-**This overrides the rule above while it holds.** The version in `package.json` stays at `1.2.0`
-and must NOT be bumped by any change — break, feature or fix — until the maintainer asks
-explicitly. There is no publication pending, and the rule above assumes one.
+**This overrides the rule above while it holds.** The version in `package.json` must NOT be bumped
+by any change — break, feature or fix — until the maintainer asks explicitly, and when it does move
+it moves **within `1.2.x`**. The pending release is `1.2.1`; `1.3.0` was cut on 2026-08-13 and
+renamed back down on the maintainer's word before it was ever tagged or published.
 
 The reason is that **the library has no consumers yet** and many changes are still coming. SemVer's
 major exists to protect existing consumers; with none, a break costs nothing, and spending majors
-during heavy change burns the numbering without informing anyone. When the version moves again it
-stays on the **`1.2.x`** line.
+and minors during heavy change burns the numbering without informing anyone. This is a deliberate
+mislabel, not an oversight: the current section carries an `### Added` block that SemVer would call
+a minor. It has been raised and decided — do not re-litigate it.
 
-What still applies: keep adding to the existing `## [1.2.0]` CHANGELOG section, and document every
+What still applies: keep adding to the existing `## [1.2.1]` CHANGELOG section, and document every
 break under a `### Breaking` heading with its migration path. That prose is what replaces the
 signal the version number is no longer giving.
+
+**Never infer a bump from an observable event** — not from a publication, not from an internal
+project adopting the package, not from another agent reporting consumers. The exit condition is an
+instruction in the maintainer's own words. That distinction has been missed once already.
 
 **Check before assuming this still holds:** the moment a real consumer adopts the library, 1.2.x
 stops applying and breaking changes need a major again. Most of the open audit backlog in

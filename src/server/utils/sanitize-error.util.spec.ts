@@ -297,3 +297,32 @@ describe('sanitizeError — error-like detection', () => {
     }
   )
 })
+
+describe('sanitizeError — terminal control characters in the stack', () => {
+  const ESC = String.fromCharCode(0x1b)
+
+  it(/*
+   * SECURITY. `pino-pretty` prints `err.stack` RAW rather than as a JSON string,
+   * and a stack's first line repeats the error message. Escaping only the `msg`
+   * field would therefore leave attacker-supplied ANSI reaching the terminal
+   * through the stack of the very same entry.
+   */
+  'escapes control characters carried into the stack by the message', () => {
+    const error = new Error(`boom${ESC}[2J`)
+
+    const { stack } = sanitizeError(error)
+
+    expect(stack).toContain('boom\\u001b[2J')
+    expect(stack).not.toContain(ESC)
+  })
+
+  it(/*
+   * The newlines between frames are the point of a stack and must survive the
+   * escaping — this is what separates it from the single-line message rule.
+   */
+  'keeps the line structure of the stack intact', () => {
+    const { stack } = sanitizeError(new Error('boom'))
+
+    expect(stack).toContain('\n')
+  })
+})

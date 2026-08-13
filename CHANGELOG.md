@@ -11,15 +11,16 @@ heading here.
 
 ## [Unreleased]
 
-## [1.3.0] - 2026-08-13
+## [1.2.1] - 2026-08-13
 
 ### Security
 
 - **A log message can no longer forge log lines in re-rendered output** (CodeQL
   `js/log-injection`, alert #61). Every message argument handed to Pino can carry caller- or
   user-provided text — a thrown value recorded off an HTTP request, a variadic NestJS line, a
-  structured message — and while the NDJSON transport already neutralizes an embedded line break
-  through JSON escaping (measured), `pino-pretty` — shipped here as `PrettyDevDestination` — and
+  structured message — and while the NDJSON transport neutralizes an embedded LF or CR through
+  JSON escaping (measured; it does NOT cover U+2028/U+2029 — see the entry below),
+  `pino-pretty` — shipped here as `PrettyDevDestination` — and
   any destination that re-renders the parsed message print real newlines, where a break forges what
   looks like a separate entry (also measured: the forged line is indistinguishable from a genuine
   one). Line and paragraph separators (`\r`, `\n`, U+2028, U+2029) are now replaced with the
@@ -27,6 +28,26 @@ heading here.
   path, the structured `info`/`warn` calls, and the NestJS variadic bridge. Structured fields are
   untouched — `err.message` keeps the verbatim text — so no information is lost, only the
   human-readable `msg` is pinned to one line.
+- **Terminal control characters can no longer drive the renderer either.** Pinning the line
+  terminators is not enough on a terminal: `ESC E` is ANSI NEL (next line), `ESC [` opens a control
+  sequence, and vertical tab, form feed and C1 NEL (U+0085) all move the cursor. Measured on the
+  built bundle — the raw `ESC` byte reached the terminal through `pino-pretty` and forged a line
+  exactly like a newline did. Every C0 control except TAB, plus DEL and the C1 range, is now
+  rendered as its readable `\uXXXX` escape — one form for every character, four hex digits.
+  Escaping the ESC byte is what disarms every sequence built on it, rather than chasing sequences
+  one by one.
+- **This also protects the raw NDJSON line, not only re-rendering destinations.** JSON escaping
+  covers C0 and nothing more: `JSON.stringify` and Pino's serializer emit DEL, the C1 range
+  (U+0085 NEL among them), U+2028 and U+2029 **verbatim** — measured on the emitted bytes. A human
+  reading raw NDJSON in a terminal was therefore exposed to the same cursor movement as a
+  `pino-pretty` reader. Both paths are now covered. The boundary is unchanged: structured values
+  are data and are not rewritten, so a control character placed in a metadata field still reaches
+  the terminal — only `msg` and the stack carry the guarantee.
+- **The scrubbed stack is escaped too.** `pino-pretty` prints `err.stack` RAW rather than as a JSON
+  string, and a stack's first line repeats the error message — so escaping only `msg` left the
+  identical attack working through `err.stack` and `exception.stacktrace`. Control characters in
+  the stack are now escaped; its newlines are preserved, because a stack is legitimately
+  multi-line.
 
 P1 of the observability audit ([`docs/observability_audit.md`](./docs/observability_audit.md)):
 stable OpenTelemetry resource identity, robust trace correlation, semconv-aligned error fields and
@@ -772,8 +793,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.3.0...HEAD
-[1.3.0]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...v1.3.0
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/bymaxone/nest-logger/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/bymaxone/nest-logger/compare/v1.0.8...v1.1.0
 [1.0.8]: https://github.com/bymaxone/nest-logger/compare/v1.0.7...v1.0.8

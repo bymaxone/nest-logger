@@ -159,6 +159,30 @@ try {
 
 `sanitizeError(err)` strips sensitive fields from Error objects before logging. See `src/server/utils/sanitize-error.util.ts`.
 
+### Log Text Escaping
+
+`toSingleLineMessage(text)` runs on EVERY string that becomes Pino's message argument, and
+`escapeControlCharacters(text)` runs on the scrubbed stack. Both live in
+`src/server/utils/escape-log-text.util.ts`.
+
+The threat is log forging, and it has TWO sinks. `pino-pretty`, which this library ships as
+`PrettyDevDestination`, writes the parsed text straight to the terminal, so a raw `\n` **or** an
+ANSI sequence like `ESC E` (next line) prints something indistinguishable from a genuine entry.
+The raw NDJSON line is exposed too: JSON escaping covers only C0, so DEL, the C1 range (U+0085
+NEL included), U+2028 and U+2029 are serialized VERBATIM — measured. Do not repeat the
+"NDJSON is already safe" premise; it holds for LF and CR and for nothing else in this set. Line terminators
+become the literal `\n`; every other terminal-driving control character becomes `\uXXXX`.
+
+Two rules when touching this:
+
+- **Escape at the sink, never in the destination.** Sanitizing `PrettyDevDestination` would
+  protect only the destination this library ships and leave every third-party `ILogDestination`
+  that re-renders exposed.
+- **The stack needs it too.** `pino-pretty` prints `err.stack` RAW rather than as a JSON string,
+  and a stack's first line repeats the error message — escaping only `msg` leaves the identical
+  attack working through `err.stack` and `exception.stacktrace`. Its newlines stay: a stack is
+  legitimately multi-line, so only `msg` carries the one-line guarantee.
+
 ---
 
 ## 5. Testing Strategy
@@ -226,6 +250,7 @@ the strict `attw` profile, which covers that mode — never weaken it with
 | Raw OTel trace ID from HTTP headers    | Always validate with `isValidTraceId`                              |
 | Destination `write()` that throws      | Wrapped by `DestinationRegistry` — safe, logs meta-error           |
 | Logging full Error objects             | Use `sanitizeError(err)` before passing to Pino                    |
+| New sink that hands a string to Pino   | Route it through `toSingleLineMessage` — the escaping is per-sink  |
 
 ### Architecture
 

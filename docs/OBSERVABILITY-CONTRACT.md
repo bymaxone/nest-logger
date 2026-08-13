@@ -133,11 +133,16 @@ the same string.
   through the failure path.
 - Query strings are stripped from every logged URL.
 - **A message cannot forge an entry.** Every string reaching Pino's message argument — from an
-  error, a structured call or the NestJS variadic bridge — has `\r`, `\n`, U+2028 and U+2029
-  replaced with the literal `\n` sequence. NDJSON was already safe by JSON escaping; this protects
-  destinations that re-render the parsed message (`pino-pretty` among them), where a raw break
-  prints a line indistinguishable from a genuine entry. Structured fields are untouched, so
-  `err.message` still carries the verbatim text.
+  error, a structured call or the NestJS variadic bridge — has its line terminators (`\r`, `\n`,
+  U+2028, U+2029, U+0085) replaced with the literal `\n` sequence, and every other terminal control
+  character (C0 except TAB, DEL, C1 — ESC among them) replaced with its `\uXXXX` escape. NDJSON was
+  safe for C0 only — `JSON.stringify` and Pino's serializer emit DEL, the C1 range (U+0085 NEL
+  among them), U+2028 and U+2029 verbatim — so this protects BOTH the raw NDJSON line read in a
+  terminal and destinations that re-render the parsed text (`pino-pretty` among them), where a raw
+  break **or** an ANSI sequence such as `ESC E` prints a line indistinguishable from a genuine
+  entry. The scrubbed stack carries the same escaping with
+  its newlines preserved. Structured fields are untouched, so `err.message` still carries the
+  verbatim text.
 - Every value is read exactly once and pinned (snapshot), so a stateful getter cannot answer clean
   to inspection and dirty to serialization.
 
@@ -148,9 +153,9 @@ the same string.
   string value. Do not put secrets in messages; value-pattern scrubbing is a possible P2, not a
   present promise.
 - The **stack** still renders across several lines in pretty output — a stack is multi-line by
-  nature, and its first line repeats the error message. Pretty printers indent the whole block
-  inside `err`, so it does not read as a separate entry, but nothing pins it to one line. Only the
-  `msg` field carries the one-line guarantee.
+  nature, and its first line repeats the error message. Its control characters are escaped, so it
+  cannot drive the terminal, but nothing pins it to one line: only `msg` carries the one-line
+  guarantee.
 - A secret under a key **nobody declared sensitive** (`{ renamed: user.password }`, a `toJSON`
   renaming nested state) is emitted. Declare the name or keep the value out of the log.
 
