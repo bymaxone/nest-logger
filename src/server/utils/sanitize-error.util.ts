@@ -15,6 +15,8 @@
  * stack scrubbing.
  */
 
+import { escapeControlCharacters } from './escape-log-text.util'
+
 /** Default number of `cause` / `AggregateError` links walked before truncating. */
 const DEFAULT_MAX_CAUSE_DEPTH = 3
 
@@ -242,10 +244,17 @@ function readAggregatedErrors(value: Error): unknown[] | undefined {
  *   // → 'Error: boom\n at app (/srv/src/a.ts:1:1)'
  */
 export function scrubStack(stack: string): string {
-  return stack
-    .split('\n')
-    .filter((line) => !line.includes('node_modules'))
-    .join('\n')
+  // Control characters are escaped here, not only in the message: `pino-pretty`
+  // prints the stack RAW rather than as a JSON string, and a stack's first line
+  // repeats the error message. Without this, attacker-supplied text reaches the
+  // terminal through `err.stack` even when `msg` is already pinned. Newlines are
+  // preserved — a stack is legitimately multi-line.
+  return escapeControlCharacters(
+    stack
+      .split('\n')
+      .filter((line) => !line.includes('node_modules'))
+      .join('\n')
+  )
 }
 
 /**

@@ -24,6 +24,7 @@ import {
   LOGGER_REDACTOR_TOKEN
 } from '../constants/injection-tokens.constants'
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
+import { toSingleLineMessage } from '../utils/escape-log-text.util'
 import type { Redactor } from '../utils/redact-by-name.util'
 
 /** Pino level methods the NestJS-style variadic path dispatches to (error is handled separately). */
@@ -84,32 +85,6 @@ function withoutOwnedKeys(metadata: Record<string, unknown> | undefined): Record
       _logKey: RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
     }
   }
-}
-
-/**
- * Pin a message to a single rendered line.
- *
- * SECURITY (CodeQL `js/log-injection`, alert #61). EVERY string this class hands
- * to Pino as the MESSAGE argument passes through here, because any of them can
- * carry caller- or user-provided text: a thrown error's message, a NestJS
- * variadic line, a structured call's message.
- *
- * On the NDJSON transport an embedded line break is harmless — JSON escaping
- * keeps a forged record inside one valid line (measured on real bytes). But
- * `pino-pretty` — which this library SHIPS as `PrettyDevDestination`, with
- * `singleLine: false` — and any destination that re-renders the parsed message
- * print real newlines, so a break there forges what looks like a separate
- * entry, indistinguishable from a genuine one.
- *
- * Line and paragraph separators therefore become the literal two-character
- * sequence `\n`. Nothing is lost: the text stays readable, and for errors the
- * structured `err.message` field keeps the original verbatim.
- *
- * @param message - The message about to become Pino's message argument.
- * @returns The same text with every line separator neutralized.
- */
-function toSingleLineMessage(message: string): string {
-  return message.replace(/[\r\n\u2028\u2029]/g, '\\n')
 }
 
 /**

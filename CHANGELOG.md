@@ -11,7 +11,7 @@ heading here.
 
 ## [Unreleased]
 
-## [1.3.0] - 2026-08-13
+## [1.2.1] - 2026-08-13
 
 ### Security
 
@@ -27,6 +27,17 @@ heading here.
   path, the structured `info`/`warn` calls, and the NestJS variadic bridge. Structured fields are
   untouched — `err.message` keeps the verbatim text — so no information is lost, only the
   human-readable `msg` is pinned to one line.
+- **Terminal control characters can no longer drive the renderer either.** Pinning the line
+  terminators is not enough on a terminal: `ESC E` is ANSI NEL (next line), `ESC [` opens a control
+  sequence, and vertical tab, form feed and C1 NEL (U+0085) all move the cursor. Measured on the
+  built bundle — the raw `ESC` byte reached the terminal through `pino-pretty` and forged a line
+  exactly like a newline did. Every C0 control except TAB, plus DEL and the C1 range, is now
+  rendered as its readable `\\xNN` escape, which disarms every sequence built on the ESC byte.
+- **The scrubbed stack is escaped too.** `pino-pretty` prints `err.stack` RAW rather than as a JSON
+  string, and a stack's first line repeats the error message — so escaping only `msg` left the
+  identical attack working through `err.stack` and `exception.stacktrace`. Control characters in
+  the stack are now escaped; its newlines are preserved, because a stack is legitimately
+  multi-line.
 
 P1 of the observability audit ([`docs/observability_audit.md`](./docs/observability_audit.md)):
 stable OpenTelemetry resource identity, robust trace correlation, semconv-aligned error fields and
@@ -772,8 +783,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.3.0...HEAD
-[1.3.0]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...v1.3.0
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/bymaxone/nest-logger/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/bymaxone/nest-logger/compare/v1.0.8...v1.1.0
 [1.0.8]: https://github.com/bymaxone/nest-logger/compare/v1.0.7...v1.0.8
