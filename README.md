@@ -101,10 +101,10 @@ pnpm add @bymax-one/nest-logger
 
 One package, two entry points — import only what your app needs:
 
-| Subpath    | Import                          | Purpose                                                                         |              Dependencies               |
-| ---------- | ------------------------------- | ------------------------------------------------------------------------------- | :-------------------------------------: |
-| **Server** | `@bymax-one/nest-logger`        | NestJS module, logger service, interceptor, filter, decorators, destinations    | NestJS 11, pino, rxjs, reflect-metadata |
-| **Shared** | `@bymax-one/nest-logger/shared` | Types, constants, the log-key regex — `LogLevel`, `LogEntry`, `ServiceMetadata` |                  None                   |
+| Subpath    | Import                          | Purpose                                                                                                                                                           |              Dependencies               |
+| ---------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------: |
+| **Server** | `@bymax-one/nest-logger`        | NestJS module, logger service, interceptor, filter, decorators, destinations                                                                                      | NestJS 11, pino, rxjs, reflect-metadata |
+| **Shared** | `@bymax-one/nest-logger/shared` | Types, constants, the log-key regex — `LogLevel`, `LogEntry`, `ServiceMetadata`, `ResolvedServiceMetadata`, `EmittedServiceResource`, `EmittedDeploymentResource` |                  None                   |
 
 ```
 shared (zero deps)
@@ -1093,7 +1093,28 @@ PINO_LEVEL_NAMES[30] // 'info' — numeric code → label
 ```typescript
 type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace'
 
-type ServiceMetadata = { name: string; version: string }
+// What you CONFIGURE.
+type ServiceMetadata = {
+  readonly name: string
+  readonly version: string
+  readonly namespace?: string
+  readonly instanceId?: string
+  readonly environment?: string
+}
+
+// What is EMITTED. Deliberately a different type: `instanceId` nests as
+// `service.instance.id`, and the environment is not under `service` at all.
+// Reusing the configuration type here would advertise `entry.service.instanceId`,
+// which no entry carries.
+type EmittedServiceResource = {
+  readonly name: string
+  readonly version: string
+  readonly namespace?: string
+  readonly instance?: { readonly id: string }
+  readonly [key: string]: unknown
+}
+
+type EmittedDeploymentResource = { readonly environment: { readonly name: string } }
 
 type LogEntry = {
   /** Pino string label — `'info'`, not `30`. Convert with `PINO_LEVEL_NUMBERS`. */
@@ -1102,7 +1123,12 @@ type LogEntry = {
   time: string
   msg: string
   logKey?: string
-  service?: ServiceMetadata
+  /** Present under `resourceFormat: 'nested'` (the default). */
+  service?: EmittedServiceResource
+  /** Present when an environment resolved — `deployment.environment.name`. */
+  deployment?: EmittedDeploymentResource
+  /** Derived from `logKey` unless `eventNameField: false`. */
+  'event.name'?: string
   context?: string
   requestId?: string
   tenantId?: string
@@ -1110,6 +1136,41 @@ type LogEntry = {
   traceId?: string
   spanId?: string
   [key: string]: unknown
+}
+```
+
+Under `resourceFormat: 'flat'` there is no `service` object at all — the values arrive as dotted
+top-level keys (`"service.instance.id"`), which the index signature already admits.
+
+The emitted types are exported, so a helper that receives one can be typed without inlining its
+shape:
+
+```typescript
+import type {
+  EmittedDeploymentResource,
+  EmittedServiceResource,
+  LogEntry
+} from '@bymax-one/nest-logger/shared'
+
+/** Build the identity triplet a backend joins on, from a parsed entry. */
+function identityOf(entry: LogEntry): string {
+  const service: EmittedServiceResource | undefined = entry.service
+  const deployment: EmittedDeploymentResource | undefined = entry.deployment
+  if (service === undefined) {
+    return 'unknown'
+  }
+  // `service.namespace` is part of the identity, not decoration: OTel allows two
+  // services to share a name when their namespaces differ, so a key built without
+  // it collapses them into one.
+  const namespace = service.namespace ?? 'no-namespace'
+  const instance = service.instance?.id ?? 'no-instance'
+  const environment = deployment?.environment.name ?? 'no-environment'
+  return `${namespace}/${service.name}@${service.version}/${instance}/${environment}`
+}
+
+/** `event.name` is declared, so it reads as a string without a cast. */
+function eventOf(entry: LogEntry): string | undefined {
+  return entry['event.name']
 }
 ```
 

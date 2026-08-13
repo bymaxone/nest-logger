@@ -1,7 +1,12 @@
 // Types
 export type { LogLevel } from './types/log-level.type'
 export type { LogEntry } from './types/log-entry.type'
-export type { ResolvedServiceMetadata, ServiceMetadata } from './types/service-metadata.type'
+export type {
+  EmittedDeploymentResource,
+  EmittedServiceResource,
+  ResolvedServiceMetadata,
+  ServiceMetadata
+} from './types/service-metadata.type'
 
 // Constants
 export { LOG_KEYS_CONVENTION_REGEX } from './constants/log-keys-convention.constants'

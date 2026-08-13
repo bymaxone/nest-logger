@@ -11,6 +11,27 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-08-13
+
+### Added
+
+- **`EmittedServiceResource` and `EmittedDeploymentResource` are exported.** `LogEntry['service']`
+  and `LogEntry['deployment']` have been typed by these interfaces since 1.2.1, but neither was
+  reexported from `@bymax-one/nest-logger/shared`, so a consumer could hold `entry.service` and had
+  no way to write its type — a function taking one had to inline the shape or reach for
+  `LogEntry['service']`. Reported by a consumer adopting 1.2.1.
+- **Every shared type is now reexported from the server subpath, not a subset.** `LogEntry` was
+  already there while the types of its own properties were not, which is the same defect one level
+  up. `ResolvedServiceMetadata` and `ReservedLogKey` join them for the same reason.
+- **`LogEntry` declares `'event.name'`.** The field has been emitted since 1.2.1 and documented as
+  part of the entry, but only the index signature covered it — so a consumer reading
+  `entry['event.name']` got `unknown` and needed a cast. A documented field that cannot be read
+  without a cast is not really published. The declaration describes the default key; a renamed
+  `eventNameField` still arrives through the index signature.
+
+Type-only change: `dist/*.mjs` and `dist/*.cjs` are byte-identical to 1.2.1, since `export type`
+erases at compile time. Only the `.d.ts` files differ.
+
 ## [1.2.1] - 2026-08-13
 
 ### Security
@@ -793,7 +814,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/bymaxone/nest-logger/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/bymaxone/nest-logger/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/bymaxone/nest-logger/compare/v1.0.8...v1.1.0

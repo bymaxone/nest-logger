@@ -108,8 +108,8 @@ Files outside `files` — `scripts/`, `.github/`, `docs/`, `CLAUDE.md`, config �
 
 **This overrides the rule above while it holds.** The version in `package.json` must NOT be bumped
 by any change — break, feature or fix — until the maintainer asks explicitly, and when it does move
-it moves **within `1.2.x`**. The pending release is `1.2.1`; `1.3.0` was cut on 2026-08-13 and
-renamed back down on the maintainer's word before it was ever tagged or published.
+it moves **within `1.2.x`**. `1.2.1` is published; `1.2.2` is the current line. `1.3.0` was cut on
+2026-08-13 and renamed back down on the maintainer's word before it was ever tagged.
 
 The reason is that **the library has no consumers yet** and many changes are still coming. SemVer's
 major exists to protect existing consumers; with none, a break costs nothing, and spending majors
@@ -117,7 +117,7 @@ and minors during heavy change burns the numbering without informing anyone. Thi
 mislabel, not an oversight: the current section carries an `### Added` block that SemVer would call
 a minor. It has been raised and decided — do not re-litigate it.
 
-What still applies: keep adding to the existing `## [1.2.1]` CHANGELOG section, and document every
+What still applies: keep adding to the current `## [1.2.x]` CHANGELOG section, and document every
 break under a `### Breaking` heading with its migration path. That prose is what replaces the
 signal the version number is no longer giving.
 

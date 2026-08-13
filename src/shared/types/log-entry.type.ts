@@ -34,6 +34,17 @@ export interface LogEntry {
   /** Convention key — `MODULE_ACTION_RESULT` format. */
   logKey?: string
   /**
+   * OTel event name derived from {@link logKey} (`PAYMENT_FAILED` →
+   * `payment.failed`), emitted on structured calls unless `eventNameField` is
+   * `false`. Declared explicitly because the index signature below would type
+   * it `unknown`: a documented field a consumer cannot read without a cast is
+   * not really published.
+   *
+   * The key is configurable, so a renamed field arrives through the index
+   * signature instead — this declaration describes the default only.
+   */
+  'event.name'?: string
+  /**
    * Service identity as EMITTED — see {@link EmittedServiceResource}. Not the
    * configuration shape: `service.instance.id` nests, and the environment lives
    * under `deployment`, not here.
