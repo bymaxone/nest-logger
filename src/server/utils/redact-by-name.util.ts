@@ -102,15 +102,54 @@ export interface RedactionFailedEnvelope {
   _logKey: typeof RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
 }
 
+/** A `toJSON` resolved off a value, and how it was stored. */
+interface ResolvedToJson {
+  /** The callable method, or `undefined` when the value has none. */
+  method: (() => unknown) | undefined
+  /**
+   * `true` when `toJSON` is an ACCESSOR, so a second read can yield a different
+   * function. Nothing may be decided from the identity of such a method.
+   */
+  fromAccessor: boolean
+}
+
 /**
- * Read a `toJSON` method off a value, if it has a callable one.
+ * Resolve `toJSON` along the prototype chain, reading it exactly ONCE and
+ * reporting whether it came from an accessor. A plain `value.toJSON` read gave
+ * neither, and both matter.
+ *
+ * Reading once is the design's premise — the walk used to read the property
+ * twice, invoking a getter twice per value. Reporting the accessor case closes a
+ * live leak: a getter answers differently on every read, so identity says nothing
+ * about what `JSON.stringify` reads later, and an accessor returning
+ * `Buffer.prototype.toJSON` took the fast path that hands back the ORIGINAL
+ * object — the stringifier then read a `{ password }` factory from it.
  *
  * @param value - A non-null object.
- * @returns The bound-callable method, or `undefined`.
+ * @returns The resolved method and whether it came from an accessor.
  */
-function readToJson(value: object): (() => unknown) | undefined {
-  const candidate = (value as { toJSON?: unknown }).toJSON
-  return typeof candidate === 'function' ? (candidate as () => unknown) : undefined
+function resolveToJson(value: object): ResolvedToJson {
+  let getter: (() => unknown) | undefined
+  let candidate: unknown
+  let current: object | null = value
+  while (current !== null) {
+    const descriptor = Object.getOwnPropertyDescriptor(current, 'toJSON')
+    if (descriptor !== undefined) {
+      getter = descriptor.get
+      candidate = getter === undefined ? descriptor.value : getter.call(value)
+      break
+    }
+    current = Object.getPrototypeOf(current)
+  }
+  // One exit, deliberately. A separate `{ method: undefined, fromAccessor: false }`
+  // for the no-`toJSON` case carried a boolean nothing reads — the flag is only
+  // ever consulted alongside a method — so it was an equivalent mutant by
+  // construction. Falling through with both locals unset says the same thing
+  // without the dead literal.
+  return {
+    method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined,
+    fromAccessor: getter !== undefined
+  }
 }
 
 /**
@@ -306,7 +345,13 @@ function walk(
   // what the check accepts. It is worth keeping: walking a binary payload
   // recurses over every byte and copies the lot. Anything else — including any
   // subclass that overrides it — falls through and is inspected.
-  if (readToJson(value) === BUFFER_TO_JSON) {
+  // Resolved ONCE for both the fast path and the `toJSON` branch below: every
+  // extra read is another chance for an accessor to answer differently.
+  // `fromAccessor` disqualifies the fast path even when the method IS
+  // `Buffer.prototype.toJSON`, because this path hands back the ORIGINAL
+  // reference and `JSON.stringify` reads `toJSON` again from it.
+  const resolvedToJson = resolveToJson(value)
+  if (!resolvedToJson.fromAccessor && resolvedToJson.method === BUFFER_TO_JSON) {
     return value
   }
 
@@ -329,7 +374,7 @@ function walk(
     // and discard `logKey`, `msg` and every other field. Nested values and
     // serializer outputs DO reach `JSON.stringify`, which honours `toJSON`, so
     // they keep it.
-    const toJson = honorToJson ? readToJson(value) : undefined
+    const toJson = honorToJson ? resolvedToJson.method : undefined
     if (toJson !== undefined) {
       // A `toJSON` can RENAME the field it exposes, carrying the value around the
       // matcher: `{ password, toJSON() { return { value: this.password } } }`
@@ -361,7 +406,12 @@ function walk(
       // that a clean `Date` / `Decimal` is substituted by its serialized form
       // rather than passed through by reference; the JSON output is identical,
       // and determinism is worth more than the reference.
-      return walk(toJson.call(value), sensitive, censor, depth, ancestors)
+      // `depth + 1`: following the output is a recursive step like any other.
+      // Leaving the counter let a chain of methods each returning a FRESH
+      // `toJSON`-bearing object recurse forever — nothing repeats, so the ancestor
+      // set never matches and the ceiling was never reached. The stack exhausted
+      // instead: contained by the root catch, but at the cost of the WHOLE record.
+      return walk(toJson.call(value), sensitive, censor, depth + 1, ancestors)
     }
 
     // A callable with no `toJSON` reaches here. It must be handed back as-is:

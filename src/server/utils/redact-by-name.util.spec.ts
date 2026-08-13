@@ -461,6 +461,80 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
+   * REGRESSION — the `Buffer` fast path hands back the ORIGINAL reference, and
+   * `JSON.stringify` reads `toJSON` again from it. When the property is an
+   * ACCESSOR, the second read can answer differently: a getter returning
+   * `Buffer.prototype.toJSON` to the walk took the fast path, and the stringifier
+   * then got a factory synthesizing `{ password }` — in clear, past both hooks.
+   * Identity proves nothing about the next read unless it is a data property.
+   */
+  'should refuse the binary fast path when toJSON is an accessor', () => {
+    let reads = 0
+    const trap = {}
+    Object.defineProperty(trap, 'toJSON', {
+      get(): unknown {
+        reads++
+        return reads === 1 ? Buffer.prototype.toJSON : (): unknown => ({ password: 'SECRET' })
+      },
+      enumerable: false,
+      configurable: true
+    })
+
+    const serialized = JSON.stringify(redact({ payload: trap }))
+
+    expect(serialized).not.toContain('SECRET')
+    // The walk reads the property exactly ONCE — its whole premise is observing
+    // caller state a single time, and it used to read this twice.
+    expect(reads).toBe(1)
+  })
+
+  it(/*
+   * The converse: an accessor is not punished for being one. A getter returning
+   * an ordinary method still has its OUTPUT walked and pinned, so a legitimate
+   * value is neither dropped nor censored — and a getter that answers differently
+   * on a later read cannot change what was emitted, because the snapshot is what
+   * ships.
+   */
+  'should pin the output of an accessor toJSON that shifts between reads', () => {
+    let reads = 0
+    const shifty = {}
+    Object.defineProperty(shifty, 'toJSON', {
+      get(): unknown {
+        reads++
+        return (): unknown => (reads === 1 ? { units: 7 } : { password: 'SECRET' })
+      },
+      enumerable: false,
+      configurable: true
+    })
+
+    const serialized = JSON.stringify(redact({ measure: shifty }))
+
+    expect(serialized).toBe('{"measure":{"units":7}}')
+    expect(serialized).not.toContain('SECRET')
+  })
+
+  it(/*
+   * REGRESSION — following `toJSON` output did not advance the depth counter, so
+   * a chain where each `toJSON()` returns a FRESH object carrying another one
+   * recursed forever: nothing repeats, so the ancestor set never matches, and the
+   * ceiling was never reached. The stack exhausted instead. Contained by the root
+   * catch, but it cost the WHOLE record — where the ceiling costs one value.
+   */
+  'should stop a toJSON chain at the traversal ceiling, keeping the record', () => {
+    const infinite: { toJSON: () => unknown } = {
+      toJSON: (): unknown => ({ toJSON: infinite.toJSON })
+    }
+
+    const serialized = JSON.stringify(redact({ chain: infinite, sibling: 'kept' }))
+
+    expect(serialized).toContain(REDACT_DEPTH_EXCEEDED)
+    // The rest of the record survives — this is the difference between the
+    // ceiling firing and the stack blowing up.
+    expect(serialized).toContain('"sibling":"kept"')
+    expect(serialized).not.toContain('_redactionFailed')
+  })
+
+  it(/*
    * REGRESSION — a value whose `toJSON()` SYNTHESIZES a sensitive field was
    * skipped by the walk and then serialized by `JSON.stringify` through that very
    * method, emitting the secret. The walk must inspect the method's output.

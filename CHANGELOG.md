@@ -41,6 +41,18 @@ shipped logging path **~50× faster**.
   `constructor` and `prototype` are now dropped, from the same constant the ALS context path
   already enforced, so the two guards cannot drift. `Object.prototype` itself was never reachable,
   which is what kept this a correctness bug rather than a pollution vulnerability.
+- **An accessor `toJSON` can no longer smuggle a value through the binary fast path.** That path
+  hands back the ORIGINAL reference, and `JSON.stringify` reads `toJSON` again from it — so a
+  GETTER returning `Buffer.prototype.toJSON` to the walk took the fast path, and the stringifier
+  then read a factory synthesizing `{ password }`, in clear, past both hooks. Identity proves
+  nothing about the next read unless the property is a data property, so an accessor no longer
+  selects any path that returns a caller-controlled reference. `toJSON` is now resolved along the
+  prototype chain exactly ONCE per value, where the walk used to read it twice.
+- **A `toJSON` chain can no longer exhaust the stack.** Following the method's output did not
+  advance the depth counter, so a chain where each `toJSON()` returns a fresh object carrying
+  another one recursed forever — nothing repeats, so the ancestor set never matched, and the
+  ceiling was never reached. The root catch contained it as the fail-closed envelope rather than a
+  crash, but it cost the whole record; the ceiling costs only the pathological value.
 - **A `toJSON` can no longer rename a field around the matcher.** Only the method's OUTPUT was
   inspected, so `{ password, toJSON: () => ({ value: this.password }) }` emitted the secret under
   `value` — a name nobody declared sensitive. When the SOURCE carries a sensitive own key the

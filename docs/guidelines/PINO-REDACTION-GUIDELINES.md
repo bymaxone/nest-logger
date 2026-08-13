@@ -48,6 +48,11 @@ serializer. Inspection cannot close that window; reading once and pinning the re
   an own property (`Date.prototype.toJSON.call({ ...date })` is `toISOString is not a function`).
 - **`ArrayBuffer` views** (`Buffer`, typed arrays) are returned untouched, as a cost bound:
   `Buffer` has a `toJSON` that would materialise a `{ type, data: number[] }` copy per entry.
+  This is the ONLY path that hands back a caller-controlled reference, so it is also the only one
+  where a second read matters — `JSON.stringify` reads `toJSON` again from that reference. An
+  **accessor** `toJSON` is therefore disqualified from it even when the method it returned IS
+  `Buffer.prototype.toJSON`: a getter answering that here and a `{ password }` factory there leaked
+  in clear. `toJSON` is resolved along the prototype chain exactly once per value.
 
 **What the name walk cannot catch, by construction.** It matches KEY NAMES, so a secret that
 arrives under a name nobody declared sensitive is emitted — and no amount of hardening changes
@@ -59,7 +64,9 @@ that. Worth stating plainly, because two reported "leaks" were really this:
   see it. Cover the name, or do not put the value in the log.
 - A **primitive at the depth boundary** is emitted rather than replaced by the sentinel. That is
   not a hole: its key was matched by the parent at level 100, the last container walked. The
-  ceiling bounds RECURSION, and only a container recurses.
+  ceiling bounds RECURSION, and only a container recurses — which is why following a `toJSON`
+  output counts as a level too, or a chain of methods each returning a fresh `toJSON`-bearing
+  object would never repeat, never match the ancestor set, and never reach the ceiling.
 
 **Where redaction is applied** — four hooks, and each covers something the others cannot:
 
