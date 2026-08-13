@@ -227,3 +227,86 @@ describe('createTraceContextMixin', () => {
     expect(mixin({}, 30, logger)).toEqual({ traceId: VALID_TRACE_ID, spanId: SPAN_ID })
   })
 })
+
+describe('createTraceContextMixin — concurrency isolation', () => {
+  const logger = pino({ enabled: false })
+  const options = { ...defaultFields, shouldAutoInjectTraceContext: true }
+
+  it(/*
+   * The property that matters most and fails most quietly: two requests in
+   * flight at once must never see each other's correlation. A leak here
+   * attributes one user's log line to another user's trace, and stays invisible
+   * until someone investigates an incident with the wrong trace.
+   *
+   * The mixin reads AMBIENT state, so isolation is not something it can assert
+   * about itself — it has to be exercised concurrently, with the scopes
+   * deliberately interleaved across await points.
+   */
+  'never leaks context between concurrently interleaved scopes', async () => {
+    mockedDetect.mockReturnValue(apiWith(undefined))
+    const logContext = new LogContextService()
+    const mixin = createTraceContextMixin(logContext, options)
+
+    const request = async (id: string): Promise<Record<string, unknown>[]> =>
+      logContext.run({ requestId: id }, async () => {
+        const seen: Record<string, unknown>[] = [mixin({}, 30, logger)]
+        await new Promise((resolve) => setTimeout(resolve, 1))
+        seen.push(mixin({}, 30, logger))
+        await Promise.all([Promise.resolve(), new Promise((r) => setImmediate(r))])
+        seen.push(mixin({}, 30, logger))
+        return seen
+      })
+
+    const results = await Promise.all([request('r-1'), request('r-2'), request('r-3')])
+
+    results.forEach((samples, index) => {
+      samples.forEach((sample) => {
+        expect(sample['requestId']).toBe(`r-${index + 1}`)
+      })
+    })
+  })
+
+  it(/*
+   * `Promise.all` inside ONE scope must keep that scope on every branch:
+   * AsyncLocalStorage propagates through the continuation, and each branch
+   * belongs to the same logical request.
+   */
+  'keeps one scope across Promise.all branches', async () => {
+    mockedDetect.mockReturnValue(apiWith(undefined))
+    const logContext = new LogContextService()
+    const mixin = createTraceContextMixin(logContext, options)
+
+    const seen = await logContext.run({ requestId: 'r-parallel' }, async () =>
+      Promise.all([
+        Promise.resolve().then(() => mixin({}, 30, logger)),
+        new Promise((resolve) => setTimeout(resolve, 1)).then(() => mixin({}, 30, logger)),
+        (async (): Promise<Record<string, unknown>> => mixin({}, 30, logger))()
+      ])
+    )
+
+    for (const sample of seen) {
+      expect(sample['requestId']).toBe('r-parallel')
+    }
+  })
+
+  it(/*
+   * Nested spans: the mixin must report the span active AT THE MOMENT OF THE LOG
+   * CALL, not the one active when the mixin was built. Reading the wrong level of
+   * a trace attaches the line to the wrong operation — and the mixin is built
+   * once per logger, so caching the span would be an easy mistake to make.
+   */
+  'reports the innermost active span, not the one active at build time', () => {
+    const outer = 'a'.repeat(32)
+    const inner = 'b'.repeat(32)
+    let current: RawSpanContext = { traceId: outer, spanId: 'a'.repeat(16), traceFlags: 1 }
+    mockedDetect.mockReturnValue({
+      getActiveSpan: () => ({ spanContext: () => current as SpanContext })
+    })
+    const mixin = createTraceContextMixin(new LogContextService(), options)
+
+    expect(mixin({}, 30, logger)['traceId']).toBe(outer)
+
+    current = { traceId: inner, spanId: 'b'.repeat(16), traceFlags: 1 }
+    expect(mixin({}, 30, logger)['traceId']).toBe(inner)
+  })
+})
