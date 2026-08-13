@@ -22,7 +22,12 @@ heading here.
   `LogEntry['service']`. Reported by a consumer adopting 1.2.1.
 - **Every shared type is now reexported from the server subpath, not a subset.** `LogEntry` was
   already there while the types of its own properties were not, which is the same defect one level
-  up. `ResolvedServiceMetadata` joins them for the same reason.
+  up. `ResolvedServiceMetadata` and `ReservedLogKey` join them for the same reason.
+- **`LogEntry` declares `'event.name'`.** The field has been emitted since 1.2.1 and documented as
+  part of the entry, but only the index signature covered it — so a consumer reading
+  `entry['event.name']` got `unknown` and needed a cast. A documented field that cannot be read
+  without a cast is not really published. The declaration describes the default key; a renamed
+  `eventNameField` still arrives through the index signature.
 
 Type-only change: `dist/*.mjs` and `dist/*.cjs` are byte-identical to 1.2.1, since `export type`
 erases at compile time. Only the `.d.ts` files differ.

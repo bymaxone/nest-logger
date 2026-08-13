@@ -77,6 +77,7 @@ export type {
   EmittedServiceResource,
   LogEntry,
   LogLevel,
+  ReservedLogKey,
   ResolvedServiceMetadata,
   ServiceMetadata
 } from '../shared'

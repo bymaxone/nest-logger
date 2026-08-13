@@ -1163,6 +1163,11 @@ function identityOf(entry: LogEntry): string {
   const environment = deployment?.environment.name ?? 'no-environment'
   return `${service.name}@${service.version}/${instance}/${environment}`
 }
+
+/** `event.name` is declared, so it reads as a string without a cast. */
+function eventOf(entry: LogEntry): string | undefined {
+  return entry['event.name']
+}
 ```
 
 ### `ILogDestination`
