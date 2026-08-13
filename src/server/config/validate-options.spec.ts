@@ -101,4 +101,25 @@ describe('validateOptions', () => {
       expect(() => validateOptions({ ...validOpts, level })).not.toThrow()
     }
   })
+
+  it(/*
+   * `redactStrategy` selects the engine behind the DEFAULT PII protection, so a
+   * typo must fail loudly at bootstrap rather than silently falling back to one
+   * of the two — a silent fallback to the wrong engine is a security posture
+   * change nobody would notice.
+   */
+  'should reject an unknown redactStrategy', () => {
+    expect(() => validateOptions({ ...validOpts, redactStrategy: 'name' as never })).toThrow(
+      /redactStrategy/
+    )
+  })
+
+  it(/*
+   * Both documented strategies, and omitting the option entirely, must pass.
+   */
+  'should accept the documented redactStrategy values and undefined', () => {
+    expect(() => validateOptions({ ...validOpts, redactStrategy: 'names' })).not.toThrow()
+    expect(() => validateOptions({ ...validOpts, redactStrategy: 'paths' })).not.toThrow()
+    expect(() => validateOptions(validOpts)).not.toThrow()
+  })
 })

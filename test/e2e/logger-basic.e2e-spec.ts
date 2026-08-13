@@ -10,15 +10,18 @@ describe('Logger E2E — basic bootstrap', () => {
   let bootstrapEntries: Record<string, unknown>[]
 
   beforeAll(async () => {
-    // Spy BEFORE compile so the bootstrap log (emitted during provider
-    // instantiation) is captured.
+    // Spy BEFORE compile so nothing the boot emits is missed. The bootstrap
+    // entries themselves are written by `DestinationRegistry.onModuleInit` — i.e.
+    // during `app.init()`, AFTER every destination has been initialized — so that
+    // a sink which only accepts writes post-`onInit()` cannot swallow them. They
+    // are therefore collected after init, not after compile.
     stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
     const moduleRef = await Test.createTestingModule({
       imports: [BymaxLoggerModule.forRoot({ service: { name: 'e2e-basic', version: '0.0.0' } })]
     }).compile()
-    bootstrapEntries = parseLogEntries(stdoutSpy)
     app = moduleRef.createNestApplication({ logger: false })
     await app.init()
+    bootstrapEntries = parseLogEntries(stdoutSpy)
   })
 
   afterAll(async () => {

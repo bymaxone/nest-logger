@@ -18,5 +18,15 @@ export const LOGGER_PINO_INSTANCE_TOKEN: unique symbol = Symbol('BYMAX_LOGGER_PI
 /** Injection token for the resolved destinations array (read-only at runtime). */
 export const LOGGER_DESTINATIONS_TOKEN: unique symbol = Symbol('BYMAX_LOGGER_DESTINATIONS')
 
+/**
+ * Injection token for the redaction function backing the DEFAULT PII coverage.
+ *
+ * Exposed as its own provider because `PinoLoggerService.child()` has to apply
+ * it BEFORE handing bindings to Pino: child bindings are pre-serialized into the
+ * instance's `chindings` fragment and never reach `formatters.log`, so the
+ * factory's hook cannot see them.
+ */
+export const LOGGER_REDACTOR_TOKEN: unique symbol = Symbol('BYMAX_LOGGER_REDACTOR')
+
 /** Injection token for the per-request AsyncLocalStorage-backed log context. */
 export const LOG_CONTEXT_TOKEN: unique symbol = Symbol('BYMAX_LOGGER_LOG_CONTEXT')

@@ -85,6 +85,7 @@ export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxL
     isGlobal: options.isGlobal ?? true,
     shouldUseAsNestLogger: options.shouldUseAsNestLogger ?? true,
     redactPaths: Object.freeze([...(options.redactPaths ?? [])]),
+    redactStrategy: options.redactStrategy ?? 'names',
     redactCensor: options.redactCensor ?? '[REDACTED]',
     shouldDisableDefaultRedact: options.shouldDisableDefaultRedact ?? false,
     destinations: Object.freeze([...(options.destinations ?? [])]),

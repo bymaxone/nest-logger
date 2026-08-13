@@ -2,24 +2,38 @@
  * Throughput + allocation benchmark guarding the logger's hot path against
  * accidental regressions.
  *
- * Three scenarios, all writing to a no-op sink so only the logging PIPELINE cost
+ * Four scenarios, all writing to a no-op sink so only the logging PIPELINE cost
  * is measured (never disk/tty I/O):
  *
- *   A — bare Pino 10                      (baseline)
- *   B — PinoLoggerService, no redact/mixin (wrapper overhead)
- *   C — PinoLoggerService + 97 redact paths + composed ALS/OTel mixin (prod path)
+ *   A — bare Pino 10                       (baseline)
+ *   B — PinoLoggerService, no redact/mixin  (wrapper overhead)
+ *   C — THE SHIPPED CONFIGURATION: PinoLoggerService + default name-walk
+ *       redaction + composed ALS/OTel mixin, inside an active request context
+ *   D — the same, with the legacy `redactStrategy: 'paths'` escape hatch
  *
- * Gates — calibrated to the measured v0.1 baseline (see bench/README.md):
- *   - C ops/sec ≥ B ops/sec × 0.004 — the HARD gate. The 97 wildcard redact
- *     paths are the dominant prod cost (~30µs/op), so the prod path runs at
- *     ~0.8% of the bare wrapper; this floor catches a further ~2× regression.
+ * Scenario C is what `BymaxLoggerModule.forRoot({ service })` actually builds,
+ * with no option set — the point of this bench is that the gate measures what
+ * the package distributes, not a configuration nobody runs.
+ *
+ * Gates:
+ *   - C ops/sec ≥ B ops/sec × 0.20 — the HARD gate. Redaction is now a single
+ *     O(nodes) walk, so the shipped path retains most of the bare wrapper's
+ *     throughput; this floor catches roughly a 2× regression while leaving room
+ *     for the noise of a shared CI runner. It replaces a 0.004 floor that was
+ *     calibrated to the old wildcard-path engine and had stopped meaning
+ *     anything: a 100× slowdown could pass it.
+ *   - D is measured and PRINTED but never gated. It exists to keep the cost of
+ *     the legacy strategy visible and reproducible — the README quotes this
+ *     comparison — not to constrain it.
  *   - B allocated ≤ A allocated × 2.0 — ADVISORY only (printed, never fails CI).
  *     heapUsed deltas are dominated by GC timing on shared CI runners (~1.2×
  *     locally vs >40× on a GitHub runner for identical code — pure sampling
  *     noise), so allocation cannot gate CI reliably.
  *
- * Finding: `pino.multistream` is NOT a bottleneck (≈ bare Pino); the throughput
- * cliff is wildcard PII redaction. The wrapper itself is nearly free.
+ * Finding, and the reason the engine changed: `pino.multistream` is NOT a
+ * bottleneck (≈ bare Pino) and the mixin costs ~14%. The throughput cliff was
+ * wildcard PII redaction — 108 multi-level `fast-redact` paths at ~107 µs/op.
+ * Scenario D still measures it.
  *
  * Run with `pnpm bench`. Allocation accuracy improves under `--expose-gc`
  * (`pnpm bench` wires it); without it the GC is simply not forced between
@@ -38,8 +52,19 @@ import { PinoLoggerService } from '../src/server/services/pino-logger.service'
 
 /** Allocation overhead budget: wrapper (B) vs bare Pino (A). Baseline ≈ 1.2×. */
 const ALLOCATION_BUDGET = 2.0
-/** Throughput-retention budget: prod path (C) vs wrapper (B). Baseline ≈ 0.008×. */
-const THROUGHPUT_BUDGET = 0.004
+/**
+ * Throughput-retention budget: SHIPPED path (C) vs wrapper (B).
+ *
+ * Measured 0.385× (462 k vs 1.20 M ops/s) on 2026-08-12 with the name-walk
+ * redactor. The floor sits at ~1.9× of headroom below that — the same
+ * calibration convention the bundle-size gate uses: tight enough to fail on a
+ * real ~2× regression, loose enough to survive a shared CI runner.
+ *
+ * It replaces a 0.004 floor calibrated to the wildcard-path engine, which had
+ * stopped gating anything: the shipped path measured 0.007× there, so a further
+ * 75 % slowdown would still have passed.
+ */
+const THROUGHPUT_BUDGET = 0.2
 /** Iterations used for the allocation probe. */
 const ALLOC_ITERATIONS = 50_000
 
@@ -73,6 +98,13 @@ const prodLogger = new PinoLoggerService(
     devNullDestination
   ])
 )
+const legacyLogger = new PinoLoggerService(
+  buildPinoInstance(
+    applyDefaults({ service: { name: 'bench', version: '1.0.0' }, redactStrategy: 'paths' }),
+    logContext,
+    [devNullDestination]
+  )
+)
 
 /** Bare-Pino call (scenario A). */
 function runBare(): void {
@@ -84,10 +116,21 @@ function runWrapper(): void {
   wrapperLogger.info('BENCH_EVENT_OK', 'bench', 'u_1', PAYLOAD)
 }
 
-/** Full prod path: redact + mixin, inside an active request context (scenario C). */
+/** The shipped configuration: default redaction + mixin, in a request context (C). */
 function runProd(): void {
   logContext.run({ requestId: 'r_1', tenantId: 't_1' }, () =>
     prodLogger.info('BENCH_EVENT_OK', 'bench', 'u_1', {
+      ...PAYLOAD,
+      password: 'secret',
+      token: 'x'
+    })
+  )
+}
+
+/** The same call under the legacy `redactStrategy: 'paths'` escape hatch (D). */
+function runLegacy(): void {
+  logContext.run({ requestId: 'r_1', tenantId: 't_1' }, () =>
+    legacyLogger.info('BENCH_EVENT_OK', 'bench', 'u_1', {
       ...PAYLOAD,
       password: 'secret',
       token: 'x'
@@ -122,7 +165,8 @@ async function main(): Promise<void> {
   bench
     .add('A: bare pino', runBare)
     .add('B: PinoLoggerService', runWrapper)
-    .add('C: prod path', runProd)
+    .add('C: shipped config', runProd)
+    .add("D: legacy redactStrategy 'paths'", runLegacy)
   await bench.run()
 
   // tinybench v6 replaced the scalar `result.hz` with a `throughput` Statistics
@@ -134,11 +178,13 @@ async function main(): Promise<void> {
   }
   const aOps = ops('A: bare pino')
   const bOps = ops('B: PinoLoggerService')
-  const cOps = ops('C: prod path')
+  const cOps = ops('C: shipped config')
+  const dOps = ops("D: legacy redactStrategy 'paths'")
 
   const aAlloc = bytesPerOp(runBare)
   const bAlloc = bytesPerOp(runWrapper)
   const cAlloc = bytesPerOp(runProd)
+  const dAlloc = bytesPerOp(runLegacy)
 
   const allocRatio = aAlloc === 0 ? 0 : bAlloc / aAlloc
   const throughputRatio = bOps === 0 ? 0 : cOps / bOps
@@ -147,12 +193,18 @@ async function main(): Promise<void> {
   process.stdout.write('| --- | ---: | ---: |\n')
   process.stdout.write(`| A: bare pino | ${fmt(aOps)} | ${fmt(aAlloc)} |\n`)
   process.stdout.write(`| B: PinoLoggerService | ${fmt(bOps)} | ${fmt(bAlloc)} |\n`)
-  process.stdout.write(`| C: prod path (redact+mixin) | ${fmt(cOps)} | ${fmt(cAlloc)} |\n\n`)
+  process.stdout.write(
+    `| C: shipped config (name redact + mixin) | ${fmt(cOps)} | ${fmt(cAlloc)} |\n`
+  )
+  process.stdout.write(`| D: legacy 'paths' strategy | ${fmt(dOps)} | ${fmt(dAlloc)} |\n\n`)
   process.stdout.write(
     `Allocation overhead (B/A): ${allocRatio.toFixed(3)}× (budget ≤ ${ALLOCATION_BUDGET}×)\n`
   )
   process.stdout.write(
     `Throughput retention (C/B): ${throughputRatio.toFixed(3)}× (budget ≥ ${THROUGHPUT_BUDGET}×)\n`
+  )
+  process.stdout.write(
+    `Name walk vs legacy paths (C/D): ${dOps === 0 ? 0 : (cOps / dOps).toFixed(1)}× faster (informational)\n`
   )
   if (!global.gc) {
     process.stdout.write('Note: run with --expose-gc for accurate allocation numbers.\n')

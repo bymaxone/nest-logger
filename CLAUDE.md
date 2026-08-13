@@ -104,6 +104,25 @@ mutation testing to `prepublishOnly` or the per-PR CI — it runs automatically 
 
 Files outside `files` — `scripts/`, `.github/`, `docs/`, `CLAUDE.md`, config — do not ship and do not justify a release on their own.
 
+### Version is frozen at `1.2.0` — do not bump it
+
+**This overrides the rule above while it holds.** The version in `package.json` stays at `1.2.0`
+and must NOT be bumped by any change — break, feature or fix — until the maintainer asks
+explicitly. There is no publication pending, and the rule above assumes one.
+
+The reason is that **the library has no consumers yet** and many changes are still coming. SemVer's
+major exists to protect existing consumers; with none, a break costs nothing, and spending majors
+during heavy change burns the numbering without informing anyone. When the version moves again it
+stays on the **`1.2.x`** line.
+
+What still applies: keep adding to the existing `## [1.2.0]` CHANGELOG section, and document every
+break under a `### Breaking` heading with its migration path. That prose is what replaces the
+signal the version number is no longer giving.
+
+**Check before assuming this still holds:** the moment a real consumer adopts the library, 1.2.x
+stops applying and breaking changes need a major again. Most of the open audit backlog in
+`docs/observability_audit.md` adds public API and would otherwise be a minor.
+
 ---
 
 ## Guidelines — Load Only What You Need

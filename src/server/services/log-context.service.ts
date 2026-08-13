@@ -10,10 +10,11 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 
 import { Injectable } from '@nestjs/common'
 
+import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
 import type { LogContext } from '../interfaces/log-context.interface'
 
 /** Keys that would corrupt the store's prototype chain and are rejected by `set()`. */
-const FORBIDDEN_CONTEXT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+const FORBIDDEN_CONTEXT_KEYS = PROTOTYPE_POLLUTING_KEYS
 
 /**
  * Injectable wrapper around `AsyncLocalStorage<LogContext>`.

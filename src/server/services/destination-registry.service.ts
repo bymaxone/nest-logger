@@ -16,8 +16,12 @@ import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common'
 
 import { PinoLoggerService } from './pino-logger.service'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
-import { LOGGER_DESTINATIONS_TOKEN } from '../constants/injection-tokens.constants'
+import {
+  LOGGER_DESTINATIONS_TOKEN,
+  LOGGER_OPTIONS_TOKEN
+} from '../constants/injection-tokens.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
+import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 
 /**
  * Coordinates destination initialization and graceful shutdown.
@@ -49,7 +53,8 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    */
   constructor(
     @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly registered: readonly ILogDestination[],
-    @Inject(PinoLoggerService) private readonly logger: PinoLoggerService
+    @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
+    @Inject(LOGGER_OPTIONS_TOKEN) private readonly options: ResolvedBymaxLoggerModuleOptions
   ) {}
 
   /**
@@ -71,6 +76,37 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         )
       }
     }
+    this.announceBootstrap()
+  }
+
+  /**
+   * Emit the one-shot bootstrap entries, AFTER every destination has been
+   * initialized.
+   *
+   * Ordering is the whole point of doing this here rather than from an eagerly
+   * instantiated provider factory: a provider factory runs while Nest is still
+   * building the graph, before `onModuleInit`, so a sink that only accepts
+   * writes once its own `onInit()` has run would drop these entries — including
+   * `LOGGER_BOOTSTRAP_WARNING`, which exists precisely so a security review can
+   * see that PII redaction was turned off. A signal that a custom destination
+   * can silently swallow is not an audit trail. Emitting from the registry that
+   * owns destination initialization makes the ordering structural instead of a
+   * cross-provider hook-order assumption.
+   */
+  private announceBootstrap(): void {
+    this.logger.info(RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK, 'BymaxLoggerModule initialized')
+    if (this.options.shouldDisableDefaultRedact) {
+      this.logger.warnStructured(
+        RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_WARNING,
+        'Default PII redaction is DISABLED — sensitive fields will be logged verbatim ' +
+          'unless every one of them is listed in options.redactPaths',
+        undefined,
+        {
+          shouldDisableDefaultRedact: true,
+          redactPathCount: this.options.redactPaths.length
+        }
+      )
+    }
   }
 
   /**
@@ -80,6 +116,26 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * point in the shutdown sequence.
    */
   async onApplicationShutdown(): Promise<void> {
+    // Emitted BEFORE the sinks are torn down — a shutdown entry written after
+    // the destinations closed would have nowhere to go. It is the bookend to
+    // `LOGGER_BOOTSTRAP_OK`: its absence in a log stream is how an operator
+    // tells a graceful shutdown from a killed process.
+    this.logger.info(
+      RESERVED_LOG_KEYS.LOGGER_SHUTDOWN_OK,
+      'BymaxLoggerModule shutting down',
+      undefined,
+      { destinations: this.active.length }
+    )
+    // Yield the event loop once before teardown. `destinationToStream` leaves the
+    // Writable callback pending until an async `write()` settles, and
+    // `logger.info()` returns immediately — so without this barrier the loop below
+    // could call `onShutdown()` on a sink whose shutdown entry is still in flight.
+    // This is a best-effort ordering nudge, not a delivery guarantee: the
+    // authoritative contract is `ILogDestination.onShutdown`, which MUST flush
+    // pending writes.
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve)
+    })
     for (const destination of [...this.active].reverse()) {
       try {
         await destination.onShutdown?.()

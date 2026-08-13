@@ -63,7 +63,15 @@ export {
 
 // Constants
 export { DEFAULT_REDACT_PATHS } from './constants/default-redact-paths.constants'
+// Level maps: `LogEntry.level` is the Pino string LABEL, so a destination that
+// needs the numeric code (a database column, a downstream protocol) has to
+// convert. Exported so it does not have to hard-code the mapping.
+export { PINO_LEVEL_NAMES, PINO_LEVEL_NUMBERS } from './constants/log-levels.constants'
 
 // Shared re-exports (convenience)
 export type { LogLevel, LogEntry, ServiceMetadata } from '../shared'
-export { LOG_KEYS_CONVENTION_REGEX, RESERVED_LOG_KEYS } from '../shared'
+export {
+  LOG_KEYS_CONVENTION_REGEX,
+  RESERVED_LOG_KEYS,
+  RESERVED_LOG_KEYS_NOT_EMITTED
+} from '../shared'

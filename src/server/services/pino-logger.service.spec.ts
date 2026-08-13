@@ -259,10 +259,206 @@ describe('PinoLoggerService', () => {
       const spy = jest.spyOn(rawLogger, 'info')
       service.setContext('Svc')
       service.info('K_DONE', 'done')
-      expect(spy).toHaveBeenCalledWith(
-        { logKey: 'K_DONE', userId: undefined, context: 'Svc' },
-        'done'
-      )
+      expect(spy).toHaveBeenCalledWith({ logKey: 'K_DONE', context: 'Svc' }, 'done')
+      // Asserted on key PRESENCE, not on `undefined`: Jest's recursive equality
+      // treats `{ userId: undefined }` and `{}` as equal, so the object literal
+      // above cannot distinguish "omitted" from "written as undefined" — and
+      // that distinction is the whole point of the ALS clobber fix.
+      expect(spy.mock.calls[0]?.[0]).not.toHaveProperty('userId')
+    })
+
+    it(/*
+     * REGRESSION — audit finding C-1, on the error path. `errorStructured` built
+     * its payload the same way, so an omitted `userId` was written as `undefined`
+     * and clobbered the ALS value. The context must still be attached, and the
+     * omitted user must leave NO key behind for the mixin's value to be
+     * overwritten by.
+     */
+    'attaches the context to errorStructured and omits an absent userId', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      service.setContext('PaymentsService')
+      service.errorStructured('K_PAY_FAILED', new Error('boom'), undefined, { orderId: 'o1' })
+
+      const [payload] = spy.mock.calls[0] ?? []
+      expect(payload).toMatchObject({
+        logKey: 'K_PAY_FAILED',
+        context: 'PaymentsService',
+        orderId: 'o1'
+      })
+      expect(payload).not.toHaveProperty('userId')
+    })
+
+    it(/*
+     * An explicit userId on the error path must still be written — the fix must
+     * not trade a clobbered value for a dropped one.
+     */
+    'writes an explicit userId on errorStructured', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      service.errorStructured('K_PAY_FAILED', new Error('boom'), 'u_9')
+      expect(spy.mock.calls[0]?.[0]).toMatchObject({ userId: 'u_9' })
+    })
+
+    it(/*
+     * REGRESSION — caller `metadata` must never occupy a field the payload owns.
+     * `userId` and `context` say who acted and where, and Pino merges the
+     * caller's object OVER the mixin's, so a metadata bag that could land in them
+     * would let a call site forge the attribution the mixin read from the
+     * authenticated ALS scope. Writing the reserved fields only-when-defined
+     * (the ALS clobber fix) removed the unconditional overwrite that used to
+     * enforce this, so it is enforced on the way in and pinned here.
+     */
+    'refuses caller metadata in the fields the payload owns', () => {
+      const infoSpy = jest.spyOn(rawLogger, 'info')
+      const errorSpy = jest.spyOn(rawLogger, 'error')
+      const forged = { userId: 'FORGED', context: 'FORGED', logKey: 'FORGED', safe: 'kept' }
+
+      service.info('K_REAL_KEY', 'msg', undefined, forged)
+      service.errorStructured('K_REAL_FAIL', new Error('boom'), undefined, forged)
+
+      for (const spy of [infoSpy, errorSpy]) {
+        const payload = spy.mock.calls[0]?.[0] as Record<string, unknown>
+        expect(payload).not.toHaveProperty('userId')
+        expect(payload).not.toHaveProperty('context')
+        expect(payload['logKey']).not.toBe('FORGED')
+        expect(payload['safe']).toBe('kept')
+      }
+    })
+
+    it(/*
+     * REGRESSION — an own `__proto__` key (which is what `JSON.parse` of an
+     * untrusted body produces) was copied with `Reflect.set`, and that does NOT
+     * create an own property for it: the write walks the prototype chain, finds
+     * `Object.prototype`'s inherited `__proto__` SETTER and invokes it. The field
+     * vanished from the entry AND the copy's prototype was swapped for whatever
+     * the caller sent. Dropped now, from the same constant the ALS path uses.
+     */
+    'drops prototype-polluting metadata keys without swapping the copy', () => {
+      const infoSpy = jest.spyOn(rawLogger, 'info')
+      const hostile = JSON.parse(
+        '{"__proto__":{"polluted":true},"constructor":"x","prototype":"y","safe":"kept"}'
+      ) as Record<string, unknown>
+
+      service.info('K_REAL_KEY', 'msg', undefined, hostile)
+
+      const payload = infoSpy.mock.calls[0]?.[0] as Record<string, unknown>
+      expect(payload['safe']).toBe('kept')
+      expect(Object.keys(payload)).not.toContain('__proto__')
+      expect(Object.keys(payload)).not.toContain('constructor')
+      expect(Object.keys(payload)).not.toContain('prototype')
+      // The payload must still be a plain object — the old `Reflect.set` swapped
+      // its prototype for the caller's value, which is the silent half of the bug.
+      expect(Object.getPrototypeOf(payload)).toBe(Object.prototype)
+      // …and nothing global was touched, which is what keeps this a correctness
+      // bug rather than a pollution vulnerability.
+      expect(({} as Record<string, unknown>)['polluted']).toBeUndefined()
+    })
+
+    it(/*
+     * REGRESSION — the never-throw guarantee has to start at the FIRST read of
+     * caller-controlled data, not at the formatter. `withoutOwnedKeys` runs
+     * `Object.keys` (which fires a Proxy `ownKeys` trap) and `Reflect.get`
+     * (which fires a getter) before anything reaches the redaction pipeline, so
+     * hostile metadata crashed the caller outright. It must degrade to the
+     * failure envelope while the entry keeps its real logKey and message.
+     */
+    'contains hostile metadata instead of crashing the caller', () => {
+      const infoSpy = jest.spyOn(rawLogger, 'info')
+      const warnSpy = jest.spyOn(rawLogger, 'warn')
+      const errorSpy = jest.spyOn(rawLogger, 'error')
+      const throwingGetter = {
+        get boom(): never {
+          throw new Error('hostile getter')
+        }
+      }
+      const hostileProxy = new Proxy(
+        {},
+        {
+          ownKeys(): never {
+            throw new Error('hostile ownKeys')
+          }
+        }
+      ) as Record<string, unknown>
+
+      expect(() => service.info('K_A_B', 'msg', undefined, throwingGetter)).not.toThrow()
+      expect(() => service.info('K_A_B', 'msg', undefined, hostileProxy)).not.toThrow()
+      expect(() => service.warnStructured('K_A_B', 'msg', undefined, throwingGetter)).not.toThrow()
+      expect(() =>
+        service.errorStructured('K_A_B', new Error('boom'), undefined, throwingGetter)
+      ).not.toThrow()
+
+      for (const spy of [infoSpy, warnSpy, errorSpy]) {
+        const payload = spy.mock.calls[0]?.[0] as Record<string, unknown>
+        expect(payload['_redactionFailed']).toBe(true)
+        expect(payload['_logKey']).toBe('LOGGER_REDACTION_FAILED')
+        // The entry survives with its real identity — only the unreadable
+        // metadata is dropped.
+        expect(payload['logKey']).toBe('K_A_B')
+      }
+    })
+
+    it(/*
+     * REGRESSION — the same class of crash on the error path, which the review
+     * did not name but the probe found: `name` / `message` / `stack` are ordinary
+     * properties a caller can redefine as throwing accessors, and `message` is
+     * read OUTSIDE the serializer, straight into Pino's message argument.
+     */
+    'contains an Error whose name, message or stack throws', () => {
+      const errorSpy = jest.spyOn(rawLogger, 'error')
+      const hostileStack = new Error('boom')
+      Object.defineProperty(hostileStack, 'stack', {
+        get(): never {
+          throw new Error('hostile stack')
+        }
+      })
+      const hostileMessage = new Error('boom')
+      Object.defineProperty(hostileMessage, 'message', {
+        get(): never {
+          throw new Error('hostile message')
+        }
+      })
+
+      expect(() => service.errorStructured('K_A_B', hostileStack)).not.toThrow()
+      expect(() => service.errorStructured('K_A_B', hostileMessage)).not.toThrow()
+      expect(() => service.error(hostileStack)).not.toThrow()
+
+      const [payload, message] = errorSpy.mock.calls[0] ?? []
+      expect((payload as Record<string, Record<string, unknown>>)['err']).toEqual({
+        type: 'SanitizeFailed',
+        message: 'Failed to read the thrown value'
+      })
+      // Asserted on CONTENT, not just on type: an empty stand-in would make the
+      // entry indistinguishable from a genuinely empty message, and this record
+      // is the only trace that a hostile value was handled at all. The two cases
+      // differ, which is the point — the guard is targeted, not blanket: a
+      // readable message survives even when the STACK is the hostile part.
+      const [, fromHostileMessage] = errorSpy.mock.calls[1] ?? []
+      expect(message).toBe('boom')
+      expect(fromHostileMessage).toBe('Unreadable error message')
+    })
+
+    it(/*
+     * The guard must not fire on ordinary input: a readable metadata bag still
+     * reaches the record intact, with no failure marker.
+     */
+    'leaves readable metadata untouched', () => {
+      const spy = jest.spyOn(rawLogger, 'info')
+      service.info('K_A_B', 'msg', 'u_1', { orderId: 'o_1' })
+      const payload = spy.mock.calls[0]?.[0] as Record<string, unknown>
+      expect(payload).toMatchObject({ orderId: 'o_1', logKey: 'K_A_B', userId: 'u_1' })
+      expect(payload).not.toHaveProperty('_redactionFailed')
+    })
+
+    it(/*
+     * The strip must be surgical: a metadata key the payload does NOT own passes
+     * through untouched. `err` in particular is a documented metadata field on the
+     * info path (it routes through Pino's `err` serializer), so stripping it would
+     * break a working pattern.
+     */
+    'passes through metadata keys the payload does not own', () => {
+      const spy = jest.spyOn(rawLogger, 'info')
+      const error = new Error('boom')
+      service.info('K_A_B', 'msg', undefined, { err: error, orderId: 'o1' })
+      expect(spy.mock.calls[0]?.[0]).toMatchObject({ err: error, orderId: 'o1' })
     })
 
     it(/*

@@ -1,9 +1,81 @@
 # Pino Redaction Guidelines — `@bymax-one/nest-logger`
 
-> **Version:** 1.0.0
-> **Last updated:** 2026-05-27
-> **Target:** Pino 10.x, fast-redact 3.x
-> **Related document:** `docs/technical_specification.md` §10, `src/server/constants/default-redact-paths.constants.ts`
+> **Version:** 2.0.0
+> **Last updated:** 2026-08-12
+> **Target:** Pino 10.x. `fast-redact` 3.x only for consumer `redactPaths` and the legacy strategy.
+> **Related documents:** `src/server/utils/redact-by-name.util.ts` (the engine),
+> `src/server/constants/default-redact-paths.constants.ts` (the name set),
+> `docs/observability_audit.md` (why it changed)
+
+---
+
+## ⚠️ Read this first — the default engine changed in `1.2.0`
+
+**`fast-redact` is no longer what redacts by default.** Sections 2, 3 and 8 below describe
+the path-matching engine, which now backs only two things: the consumer's own `redactPaths`
+option, and the opt-in `redactStrategy: 'paths'` escape hatch. They are kept because both are
+still supported and because the path syntax is still what `redactPaths` takes.
+
+The DEFAULT is a single recursive **snapshotting walk** keyed on FIELD NAME
+(`src/server/utils/redact-by-name.util.ts`). What it changes for anyone editing redaction:
+
+|                | path engine (legacy)                              | name walk (default)                                          |
+| -------------- | ------------------------------------------------- | ------------------------------------------------------------ |
+| Match on       | an exact path or wildcard shape                   | the KEY NAME, anywhere it appears                            |
+| Depth          | four levels; deeper LEAKED                        | 100 levels; a deeper CONTAINER is DROPPED, never emitted     |
+| Casing         | case-sensitive                                    | case-INSENSITIVE (HTTP headers are case-insensitive by spec) |
+| Cost           | grows with the PATH COUNT; ~107 µs/entry          | grows with the payload; ~3.6 µs/entry                        |
+| Adding a field | add it at every depth                             | add the name once to `REDACT_COMMON_FIELDS`                  |
+| Output         | the source object, censored in place at stringify | a snapshot — every value read exactly once                   |
+
+**Why a snapshot rather than the cheaper copy-on-write:** returning a clean subtree by
+reference left every accessor in it to be evaluated a SECOND time by `JSON.stringify`, and a
+stateful getter (or a `toJSON`) can answer clean to the walk and `{ password }` to the
+serializer. Inspection cannot close that window; reading once and pinning the result can.
+
+**Three shapes carry rules that are easy to break** — all three were live leaks found in review:
+
+- **`Error`** is cloned through its prototype and descriptors, so it stays an `Error` for Pino's
+  `err` serializer while its enumerable properties are censored. `message` / `stack` are own but
+  NON-enumerable, so a spread would drop them silently.
+- **Anything with `toJSON`** is inspected through that method's OUTPUT, because that is what
+  reaches the log — EXCEPT at the root of a record, which Pino iterates rather than serializes.
+  Honouring it there replaces the whole record and discards `logKey`, `msg` and everything else.
+  A method can also RENAME what it exposes (`{ password, toJSON: () => ({ value: this.password }) }`
+  emitted the secret under `value`), so when the SOURCE carries a sensitive own key the method is
+  not trusted and the whole value is censored. Calling `toJSON` against a sanitized copy instead —
+  the obvious fix — was rejected: it throws on every method that reads an internal slot rather than
+  an own property (`Date.prototype.toJSON.call({ ...date })` is `toISOString is not a function`).
+- **`ArrayBuffer` views** (`Buffer`, typed arrays) are returned untouched, as a cost bound:
+  `Buffer` has a `toJSON` that would materialise a `{ type, data: number[] }` copy per entry.
+  This is the ONLY path that hands back a caller-controlled reference, so it is also the only one
+  where a second read matters — `JSON.stringify` reads `toJSON` again from that reference. An
+  **accessor** `toJSON` is therefore disqualified from it even when the method it returned IS
+  `Buffer.prototype.toJSON`: a getter answering that here and a `{ password }` factory there leaked
+  in clear. `toJSON` is resolved along the prototype chain exactly once per value.
+
+**What the name walk cannot catch, by construction.** It matches KEY NAMES, so a secret that
+arrives under a name nobody declared sensitive is emitted — and no amount of hardening changes
+that. Worth stating plainly, because two reported "leaks" were really this:
+
+- `logger.log('x', { renamed: user.password })` — the caller chose the key. `renamed` is not in
+  the set, so it is emitted. Identical in kind to a `toJSON` that renames NESTED state
+  (`() => ({ v: this.inner.password })`): the source-key check above is shallow and does not
+  see it. Cover the name, or do not put the value in the log.
+- A **primitive at the depth boundary** is emitted rather than replaced by the sentinel. That is
+  not a hole: its key was matched by the parent at level 100, the last container walked. The
+  ceiling bounds RECURSION, and only a container recurses — which is why following a `toJSON`
+  output counts as a level too, or a chain of methods each returning a fresh `toJSON`-bearing
+  object would never repeat, never match the ancestor set, and never reach the ceiling.
+
+**Where redaction is applied** — four hooks, and each covers something the others cannot:
+
+| Hook                        | Covers                                                | Why the others miss it                                          |
+| --------------------------- | ----------------------------------------------------- | --------------------------------------------------------------- |
+| `formatters.log`            | the merged record (mixin + caller object)             | —                                                               |
+| `formatters.bindings`       | `base` — carries consumer-supplied `service` metadata | base never reaches `formatters.log`; runs once, at construction |
+| every serializer's output   | fields a serializer PRODUCES                          | `formatters.log` runs BEFORE serializers                        |
+| `PinoLoggerService.child()` | child bindings                                        | Pino pre-serializes them into `chindings` before any formatter  |
 
 ---
 
@@ -111,7 +183,11 @@ The lib applies this strategy by default — see §4.
 
 See the canonical file: [`src/server/constants/default-redact-paths.constants.ts`](../../src/server/constants/default-redact-paths.constants.ts).
 
-**Current coverage (113 total paths — 108 via `depth()` + 5 absolute paths):**
+**Current coverage.** Under the default strategy the contract is the NAME LIST
+(`REDACT_COMMON_FIELDS`, 32 names), matched case-insensitively down to 100 levels of nesting;
+past that a value is dropped rather than emitted. The path
+expansion below is what `DEFAULT_REDACT_PATHS` still produces for the legacy strategy —
+`fields × 5 + absolute`, derived rather than fixed:
 
 | Category            | Fields (count)                                                                  | Depth | Generated paths |
 | ------------------- | ------------------------------------------------------------------------------- | ----- | --------------- |
@@ -249,7 +325,11 @@ Use in **E2E tests** to ensure the app provides the paths the domain requires.
 | 200-400 | 5-10%             | Audit — likely redundant paths                            |
 | > 400   | > 10%             | Refactor — use a custom serializer or group by sub-object |
 
-The lib default sits at 113 paths; throughput is governed by the `pnpm bench` gate (against the recalibrated v0.1 baseline), not a hard path-count budget.
+Under the default name walk the cost tracks the PAYLOAD, not a path count: ~3.6 µs/entry
+(~274 k logs/s on the shipped configuration) against ~107 µs/entry (~9.3 k logs/s) for the
+path expansion it replaced. Throughput is governed by the `pnpm bench` gate, which measures
+the configuration the package actually ships — see `bench/README.md` for the calibration
+history and the measured cost of each design.
 
 ---
 

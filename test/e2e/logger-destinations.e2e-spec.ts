@@ -120,6 +120,27 @@ describe('Logger E2E — custom destinations', () => {
   })
 
   it(/*
+   * REGRESSION — audit finding D-1. `LOGGER_SHUTDOWN_OK` was declared in the
+   * reserved catalog and never written by any code path. It is the bookend to
+   * `LOGGER_BOOTSTRAP_OK`: its absence in a log stream is how an operator tells
+   * a graceful shutdown from a killed process. It must be emitted BEFORE the
+   * sinks are torn down, which is why the collector still receives it.
+   */
+  'emits LOGGER_SHUTDOWN_OK before tearing the destinations down', async () => {
+    const collector = new CollectorDestination()
+    const booted = await bootApp({ destinations: [collector] })
+
+    expect(collector.entries().map((entry) => entry['logKey'])).not.toContain('LOGGER_SHUTDOWN_OK')
+
+    await booted.close()
+    app = undefined
+
+    const shutdown = collector.entries().find((entry) => entry['logKey'] === 'LOGGER_SHUTDOWN_OK')
+    expect(shutdown).toBeDefined()
+    expect(shutdown?.['destinations']).toBe(1)
+  })
+
+  it(/*
    * A destination whose `onInit` throws must NOT crash the app: boot succeeds, a
    * `LOGGER_DESTINATION_INIT_FAILED` meta-log naming the offender is emitted, and
    * the healthy destination keeps receiving subsequent logs.

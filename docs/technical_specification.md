@@ -1825,7 +1825,11 @@ BymaxLoggerModule.forRoot({
 - ≤ 200 total paths: < 5% throughput impact
 - > 200 paths: evaluate grouping by depth or a custom serializer
 
-Official Pino benchmark: redacting 100 paths impacts ~3% on throughput. The lib's default list (§10.1) generates 140 paths and stays within budget.
+Superseded in `1.2.0`. Path-based redaction was measured at ~107 µs per entry (~9.3 k logs/s),
+not the ~3% the official benchmark suggests — the cost grows with the PATH COUNT, and the default
+list expands to 140. The default is now a name-keyed snapshotting walk at ~3.6 µs per entry; the
+path expansion survives for consumer `redactPaths` and the opt-in `redactStrategy: 'paths'`.
+See `docs/guidelines/PINO-REDACTION-GUIDELINES.md` and `bench/README.md`.
 
 ### 10.4 Customizable censor
 

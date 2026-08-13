@@ -1,5 +1,31 @@
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { LOG_KEYS_CONVENTION_REGEX } from './log-keys-convention.constants'
-import { RESERVED_LOG_KEYS, type ReservedLogKey } from './reserved-log-keys.constants'
+import {
+  RESERVED_LOG_KEYS,
+  RESERVED_LOG_KEYS_NOT_EMITTED,
+  type ReservedLogKey
+} from './reserved-log-keys.constants'
+
+/** Absolute path to `src/`, walked to prove each reserved key has a writer. */
+const SOURCE_ROOT = join(__dirname, '..', '..')
+
+/** Every non-spec `.ts` file under `src/`, read once. */
+function readProductionSources(directory: string): string[] {
+  const collected: string[] = []
+  for (const item of readdirSync(directory, { withFileTypes: true })) {
+    const full = join(directory, item.name)
+    if (item.isDirectory()) {
+      if (item.name !== 'coverage') {
+        collected.push(...readProductionSources(full))
+      }
+    } else if (item.name.endsWith('.ts') && !item.name.endsWith('.spec.ts')) {
+      collected.push(readFileSync(full, 'utf-8'))
+    }
+  }
+  return collected
+}
 
 describe('RESERVED_LOG_KEYS', () => {
   it(/*
@@ -55,5 +81,42 @@ describe('RESERVED_LOG_KEYS', () => {
     expect(values).toContain('LOGGER_BOOTSTRAP_OK')
     expect(values).toContain('HTTP_REQUEST_START')
     expect(values).toContain('LOGGER_ENTRY_TRUNCATED')
+  })
+
+  it(/*
+   * REGRESSION — audit finding D-1. Three keys were declared, documented, and
+   * never written by any code path. One of them, LOGGER_BOOTSTRAP_WARNING, was
+   * sold in the README as the audit trail proving when PII protection had been
+   * turned off: a team relying on it got silence. A declared key must therefore
+   * have a writer in production source, or be listed as reserved-only WITH its
+   * reason — there is no third state where the catalog and the code disagree
+   * silently.
+   */
+  'should have a production writer for every key that is not explicitly reserved-only', () => {
+    const sources = readProductionSources(SOURCE_ROOT).join('\n')
+    const declaredOnly = new Set<string>(Object.keys(RESERVED_LOG_KEYS_NOT_EMITTED))
+
+    // A writer references the key through the constant, e.g.
+    // `RESERVED_LOG_KEYS.LOGGER_SHUTDOWN_OK`. Collected rather than asserted in
+    // the loop so a failure names every dead key at once.
+    const withoutWriter = Object.keys(RESERVED_LOG_KEYS).filter(
+      (key) => !declaredOnly.has(key) && !sources.includes(`RESERVED_LOG_KEYS.${key}`)
+    )
+
+    expect(withoutWriter).toEqual([])
+  })
+
+  it(/*
+   * The reserved-only map may only name keys that actually exist, and each must
+   * carry a non-empty reason — an escape hatch without a justification would
+   * just re-create the dead-key problem under a different name.
+   */
+  'should justify every reserved-only key against a real declaration', () => {
+    for (const [key, reason] of Object.entries(RESERVED_LOG_KEYS_NOT_EMITTED)) {
+      expect(Object.keys(RESERVED_LOG_KEYS)).toContain(key)
+      expect(typeof reason).toBe('string')
+      expect(reason.length).toBeGreaterThan(20)
+    }
+    expect(Object.isFrozen(RESERVED_LOG_KEYS_NOT_EMITTED)).toBe(true)
   })
 })

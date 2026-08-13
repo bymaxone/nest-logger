@@ -32,15 +32,16 @@ describe('depth helper', () => {
 
 describe('DEFAULT_REDACT_PATHS', () => {
   it(/*
-   * Locks the canonical count to the documented composition (27 common fields
-   * at the root plus 27 × 4 depth wildcards + 5 absolute paths = 140). The root
-   * entries were added so a sensitive field spread into the record root as
-   * caller metadata is redacted, not only one nested a level deep. A drift
-   * breaks consumer dashboards that count redacted fields.
+   * Locks the composition: every common field at the record root plus its four
+   * depth wildcards, then the absolute header paths. The count is DERIVED, not
+   * fixed — the list is append-only, so it may only grow. The root entries exist
+   * so a sensitive field spread into the record root as caller metadata is
+   * redacted, not only one nested a level deep.
    */
-  'should match the derived length 27 root + 27 × 4 + 5 = 140', () => {
+  'should match the derived length fields × 5 + absolute paths', () => {
     const expected = REDACT_COMMON_FIELDS.length * 5 + REDACT_ABSOLUTE_PATHS.length
     expect(DEFAULT_REDACT_PATHS.length).toBe(expected)
+    // Append-only floor: the set as shipped in 1.1.0. It may grow, never shrink.
     expect(DEFAULT_REDACT_PATHS.length).toBeGreaterThanOrEqual(140)
   })
 
@@ -72,6 +73,21 @@ describe('DEFAULT_REDACT_PATHS', () => {
     expect(DEFAULT_REDACT_PATHS).toContain('req.headers.authorization')
     expect(DEFAULT_REDACT_PATHS).toContain('req.headers["x-api-key"]')
     expect(DEFAULT_REDACT_PATHS).toContain('res.headers["set-cookie"]')
+  })
+
+  it(/*
+   * REGRESSION — audit finding S-1. The credential-bearing header names were
+   * present ONLY as the absolute paths `req.headers.*` / `res.headers.*`, so a
+   * headers bag logged under any other key wrote the bearer token in clear.
+   * They must now be first-class field names, which is what makes the name walk
+   * catch them anywhere — and what expands them across the legacy depths too.
+   */
+  'should list every credential-bearing header as a bare field name', () => {
+    for (const header of ['authorization', 'cookie', 'set-cookie', 'x-api-key', 'x-auth-token']) {
+      expect(REDACT_COMMON_FIELDS).toContain(header)
+      expect(DEFAULT_REDACT_PATHS).toContain(header)
+      expect(DEFAULT_REDACT_PATHS).toContain(`*.${header}`)
+    }
   })
 
   it(/*
