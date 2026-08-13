@@ -23,6 +23,19 @@ complete field inventory is in
 
 ### Fixed
 
+- **The HTTP terminal entry is emitted in the live async context when one exists.** The `'close'`
+  listener used `AsyncResource.bind` alone, which captures the context at REGISTRATION time — so
+  when instrumentation opened a span downstream of the middleware, the terminal entry was
+  attributed to the wrong span, silently, because a plausible trace id was still present. Measured
+  (and confirmed independently against a real OTel ContextManager): the live read covers the
+  normal path, the bound context covers the aborted path, and neither alone covers both. The
+  listener now reads live-first with the bound context as fallback; the ALS store doubles as the
+  liveness probe.
+- **A thrown non-object no longer spreads into the `err` object.** The serializer's own-property
+  copy ran on any value, and `Object.entries` on a thrown STRING spreads its characters as indexed
+  keys — a record carried `err: {"0":"t","1":"h",…}` beside the `UnknownError` envelope; a thrown
+  array spread its elements the same way. Own properties are now copied only off a plain
+  non-array object.
 - **Trace correlation no longer switches off because of the working directory.** `@opentelemetry/api`
   was resolved from `process.cwd()` alone, so a Docker `WORKDIR` that is not the app root, a
   pnpm/Yarn workspace with hoisted `node_modules`, a monorepo launched from the repository root or a

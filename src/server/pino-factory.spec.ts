@@ -1398,3 +1398,28 @@ describe('exception.stacktrace scrubbing', () => {
     expect(out['exception.stacktrace']).not.toContain('node_modules')
   })
 })
+
+describe('err serializer — non-object thrown values', () => {
+  it.each<[unknown, string]>([
+    ['thrown string', 'a string spreads its characters'],
+    [[1, 2, 3], 'an array spreads its elements'],
+    [42, 'a number'],
+    [null, 'null']
+  ])(
+    /*
+     * REGRESSION — the own-property copy ran on ANY value, and `Object.entries`
+     * on a thrown STRING spreads its characters as indexed keys: a real record
+     * carried `"0":"t","1":"h",…` beside the UnknownError envelope. Same for an
+     * array's elements. The envelope's stringified message already carries the
+     * whole value, so the copy adds only unqueryable noise and payload bloat.
+     */
+    'emits only the envelope for %p (%s)',
+    (thrown) => {
+      const serialized = serializeErrorValue(thrown)
+
+      expect(Object.keys(serialized).sort()).toEqual(['message', 'type'])
+      expect(serialized['type']).toBe('UnknownError')
+      expect(serialized).not.toHaveProperty('0')
+    }
+  )
+})

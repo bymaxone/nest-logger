@@ -47,6 +47,7 @@ import type {
   NextHandler
 } from '../interfaces/http-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
+import { LogContextService } from '../services/log-context.service'
 import { PinoLoggerService } from '../services/pino-logger.service'
 import {
   HTTP_CLIENT_ERROR_MIN,
@@ -78,6 +79,7 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
    */
   constructor(
     @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
+    @Inject(LogContextService) private readonly logContext: LogContextService,
     @Inject(LOGGER_OPTIONS_TOKEN) options: ResolvedBymaxLoggerModuleOptions
   ) {
     this.isEnabled = options.http.isEnabled
@@ -141,12 +143,35 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
       userAgent: readUserAgent(req)
     })
 
-    res.on(
-      'close',
-      AsyncResource.bind(() => {
-        this.logTerminal(req, res, method, url, Date.now() - start)
-      })
-    )
+    const emitTerminal = (): void => {
+      this.logTerminal(req, res, method, url, Date.now() - start)
+    }
+    // LIVE context first, BOUND context as the fallback — neither alone covers
+    // both paths, measured (and confirmed independently by nest-core against a
+    // real ContextManager):
+    //
+    //   normal request:  live = the innermost scope at emit time  ✓
+    //                    bound = the scope at REGISTRATION time    ✗ (stale)
+    //   aborted request: live = undefined (close fires from the socket's
+    //                    context, outside every request scope)     ✗
+    //                    bound = the middleware's scope             ✓
+    //
+    // Bound-only was the previous behaviour, and it attributed the terminal
+    // entry to the WRONG span whenever instrumentation opened one downstream of
+    // this middleware — silently, because a plausible trace id was still
+    // present. The ALS store doubles as the liveness probe: when it is readable
+    // at close time we are inside the request's async continuation, so the Pino
+    // mixin reads the freshest ALS and OTel state on its own; when it is not,
+    // the bound callback restores the middleware-time context, which is what
+    // keeps the ABORTED path carrying its requestId.
+    const bound = AsyncResource.bind(emitTerminal)
+    res.on('close', () => {
+      if (this.logContext.getStore() !== undefined) {
+        emitTerminal()
+      } else {
+        bound()
+      }
+    })
 
     next()
   }

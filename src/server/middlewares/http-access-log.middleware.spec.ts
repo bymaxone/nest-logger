@@ -2,6 +2,7 @@ import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.cons
 import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import type { PinoLoggerService } from '../services/pino-logger.service'
+import { LogContextService } from '../services/log-context.service'
 import { isRecorderActive, recordError } from '../utils/http-log-state.util'
 
 import { HttpAccessLogMiddleware } from './http-access-log.middleware'
@@ -76,7 +77,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'emits START with normalized url, stripped query, ip and user agent', () => {
     const { logger, info } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const req = createRequest({ url: '/users/123?token=SECRET' })
     const { res } = createResponse()
     const next = jest.fn()
@@ -106,7 +107,11 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'skips an excluded path without claiming the lifecycle', () => {
     const { logger, info } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions([/^\/health/]))
+    const middleware = new HttpAccessLogMiddleware(
+      logger,
+      new LogContextService(),
+      createOptions([/^\/health/])
+    )
     const req = createRequest({ url: '/health?probe=1' })
     const { res } = createResponse()
     const next = jest.fn()
@@ -127,7 +132,11 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'emits nothing and does not claim when http logging is disabled', () => {
     const { logger, info } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions([], false))
+    const middleware = new HttpAccessLogMiddleware(
+      logger,
+      new LogContextService(),
+      createOptions([], false)
+    )
     const req = createRequest()
     const next = jest.fn()
 
@@ -148,7 +157,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'logs the original target, not the mount-relative url', () => {
     const { logger, info } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const req = createRequest({ url: '/users/123', originalUrl: '/api/users/123?q=1' })
 
     middleware.use(req, createResponse().res, jest.fn())
@@ -165,7 +174,11 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'matches exclude patterns against the original target', () => {
     const { logger, info } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions([/^\/api\/health/]))
+    const middleware = new HttpAccessLogMiddleware(
+      logger,
+      new LogContextService(),
+      createOptions([/^\/api\/health/])
+    )
     const req = createRequest({ url: '/health', originalUrl: '/api/health' })
 
     middleware.use(req, createResponse().res, jest.fn())
@@ -180,7 +193,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'claims the lifecycle for a logged request', () => {
     const { logger } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const req = createRequest()
 
     middleware.use(req, createResponse().res, jest.fn())
@@ -204,7 +217,11 @@ describe('HttpAccessLogMiddleware', () => {
     'logs status %i as %s',
     (statusCode, expectedKey) => {
       const { logger, info } = createLogger()
-      const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+      const middleware = new HttpAccessLogMiddleware(
+        logger,
+        new LogContextService(),
+        createOptions()
+      )
       const { res, fireClose } = createResponse(statusCode)
 
       middleware.use(createRequest(), res, jest.fn())
@@ -226,7 +243,11 @@ describe('HttpAccessLogMiddleware', () => {
     'logs client error %i at warn level',
     (statusCode) => {
       const { logger, warnStructured } = createLogger()
-      const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+      const middleware = new HttpAccessLogMiddleware(
+        logger,
+        new LogContextService(),
+        createOptions()
+      )
       const { res, fireClose } = createResponse(statusCode)
 
       middleware.use(createRequest(), res, jest.fn())
@@ -248,7 +269,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'carries errorMessage on a 4xx that threw', () => {
     const { logger, warnStructured } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const req = createRequest()
     const { res, fireClose } = createResponse(400)
 
@@ -270,7 +291,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'omits errorMessage on a 4xx that did not throw', () => {
     const { logger, warnStructured } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const { res, fireClose } = createResponse(403)
 
     middleware.use(createRequest(), res, jest.fn())
@@ -286,7 +307,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'logs a 5xx with the error the interceptor recorded', () => {
     const { logger, errorStructured } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const req = createRequest()
     const { res, fireClose } = createResponse(500)
     const thrown = new Error('handler exploded')
@@ -310,7 +331,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'logs a 5xx with no recorded error as a synthesized one', () => {
     const { logger, errorStructured } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const { res, fireClose } = createResponse(503)
 
     middleware.use(createRequest(), res, jest.fn())
@@ -333,7 +354,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'logs an undelivered response as ABORTED, keeping the real status', () => {
     const { logger, info, warnStructured } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const { res, fireClose } = createResponse(200, false)
 
     middleware.use(createRequest(), res, jest.fn())
@@ -356,7 +377,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'prefers ABORTED over the status classification', () => {
     const { logger, warnStructured, errorStructured } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const { res, fireClose } = createResponse(500, false)
 
     middleware.use(createRequest(), res, jest.fn())
@@ -373,7 +394,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'reads the acting user at close, after the guard populated it', () => {
     const { logger, info } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const req = createRequest() as { user?: { sub?: string } }
     const { res, fireClose } = createResponse(200)
 
@@ -394,7 +415,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'renders the terminal message with method, url, status and duration', () => {
     const { logger, info } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const { res, fireClose } = createResponse(200)
 
     middleware.use(createRequest(), res, jest.fn())
@@ -411,7 +432,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'reports an elapsed duration, not a timestamp', () => {
     const { logger, info } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const { res, fireClose } = createResponse(200)
 
     middleware.use(createRequest(), res, jest.fn())
@@ -431,7 +452,7 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'keeps a 4xx at warn even when an error was recorded', () => {
     const { logger, warnStructured, errorStructured } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
     const req = createRequest()
     const { res, fireClose } = createResponse(400)
 
@@ -449,10 +470,78 @@ describe('HttpAccessLogMiddleware', () => {
    */
   'falls back to unknown when the user agent is absent', () => {
     const { logger, info } = createLogger()
-    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
 
     middleware.use(createRequest({ headers: {} }), createResponse().res, jest.fn())
 
     expect(info.mock.calls[0]?.[3]).toMatchObject({ userAgent: 'unknown' })
+  })
+})
+
+describe('HttpAccessLogMiddleware — terminal-entry async context', () => {
+  /*
+   * Which async context the terminal entry is emitted in decides which
+   * correlation the Pino mixin reads. Neither strategy alone covers both paths,
+   * measured against real ALS behaviour (and confirmed independently by
+   * nest-core against a real OTel ContextManager):
+   *
+   *   normal:  live context = innermost scope at emit time; bound = stale
+   *   aborted: live context = undefined; bound = the middleware's scope
+   */
+  function arm(logContext: LogContextService): {
+    fireClose: () => void
+    seenScopes: unknown[]
+  } {
+    const seenScopes: unknown[] = []
+    const logger = {
+      info: jest.fn(() => {
+        seenScopes.push(logContext.getStore()?.['requestId'])
+      }),
+      warnStructured: jest.fn(),
+      errorStructured: jest.fn()
+    } as unknown as PinoLoggerService
+    const middleware = new HttpAccessLogMiddleware(logger, logContext, createOptions())
+    const { res, fireClose } = createResponse(200)
+    logContext.run({ requestId: 'mw-scope' }, () => {
+      middleware.use(createRequest(), res, jest.fn())
+    })
+    return { fireClose, seenScopes }
+  }
+
+  it(/*
+   * REGRESSION — bound-only was the previous behaviour, and it attributed the
+   * terminal entry to the REGISTRATION-time context whenever instrumentation
+   * opened a scope downstream of this middleware. Silent, because a plausible
+   * correlation was still present — just the wrong one. When a live store is
+   * readable at close time, the emit must run in it, so the mixin reads the
+   * freshest state.
+   */
+  'emits in the LIVE context when one is readable at close time', () => {
+    const logContext = new LogContextService()
+    const { fireClose, seenScopes } = arm(logContext)
+
+    // A downstream scope, opened AFTER the middleware registered its listener —
+    // the shape of instrumentation running later in the pipeline.
+    logContext.run({ requestId: 'downstream-scope' }, () => {
+      fireClose()
+    })
+
+    expect(seenScopes).toEqual(['mw-scope', 'downstream-scope'])
+  })
+
+  it(/*
+   * The aborted path: `close` fires from the socket's context, outside every
+   * request scope, where the live store is undefined. The bound fallback is what
+   * keeps that entry carrying its requestId — the case where correlation matters
+   * most, and the case the live read alone loses entirely.
+   */
+  'falls back to the BOUND context when no live store is readable', () => {
+    const logContext = new LogContextService()
+    const { fireClose, seenScopes } = arm(logContext)
+
+    // Fired outside any scope, as the socket does on an aborted connection.
+    fireClose()
+
+    expect(seenScopes).toEqual(['mw-scope', 'mw-scope'])
   })
 })
