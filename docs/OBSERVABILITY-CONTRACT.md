@@ -136,9 +136,11 @@ the same string.
   error, a structured call or the NestJS variadic bridge — has its line terminators (`\r`, `\n`,
   U+2028, U+2029, U+0085) replaced with the literal `\n` sequence, and every other terminal control
   character (C0 except TAB, DEL, C1 — ESC among them) replaced with its `\uXXXX` escape. NDJSON was
-  already safe by JSON escaping; this protects destinations that re-render the parsed text
-  (`pino-pretty` among them), where a raw break **or** an ANSI sequence such as `ESC E` prints a
-  line indistinguishable from a genuine entry. The scrubbed stack carries the same escaping with
+  safe for C0 only — `JSON.stringify` and Pino's serializer emit DEL, the C1 range (U+0085 NEL
+  among them), U+2028 and U+2029 verbatim — so this protects BOTH the raw NDJSON line read in a
+  terminal and destinations that re-render the parsed text (`pino-pretty` among them), where a raw
+  break **or** an ANSI sequence such as `ESC E` prints a line indistinguishable from a genuine
+  entry. The scrubbed stack carries the same escaping with
   its newlines preserved. Structured fields are untouched, so `err.message` still carries the
   verbatim text.
 - Every value is read exactly once and pinned (snapshot), so a stateful getter cannot answer clean

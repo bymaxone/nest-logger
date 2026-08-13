@@ -165,10 +165,12 @@ try {
 `escapeControlCharacters(text)` runs on the scrubbed stack. Both live in
 `src/server/utils/escape-log-text.util.ts`.
 
-The threat is log forging in a re-rendering destination, not in NDJSON — JSON escaping already
-keeps the record on one line. `pino-pretty`, which this library ships as `PrettyDevDestination`,
-writes the parsed text straight to the terminal, so a raw `\n` **or** an ANSI sequence like
-`ESC E` (next line) prints something indistinguishable from a genuine entry. Line terminators
+The threat is log forging, and it has TWO sinks. `pino-pretty`, which this library ships as
+`PrettyDevDestination`, writes the parsed text straight to the terminal, so a raw `\n` **or** an
+ANSI sequence like `ESC E` (next line) prints something indistinguishable from a genuine entry.
+The raw NDJSON line is exposed too: JSON escaping covers only C0, so DEL, the C1 range (U+0085
+NEL included), U+2028 and U+2029 are serialized VERBATIM — measured. Do not repeat the
+"NDJSON is already safe" premise; it holds for LF and CR and for nothing else in this set. Line terminators
 become the literal `\n`; every other terminal-driving control character becomes `\uXXXX`.
 
 Two rules when touching this:

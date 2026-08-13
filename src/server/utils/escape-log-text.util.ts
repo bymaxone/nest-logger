@@ -6,21 +6,27 @@
  * Layer: server/utils — applied at the boundary where a value stops being data
  * and becomes rendered output.
  *
- * Why this is not the transport's job: on the NDJSON transport every one of
- * these characters is already inert, because JSON escaping keeps the record on
- * one line and never emits a raw control byte. The exposure is in destinations
- * that re-render the PARSED text — `pino-pretty`, shipped here as
- * `PrettyDevDestination`, writes the restored string straight to the terminal.
- * Sanitizing that destination alone would protect only the one this library
- * ships and leave every third-party `ILogDestination` exposed, so the escaping
- * happens at the boundary instead.
+ * Two sinks are exposed, not one. Measured on real bytes:
+ *
+ * 1. Destinations that re-render the PARSED text. `pino-pretty`, shipped here as
+ *    `PrettyDevDestination`, writes the restored string straight to the
+ *    terminal, so a raw break or an ANSI sequence lands as terminal input.
+ * 2. The RAW NDJSON line itself, when a human reads it in a terminal. JSON
+ *    escaping covers only C0 — `JSON.stringify` and Pino's serializer emit DEL,
+ *    the C1 range (U+0085 NEL among them), U+2028 and U+2029 VERBATIM. Those
+ *    bytes move the cursor exactly as they would anywhere else.
+ *
+ * Escaping at this boundary covers both, and covers every third-party
+ * `ILogDestination` too. Sanitizing inside `PrettyDevDestination` would protect
+ * only the destination this library happens to ship.
  */
 
 /**
  * Characters a terminal treats as "start a new line": the two JavaScript line
  * terminators, the Unicode line/paragraph separators, and C1 NEL (U+0085).
- * They become the literal `\n` sequence — readable, and identical to what the
- * NDJSON transport already emits for them.
+ * They become the literal `\n` sequence — readable, and matching what JSON
+ * escaping does to LF and CR. The other three are NOT escaped by JSON, which is
+ * precisely why the raw NDJSON line needed this too.
  */
 const LINE_TERMINATORS = new Set(['\r', '\n', '\u0085', '\u2028', '\u2029'])
 
@@ -43,11 +49,13 @@ const UNSAFE_IN_MULTILINE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u202
 /**
  * Render a control character as its readable `\uXXXX` escape.
  *
- * One form for every character, always four hex digits — the same shape JSON
- * uses for control characters, so the pretty rendering and the NDJSON line show
- * a given byte the same way. A two-digit `\xNN` form was rejected: `\x` takes
- * exactly two digits, so U+2028 would render as `\x2028`, which reads as `\x20`
- * followed by the text `28` — a space, not a separator.
+ * One form for every character, always four hex digits. A two-digit `\xNN` form
+ * was rejected: `\x` takes exactly two digits, so U+2028 would render as
+ * `\x2028`, which reads as `\x20` followed by the text `28` — a space, not a
+ * separator. The four-digit form is the one JavaScript and JSON use for a code
+ * point, so it is familiar; it is NOT byte-identical to what the NDJSON line
+ * carries, since the backslash this produces is itself escaped on the way into
+ * JSON.
  *
  * @param char - A single control character.
  * @returns The four-digit lowercase escape, e.g. `\u001b` for ESC.
