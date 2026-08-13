@@ -1159,9 +1159,13 @@ function identityOf(entry: LogEntry): string {
   if (service === undefined) {
     return 'unknown'
   }
+  // `service.namespace` is part of the identity, not decoration: OTel allows two
+  // services to share a name when their namespaces differ, so a key built without
+  // it collapses them into one.
+  const namespace = service.namespace ?? 'no-namespace'
   const instance = service.instance?.id ?? 'no-instance'
   const environment = deployment?.environment.name ?? 'no-environment'
-  return `${service.name}@${service.version}/${instance}/${environment}`
+  return `${namespace}/${service.name}@${service.version}/${instance}/${environment}`
 }
 
 /** `event.name` is declared, so it reads as a string without a cast. */
