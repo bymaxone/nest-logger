@@ -59,6 +59,9 @@ const ATTR_ENVIRONMENT = 'deployment.environment.name'
  *
  * @param raw - The raw environment value, or `undefined`.
  * @returns Attribute key/value pairs; empty when there is nothing usable.
+ * @example
+ *   parseResourceAttributes('service.namespace=payments,service.version=2.14.3')
+ *   // → { 'service.namespace': 'payments', 'service.version': '2.14.3' }
  */
 export function parseResourceAttributes(raw: string | undefined): Readonly<Record<string, string>> {
   const parsed: Record<string, string> = {}
@@ -146,6 +149,11 @@ function firstNonEmpty(...candidates: unknown[]): string | undefined {
  * @param service - The consumer-supplied service metadata.
  * @param env - Environment to read; defaults to `process.env`.
  * @returns The resolved identity, with absent fields omitted.
+ * @example
+ *   resolveServiceMetadata({ name: 'checkout-api', version: '2.14.3' },
+ *     { OTEL_RESOURCE_ATTRIBUTES: 'service.namespace=payments', NODE_ENV: 'production' })
+ *   // → { name: 'checkout-api', version: '2.14.3',
+ *   //     namespace: 'payments', environment: 'production' }
  */
 export function resolveServiceMetadata(
   service: ServiceMetadata,
@@ -200,6 +208,12 @@ export function resolveServiceMetadata(
  *   it would be a regression. They still pass through redaction like any other
  *   base binding.
  * @returns The base bindings object.
+ * @example
+ *   buildResourceBindings({ name: 'api', version: '1.0.0', instanceId: 'pod-1' }, 'nested')
+ *   // → { service: { name: 'api', version: '1.0.0', instance: { id: 'pod-1' } } }
+ * @example
+ *   buildResourceBindings({ name: 'api', version: '1.0.0' }, 'flat')
+ *   // → { 'service.name': 'api', 'service.version': '1.0.0' }
  */
 export function buildResourceBindings(
   resolved: ResolvedServiceMetadata,
@@ -269,6 +283,9 @@ const OWNED_SERVICE_KEYS: ReadonlySet<string> = new Set([
  *
  * @param service - The consumer-supplied service metadata.
  * @returns The extra keys, or an empty object when there are none.
+ * @example
+ *   extraServiceFields({ name: 'api', version: '1.0.0', buildSha: 'abc123' })
+ *   // → { buildSha: 'abc123' }
  */
 export function extraServiceFields(service: ServiceMetadata): Readonly<Record<string, unknown>> {
   const extras: Record<string, unknown> = {}

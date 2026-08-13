@@ -983,10 +983,17 @@ describe('err serializer', () => {
   })
 
   it(/*
-   * The serializer's own never-throw guard covers the values the redaction walk
-   * DOES tolerate — a getter that throws only when the serializer reads it.
+   * The serializer's own never-throw guard, asserted where it actually runs.
+   *
+   * Going through the sink did NOT exercise this: a non-enumerable `stack` is
+   * dropped by the redaction snapshot before the serializer ever reads it, so
+   * the previous version of this test asserted `not.toThrow()` on a path that
+   * never had a chance to throw — green while proving nothing. Calling the
+   * serializer directly reaches the guard, and the envelope is asserted on its
+   * exact content rather than its type, because an empty stand-in would be
+   * indistinguishable from a genuinely empty error.
    */
-  'degrades to a SanitizeFailed envelope when only serialization fails', () => {
+  'degrades to the SanitizeFailed envelope when reading the value throws', () => {
     const hostile = { name: 'Weird', message: 'readable' }
     Object.defineProperty(hostile, 'stack', {
       get(): never {
@@ -995,7 +1002,14 @@ describe('err serializer', () => {
       enumerable: false
     })
 
-    expect(() => serializeThrough(hostile)).not.toThrow()
+    let serialized: Record<string, unknown> | undefined
+    expect(() => {
+      serialized = serializeErrorValue(hostile)
+    }).not.toThrow()
+    expect(serialized).toEqual({
+      type: 'SanitizeFailed',
+      message: 'Failed to sanitize the thrown value'
+    })
   })
 
   it(/*

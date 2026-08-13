@@ -59,3 +59,46 @@ export interface ResolvedServiceMetadata {
   /** `deployment.environment.name`, when any source supplied one. */
   environment?: string
 }
+
+/**
+ * The `service` block as it appears in an EMITTED record, under the default
+ * `resourceFormat: 'nested'`.
+ *
+ * Distinct from {@link ServiceMetadata} on purpose, and the distinction is the
+ * kind of defect this library has already been bitten by once: a published type
+ * that describes something the runtime never emits. `ServiceMetadata` is what a
+ * consumer CONFIGURES — flat option names like `instanceId` and `environment`.
+ * What comes out is the flattened OTel attribute path: `service.instance.id`
+ * nests as `service: { instance: { id } }`, and the environment is not under
+ * `service` at all, it is `deployment.environment.name`. Typing the emitted
+ * record with the configuration interface would advertise `entry.service.instanceId`
+ * to every consumer, and that property does not exist on any entry.
+ *
+ * Under `resourceFormat: 'flat'` these values appear as dotted top-level keys
+ * (`"service.instance.id"`), which {@link LogEntry}'s index signature already
+ * admits — a flat record simply has no `service` object.
+ */
+export interface EmittedServiceResource {
+  /** OTel `service.name`. */
+  readonly name: string
+  /** OTel `service.version`. */
+  readonly version: string
+  /** OTel `service.namespace`, when resolved. */
+  readonly namespace?: string
+  /** OTel `service.instance.id`, nested as the attribute path spells it. */
+  readonly instance?: { readonly id: string }
+  /** Consumer-supplied extras carried through from the `service` option. */
+  readonly [key: string]: unknown
+}
+
+/**
+ * The `deployment` block as it appears in an EMITTED record under
+ * `resourceFormat: 'nested'`, carrying `deployment.environment.name`.
+ *
+ * Absent entirely when no source resolved an environment. The deprecated
+ * `deployment.environment` spelling is never emitted.
+ */
+export interface EmittedDeploymentResource {
+  /** OTel `deployment.environment.name`, flattened from its attribute path. */
+  readonly environment: { readonly name: string }
+}

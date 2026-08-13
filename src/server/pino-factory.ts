@@ -144,6 +144,10 @@ const DERIVED_ERROR_FIELDS: ReadonlySet<string> = new Set([
  *   gap. NOT re-exported by the package barrel.
  * @param value_ - The thrown value, in whatever shape it reached the log call.
  * @returns A JSON-safe error object.
+ * @example
+ *   serializeErrorValue(new Error('outer', { cause: new Error('inner') }))
+ *   // → { type: 'Error', message: 'outer', stack: '…',
+ *   //     cause: { name: 'Error', message: 'inner', … } }
  */
 export function serializeErrorValue(value_: unknown): Record<string, unknown> {
   const sanitized = sanitizeError(value_)
@@ -215,6 +219,10 @@ export function serializeErrorValue(value_: unknown): Record<string, unknown> {
  * @param format - `'pino'` keeps only `err`; `'semconv'` replaces it; `'both'`
  *   emits each.
  * @returns The record, with the exception attributes applied.
+ * @example
+ *   withSemconvException({ err: new TypeError('bad') }, 'both')
+ *   // → { err: TypeError, 'exception.type': 'TypeError',
+ *   //     'error.type': 'TypeError', 'exception.message': 'bad', … }
  */
 export function withSemconvException(
   record: Record<string, unknown>,
@@ -333,6 +341,9 @@ function toEventName(logKey: string): string {
  * @param record - The redacted record about to be serialized.
  * @param field - The field name, or `false` to emit nothing.
  * @returns The same record, with the event name added when applicable.
+ * @example
+ *   withEventName({ logKey: 'PAYMENT_FAILED' }, 'event.name')
+ *   // → { logKey: 'PAYMENT_FAILED', 'event.name': 'payment.failed' }
  */
 export function withEventName(
   record: Record<string, unknown>,

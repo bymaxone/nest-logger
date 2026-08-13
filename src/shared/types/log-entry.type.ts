@@ -1,5 +1,5 @@
 import type { LogLevel } from './log-level.type'
-import type { ServiceMetadata } from './service-metadata.type'
+import type { EmittedDeploymentResource, EmittedServiceResource } from './service-metadata.type'
 
 /**
  * Shape of a single log entry as serialized to JSON output.
@@ -33,8 +33,14 @@ export interface LogEntry {
   msg: string
   /** Convention key — `MODULE_ACTION_RESULT` format. */
   logKey?: string
-  /** Service metadata snapshot — see {@link ServiceMetadata}. */
-  service?: ServiceMetadata
+  /**
+   * Service identity as EMITTED — see {@link EmittedServiceResource}. Not the
+   * configuration shape: `service.instance.id` nests, and the environment lives
+   * under `deployment`, not here.
+   */
+  service?: EmittedServiceResource
+  /** Deployment identity as emitted — see {@link EmittedDeploymentResource}. */
+  deployment?: EmittedDeploymentResource
   /** Optional NestJS context (typically the emitting class name). */
   context?: string
   /** Optional correlation IDs propagated via AsyncLocalStorage. */

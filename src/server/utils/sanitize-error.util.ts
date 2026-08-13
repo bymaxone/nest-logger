@@ -237,6 +237,9 @@ function readAggregatedErrors(value: Error): unknown[] | undefined {
  *   lost the scrubbing they had. NOT re-exported by the package barrel.
  * @param stack - The raw stack trace.
  * @returns The stack with dependency frames stripped.
+ * @example
+ *   scrubStack('Error: boom\n at app (/srv/src/a.ts:1:1)\n at dep (/srv/node_modules/p/i.js:2)')
+ *   // → 'Error: boom\n at app (/srv/src/a.ts:1:1)'
  */
 export function scrubStack(stack: string): string {
   return stack
