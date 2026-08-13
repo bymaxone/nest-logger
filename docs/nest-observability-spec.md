@@ -94,10 +94,15 @@ BymaxObservabilityModule.forRoot({
   traces?: { enabled?: true, sampleRatio?: number },                   // parent-based head sampling
   metrics?: { enabled?: true, exportIntervalMillis? },
   instrumentations?: { http?: true, nestjs?: true, pg?, ioredis?, custom?: Instrumentation[] },
-  logger?: BymaxLoggerModuleOptions | false                            // false = consumer wires nest-logger separately
+  logger?: Omit<BymaxLoggerModuleOptions, 'service'> | false           // false = consumer wires nest-logger separately
 })
 // plus forRootAsync mirroring nest-logger's pattern
 ```
+
+The nested `logger` options **exclude `service`** at the type level. Accepting the full options
+there would allow a second identity that conflicts with the top-level one, defeating the
+configure-once guarantee this package exists to provide — the top-level `service` is the ONLY
+identity source, and the module injects it into the logger itself.
 
 Design constraints: no boolean explosion (group by signal), no vendor names anywhere in the API,
 no Pino or SDK types leaking through public signatures, standard OTel environment variables
