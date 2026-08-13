@@ -66,6 +66,19 @@ cannot see a request a guard rejected: 401, 403, 429 and 404 produced no log lin
 - **`LoggableResponse` gained `writableFinished` and `on('close', …)`.** An Express response
   satisfies both already. **Migration:** only a consumer who hand-implements the interface — for a
   test double, say — needs to add them.
+- **`HTTP_REQUEST_START` no longer carries `userId`.** The entry is now emitted before guards run,
+  which is the whole point of the change — and authentication runs in a guard, so at that moment
+  there is no principal to read. The previous interceptor-based START ran after guards and did
+  include it. The acting user is still logged: it is read at the terminal entry
+  (`HTTP_REQUEST_SUCCESS` / `_REDIRECT` / `_CLIENT_ERROR` / `_SERVER_ERROR` / `_ABORTED`), where
+  the guard has populated it. **Migration:** query the terminal entry for `userId`, not START. A
+  dashboard joining on START's `userId` should join on `requestId` instead, which both entries
+  carry.
+- **The logged URL now includes the app's global prefix.** The middleware is mounted, and a mounted
+  middleware sees `url` relative to its mount point, so the entry is built from `originalUrl`.
+  Under `setGlobalPrefix('api')` a request for `/api/users/7` used to be logged by the interceptor
+  as `/api/users/:id`; that is preserved. **Migration:** none — this keeps the previous value. An
+  `excludePaths` pattern is likewise matched against the full path, as before.
 - **New reserved log key `HTTP_REQUEST_ABORTED`.** A consumer asserting an exhaustive list of
   `RESERVED_LOG_KEYS` must add it. **Migration:** add the key to the assertion.
 

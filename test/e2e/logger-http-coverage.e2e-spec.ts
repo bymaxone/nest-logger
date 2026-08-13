@@ -78,6 +78,87 @@ class CoverageAppModule implements NestModule {
   }
 }
 
+/** The same app, mounted under a global prefix. */
+@Module({
+  imports: [
+    BymaxLoggerModule.forRoot({
+      service: { name: 'e2e-prefix', version: '0.0.0' },
+      http: { isEnabled: true }
+    })
+  ],
+  controllers: [CoverageController]
+})
+class PrefixedAppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    applyRequestIdMiddleware(consumer)
+  }
+}
+
+/** Correlation only: `http.isEnabled` left at its default. */
+@Module({
+  imports: [BymaxLoggerModule.forRoot({ service: { name: 'e2e-no-http', version: '0.0.0' } })],
+  controllers: [CoverageController]
+})
+class CorrelationOnlyAppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    applyRequestIdMiddleware(consumer)
+  }
+}
+
+describe('Logger E2E — middleware mounting and the disabled path', () => {
+  let stdoutSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
+  })
+
+  it(/*
+   * REGRESSION — the motivating behaviour of mounting at `'/'` instead of
+   * matching `'*'`. Under NestJS 11 (Express 5 / path-to-regexp v8) a wildcard is
+   * a named parameter with segment-count semantics, so `'*'` and `'{*splat}'`
+   * both stop matching the PREFIXED ROOT once the app calls `setGlobalPrefix` —
+   * `GET /api` had no correlation scope and no access log, failing by absence
+   * with no error. Asserting that `'/'` reaches Nest is not enough: only a booted
+   * app with a global prefix exercises the router behaviour that broke.
+   */
+  'logs the prefixed root route under setGlobalPrefix', async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [PrefixedAppModule] }).compile()
+    const app = moduleRef.createNestApplication({ logger: false })
+    app.setGlobalPrefix('api')
+    await app.init()
+
+    await request(app.getHttpServer()).get('/api').expect(404)
+
+    const entries = parseLogEntries(stdoutSpy)
+    const start = entries.find((e) => e['logKey'] === 'HTTP_REQUEST_START')
+    expect(start?.['url']).toBe('/api')
+    expect(start?.['requestId']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    )
+    await app.close()
+  })
+
+  it(/*
+   * REGRESSION — `applyRequestIdMiddleware` is ALSO the public wiring for
+   * correlation alone, and `http.isEnabled` defaults to false. Registering the
+   * access-log middleware there made consumers who asked only for a `requestId`
+   * start emitting an access log they never opted into.
+   */
+  'emits no access log when http logging is disabled', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [CorrelationOnlyAppModule]
+    }).compile()
+    const app = moduleRef.createNestApplication({ logger: false })
+    await app.init()
+
+    await request(app.getHttpServer()).get('/open').expect(200)
+
+    const keys = parseLogEntries(stdoutSpy).map((e) => String(e['logKey']))
+    expect(keys.filter((k) => k.startsWith('HTTP_'))).toEqual([])
+    await app.close()
+  })
+})
+
 describe('Logger E2E — coverage of requests the interceptor never sees', () => {
   let app: INestApplication
   let stdoutSpy: jest.SpyInstance
@@ -142,8 +223,14 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
 
     const start = parseLogEntries(stdoutSpy).find((e) => e['logKey'] === 'HTTP_REQUEST_START')
     expect(start?.['userAgent']).toBe('probe/1.0')
-    expect(start?.['ip']).toBeDefined()
-    expect(start?.['requestId']).toBeDefined()
+    // Values are PINNED, not merely present: `toBeDefined()` passes on an empty
+    // string or a placeholder, so a field that silently degraded would still go
+    // green. The loopback address is what the adapter resolves here, and the
+    // generated correlation id is a UUID.
+    expect(start?.['ip']).toMatch(/(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)/)
+    expect(start?.['requestId']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    )
   })
 
   it(/*
@@ -219,7 +306,15 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
     })
     await new Promise((r) => setTimeout(r, 400))
 
-    const terminal = parseLogEntries(stdoutSpy).find((e) => e['logKey'] === 'HTTP_REQUEST_ABORTED')
-    expect(terminal?.['requestId']).toBeDefined()
+    const entries = parseLogEntries(stdoutSpy)
+    const start = entries.find((e) => e['logKey'] === 'HTTP_REQUEST_START')
+    const terminal = entries.find((e) => e['logKey'] === 'HTTP_REQUEST_ABORTED')
+    // Presence is not correlation: an unbound listener could still attach SOME
+    // id. The terminal entry must carry the SAME id as its START, and that id
+    // must be the generated UUID.
+    expect(terminal?.['requestId']).toBe(start?.['requestId'])
+    expect(terminal?.['requestId']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    )
   })
 })

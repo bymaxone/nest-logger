@@ -39,6 +39,18 @@ export interface LoggableRequest {
   readonly method: string
   /** Request target, normalized and query-stripped before it reaches a log. */
   readonly url: string
+  /**
+   * The request target as it arrived, before any mount point was stripped.
+   *
+   * Middleware mounted at a path sees `url` RELATIVE to that mount: measured
+   * under `setGlobalPrefix('api')`, a request for `/api/users/7` reaches a
+   * root-mounted middleware as `url = '/users/7'` and
+   * `originalUrl = '/api/users/7'`, and `/api` itself arrives as `url = '/'`.
+   * Logging `url` there would drop the prefix from every entry and make an
+   * `excludePaths` pattern written against the real path stop matching. Absent
+   * on adapters that do not provide it, in which case `url` is already whole.
+   */
+  readonly originalUrl?: string | undefined
   /** Client address when the adapter resolves one. */
   readonly ip?: string | undefined
   /**

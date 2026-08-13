@@ -282,8 +282,13 @@ Enable `http.isEnabled: true` in the module options and wire `applyRequestIdMidd
 | `HTTP_REQUEST_CLIENT_ERROR` | 4xx response                                        |
 | `HTTP_REQUEST_SERVER_ERROR` | 5xx response                                        |
 | `HTTP_REQUEST_ABORTED`      | Connection closed before the response was delivered |
-| `HTTP_EXCEPTION_HANDLED`    | `HttpException` caught by the filter                |
-| `HTTP_EXCEPTION_UNHANDLED`  | Unexpected error caught by the filter               |
+
+`HTTP_REQUEST_START` is emitted **before guards**, so it carries no `userId` — authentication runs
+in a guard, and at that point there is no principal yet. The acting user is on the **terminal**
+entry, where the guard has populated it. Both entries carry the same `requestId`, so joining on
+that gives the whole request.
+| `HTTP_EXCEPTION_HANDLED` | `HttpException` caught by the filter |
+| `HTTP_EXCEPTION_UNHANDLED` | Unexpected error caught by the filter |
 
 URLs are automatically normalized — `/users/550e8400-e29b-41d4-a716-446655440000` becomes `/users/:id` so Loki/Grafana cardinality stays bounded. The query string is stripped from every logged URL, because a magic-link token or reset code in a query parameter is a secret no key-name redaction can scrub out of a string value.
 

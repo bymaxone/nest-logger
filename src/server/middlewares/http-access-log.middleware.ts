@@ -65,6 +65,8 @@ import { normalizeUrl, stripQueryString } from '../utils/normalize-url.util'
  */
 @Injectable()
 export class HttpAccessLogMiddleware implements NestMiddleware {
+  /** Whether HTTP logging is on at all (`http.isEnabled`). */
+  private readonly isEnabled: boolean
   /** Path patterns that bypass HTTP logging entirely (health checks, metrics). */
   private readonly excludePaths: readonly RegExp[]
 
@@ -78,6 +80,7 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
     @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
     @Inject(LOGGER_OPTIONS_TOKEN) options: ResolvedBymaxLoggerModuleOptions
   ) {
+    this.isEnabled = options.http.isEnabled
     this.excludePaths = options.http.excludePaths
   }
 
@@ -89,7 +92,23 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
    * @param next - The next handler in the chain.
    */
   use(req: LoggableRequest, res: LoggableResponse, next: NextHandler): void {
-    const path = stripQueryString(req.url)
+    // `applyRequestIdMiddleware` is ALSO the public wiring for correlation alone,
+    // and `http.isEnabled` defaults to false. Registering this middleware there
+    // would otherwise start emitting an access log for consumers who asked only
+    // for a `requestId` — and the claim below would silence the interceptor for a
+    // request nothing logs. The flag is checked before both.
+    if (!this.isEnabled) {
+      next()
+      return
+    }
+
+    // `originalUrl` first: this middleware is MOUNTED, and a mounted middleware
+    // sees `url` relative to its mount point. Under `setGlobalPrefix('api')` a
+    // request for `/api/users/7` arrives here as `/users/7`, so logging `url`
+    // would drop the prefix from every entry and stop an `excludePaths` pattern
+    // written against the real path from matching.
+    const target = req.originalUrl ?? req.url
+    const path = stripQueryString(target)
     // Excluded paths bypass logging entirely — no START, no terminal entry — so
     // health-check and metrics traffic does not flood the sink. The recorder is
     // NOT marked active here, so the interceptor keeps its own exclude handling
@@ -105,7 +124,7 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
     markRecorderActive(req)
 
     const method = req.method
-    const url = normalizeUrl(req.url)
+    const url = normalizeUrl(target)
     const start = Date.now()
 
     this.logger.info(RESERVED_LOG_KEYS.HTTP_REQUEST_START, `${method} ${url}`, readUserId(req), {
@@ -187,11 +206,19 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
 
     if (statusCode >= HTTP_CLIENT_ERROR_MIN) {
       // The line a guard rejection produces, and the reason this file exists.
+      //
+      // `errorMessage` is carried when something threw, because the interceptor's
+      // 4xx entry included it and dropping it would silently narrow the log schema
+      // for consumers already querying that field. It is ABSENT for a rejection
+      // that never threw through the interceptor — a guard rejection resolved by
+      // an exception filter, or a status set directly — rather than being filled
+      // with an empty string, so "no message" stays distinguishable from "".
+      const recorded = readRecordedError(req)
       this.logger.warnStructured(
         RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR,
         `${method} ${url} → ${statusCode}`,
         userId,
-        meta
+        recorded === undefined ? meta : { ...meta, errorMessage: recorded.error.message }
       )
       return
     }

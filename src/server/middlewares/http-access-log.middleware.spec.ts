@@ -1,9 +1,10 @@
-import { HttpAccessLogMiddleware } from './http-access-log.middleware'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import type { PinoLoggerService } from '../services/pino-logger.service'
 import { isRecorderActive, recordError } from '../utils/http-log-state.util'
+
+import { HttpAccessLogMiddleware } from './http-access-log.middleware'
 
 /** Logger double capturing every structured call the middleware makes. */
 function createLogger(): {
@@ -24,8 +25,11 @@ function createLogger(): {
 }
 
 /** Options double carrying only what the middleware reads. */
-function createOptions(excludePaths: RegExp[] = []): ResolvedBymaxLoggerModuleOptions {
-  return { http: { excludePaths } } as unknown as ResolvedBymaxLoggerModuleOptions
+function createOptions(
+  excludePaths: RegExp[] = [],
+  isEnabled = true
+): ResolvedBymaxLoggerModuleOptions {
+  return { http: { excludePaths, isEnabled } } as unknown as ResolvedBymaxLoggerModuleOptions
 }
 
 /** Mutable response double exposing the registered `'close'` listener. */
@@ -115,6 +119,62 @@ describe('HttpAccessLogMiddleware', () => {
   })
 
   it(/*
+   * REGRESSION — `applyRequestIdMiddleware` is ALSO the public wiring for
+   * correlation alone, and `http.isEnabled` defaults to false. Without this gate
+   * a consumer who asked only for a `requestId` started emitting an access log
+   * they never opted into — and the lifecycle claim would silence the interceptor
+   * for a request nothing logs, losing it from both.
+   */
+  'emits nothing and does not claim when http logging is disabled', () => {
+    const { logger, info } = createLogger()
+    const middleware = new HttpAccessLogMiddleware(logger, createOptions([], false))
+    const req = createRequest()
+    const next = jest.fn()
+
+    middleware.use(req, createResponse().res, next)
+
+    expect(info).not.toHaveBeenCalled()
+    expect(isRecorderActive(req)).toBe(false)
+    expect(next).toHaveBeenCalledTimes(1)
+  })
+
+  it(/*
+   * REGRESSION — this middleware is MOUNTED, and a mounted middleware sees `url`
+   * relative to its mount point. Measured under `setGlobalPrefix('api')`:
+   * `/api/users/7` arrives as `url = '/users/7'` with
+   * `originalUrl = '/api/users/7'`. Logging `url` dropped the prefix from every
+   * entry and stopped an `excludePaths` pattern written against the real path
+   * from matching.
+   */
+  'logs the original target, not the mount-relative url', () => {
+    const { logger, info } = createLogger()
+    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const req = createRequest({ url: '/users/123', originalUrl: '/api/users/123?q=1' })
+
+    middleware.use(req, createResponse().res, jest.fn())
+
+    expect(info.mock.calls[0]?.[3]).toMatchObject({
+      url: '/api/users/:id',
+      fullUrl: '/api/users/123'
+    })
+  })
+
+  it(/*
+   * The exclude patterns are written against the REAL path, so they must be
+   * matched against it too — `/api/health` must be skipped by `^/api/health`.
+   */
+  'matches exclude patterns against the original target', () => {
+    const { logger, info } = createLogger()
+    const middleware = new HttpAccessLogMiddleware(logger, createOptions([/^\/api\/health/]))
+    const req = createRequest({ url: '/health', originalUrl: '/api/health' })
+
+    middleware.use(req, createResponse().res, jest.fn())
+
+    expect(info).not.toHaveBeenCalled()
+    expect(isRecorderActive(req)).toBe(false)
+  })
+
+  it(/*
    * The claim is what stops the interceptor emitting a second START and terminal
    * entry for every request both can see.
    */
@@ -180,6 +240,44 @@ describe('HttpAccessLogMiddleware', () => {
       )
     }
   )
+
+  it(/*
+   * REGRESSION — the interceptor's 4xx entry carried `errorMessage`, and the
+   * middleware taking over the lifecycle dropped it. That silently narrowed the
+   * log schema for any consumer already querying the field.
+   */
+  'carries errorMessage on a 4xx that threw', () => {
+    const { logger, warnStructured } = createLogger()
+    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const req = createRequest()
+    const { res, fireClose } = createResponse(400)
+
+    middleware.use(req, res, jest.fn())
+    recordError(req, new Error('bad input'))
+    fireClose()
+
+    expect(warnStructured.mock.calls[0]?.[3]).toMatchObject({
+      statusCode: 400,
+      errorMessage: 'bad input'
+    })
+  })
+
+  it(/*
+   * A rejection that never threw through the interceptor — a guard rejection an
+   * exception filter resolved, or a status set directly — carries NO
+   * `errorMessage` rather than an empty one, so "no message" stays
+   * distinguishable from a message that happened to be blank.
+   */
+  'omits errorMessage on a 4xx that did not throw', () => {
+    const { logger, warnStructured } = createLogger()
+    const middleware = new HttpAccessLogMiddleware(logger, createOptions())
+    const { res, fireClose } = createResponse(403)
+
+    middleware.use(createRequest(), res, jest.fn())
+    fireClose()
+
+    expect(warnStructured.mock.calls[0]?.[3]).not.toHaveProperty('errorMessage')
+  })
 
   it(/*
    * A 5xx that threw: the interceptor recorded the value on the way past, so the
