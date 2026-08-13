@@ -76,6 +76,13 @@ business helper) + OTLP + logger integration + graceful shutdown.
 - Without a registered ContextManager, **no** event-time reader sees any span, and tests pass
   while proving nothing. Register a real `AsyncLocalStorageContextManager` in integration tests
   and dispose of it in `afterEach`.
+- Any text that reaches a terminal is an injection surface, and the JavaScript line terminators are
+  only half of it: `ESC E` is ANSI NEL, and VT/FF/U+0085 move the cursor too. `pino-pretty` prints
+  the parsed message — and the stack, RAW — straight to the terminal. Escape at the sink, never in
+  the renderer, or third-party sinks stay exposed. `nest-logger` already applies this to everything
+  logged through it — the helpers are internal, deliberately: the fix belongs at the sink that owns
+  the text. If this package ever renders text itself, it inherits the same problem, and the answer
+  is to log through `nest-logger` rather than to copy the escaping.
 - Jest `toHaveProperty('a.b')` treats the dot as a nested path — dotted-key assertions must use
   bracket access, or every negative assertion passes vacuously.
 - A surviving "equivalent" Stryker mutant means "no test distinguishes", not "code is dead".
