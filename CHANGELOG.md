@@ -11,7 +11,7 @@ heading here.
 
 ## [Unreleased]
 
-## [1.2.0] - 2026-08-12
+## [1.2.0] - 2026-08-13
 
 Remediation of the P0 findings from the observability audit
 ([`docs/observability_audit.md`](./docs/observability_audit.md)): a credential leak in the
