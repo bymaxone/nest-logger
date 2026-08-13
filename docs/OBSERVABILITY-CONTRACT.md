@@ -16,7 +16,7 @@ Every entry is one line of valid JSON on its destination. The invariant keys:
 | ------------ | ------------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `level`      | `'trace'…'fatal'` string label | always                                 | Severity. Never a number.                                                                           |
 | `time`       | ISO 8601 UTC string            | always                                 | Timestamp. Never epoch millis.                                                                      |
-| `msg`        | string                         | always                                 | Human-readable message. Machines should not parse it.                                               |
+| `msg`        | single-line string             | always                                 | Human-readable message. Machines should not parse it. Never contains a line separator — see below.  |
 | `logKey`     | `MODULE_ACTION_RESULT` string  | structured calls only                  | The library's event convention. Never renamed.                                                      |
 | `event.name` | lowercase dotted string        | structured calls only, unless disabled | Derived from `logKey` (`PAYMENT_FAILED` → `payment.failed`). See [Event contract](#event-contract). |
 | `context`    | string                         | when set                               | NestJS class label.                                                                                 |
@@ -132,6 +132,12 @@ the same string.
   dropped container, or the marked `LOGGER_REDACTION_FAILED` record) — never a crash, never a leak
   through the failure path.
 - Query strings are stripped from every logged URL.
+- **A message cannot forge an entry.** Every string reaching Pino's message argument — from an
+  error, a structured call or the NestJS variadic bridge — has `\r`, `\n`, U+2028 and U+2029
+  replaced with the literal `\n` sequence. NDJSON was already safe by JSON escaping; this protects
+  destinations that re-render the parsed message (`pino-pretty` among them), where a raw break
+  prints a line indistinguishable from a genuine entry. Structured fields are untouched, so
+  `err.message` still carries the verbatim text.
 - Every value is read exactly once and pinned (snapshot), so a stateful getter cannot answer clean
   to inspection and dirty to serialization.
 
@@ -141,6 +147,10 @@ the same string.
   interpolating a token into `msg`) is emitted. Name-keyed redaction has no key to match inside a
   string value. Do not put secrets in messages; value-pattern scrubbing is a possible P2, not a
   present promise.
+- The **stack** still renders across several lines in pretty output — a stack is multi-line by
+  nature, and its first line repeats the error message. Pretty printers indent the whole block
+  inside `err`, so it does not read as a separate entry, but nothing pins it to one line. Only the
+  `msg` field carries the one-line guarantee.
 - A secret under a key **nobody declared sensitive** (`{ renamed: user.password }`, a `toJSON`
   renaming nested state) is emitted. Declare the name or keep the value out of the log.
 

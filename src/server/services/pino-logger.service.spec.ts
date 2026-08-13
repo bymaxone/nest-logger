@@ -504,45 +504,97 @@ describe('PinoLoggerService', () => {
       expect(service.onApplicationShutdown()).toBeUndefined()
     })
   })
-})
 
-describe('safeErrorMessage — log-forging neutralization', () => {
-  /** Self-contained: a silent Pino instance with a spied error method. */
-  function makeService(): { service: PinoLoggerService; spy: jest.SpyInstance } {
-    const raw = pino({ enabled: false })
-    const spy = jest.spyOn(raw, 'error').mockImplementation()
-    return { service: new PinoLoggerService(raw), spy }
-  }
+  describe('message line-forging neutralization', () => {
+    /*
+     * SECURITY (CodeQL js/log-injection, alert #61). Every message argument this
+     * class hands to Pino can carry caller- or user-provided text. On the NDJSON
+     * transport an embedded line break is harmless — JSON escaping keeps the
+     * forged record inside one valid line — but `pino-pretty` (shipped here as
+     * PrettyDevDestination) and any destination that re-renders the parsed
+     * message print real newlines, forging what looks like a separate entry.
+     *
+     * Every sink is covered separately: a fix on one path is not a fix on the
+     * others, which is exactly how the first attempt at this left three holes.
+     */
+    const FORGED = 'fail\nFORGED\rmore\u2028ls\u2029ps'
+    const PINNED = 'fail\\nFORGED\\nmore\\nls\\nps'
 
-  it(/*
-   * SECURITY (CodeQL js/log-injection, alert #61) — the error message can carry
-   * user-provided text, and it becomes Pino's MESSAGE argument. On the NDJSON
-   * transport JSON escaping already neutralizes an embedded line break, but
-   * `pino-pretty` and any destination that re-renders the parsed message print
-   * real newlines — where a break forges what looks like a separate entry. The
-   * message is pinned to one line at the sink.
-   */
-  'replaces every line separator in the message argument', () => {
-    const { service, spy } = makeService()
-    service.errorStructured('K_A_B', new Error('fail\nFORGED\rmore\u2028ls\u2029ps'))
+    it(/*
+     * errorStructured() — the Error path, read outside the serializer.
+     */
+    'pins the message of an Error logged through errorStructured()', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      service.errorStructured('K_A_B', new Error(FORGED))
 
-    const [, message] = spy.mock.calls[0] ?? []
-    expect(message).toBe('fail\\nFORGED\\nmore\\nls\\nps')
-    expect(String(message)).not.toMatch(/[\r\n\u2028\u2029]/)
-  })
+      expect(spy.mock.calls[0]?.[1]).toBe(PINNED)
+    })
 
-  it(/*
-   * No information is lost: the structured `err` field keeps the raw error, so
-   * its verbatim message reaches the serializer — only the human-readable
-   * message line is sanitized.
-   */
-  'keeps the structured err verbatim', () => {
-    const { service, spy } = makeService()
-    const error = new Error('fail\nsecond line')
-    service.errorStructured('K_A_B', error)
+    it(/*
+     * No information is lost: the structured `err` keeps the raw error, so the
+     * verbatim message still reaches the serializer.
+     */
+    'keeps the structured err verbatim', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      const error = new Error('fail\nsecond line')
+      service.errorStructured('K_A_B', error)
 
-    const [payload] = spy.mock.calls[0] ?? []
-    expect((payload as Record<string, unknown>)['err']).toBe(error)
-    expect(error.message).toBe('fail\nsecond line')
+      const payload = spy.mock.calls[0]?.[0] as Record<string, unknown>
+      expect(payload['err']).toBe(error)
+      expect(error.message).toBe('fail\nsecond line')
+    })
+
+    it(/*
+     * error(string) — the NestJS variadic path, which does NOT go through the
+     * Error branch and needs its own normalization.
+     */
+    'pins a plain string passed to error()', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      service.error(FORGED)
+
+      expect(spy.mock.calls[0]?.[1]).toBe(PINNED)
+    })
+
+    it(/*
+     * info()/warnStructured() — the structured path shared by every library-
+     * emitted entry (HTTP access log, bootstrap, decorators).
+     */
+    'pins the message of a structured info entry', () => {
+      const spy = jest.spyOn(rawLogger, 'info')
+      service.info('K_A_B', FORGED)
+
+      expect(spy.mock.calls[0]?.[1]).toBe(PINNED)
+    })
+
+    it(/*
+     * The structured warn branch is a distinct sink from info.
+     */
+    'pins the message of a structured warn entry', () => {
+      const spy = jest.spyOn(rawLogger, 'warn')
+      service.warnStructured('K_A_B', FORGED)
+
+      expect(spy.mock.calls[0]?.[1]).toBe(PINNED)
+    })
+
+    it(/*
+     * log() — the NestJS variadic bridge used by `app.useLogger()`.
+     */
+    'pins a message logged through the NestJS variadic bridge', () => {
+      const spy = jest.spyOn(rawLogger, 'info')
+      service.log(FORGED)
+
+      expect(spy.mock.calls[0]?.[1]).toBe(PINNED)
+    })
+
+    it(/*
+     * A message with no separator must be handed over untouched — the guard
+     * against a normalization that quietly rewrites ordinary text.
+     */
+    'leaves a single-line message unchanged', () => {
+      const spy = jest.spyOn(rawLogger, 'info')
+      service.info('K_A_B', 'ordinary message')
+
+      expect(spy.mock.calls[0]?.[1]).toBe('ordinary message')
+    })
   })
 })

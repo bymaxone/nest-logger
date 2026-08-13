@@ -880,6 +880,8 @@ Before `1.2.0` the same names were expanded into 140 `fast-redact` paths at wild
 
 **Not covered, by design:** a secret interpolated into the message STRING (`logger.info(key, \`token=${t}\`)`) — redaction works on structured fields, and no field-based mechanism can scrub a substring. Keep secrets out of `msg`.
 
+**One entry, one line.** What the message string _cannot_ do is forge an entry. Every message argument passes through a line-separator normalization before it reaches Pino, so `\r`, `\n`, U+2028 and U+2029 become the literal two-character sequence `\n`. On NDJSON this changes nothing visible — JSON escaping already kept the record on one line — but `pino-pretty` (shipped here as `PrettyDevDestination`) and any destination that re-renders the parsed message print real newlines, and there an embedded break produces something indistinguishable from a separate log entry. Structured fields are untouched: `err.message` keeps the original text verbatim.
+
 ### Extending the defaults
 
 ```typescript

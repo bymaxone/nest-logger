@@ -87,6 +87,32 @@ function withoutOwnedKeys(metadata: Record<string, unknown> | undefined): Record
 }
 
 /**
+ * Pin a message to a single rendered line.
+ *
+ * SECURITY (CodeQL `js/log-injection`, alert #61). EVERY string this class hands
+ * to Pino as the MESSAGE argument passes through here, because any of them can
+ * carry caller- or user-provided text: a thrown error's message, a NestJS
+ * variadic line, a structured call's message.
+ *
+ * On the NDJSON transport an embedded line break is harmless — JSON escaping
+ * keeps a forged record inside one valid line (measured on real bytes). But
+ * `pino-pretty` — which this library SHIPS as `PrettyDevDestination`, with
+ * `singleLine: false` — and any destination that re-renders the parsed message
+ * print real newlines, so a break there forges what looks like a separate
+ * entry, indistinguishable from a genuine one.
+ *
+ * Line and paragraph separators therefore become the literal two-character
+ * sequence `\n`. Nothing is lost: the text stays readable, and for errors the
+ * structured `err.message` field keeps the original verbatim.
+ *
+ * @param message - The message about to become Pino's message argument.
+ * @returns The same text with every line separator neutralized.
+ */
+function toSingleLineMessage(message: string): string {
+  return message.replace(/[\r\n\u2028\u2029]/g, '\\n')
+}
+
+/**
  * Read `error.message` without letting a hostile getter escape.
  *
  * `message` is an ordinary property that a caller can redefine as a throwing
@@ -94,21 +120,11 @@ function withoutOwnedKeys(metadata: Record<string, unknown> | undefined): Record
  * argument — so it needs its own guard.
  *
  * @param error - The error being logged.
- * @returns The message, or a fixed stand-in when it cannot be read.
+ * @returns The message pinned to one line, or a fixed stand-in when it cannot be read.
  */
 function safeErrorMessage(error: Error): string {
   try {
-    // Line and paragraph separators are replaced with the literal two-character
-    // sequence `\n` (CodeQL js/log-injection, alert #61). The error message can
-    // carry user-provided text — a thrown value recorded off an HTTP request —
-    // and this string becomes Pino's MESSAGE argument. On the NDJSON transport
-    // that is harmless (JSON escaping already neutralizes a forged-record
-    // payload; measured), but `pino-pretty` and any destination that re-renders
-    // the parsed message print real newlines, where an embedded line break
-    // forges what looks like a separate log entry. The structured `err.message`
-    // field keeps the original text verbatim, so no information is lost — only
-    // the human-readable message line is pinned to one line.
-    return String(error.message).replace(/[\r\n\u2028\u2029]/g, '\\n')
+    return toSingleLineMessage(String(error.message))
   } catch {
     return 'Unreadable error message'
   }
@@ -215,7 +231,10 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const payload: Record<string, unknown> = {}
     assignIfDefined(payload, 'context', context)
     assignIfDefined(payload, 'stack', stack)
-    this.pino.error(payload, typeof message === 'string' ? message : String(message))
+    this.pino.error(
+      payload,
+      toSingleLineMessage(typeof message === 'string' ? message : String(message))
+    )
   }
 
   /**
@@ -406,10 +425,11 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const payload: Record<string, unknown> = { ...withoutOwnedKeys(metadata), logKey }
     assignIfDefined(payload, 'userId', userId)
     assignIfDefined(payload, 'context', this.context)
+    const line = toSingleLineMessage(message)
     if (level === 'info') {
-      this.pino.info(payload, message)
+      this.pino.info(payload, line)
     } else {
-      this.pino.warn(payload, message)
+      this.pino.warn(payload, line)
     }
   }
 
@@ -417,7 +437,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   private emitNestStyle(level: PinoLevelMethod, message: unknown, optionalParams: unknown[]): void {
     const payload: Record<string, unknown> = {}
     assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
-    const msg = typeof message === 'string' ? message : String(message)
+    const msg = toSingleLineMessage(typeof message === 'string' ? message : String(message))
     switch (level) {
       case 'info':
         this.pino.info(payload, msg)
