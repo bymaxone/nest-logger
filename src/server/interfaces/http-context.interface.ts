@@ -58,10 +58,24 @@ export interface LoggableRequest {
 export interface LoggableResponse {
   /** Status code, read when logging the completed request. */
   readonly statusCode: number
+  /**
+   * `true` once every byte has been flushed to the socket. Read in the `'close'`
+   * handler to tell a delivered response from one the client never received:
+   * `'close'` fires for both, and `'finish'` never fires for an aborted request
+   * at all. It is what keeps an aborted request from being logged as the success
+   * the handler intended.
+   */
+  readonly writableFinished: boolean
   /** Sets a response header (used for the correlation id). */
   setHeader(name: string, value: string): void
   /** Selects the status code and returns the chainable body writer. */
   status(code: number): { json(body: unknown): unknown }
+  /**
+   * Registers a lifecycle listener. Only `'close'` is used: it fires exactly
+   * once whether the response completed or the connection died early, where
+   * `'finish'` is blind to the aborted case.
+   */
+  on(event: 'close', listener: () => void): unknown
 }
 
 /** Continuation passed to a middleware; invoked with no arguments here. */

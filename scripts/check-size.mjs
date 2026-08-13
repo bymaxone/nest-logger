@@ -33,6 +33,18 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-08-13 — server: 15.97 KiB real -> 20.0 KiB budget (~25% headroom).
+//     Raised deliberately and with more headroom than the usual ~5%, by the
+//     maintainer's decision, because the 16.0 budget had 0.03 KiB left and was
+//     about to block the HTTP observability fix rather than catch bloat: guard
+//     rejections (401/403/429) and unmatched routes produce no log line at all,
+//     since logging is interceptor-based and NestJS runs guards first. That fix
+//     needs a middleware, a `close` listener and URL sanitisation — none of which
+//     fit in 30 bytes. Per rule 1 the answer was NOT to minify.
+//     This headroom is temporary ON PURPOSE and violates the "avoid >2x" spirit
+//     in one direction only: re-tighten to real + ~5% once the HTTP work lands
+//     and the artifact stops moving. A budget that stays 25% loose stops being a
+//     tripwire.
 //   - 2026-08-12 — server: 15.29 KiB real -> 16.0 KiB budget (~4.6% headroom).
 //     The +0.79 KiB over the prior 13.5 KiB is the P0 audit remediation, and it
 //     is feature surface rather than bloat: the name-based redaction engine
@@ -73,7 +85,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 16.0 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 20.0 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 

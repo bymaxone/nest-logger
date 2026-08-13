@@ -15,15 +15,33 @@
 
 ## <a id="p0-implementation-status"></a>P0 implementation status — shipped in `1.2.0`
 
-| Finding                                   | Status | What landed                                                                                                                                               |
-| ----------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [S-1](#s-1) auth headers unredacted       |   ✅   | Header names added to `REDACT_COMMON_FIELDS`; caught at any position                                                                                      |
-| [S-2](#2-5-security--pii) depth-4 ceiling |   ✅   | Removed — the walk is depth-unbounded (fail-closed guard at 100 for stack safety)                                                                         |
-| [P-1](#p-1) redaction cost                |   ✅   | Name-walk engine, then hardened to a snapshotting walk after review. **9,311 → ~274,000 logs/s** on the shipped config (~29×)                             |
-| [C-1](#c-1) ALS `userId` dropped          |   ✅   | `assignIfDefined` — reserved fields written only when defined                                                                                             |
-| [C-2](#c-2) `LogEntry` type mismatch      |   ✅   | `level: LogLevel`, `time: string`; level maps exported; README examples fixed and executed by a test                                                      |
-| [D-1](#d-1) dead reserved keys            |   ✅   | `LOGGER_BOOTSTRAP_WARNING` + `LOGGER_SHUTDOWN_OK` emitted; `HTTP_REQUEST_COMPLETED` justified in `RESERVED_LOG_KEYS_NOT_EMITTED`; completeness test added |
-| [D-4](#d-4) README API table wrong        |   ✅   | Table rewritten to match the source; diagram corrected                                                                                                    |
+| Finding                                   | Status | What landed                                                                                                                                                     |
+| ----------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [S-1](#s-1) auth headers unredacted       |   ✅   | Header names added to `REDACT_COMMON_FIELDS`; caught at any position                                                                                            |
+| [S-2](#2-5-security--pii) depth-4 ceiling |   ✅   | Removed — the walk is depth-unbounded (fail-closed guard at 100 for stack safety)                                                                               |
+| [P-1](#p-1) redaction cost                |   ✅   | Name-walk engine, then hardened to a snapshotting walk after review. **9,311 → ~274,000 logs/s** on the shipped config (~29×)                                   |
+| [C-1](#c-1) ALS `userId` dropped          |   ✅   | `assignIfDefined` — reserved fields written only when defined                                                                                                   |
+| [C-2](#c-2) `LogEntry` type mismatch      |   ✅   | `level: LogLevel`, `time: string`; level maps exported; README examples fixed and executed by a test                                                            |
+| [D-1](#d-1) dead reserved keys            |   ✅   | `LOGGER_BOOTSTRAP_WARNING` + `LOGGER_SHUTDOWN_OK` emitted; `HTTP_REQUEST_COMPLETED` justified in `RESERVED_LOG_KEYS_NOT_EMITTED`; completeness test added       |
+| [D-4](#d-4) README API table wrong        |   ✅   | Table rewritten to match the source; diagram corrected                                                                                                          |
+| **S-3** guard rejections unlogged         |   ✅   | Found after the audit, by the template/nest-core sessions. Access log moved to `HttpAccessLogMiddleware`, which runs before guards — 401/403/429/404 now logged |
+| **C-3** aborted request logged as success |   ✅   | Found after the audit, measured in this repo. `HTTP_REQUEST_ABORTED` from the response's `'close'` event; the real status is preserved                          |
+| **D-5** middleware skipped prefixed root  |   ✅   | Found after the audit. `applyRequestIdMiddleware` defaulted to `'*'`, which stops matching under `setGlobalPrefix`; now mounts at `'/'`                         |
+
+### Findings added after the audit was written
+
+Three defects surfaced from integration testing by the `bymax-one` template and `nest-core`
+sessions, which observed a real backend through Grafana/Loki rather than reading this repository.
+They are recorded here because the audit missed them, and the reason it missed them is
+instructive: **it reviewed each component against its own contract, and all three are defects of
+POSITION in the request pipeline.** The interceptor does exactly what its file says; it is mounted
+where it cannot see a guard rejection. A component-by-component reading cannot find that. The
+measurement that did was "count the log lines per status code over 20 minutes of real traffic, and
+notice that 401 has none".
+
+The generalizable lesson for the remaining P1/P2 work: an observability audit needs at least one
+pass that asks what the pipeline as a whole never emits, not only whether each part emits what it
+claims.
 
 Every fix carries a regression test that reproduces the original defect, verified to fail
 against the pre-fix code. Seven rounds of adversarial PR review followed, each finding more —

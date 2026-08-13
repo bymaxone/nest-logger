@@ -75,7 +75,7 @@ pnpm add @bymax-one/nest-logger
 
 - ✅ **OpenTelemetry Correlation** — optional `@opentelemetry/api` peer; injects `traceId`/`spanId`/`traceFlags` into every log via a Pino mixin when an active span is detected
 - ✅ **AsyncLocalStorage Context** — `requestId`, `tenantId`, `userId` flow automatically through the request lifecycle without prop drilling
-- ✅ **HTTP Logging Interceptor** — auto-logs all HTTP requests/responses with URL normalization (UUIDs and numeric IDs replaced by `:id`)
+- ✅ **HTTP Access Log, before guards** — logs every request including the ones an interceptor cannot see (401/403/429 guard rejections, 404 unmatched routes), with URL normalization (UUIDs and numeric IDs replaced by `:id`) and the query string stripped
 - ✅ **Exception Filter** — captures NestJS `HttpException` and unexpected errors with structured output
 
 ### 🔌 Destinations
@@ -272,19 +272,43 @@ Output (pretty-print, development):
 
 ### 5. HTTP logging (automatic)
 
-Enable `http.isEnabled: true` in the module options. The `HttpLoggingInterceptor` is registered globally and emits:
+Enable `http.isEnabled: true` in the module options and wire `applyRequestIdMiddleware(consumer)` (see [Context propagation](#7-context-propagation-with-logcontextservice)). The access log is recorded from **middleware**, which emits:
 
-| Log key                     | When                                  |
-| --------------------------- | ------------------------------------- |
-| `HTTP_REQUEST_START`        | Request received                      |
-| `HTTP_REQUEST_SUCCESS`      | 2xx response                          |
-| `HTTP_REQUEST_REDIRECT`     | 3xx response                          |
-| `HTTP_REQUEST_CLIENT_ERROR` | 4xx response                          |
-| `HTTP_REQUEST_SERVER_ERROR` | 5xx response                          |
-| `HTTP_EXCEPTION_HANDLED`    | `HttpException` caught by the filter  |
-| `HTTP_EXCEPTION_UNHANDLED`  | Unexpected error caught by the filter |
+| Log key                     | When                                                |
+| --------------------------- | --------------------------------------------------- |
+| `HTTP_REQUEST_START`        | Request received                                    |
+| `HTTP_REQUEST_SUCCESS`      | 2xx response                                        |
+| `HTTP_REQUEST_REDIRECT`     | 3xx response                                        |
+| `HTTP_REQUEST_CLIENT_ERROR` | 4xx response                                        |
+| `HTTP_REQUEST_SERVER_ERROR` | 5xx response                                        |
+| `HTTP_REQUEST_ABORTED`      | Connection closed before the response was delivered |
+| `HTTP_EXCEPTION_HANDLED`    | `HttpException` caught by the filter                |
+| `HTTP_EXCEPTION_UNHANDLED`  | Unexpected error caught by the filter               |
 
-URLs are automatically normalized — `/users/550e8400-e29b-41d4-a716-446655440000` becomes `/users/:id` so Loki/Grafana cardinality stays bounded.
+URLs are automatically normalized — `/users/550e8400-e29b-41d4-a716-446655440000` becomes `/users/:id` so Loki/Grafana cardinality stays bounded. The query string is stripped from every logged URL, because a magic-link token or reset code in a query parameter is a secret no key-name redaction can scrub out of a string value.
+
+> [!IMPORTANT]
+> **Why middleware and not an interceptor.** NestJS runs middleware → guards → interceptors →
+> handler, so an interceptor never observes a request a guard rejected, and never observes one that
+> matched no route. Measured against a real backend: **401, 403, 429 from a throttler and 404 for an
+> unknown path produced no log line at all** — not even `HTTP_REQUEST_START` — so brute force,
+> credential stuffing and route enumeration were invisible, and invisible without a `requestId` to
+> correlate them by. The access log therefore runs before guards.
+>
+> A consumer who does not wire the middleware keeps the previous interceptor-based behaviour rather
+> than losing HTTP logs — including its blind spot.
+
+**Delivery is reported separately from status.** `HTTP_REQUEST_ABORTED` is emitted when the
+connection closed before the response was flushed, and it **keeps the real status the server
+produced** rather than inventing one: nginx's `499` is not an HTTP status (IANA leaves 452–499
+unassigned), so recording it would assert a code the protocol has no name for and break any
+consumer grouping by class.
+
+Its limit is worth stating: `writableFinished` distinguishes a response still in flight from one
+handed to the operating system. A **fast handler whose client hangs up after the bytes were
+flushed** is reported as the success it was — the server completed and flushed it, and whether the
+peer read it is not knowable from the server side. What this catches is the case that matters
+operationally: the slow upstream, the load-balancer timeout, the cancelled request.
 
 ### 6. OpenTelemetry correlation
 
@@ -425,7 +449,7 @@ function assertValidLogKey(key: string) {
 
 The following keys are used internally by the library — do not reuse them in application code:
 
-`LOGGER_BOOTSTRAP_OK` · `LOGGER_BOOTSTRAP_WARNING` · `LOGGER_SHUTDOWN_OK` · `HTTP_REQUEST_START` · `HTTP_REQUEST_SUCCESS` · `HTTP_REQUEST_REDIRECT` · `HTTP_REQUEST_CLIENT_ERROR` · `HTTP_REQUEST_SERVER_ERROR` · `HTTP_REQUEST_COMPLETED` · `HTTP_EXCEPTION_HANDLED` · `HTTP_EXCEPTION_UNHANDLED` · `METHOD_EXECUTION` · `METHOD_SLOW_EXECUTION` · `LOGGER_DESTINATION_INIT_FAILED` · `LOGGER_DESTINATION_WRITE_FAILED` · `LOGGER_ENTRY_TRUNCATED` · `LOGGER_REDACTION_FAILED`
+`LOGGER_BOOTSTRAP_OK` · `LOGGER_BOOTSTRAP_WARNING` · `LOGGER_SHUTDOWN_OK` · `HTTP_REQUEST_START` · `HTTP_REQUEST_SUCCESS` · `HTTP_REQUEST_REDIRECT` · `HTTP_REQUEST_CLIENT_ERROR` · `HTTP_REQUEST_SERVER_ERROR` · `HTTP_REQUEST_ABORTED` · `HTTP_REQUEST_COMPLETED` · `HTTP_EXCEPTION_HANDLED` · `HTTP_EXCEPTION_UNHANDLED` · `METHOD_EXECUTION` · `METHOD_SLOW_EXECUTION` · `LOGGER_DESTINATION_INIT_FAILED` · `LOGGER_DESTINATION_WRITE_FAILED` · `LOGGER_ENTRY_TRUNCATED` · `LOGGER_REDACTION_FAILED`
 
 All reserved keys are exported as the `RESERVED_LOG_KEYS` constant from `@bymax-one/nest-logger/shared`.
 
@@ -599,11 +623,19 @@ HTTP Request
     │
     ▼
 RequestIdMiddleware             ← runs FIRST (NestJS middleware precedes
-    │                              interceptors) and opens the
+    │                              guards AND interceptors) and opens the
     │                              AsyncLocalStorage scope
     │                              { requestId, tenantId, userId }
     ▼
-HttpLoggingInterceptor          ← emits HTTP_REQUEST_START, already inside the scope
+HttpAccessLogMiddleware         ← emits HTTP_REQUEST_START inside that scope, and
+    │                              arms the terminal entry on the response's
+    │                              'close' event. BEFORE guards, so a 401/403/429
+    │                              rejection is logged too.
+    ▼
+Guards (consumer's auth)        ← may reject here; no interceptor ever runs
+    │
+    ▼
+HttpLoggingInterceptor          ← records the thrown error for the terminal entry
     │
     ▼
 Application Service
