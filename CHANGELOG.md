@@ -11,7 +11,61 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-08-14
+
+### Documentation
+
+- **The `1.2.3` notes below were amended after release: they were missing a `### Security` section.**
+  The terminal-escaping hardening described there shipped **in 1.2.3** — `toSingleLineMessage` is in
+  that bundle — but the release notes did not mention it, so a reader auditing the CHANGELOG for
+  security-relevant changes would have missed it. Found by a consumer reading the bundle diff rather
+  than the notes. The section was added to `[1.2.3]` where it belongs chronologically, and this entry
+  exists so anyone who already read those notes learns they changed. No code moved; the amendment is
+  the correction.
+
+- **An optional peer dependency is NOT absent from a pruned production install.** Two consumers
+  independently reasoned that because `pino-pretty` is a `devDependency`, `pnpm prune --prod` strips
+  it and `PrettyDevDestination` therefore cannot run in production. That is false under pnpm, and one
+  of them disproved it inside a real production image: `prune --prod` removes the **top-level link**
+  while the package stays in the store, linked beside this library as the resolved optional peer, so
+  the lazy `import('pino-pretty')` inside `onInit` resolves relative to the library's own directory
+  and succeeds.
+
+  The practical consequence is documented in the README and the destinations guideline: do not treat
+  "it is a devDependency" as proof that a code path is unreachable in production. A `PrettyDevDestination`
+  left registered in a production deployment will not crash and will not warn — it will render ANSI
+  colour into a log pipeline that has silently failed to parse every line since the deploy.
+
+### Tests
+
+- **The rescue path now asserts the audit signal it was written to protect.** The end-to-end case for
+  the total-init-failure fallback names `LOGGER_BOOTSTRAP_WARNING` — the signal that exists so a
+  security review can see PII redaction was disabled — as its justification, then asserted
+  `LOGGER_BOOTSTRAP_OK` instead. The guarantee was covered transitively (same path, and `warn` clears
+  any filter `info` clears), but the test did not pin the promise it cited, so it could have been
+  weakened without anyone noticing what was surrendered. A dedicated case now boots with
+  `shouldDisableDefaultRedact: true` and asserts the warning survives the rescue, with its flag and
+  level. Verified to fail when the rescuer election is moved after `announceBootstrap()`.
+
 ## [1.2.3] - 2026-08-14
+
+### Security
+
+- **Control characters in a destination failure report are escaped before reaching a terminal.**
+  The `LOGGER_DESTINATION_INIT_FAILED` and `LOGGER_DESTINATION_WRITE_FAILED` lines are written
+  straight to `process.stderr` and read by a human in a terminal, and `JSON.stringify` escapes C0 and
+  nothing else — DEL, the C1 range (U+0085 NEL included), U+2028 and U+2029 survive verbatim, which is
+  enough to drive a terminal or forge what looks like a separate log entry. The destination `name` is
+  consumer-chosen and the failure text is frequently remote-derived, so both are attacker-influenced
+  surfaces. `destination`, `err.type`, `err.message` and `msg` now pass through `toSingleLineMessage`,
+  the same per-sink escaping the rest of the library applies.
+
+- **A rejected value that throws while being coerced can no longer abort application bootstrap.**
+  The failure reporter normalized the thrown value _outside_ its own guard, so `String(cause)` on a
+  value with a throwing `toString`/`Symbol.toPrimitive` — or the `name`/`message` reads on an `Error`
+  with hostile getters — escaped the reporter. It runs inside the registry catch that exists to keep a
+  bad sink from mattering, so the escape aborted boot: the failure handler became a harder failure
+  than the one it was handling. Coercion now happens inside the guard.
 
 ### Fixed
 
@@ -868,7 +922,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.3...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.4...HEAD
+[1.2.4]: https://github.com/bymaxone/nest-logger/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/bymaxone/nest-logger/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/bymaxone/nest-logger/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...v1.2.1
