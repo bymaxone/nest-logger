@@ -104,13 +104,10 @@ export function destinationToStream(
       }
       try {
         const payload = typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
-        // A destination that failed `onInit` never became a live sink, so it is
-        // skipped rather than written to — its own `write()` may assume resources
-        // that were never acquired. When NOTHING initialized, the elected rescuer
-        // emits the raw entry to stdout instead: without it, a single bad
-        // destination silences the whole application, including the bootstrap
-        // entries whose entire purpose is to be seen (`LOGGER_BOOTSTRAP_WARNING`
-        // exists so a security review can tell that PII redaction was turned off).
+        // A sink that failed `onInit` never became live, so it is skipped rather
+        // than written to — its `write()` may assume resources never acquired.
+        // When NOTHING initialized, the elected rescuer emits the raw entry to
+        // stdout: without it, one bad destination silences the whole application.
         if (health.isFailed(destination)) {
           if (health.shouldRescue(destination)) {
             rescueToStdout(payload)

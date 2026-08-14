@@ -6,15 +6,13 @@
  * failed `onInit`) and `destinationToStream` (a sink that failed a `write`).
  *
  * Why stderr and never the logger: `destinations` REPLACES the default stdout
- * sink, so the sinks that just failed may be the only ones the application has.
- * Reporting a broken sink *through the sink set* is a feedback loop, and in the
- * total-failure case it delivers the explanation into the dead sink — an
- * application that boots, runs, exits 0 and says nothing about why. Stderr is
- * outside the fan-out, and every container runtime collects it.
+ * sink, so the sinks that just failed may be the only ones there are. Reporting a
+ * broken sink *through the sink set* is a feedback loop, and in the total-failure
+ * case it delivers the explanation into the dead sink. Stderr is outside the
+ * fan-out, and every container runtime collects it.
  *
- * Why one function rather than one per stage: the two reports share a wire shape
- * on purpose, so an operator greps a single `logKey` field regardless of which
- * stage failed. Two copies of the shape would let that drift silently.
+ * One function rather than one per stage, so both reports share a wire shape and
+ * an operator greps a single `logKey` regardless of which stage failed.
  */
 import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.constants'
 
@@ -29,13 +27,6 @@ import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.co
  * @param name - The failing destination's name.
  * @param cause - The thrown or rejected value, in whatever shape it arrived.
  * @param msg - Human-readable explanation, including what happens to the entry.
- * @example
- *   reportDestinationFailure(
- *     RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
- *     'loki',
- *     new Error('ECONNREFUSED'),
- *     'Log destination "loki" failed to write; the entry was dropped'
- *   )
  */
 export function reportDestinationFailure(
   logKey: ReservedLogKey,

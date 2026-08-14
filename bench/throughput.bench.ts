@@ -47,6 +47,7 @@ import { Bench } from 'tinybench'
 import { applyDefaults } from '../src/server/config/default-options'
 import type { ILogDestination } from '../src/server/interfaces/log-destination.interface'
 import { buildPinoInstance } from '../src/server/pino-factory'
+import { DestinationHealth } from '../src/server/services/destination-health.service'
 import { LogContextService } from '../src/server/services/log-context.service'
 import { PinoLoggerService } from '../src/server/services/pino-logger.service'
 
@@ -93,16 +94,24 @@ const bareLogger = pino({ level: 'info' }, devNull)
 const wrapperLogger = new PinoLoggerService(pino({ level: 'info' }, devNull))
 
 const logContext = new LogContextService()
+// Nothing is ever marked failed here, so every destination counts as live —
+// the benchmark measures the healthy write path, which is the one that runs in
+// production.
+const health = new DestinationHealth()
 const prodLogger = new PinoLoggerService(
-  buildPinoInstance(applyDefaults({ service: { name: 'bench', version: '1.0.0' } }), logContext, [
-    devNullDestination
-  ])
+  buildPinoInstance(
+    applyDefaults({ service: { name: 'bench', version: '1.0.0' } }),
+    logContext,
+    [devNullDestination],
+    health
+  )
 )
 const legacyLogger = new PinoLoggerService(
   buildPinoInstance(
     applyDefaults({ service: { name: 'bench', version: '1.0.0' }, redactStrategy: 'paths' }),
     logContext,
-    [devNullDestination]
+    [devNullDestination],
+    health
   )
 )
 

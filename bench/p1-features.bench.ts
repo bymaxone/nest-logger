@@ -13,6 +13,7 @@
 import { applyDefaults } from '../src/server/config/default-options'
 import type { BymaxLoggerModuleOptions } from '../src/server/interfaces/logger-module-options.interface'
 import { buildPinoInstance } from '../src/server/pino-factory'
+import { DestinationHealth } from '../src/server/services/destination-health.service'
 import { LogContextService } from '../src/server/services/log-context.service'
 import { PinoLoggerService } from '../src/server/services/pino-logger.service'
 
@@ -27,7 +28,9 @@ const SERVICE = { name: 'checkout-api', version: '2.14.3' }
 /** Build a logger for one configuration. */
 function makeLogger(overrides: Partial<BymaxLoggerModuleOptions>): PinoLoggerService {
   const options = applyDefaults({ service: SERVICE, ...overrides } as BymaxLoggerModuleOptions)
-  return new PinoLoggerService(buildPinoInstance(options, new LogContextService(), [SINK]))
+  return new PinoLoggerService(
+    buildPinoInstance(options, new LogContextService(), [SINK], new DestinationHealth())
+  )
 }
 
 /** Measure ops/sec for one scenario. */

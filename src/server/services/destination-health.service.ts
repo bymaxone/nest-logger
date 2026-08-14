@@ -4,21 +4,18 @@
  * Layer: server/services — an internal (NOT exported) NestJS provider holding
  * one fact per destination: did its `onInit()` succeed?
  *
- * It exists because of an ordering constraint that cannot be removed cheaply.
- * The Pino instance is built by a `useFactory` while NestJS assembles the DI
- * graph, so `pino.multistream` is wired from the FULL registered list — strictly
- * before `DestinationRegistry.onModuleInit` has had the chance to discover which
- * sinks actually came up. Rebuilding the fan-out afterwards would mean either
- * restructuring the module or reaching for `multistream.remove()`, which exists
- * at runtime but is absent from Pino's published `MultiStreamRes` typings and is
- * keyed by an internal auto-incrementing stream id. A correctness fix does not
- * get to depend on an undocumented API, so the stream stays and consults this
- * record instead.
+ * It exists because of an ordering constraint. `pino.multistream` is wired by a
+ * `useFactory` while NestJS assembles the DI graph — strictly before
+ * `DestinationRegistry.onModuleInit` discovers which sinks came up — so the
+ * fan-out cannot be built from the surviving set. Rebuilding it afterwards would
+ * need `multistream.remove()`, which exists at runtime but is absent from Pino's
+ * published `MultiStreamRes` typings and is keyed by an internal stream id; a
+ * correctness fix does not get to depend on an undocumented API. The streams stay
+ * and consult this record instead.
  *
- * Two behaviours fall out of the same record:
- *   - a failed sink stops receiving writes (it was never able to accept them);
- *   - if EVERY sink failed, one of them is designated to rescue the entry as raw
- *     NDJSON on stdout, so a misconfiguration degrades instead of going silent.
+ * Two behaviours fall out of it: a failed sink stops receiving writes, and if
+ * EVERY sink failed one is elected to rescue the entry as raw NDJSON on stdout,
+ * so a misconfiguration degrades instead of going silent.
  */
 import { Injectable } from '@nestjs/common'
 
@@ -70,20 +67,17 @@ export class DestinationHealth {
    * Record that a destination failed to initialize, and re-elect the rescuer.
    *
    * The rescuer is the failed destination with the LOWEST effective level, ties
-   * broken by registration order (the comparison is strict, so the first one
-   * marked keeps the slot). Registration order alone would have been
-   * deterministic but arbitrary: given a `warn` sink registered before an `info`
-   * one, it would rescue at `warn` and silently drop the `info` entries the
-   * second sink was configured to receive — and swapping the array would change
-   * the output for the same configuration. Electing by level rescues the UNION of
-   * what the consumer asked to see, which is the only defensible reading of a
-   * last resort.
+   * broken by registration order (the comparison is strict). Registration order
+   * alone is deterministic but arbitrary: a `warn` sink registered before an
+   * `info` one would rescue at `warn` and silently drop the `info` entries the
+   * second was configured to receive, and swapping the array would change the
+   * output for the same configuration. Electing by level rescues the UNION of
+   * what the consumer asked to see.
    *
-   * Inheriting a level filter at all is deliberate: `minLevel` is the consumer's
-   * own instruction, and a rescue that ignored it would deliver entries they had
-   * filtered out, in the one moment they least expect output. The one entry that
-   * must never be filtered — the init failure itself — does not travel this path:
-   * it goes straight to stderr, outside the multistream.
+   * Inheriting a level filter at all is deliberate — `minLevel` is the consumer's
+   * own instruction, so the rescue delivers what a working sink would have, never
+   * more. The one entry that must never be filtered, the init failure itself, goes
+   * straight to stderr, outside the multistream.
    *
    * @param destination - The destination whose `onInit()` rejected.
    * @param effectiveLevel - Its multistream level: `minLevel` when set, otherwise

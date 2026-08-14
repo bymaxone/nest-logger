@@ -75,7 +75,7 @@
     "test:cov:all": "jest --config jest.coverage.config.ts --coverage",
     "test:e2e": "jest --config jest.e2e.config.ts",
     "test:watch": "jest --watch",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.bench.json"
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs,cjs}": [
