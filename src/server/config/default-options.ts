@@ -97,7 +97,6 @@ export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxL
     redactCensor: options.redactCensor ?? '[REDACTED]',
     shouldDisableDefaultRedact: options.shouldDisableDefaultRedact ?? false,
     destinations: Object.freeze([...(options.destinations ?? [])]),
-    isPretty: options.isPretty ?? !isProduction,
     http: Object.freeze({
       ...http,
       excludePaths: Object.freeze([...http.excludePaths])

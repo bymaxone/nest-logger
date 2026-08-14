@@ -3,7 +3,21 @@ import type { Writable } from 'node:stream'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 
-import { destinationToStream } from './destination-to-stream'
+import { DestinationHealth } from '../services/destination-health.service'
+
+import { destinationToStream as destinationToStreamWithHealth } from './destination-to-stream'
+
+/**
+ * `destinationToStream` with an empty health record — nothing marked failed, so
+ * every destination is treated as live. The health-aware branches pass their own
+ * record explicitly.
+ */
+function destinationToStream(
+  destination: ILogDestination,
+  health: DestinationHealth = new DestinationHealth()
+): Writable {
+  return destinationToStreamWithHealth(destination, health)
+}
 
 /** Write a single chunk and resolve/reject once the stream signals completion. */
 function writeOnce(stream: Writable, chunk: string | Buffer): Promise<void> {
@@ -161,5 +175,87 @@ describe('destinationToStream', () => {
 
     await expect(writeOnce(stream, 'x\n')).resolves.toBeUndefined()
     expect(stderrSpy).toHaveBeenCalled()
+  })
+
+  describe('init health', () => {
+    let stdoutSpy: jest.SpyInstance
+
+    beforeEach(() => {
+      stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
+    })
+
+    afterEach(() => {
+      stdoutSpy.mockRestore()
+    })
+
+    it(/*
+     * A destination that failed onInit never became a live sink, so it must not be
+     * written to — its write() may assume resources that were never acquired. The
+     * multistream is wired before any onInit runs, so this check is the only place
+     * the exclusion can happen.
+     */
+    'does not write to a destination that failed onInit', async () => {
+      const destination: ILogDestination = { name: 'failed', write: jest.fn() }
+      const health = new DestinationHealth()
+      health.markHealthy() // a healthy sink exists elsewhere
+      health.markFailed(destination, 'info')
+      const stream = destinationToStream(destination, health)
+
+      await writeOnce(stream, 'entry\n')
+
+      expect(destination.write).not.toHaveBeenCalled()
+      expect(stdoutSpy).not.toHaveBeenCalled()
+    })
+
+    it(/*
+     * REGRESSION — the defect this whole mechanism exists for. With `destinations`
+     * replacing the default stdout sink, a sole destination that fails onInit left
+     * the application booting, running, exiting 0 and writing NOTHING anywhere.
+     * When nothing initialized, the elected rescuer must emit the raw NDJSON.
+     */
+    'rescues the entry to stdout when no destination initialized', async () => {
+      const destination: ILogDestination = { name: 'only', write: jest.fn() }
+      const health = new DestinationHealth()
+      health.markFailed(destination, 'info')
+      const stream = destinationToStream(destination, health)
+
+      await writeOnce(stream, '{"level":"info"}\n')
+
+      expect(stdoutSpy).toHaveBeenCalledWith('{"level":"info"}\n')
+      expect(destination.write).not.toHaveBeenCalled()
+    })
+
+    it(/*
+     * Exactly one failed destination rescues an entry, so N failed sinks produce
+     * one line rather than N duplicates of the same entry.
+     */
+    'rescues an entry once when several destinations failed', async () => {
+      const first: ILogDestination = { name: 'first', write: jest.fn() }
+      const second: ILogDestination = { name: 'second', write: jest.fn() }
+      const health = new DestinationHealth()
+      health.markFailed(first, 'info')
+      health.markFailed(second, 'info')
+
+      await writeOnce(destinationToStream(first, health), 'entry\n')
+      await writeOnce(destinationToStream(second, health), 'entry\n')
+
+      expect(stdoutSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it(/*
+     * The rescue must not become the crash it exists to prevent: stdout can be a
+     * closed pipe (`node app | head`), and EPIPE there must be swallowed.
+     */
+    'survives stdout itself failing during a rescue', async () => {
+      stdoutSpy.mockImplementation(() => {
+        throw new Error('EPIPE')
+      })
+      const destination: ILogDestination = { name: 'only', write: jest.fn() }
+      const health = new DestinationHealth()
+      health.markFailed(destination, 'info')
+      const stream = destinationToStream(destination, health)
+
+      await expect(writeOnce(stream, 'entry\n')).resolves.toBeUndefined()
+    })
   })
 })

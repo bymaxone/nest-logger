@@ -72,6 +72,14 @@ export class PrettyDevDestination implements ILogDestination {
       // ships as `export =`, so a dynamic `import(...).default` is not typed,
       // whereas `.build` is a declared namespace export with the same factory.
       //
+      // This runs pino-pretty as a MAIN-THREAD transform: a documented
+      // pino-pretty API, but NOT the form Pino's docs recommend
+      // (`transport: { target: 'pino-pretty' }`, a worker). That form is
+      // unreachable here — this library owns the Pino instance and fans out
+      // through `multistream`, which does not compose with `transport`. So
+      // prettifying costs the logging thread, which is why this sink is
+      // development-only.
+      //
       // `destination: process.stdout` makes pino-pretty render the prettified
       // line through Node's stdout stream. Piping the transform's readable side
       // instead (`stream.pipe(process.stdout)`) would leak the RAW NDJSON to
@@ -86,9 +94,11 @@ export class PrettyDevDestination implements ILogDestination {
         destination: process.stdout
       })
     } catch {
-      // Mark as failed so subsequent writes are dropped (not fallen back to
-      // stdout): the registry drops this destination from its active set, and a
-      // failed pretty sink must not silently duplicate raw NDJSON to stdout.
+      // Mark as failed so subsequent writes are dropped rather than falling back
+      // to raw stdout here: with a stdout sink also registered, a fallback would
+      // print every entry twice. Dropping is safe because it is no longer the last
+      // word — `DestinationHealth` covers the case where it would have meant
+      // silence (this sink being the only one) by rescuing from the fan-out above.
       this.initFailed = true
       throw new Error(
         '[PrettyDevDestination] pino-pretty is not installed. Install it as a peer ' +
@@ -102,8 +112,10 @@ export class PrettyDevDestination implements ILogDestination {
    *
    * Three states:
    *   - initialized → forward to the pino-pretty transform;
-   *   - init failed → DROP (the destination was removed from the active set, so
-   *     it must not duplicate raw NDJSON to stdout);
+   *   - init failed → DROP, so a co-registered stdout sink is not duplicated. The
+   *     fan-out already skips a failed destination before reaching this method
+   *     (and rescues the entry when nothing else initialized); this branch is the
+   *     belt to that, for any caller holding the destination directly;
    *   - pre-init (transient window before {@link onInit}, e.g. a bootstrap log)
    *     → fall back to raw stdout so the entry is not lost.
    *

@@ -193,6 +193,20 @@ A destination that **throws** in `write()` breaks Pino multi-stream — a failur
 | `write`      | Every log                              | Push to internal buffer; flush in batch if ≥ batchSize |
 | `onShutdown` | NestJS `SIGTERM` / `app.close()`       | Stop timers, flush remaining buffer, close connections |
 
+### What happens when `onInit` fails
+
+Throwing from `onInit` is a legitimate way to say "I cannot run" — it never aborts application bootstrap. The library then guarantees three things, and you should design against them rather than around them:
+
+1. **The failure is reported as `LOGGER_DESTINATION_INIT_FAILED` on `process.stderr`** — never through the logger. Your sink may be the only one registered, so routing the explanation through the logger would deliver it into the sink that just died.
+2. **Your destination is excluded from the write fan-out.** `write()` is not called after a failed `onInit`, so you never have to defend it with an "am I initialized?" flag. (Keep one anyway if `write()` can be reached from your own code.)
+3. **If _no_ destination initialized, entries fall back to raw NDJSON on `stdout`.** Degraded and unformatted, but nothing is lost — including the bootstrap entries.
+
+That third guarantee exists because `destinations` **replaces** the default stdout sink (see §1). Before it, a single sink that failed `onInit` left the application booting, running, exiting `0` and writing nothing anywhere — with the diagnostic explaining why delivered into the dead sink.
+
+The fallback inherits your destination's effective level (`minLevel`, else the module `level`): the rescue delivers what a working sink would have delivered, never more. The `stderr` report is outside the fan-out, so no `minLevel` can hide it.
+
+**Implication for your `onInit`:** validate config and fail loudly there rather than degrading silently inside `write()`. A destination that throws from `onInit` produces a named diagnostic; one that swallows the problem and drops entries in `write()` produces silence.
+
 ### Flush guarantee at shutdown
 
 The lib calls `destination.onShutdown()` in **reverse registration order** — the last registered closes first. This ensures downstream destinations (e.g., Loki) process the final batch before upstream (stdout) is closed.
@@ -253,7 +267,9 @@ export class PrettyDevDestination implements ILogDestination {
 }
 ```
 
-> `pino-pretty` is an **optional peer dep** — if absent, the lib emits a warning and falls back to stdout-json. Emits reserved key `LOGGER_PRETTY_UNAVAILABLE` so the fallback is searchable in dashboards.
+> `pino-pretty` is an **optional peer dep**. If it is absent, `PrettyDevDestination.onInit()` **throws** with an actionable message, and the generic init-failure path takes over (§4): the failure is reported as `LOGGER_DESTINATION_INIT_FAILED` on stderr, the destination is dropped from the fan-out, and — if it was the only one registered — entries fall back to raw NDJSON on stdout.
+>
+> Earlier revisions of this guide described a `LOGGER_PRETTY_UNAVAILABLE` key emitted for this case. **No such entry is ever written.** The name survives only in `logger-error-codes.constants.ts`, which is not exported and not used; do not build a dashboard on it. The searchable signal is `LOGGER_DESTINATION_INIT_FAILED` on stderr, with `destination: "pretty-dev"`.
 
 ### 5.3 Rolling file (`pino-roll`)
 

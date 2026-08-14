@@ -1,6 +1,6 @@
 {
   "name": "@bymax-one/nest-logger",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Structured JSON logging for NestJS based on Pino 10, with optional OpenTelemetry correlation.",
   "author": "Bymax One <support@bymax.one>",
   "license": "MIT",
@@ -75,7 +75,7 @@
     "test:cov:all": "jest --config jest.coverage.config.ts --coverage",
     "test:e2e": "jest --config jest.e2e.config.ts",
     "test:watch": "jest --watch",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.bench.json"
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs,cjs}": [
@@ -86,7 +86,6 @@
       "prettier --write"
     ]
   },
-  "dependencies": {},
   "peerDependencies": {
     "@nestjs/common": "^11.0.16",
     "@nestjs/core": "^11.1.18",

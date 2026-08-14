@@ -11,6 +11,7 @@ import type { ILogDestination } from '../interfaces/log-destination.interface'
 import { applyDefaults } from '../config/default-options'
 import { detectOtelTraceApi } from '../utils/otel-detector'
 
+import { DestinationHealth } from './destination-health.service'
 import { DestinationRegistry } from './destination-registry.service'
 import { PinoLoggerService } from './pino-logger.service'
 
@@ -30,13 +31,29 @@ describe('DestinationRegistry', () => {
   let logger: PinoLoggerService
   let errorSpy: jest.SpyInstance
   let infoSpy: jest.SpyInstance
+  let stderrSpy: jest.SpyInstance
+  let health: DestinationHealth
 
   beforeEach(() => {
     // A real but silent Pino instance avoids fabricating a Logger mock (cast-free).
     logger = new PinoLoggerService(pino({ enabled: false }))
     errorSpy = jest.spyOn(logger, 'errorStructured').mockImplementation(() => undefined)
     infoSpy = jest.spyOn(logger, 'info').mockImplementation(() => undefined)
+    // Init failures are reported to stderr, never through the logger — the whole
+    // point of the fix, since the logger's own sinks are what may have failed.
+    stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+    health = new DestinationHealth()
   })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  /** The single stderr report emitted for a failed destination, parsed. */
+  function reportedInitFailure(): Record<string, unknown> {
+    const line = stderrSpy.mock.calls[0]?.[0] as string
+    return JSON.parse(line) as Record<string, unknown>
+  }
 
   describe('onModuleInit', () => {
     it(/*
@@ -46,7 +63,7 @@ describe('DestinationRegistry', () => {
     'initializes every destination and marks them active', async () => {
       const withHook = makeDestination('with-hook', { onInit: jest.fn() })
       const hookless = makeDestination('hookless')
-      const registry = new DestinationRegistry([withHook, hookless], logger, options)
+      const registry = new DestinationRegistry([withHook, hookless], logger, options, health)
 
       await registry.onModuleInit()
 
@@ -56,7 +73,7 @@ describe('DestinationRegistry', () => {
 
     it(/*
      * A destination whose onInit throws must be dropped from the active set and
-     * reported via LOGGER_DESTINATION_INIT_FAILED — without aborting boot or
+     * reported as LOGGER_DESTINATION_INIT_FAILED — without aborting boot or
      * preventing the healthy destinations from initializing.
      */
     'skips a failing destination and reports it without blocking the others', async () => {
@@ -64,34 +81,199 @@ describe('DestinationRegistry', () => {
         onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
       })
       const healthy = makeDestination('healthy', { onInit: jest.fn() })
-      const registry = new DestinationRegistry([boom, healthy], logger, options)
+      const registry = new DestinationRegistry([boom, healthy], logger, options, health)
 
       await registry.onModuleInit()
 
       expect(registry.getActive()).toEqual([healthy])
-      expect(errorSpy).toHaveBeenCalledWith(
-        RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-        expect.any(Error),
-        undefined,
-        { destination: 'boom' }
-      )
+      expect(reportedInitFailure()).toMatchObject({
+        level: 'error',
+        logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+        destination: 'boom',
+        err: { type: 'Error', message: 'init-fail' }
+      })
     })
 
     it(/*
-     * A non-Error thrown from onInit (e.g. a bare string) must be coerced into an
-     * Error so errorStructured always receives a serializable Error.
+     * The human-readable message is the operator-facing half of the report: it
+     * has to name the destination, say that it will receive nothing, AND state
+     * the stdout fallback — that last sentence is what tells a developer staring
+     * at raw NDJSON where it is coming from. Asserted because mutation testing
+     * showed the message could be emptied entirely without a test noticing.
      */
-    'coerces a non-Error onInit failure into an Error', async () => {
-      const weird = makeDestination('weird', {
-        onInit: jest.fn().mockRejectedValue('string-failure')
+    'explains the consequence and the fallback in the report message', async () => {
+      const boom = makeDestination('boom', {
+        onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
       })
-      const registry = new DestinationRegistry([weird], logger, options)
+      const registry = new DestinationRegistry([boom], logger, options, health)
 
       await registry.onModuleInit()
 
-      const reportedError = errorSpy.mock.calls[0]?.[1]
-      expect(reportedError).toBeInstanceOf(Error)
-      expect(reportedError).toHaveProperty('message', 'string-failure')
+      const msg = reportedInitFailure()['msg']
+      expect(msg).toContain('"boom" failed to initialize')
+      expect(msg).toContain('will receive no entries')
+      expect(msg).toContain('fall back to raw NDJSON on stdout')
+    })
+
+    it(/*
+     * REGRESSION — the init failure must NOT be reported through the logger. Doing
+     * so routes the explanation into the very sink set that just failed: with
+     * `destinations` replacing the default stdout sink, a single failing sink
+     * produced an application that booted, ran, exited 0 and wrote nothing
+     * anywhere — with the diagnostic naming the cause delivered into the dead sink.
+     */
+    'reports the failure to stderr and never through the logger', async () => {
+      const boom = makeDestination('boom', {
+        onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
+      })
+      const registry = new DestinationRegistry([boom], logger, options, health)
+
+      await registry.onModuleInit()
+
+      expect(stderrSpy).toHaveBeenCalledTimes(1)
+      expect(errorSpy).not.toHaveBeenCalled()
+    })
+
+    it(/*
+     * A failed destination must be marked in the shared health record — that is
+     * what removes it from the write fan-out, which the multistream (built before
+     * any onInit ran) cannot do for itself.
+     */
+    'marks a failed destination in the shared health record', async () => {
+      const boom = makeDestination('boom', {
+        onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
+      })
+      const healthy = makeDestination('healthy', { onInit: jest.fn() })
+      const registry = new DestinationRegistry([boom, healthy], logger, options, health)
+
+      await registry.onModuleInit()
+
+      expect(health.isFailed(boom)).toBe(true)
+      expect(health.isFailed(healthy)).toBe(false)
+      // A healthy sink exists, so nothing needs rescuing.
+      expect(health.shouldRescue(boom)).toBe(false)
+    })
+
+    it(/*
+     * When EVERY destination fails, one must be elected to rescue entries as raw
+     * NDJSON — and the election must happen before announceBootstrap() runs, or
+     * the bootstrap entries (including LOGGER_BOOTSTRAP_WARNING, the signal that
+     * PII redaction was disabled) are lost exactly when the configuration is
+     * already known to be broken.
+     */
+    'elects a rescuer before announcing bootstrap when every destination fails', async () => {
+      const electedDuringAnnounce: boolean[] = []
+      const boom = makeDestination('boom', {
+        onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
+      })
+      infoSpy.mockImplementation(() => {
+        electedDuringAnnounce.push(health.shouldRescue(boom))
+      })
+      const registry = new DestinationRegistry([boom], logger, options, health)
+
+      await registry.onModuleInit()
+
+      expect(health.shouldRescue(boom)).toBe(true)
+      expect(electedDuringAnnounce).toEqual([true])
+    })
+
+    it(/*
+     * A destination's effective level (minLevel when set, otherwise the module
+     * level) must be what is recorded, since the rescuer is elected by level.
+     */
+    'records the destination minLevel as its effective level', async () => {
+      const quiet: ILogDestination = {
+        ...makeDestination('quiet', {
+          onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
+        }),
+        minLevel: 'error'
+      }
+      const loud = makeDestination('loud', {
+        onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
+      })
+      const registry = new DestinationRegistry([quiet, loud], logger, options, health)
+
+      await registry.onModuleInit()
+
+      // `loud` has no minLevel, so it inherits the module level (debug) and wins
+      // the election over `quiet`'s error — despite being registered second.
+      expect(health.shouldRescue(loud)).toBe(true)
+      expect(health.shouldRescue(quiet)).toBe(false)
+    })
+
+    it(/*
+     * A non-Error thrown from onInit (e.g. a bare string) must be coerced into a
+     * serializable envelope so the stderr report is always valid NDJSON.
+     */
+    'coerces a non-Error onInit failure into a serializable envelope', async () => {
+      const weird = makeDestination('weird', {
+        onInit: jest.fn().mockRejectedValue('string-failure')
+      })
+      const registry = new DestinationRegistry([weird], logger, options, health)
+
+      await registry.onModuleInit()
+
+      expect(reportedInitFailure()).toMatchObject({
+        err: { type: 'UnknownError', message: 'string-failure' }
+      })
+    })
+
+    it(/*
+     * REGRESSION — the never-throw contract has to cover READING the rejected
+     * value, not just writing the report. A value whose `toString` throws was
+     * coerced outside the guard, so the exception escaped the registry's own
+     * catch and aborted application bootstrap: the failure handler became a
+     * harder failure than the one it was handling.
+     */
+    'survives a rejection value that throws while being coerced', async () => {
+      const hostile = {
+        toString(): string {
+          throw new Error('hostile toString')
+        }
+      }
+      const boom = makeDestination('boom', { onInit: jest.fn().mockRejectedValue(hostile) })
+      const registry = new DestinationRegistry([boom], logger, options, health)
+
+      await expect(registry.onModuleInit()).resolves.toBeUndefined()
+      // Still dropped from the fan-out — the unreadable value must not make the
+      // sink look healthy.
+      expect(health.isFailed(boom)).toBe(true)
+    })
+
+    it(/*
+     * Control characters in a consumer-named destination must not reach a
+     * terminal unescaped. `JSON.stringify` escapes C0 and nothing else, so DEL,
+     * C1 (U+0085 NEL), U+2028 and U+2029 would survive verbatim into a line an
+     * operator reads — enough to forge a rendered entry.
+     */
+    'escapes control characters in the reported destination name', async () => {
+      const sneaky = makeDestination('evil\u0085forged', {
+        onInit: jest.fn().mockRejectedValue(new Error('nope'))
+      })
+      const registry = new DestinationRegistry([sneaky], logger, options, health)
+
+      await registry.onModuleInit()
+
+      const line = stderrSpy.mock.calls[0]?.[0] as string
+      expect(line).not.toContain('\u0085')
+      expect(reportedInitFailure()['destination']).toContain('evil')
+    })
+
+    it(/*
+     * Reporting a broken sink must never become the crash it exists to prevent —
+     * stderr itself can be a closed pipe (`node app | head`), and EPIPE there must
+     * be swallowed rather than aborting bootstrap.
+     */
+    'survives stderr itself failing', async () => {
+      stderrSpy.mockImplementation(() => {
+        throw new Error('EPIPE')
+      })
+      const boom = makeDestination('boom', {
+        onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
+      })
+      const registry = new DestinationRegistry([boom], logger, options, health)
+
+      await expect(registry.onModuleInit()).resolves.toBeUndefined()
     })
   })
 
@@ -112,7 +294,7 @@ describe('DestinationRegistry', () => {
           seenAtShutdown.push(infoSpy.mock.calls.length)
         })
       })
-      const registry = new DestinationRegistry([destination], logger, options)
+      const registry = new DestinationRegistry([destination], logger, options, health)
       await registry.onModuleInit()
 
       await registry.onApplicationShutdown()
@@ -147,7 +329,7 @@ describe('DestinationRegistry', () => {
           order.push('second')
         })
       })
-      const registry = new DestinationRegistry([first, second], logger, options)
+      const registry = new DestinationRegistry([first, second], logger, options, health)
       await registry.onModuleInit()
 
       await registry.onApplicationShutdown()
@@ -160,7 +342,7 @@ describe('DestinationRegistry', () => {
      */
     'tolerates a destination without an onShutdown hook', async () => {
       const hookless = makeDestination('hookless', { onInit: jest.fn() })
-      const registry = new DestinationRegistry([hookless], logger, options)
+      const registry = new DestinationRegistry([hookless], logger, options, health)
       await registry.onModuleInit()
 
       await expect(registry.onApplicationShutdown()).resolves.toBeUndefined()
@@ -176,7 +358,7 @@ describe('DestinationRegistry', () => {
         onInit: jest.fn(),
         onShutdown: jest.fn().mockRejectedValue(new Error('shutdown-fail'))
       })
-      const registry = new DestinationRegistry([boom], logger, options)
+      const registry = new DestinationRegistry([boom], logger, options, health)
       await registry.onModuleInit()
 
       await registry.onApplicationShutdown()
@@ -195,7 +377,7 @@ describe('DestinationRegistry', () => {
         onInit: jest.fn(),
         onShutdown: jest.fn().mockRejectedValue('non-error-string')
       })
-      const registry = new DestinationRegistry([boom], logger, options)
+      const registry = new DestinationRegistry([boom], logger, options, health)
       await registry.onModuleInit()
 
       await registry.onApplicationShutdown()
@@ -216,7 +398,7 @@ describe('DestinationRegistry', () => {
         onInit: jest.fn(),
         onShutdown: jest.fn().mockRejectedValue(stacklessError)
       })
-      const registry = new DestinationRegistry([boom], logger, options)
+      const registry = new DestinationRegistry([boom], logger, options, health)
       await registry.onModuleInit()
 
       await registry.onApplicationShutdown()
@@ -232,7 +414,7 @@ describe('DestinationRegistry', () => {
      * list) — nothing is "active" until it has successfully initialized.
      */
     'returns an empty list before initialization', () => {
-      const registry = new DestinationRegistry([makeDestination('a')], logger, options)
+      const registry = new DestinationRegistry([makeDestination('a')], logger, options, health)
       expect(registry.getActive()).toEqual([])
     })
   })
@@ -247,7 +429,12 @@ describe('DestinationRegistry — OTel availability warning', () => {
   async function boot(overrides: Parameters<typeof applyDefaults>[0]): Promise<void> {
     logger = new PinoLoggerService(pino({ enabled: false }))
     warnSpy = jest.spyOn(logger, 'warnStructured').mockImplementation()
-    const registry = new DestinationRegistry([], logger, applyDefaults(overrides))
+    const registry = new DestinationRegistry(
+      [],
+      logger,
+      applyDefaults(overrides),
+      new DestinationHealth()
+    )
     await registry.onModuleInit()
   }
 

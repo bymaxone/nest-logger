@@ -1,0 +1,19 @@
+{
+  // Type-checks `bench/`, which the root config cannot cover: it pins
+  // `rootDir: "./src"`, so a bench file listed there fails TS6059 rather than
+  // being checked.
+  //
+  // This exists because it was missed once, and the miss was expensive. The
+  // benchmarks call internals directly (`buildPinoInstance`), so a signature
+  // change in `src/` breaks them — and with nothing type-checking `bench/`, the
+  // break surfaced only as a runtime `TypeError` inside a CI benchmark, swallowed
+  // by the logger's own fail-soft path into "every entry dropped". A caller that
+  // is not compiled is a caller that reports its breakage in the worst way it can.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["bench/**/*", "src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

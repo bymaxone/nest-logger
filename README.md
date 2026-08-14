@@ -546,24 +546,23 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
 ### Top-level options
 
-| Option                       | Type                            | Default         | Description                                                                                                                                |
-| ---------------------------- | ------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `service.name`               | `string`                        | **Required**    | Service name emitted in every log entry                                                                                                    |
-| `service.version`            | `string`                        | **Required**    | Release version/SHA emitted in every log entry                                                                                             |
-| `service.namespace`          | `string`                        | —               | OTel `service.namespace` (**Stable**) — the group the service belongs to                                                                   |
-| `service.instanceId`         | `string`                        | —               | OTel `service.instance.id` (**Stable**). **Never generated** — supply it from the platform. See [Resource identity](#6b-resource-identity) |
-| `service.environment`        | `string`                        | `NODE_ENV`      | OTel `deployment.environment.name` (**Stable**). The deprecated `deployment.environment` is never emitted                                  |
-| `resourceFormat`             | `'nested' \| 'flat'`            | `'nested'`      | Shape of the identity fields. `'flat'` emits the dotted attribute names verbatim                                                           |
-| `eventNameField`             | `string \| false`               | `'event.name'`  | Field carrying the derived event name (`PAYMENT_FAILED` → `payment.failed`). `false` disables it                                           |
-| `errorFormat`                | `'pino' \| 'semconv' \| 'both'` | `'pino'`        | `'both'` adds `exception.*` and `error.type` beside `err.*`; `'semconv'` replaces them                                                     |
-| `level`                      | `LogLevel`                      | `'info'`        | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                                               |
-| `isPretty`                   | `boolean`                       | `!isProduction` | ⚠️ Reserved — not auto-wired. For pretty output add `new PrettyDevDestination()` to `destinations` (needs `pino-pretty`)                   |
-| `redactPaths`                | `string[]`                      | `[]`            | Additional `fast-redact` paths, applied on top of the default coverage                                                                     |
-| `redactStrategy`             | `'names' \| 'paths'`            | `'names'`       | Engine behind the DEFAULT set. `'paths'` restores the pre-1.2 `fast-redact` expansion (four-level ceiling, ~100× slower)                   |
-| `shouldDisableDefaultRedact` | `boolean`                       | `false`         | Skip the default PII coverage entirely. ⚠️ Emits `LOGGER_BOOTSTRAP_WARNING` at startup — document why                                      |
-| `redactCensor`               | `string`                        | `'[REDACTED]'`  | Replacement value written in place of every redacted field                                                                                 |
-| `maxEntrySizeBytes`          | `number`                        | `65536`         | UTF-8 byte ceiling per serialized field (`err` + any custom serializer); over it the value becomes a truncation envelope                   |
-| `destinations`               | `ILogDestination[]`             | `[]`            | Additional sinks (Loki, Postgres, rolling file, …) alongside default stdout                                                                |
+| Option                       | Type                            | Default                            | Description                                                                                                                                |
+| ---------------------------- | ------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `service.name`               | `string`                        | **Required**                       | Service name emitted in every log entry                                                                                                    |
+| `service.version`            | `string`                        | **Required**                       | Release version/SHA emitted in every log entry                                                                                             |
+| `service.namespace`          | `string`                        | —                                  | OTel `service.namespace` (**Stable**) — the group the service belongs to                                                                   |
+| `service.instanceId`         | `string`                        | —                                  | OTel `service.instance.id` (**Stable**). **Never generated** — supply it from the platform. See [Resource identity](#6b-resource-identity) |
+| `service.environment`        | `string`                        | `NODE_ENV`                         | OTel `deployment.environment.name` (**Stable**). The deprecated `deployment.environment` is never emitted                                  |
+| `resourceFormat`             | `'nested' \| 'flat'`            | `'nested'`                         | Shape of the identity fields. `'flat'` emits the dotted attribute names verbatim                                                           |
+| `eventNameField`             | `string \| false`               | `'event.name'`                     | Field carrying the derived event name (`PAYMENT_FAILED` → `payment.failed`). `false` disables it                                           |
+| `errorFormat`                | `'pino' \| 'semconv' \| 'both'` | `'pino'`                           | `'both'` adds `exception.*` and `error.type` beside `err.*`; `'semconv'` replaces them                                                     |
+| `level`                      | `LogLevel`                      | `'info'`                           | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                                               |
+| `redactPaths`                | `string[]`                      | `[]`                               | Additional `fast-redact` paths, applied on top of the default coverage                                                                     |
+| `redactStrategy`             | `'names' \| 'paths'`            | `'names'`                          | Engine behind the DEFAULT set. `'paths'` restores the pre-1.2 `fast-redact` expansion (four-level ceiling, ~100× slower)                   |
+| `shouldDisableDefaultRedact` | `boolean`                       | `false`                            | Skip the default PII coverage entirely. ⚠️ Emits `LOGGER_BOOTSTRAP_WARNING` at startup — document why                                      |
+| `redactCensor`               | `string`                        | `'[REDACTED]'`                     | Replacement value written in place of every redacted field                                                                                 |
+| `maxEntrySizeBytes`          | `number`                        | `65536`                            | UTF-8 byte ceiling per serialized field (`err` + any custom serializer); over it the value becomes a truncation envelope                   |
+| `destinations`               | `ILogDestination[]`             | `[new DefaultStdoutDestination()]` | The sinks entries are written to. ⚠️ A non-empty list **replaces** that default — see [Destinations](#destinations-replace-stdout)         |
 
 ### `http` options
 
@@ -712,6 +711,21 @@ BymaxLoggerModule.forRootAsync({
   })
 })
 ```
+
+### Destinations replace stdout
+
+A non-empty `destinations` **replaces** `DefaultStdoutDestination` — it does not add to it. That is deliberate: a file-only or socket-only deployment has to be able to turn structured stdout off. To keep stdout alongside a custom sink, list it explicitly:
+
+```typescript
+destinations: [new DefaultStdoutDestination(), new LokiDestination({ ... })]
+```
+
+The consequence worth knowing: a sink you supply may be the **only** one the application has, so its failure is the application's silence. Two guarantees cover that, and neither requires anything from you:
+
+- **A destination that fails `onInit` is reported as `LOGGER_DESTINATION_INIT_FAILED` on `stderr`** — not through the logger, whose sinks are the ones that just failed — and receives no entries.
+- **If _every_ destination fails to initialize, entries fall back to raw NDJSON on `stdout`.** Degraded and ugly, but visible; nothing is lost, including the bootstrap entries.
+
+So the common accident — adding `new PrettyDevDestination()` without installing the optional `pino-pretty` — costs you colours and a line on stderr telling you why, never your logs.
 
 ### Postgres destination (Prisma)
 

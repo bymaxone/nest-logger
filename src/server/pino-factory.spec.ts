@@ -2,7 +2,7 @@ import { applyDefaults } from './config/default-options'
 import { DEFAULT_REDACT_PATHS } from './constants/default-redact-paths.constants'
 import type { ILogDestination } from './interfaces/log-destination.interface'
 import {
-  buildPinoInstance,
+  buildPinoInstance as buildPinoInstanceWithHealth,
   leafNameOf,
   resolveNameRedactor,
   resolveRedactOption,
@@ -10,8 +10,28 @@ import {
   withEventName,
   withSemconvException
 } from './pino-factory'
+import { DestinationHealth } from './services/destination-health.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
+import type { ResolvedBymaxLoggerModuleOptions } from './interfaces/logger-module-options.interface'
+
+/**
+ * `buildPinoInstance` with a fresh, all-healthy `DestinationHealth`.
+ *
+ * Every case below exercises the fan-out with destinations that initialized, so
+ * the health record is uniform noise at these call sites. The health-aware
+ * behaviour (a failed sink skipped, a total failure rescued to stdout) belongs to
+ * the wrapper and is asserted in `destination-to-stream.spec.ts` against the
+ * record directly, rather than through a Pino instance that cannot observe it.
+ */
+function buildPinoInstance(
+  options: ResolvedBymaxLoggerModuleOptions,
+  logContext: LogContextService,
+  destinations: readonly ILogDestination[],
+  health: DestinationHealth = new DestinationHealth()
+): ReturnType<typeof buildPinoInstanceWithHealth> {
+  return buildPinoInstanceWithHealth(options, logContext, destinations, health)
+}
 
 /** In-memory destination capturing each emitted NDJSON line as a parsed entry. */
 function createCapture(name = 'capture'): {

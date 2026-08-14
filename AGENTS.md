@@ -44,7 +44,7 @@ Host App (NestJS)
 │
 ├── Consumer provides (via forRootAsync options):
 │   ├── service: { name, version }  (required)
-│   ├── destinations?: ILogDestination[]  (optional — defaults to stdout JSON)
+│   ├── destinations?: ILogDestination[]  (optional — REPLACES the stdout JSON default)
 │   └── level?, redactPaths?, http?, otel?, ...
 ```
 
@@ -52,8 +52,8 @@ Host App (NestJS)
 
 1. `BymaxLoggerModule.forRootAsync()` → `ConfigurableModuleBuilder` resolves options
 2. `validateOptions()` → `applyDefaults()` → `buildPinoInstance()` (with mixin for ALS + OTel)
-3. `DestinationRegistry.onModuleInit()` → calls `onInit()` on all destinations
-4. Bootstrap log: `LOGGER_BOOTSTRAP_OK` emitted
+3. `DestinationRegistry.onModuleInit()` → calls `onInit()` on all destinations; a rejection is recorded in `DestinationHealth` and reported to stderr, never through the logger
+4. Bootstrap log: `LOGGER_BOOTSTRAP_OK` emitted — **after** step 3, so a total init failure has already elected its stdout fallback and these entries survive it
 
 ### Request Flow
 
@@ -107,10 +107,13 @@ class MyDestination implements ILogDestination {
 
   async onInit(): Promise<void> {
     // open connection / allocate buffer
+    // throwing here is legitimate: the sink is dropped from the fan-out and the
+    // reason is reported to stderr — it never aborts application bootstrap
   }
 
   write(payload: string): void {
-    // non-blocking; errors are caught by DestinationRegistry
+    // non-blocking; errors are contained by destinationToStream
+    // not called at all if onInit() rejected
   }
 
   async onShutdown(): Promise<void> {
@@ -121,17 +124,27 @@ class MyDestination implements ILogDestination {
 
 ### Error Handling — Never Crash the App
 
+Failures are contained in `destinationToStream`, the `Writable` wrapper each destination is given
+in the `pino.multistream` fan-out — NOT in `DestinationRegistry`, which owns only the
+`onInit`/`onShutdown` lifecycle.
+
 ```typescript
-// DestinationRegistry wraps every write():
+// destinationToStream wraps every write():
 try {
-  await destination.write(payload)
-} catch (err) {
-  metaLogger.error(
-    { logKey: LOGGER_ERROR_CODES.LOGGER_DESTINATION_WRITE_FAILED, err },
-    'Destination write failed'
-  )
+  destination.write(payload)
+} catch (cause) {
+  // stderr, NEVER through the logger — a broken sink must not be able to create
+  // a write → log → write feedback loop, and `destinations` REPLACES the default
+  // stdout sink, so the logger's own sinks may be the ones that are broken.
+  reportDestinationFailure(RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED, name, cause, msg)
 }
+// The stream callback is then invoked WITHOUT an error: propagating it would make
+// the wrapper emit an unhandled 'error' event, which crashes the host.
 ```
+
+The same reporting path serves `onInit` failures (`LOGGER_DESTINATION_INIT_FAILED`), so both stages
+share one wire shape. If **no** destination initializes, entries fall back to raw NDJSON on stdout
+rather than disappearing — see `DestinationHealth`.
 
 ---
 
@@ -244,13 +257,14 @@ the strict `attw` profile, which covers that mode — never weaken it with
 
 ### Security
 
-| Pitfall                                | Fix                                                                |
-| -------------------------------------- | ------------------------------------------------------------------ |
-| Consumer disables default redact paths | Warn in JSDoc; require explicit `shouldDisableDefaultRedact: true` |
-| Raw OTel trace ID from HTTP headers    | Always validate with `isValidTraceId`                              |
-| Destination `write()` that throws      | Wrapped by `DestinationRegistry` — safe, logs meta-error           |
-| Logging full Error objects             | Use `sanitizeError(err)` before passing to Pino                    |
-| New sink that hands a string to Pino   | Route it through `toSingleLineMessage` — the escaping is per-sink  |
+| Pitfall                                | Fix                                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Consumer disables default redact paths | Warn in JSDoc; require explicit `shouldDisableDefaultRedact: true`                          |
+| Raw OTel trace ID from HTTP headers    | Always validate with `isValidTraceId`                                                       |
+| Destination `write()` that throws      | Wrapped by `destinationToStream` — contained, reported to stderr                            |
+| Destination whose `onInit()` rejects   | Dropped from the fan-out, reported to stderr; if NONE init, raw NDJSON falls back to stdout |
+| Logging full Error objects             | Use `sanitizeError(err)` before passing to Pino                                             |
+| New sink that hands a string to Pino   | Route it through `toSingleLineMessage` — the escaping is per-sink                           |
 
 ### Architecture
 

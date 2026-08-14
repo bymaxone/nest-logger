@@ -14,42 +14,58 @@
  * wrapper `Writable` emit an unhandled `'error'` event, which crashes the process.
  * The report goes to stderr — NEVER back through the logger — so a broken
  * destination cannot create a write → log → write feedback loop.
+ *
+ * Init health (`DestinationHealth`) is consulted BEFORE the destination is
+ * called, which is what keeps a failed sink out of the fan-out and what makes a
+ * total init failure degrade to raw NDJSON instead of silence. See the health
+ * record's own documentation for why the check lives here rather than in the
+ * multistream.
  */
 import { Writable } from 'node:stream'
 
+import { reportDestinationFailure } from './report-destination-failure.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
+import type { DestinationHealth } from '../services/destination-health.service'
 
 /**
- * Report one destination write failure to `process.stderr` as a structured
- * `LOGGER_DESTINATION_WRITE_FAILED` line — one line per failed write (not
+ * Report one destination write failure — one line per failed write (not
  * throttled, so a sustained outage stays visible rather than silently dropping).
- * Writes to stderr directly (the safe sink), never through the logger, to avoid a
- * write-failure feedback loop, and swallows any error from stderr itself so the
- * fail-soft contract holds even when the safe sink is broken.
+ *
+ * Formatting and the stderr-vs-logger reasoning live in
+ * {@link reportDestinationFailure}, shared with the registry's init-failure path
+ * so both stages emit the same wire shape.
  *
  * @param name - The failing destination's name.
  * @param cause - The thrown or rejected value.
  */
 function reportWriteFailure(name: string, cause: unknown): void {
-  const err =
-    cause instanceof Error
-      ? { type: cause.name, message: cause.message }
-      : { type: 'UnknownError', message: String(cause) }
+  reportDestinationFailure(
+    RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+    name,
+    cause,
+    `Log destination "${name}" failed to write; the entry was dropped`
+  )
+}
+
+/**
+ * Write one entry directly to stdout because every destination failed to
+ * initialize and this one was elected to speak for them.
+ *
+ * The payload is the already-serialized NDJSON line, emitted verbatim: the point
+ * of a last resort is to lose nothing, and reformatting it here would need the
+ * very sink machinery that just failed. Errors from stdout are swallowed for the
+ * same reason `reportWriteFailure` swallows them — the fail-soft contract is
+ * absolute, and rescuing a log line must never become the crash it prevents.
+ *
+ * @param payload - The serialized, newline-terminated NDJSON entry.
+ */
+function rescueToStdout(payload: string): void {
   try {
-    process.stderr.write(
-      JSON.stringify({
-        level: 'error',
-        logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
-        destination: name,
-        err,
-        msg: `Log destination "${name}" failed to write; the entry was dropped`
-      }) + '\n'
-    )
+    process.stdout.write(payload)
   } catch {
-    // The safe sink itself can fail — e.g. EPIPE when stderr is a closed pipe
-    // (`node app | head`). Swallow it: the fail-soft contract is absolute, so
-    // reporting a dropped log must never become the crash it exists to prevent.
+    // Same EPIPE reasoning as reportWriteFailure: the safe sink can be a closed
+    // pipe, and that must not escalate into a crash.
   }
 }
 
@@ -57,11 +73,16 @@ function reportWriteFailure(name: string, cause: unknown): void {
  * Wrap a destination as a `Writable` consumable by `pino.multistream`.
  *
  * @param destination - The destination receiving each serialized NDJSON entry.
+ * @param health - Init-health record consulted before every write, so a sink that
+ *   failed `onInit` is skipped and a total failure is rescued to stdout.
  * @returns A `Writable` that forwards every chunk to `destination.write`,
  *   awaiting async writes and containing per-destination failures fail-soft
  *   (reported to stderr, never propagated as a crashing stream error).
  */
-export function destinationToStream(destination: ILogDestination): Writable {
+export function destinationToStream(
+  destination: ILogDestination,
+  health: DestinationHealth
+): Writable {
   return new Writable({
     // Keep string chunks as strings (Node's default re-encodes them to Buffers
     // before `_write`): the common Pino path emits NDJSON strings, so this skips
@@ -83,6 +104,17 @@ export function destinationToStream(destination: ILogDestination): Writable {
       }
       try {
         const payload = typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
+        // A sink that failed `onInit` never became live, so it is skipped rather
+        // than written to — its `write()` may assume resources never acquired.
+        // When NOTHING initialized, the elected rescuer emits the raw entry to
+        // stdout: without it, one bad destination silences the whole application.
+        if (health.isFailed(destination)) {
+          if (health.shouldRescue(destination)) {
+            rescueToStdout(payload)
+          }
+          callback()
+          return
+        }
         const result = destination.write(payload)
         if (result instanceof Promise) {
           result.then(() => callback(), onFailure)

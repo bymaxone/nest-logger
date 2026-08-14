@@ -8,12 +8,23 @@
  * traffic and flushed in reverse order at shutdown.
  *
  * Failure policy: a destination that throws during `onInit` is dropped from the
- * active set and reported via `LOGGER_DESTINATION_INIT_FAILED` — boot is NEVER
- * aborted (degraded logging is preferred over a crashed application).
+ * active set, removed from the write fan-out, and reported as
+ * `LOGGER_DESTINATION_INIT_FAILED` **directly to `process.stderr`** — boot is
+ * NEVER aborted (degraded logging is preferred over a crashed application).
+ *
+ * The report does not go through `this.logger`, and that is the whole fix rather
+ * than a stylistic choice. `destinations` REPLACES the default stdout sink, so
+ * the sinks that just failed may be the only ones there are; routing the
+ * explanation back through them is what turned a misconfiguration into an
+ * application that boots, runs, exits 0 and writes nothing anywhere — with the
+ * diagnostic naming the cause delivered into the dead sink. It is the same
+ * reasoning `destinationToStream` already applies to write failures, and the
+ * same reasoning the shutdown path below already applies to teardown failures.
  */
 import { Inject, Injectable } from '@nestjs/common'
 import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common'
 
+import { DestinationHealth } from './destination-health.service'
 import { PinoLoggerService } from './pino-logger.service'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import {
@@ -23,6 +34,7 @@ import {
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { detectOtelTraceApi } from '../utils/otel-detector'
+import { reportDestinationFailure } from '../utils/report-destination-failure.util'
 
 /**
  * Coordinates destination initialization and graceful shutdown.
@@ -36,12 +48,10 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
   /**
    * Destinations that initialized successfully, in registration order.
    *
-   * Note: the Pino multistream is built from the full registered list, and the
-   * write path is independently fail-soft (see `destinationToStream`). This set
-   * is the authoritative record of init success — it drives reverse-order
-   * shutdown — but is not currently used to remove a failed-init sink from the
-   * write fan-out; a sink that failed `onInit` still receives writes, contained
-   * fail-soft by the wrapper.
+   * Authoritative for BOTH shutdown (reverse order) and — via the shared
+   * `DestinationHealth` record written alongside it — the write fan-out. The two
+   * are kept in step here because the multistream itself is wired before any
+   * `onInit` runs and cannot be rebuilt afterwards; see `DestinationHealth`.
    */
   private readonly active: ILogDestination[] = []
 
@@ -49,35 +59,67 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * @param registered - Every destination declared under
    *   `LOGGER_DESTINATIONS_TOKEN`. Injected by token explicitly because the
    *   package is bundled without `emitDecoratorMetadata`.
-   * @param logger - Structured logger used to report init failures. Injected by
-   *   token explicitly for the same bundling reason.
+   * @param logger - Structured logger used for the bootstrap entries. Injected by
+   *   token explicitly for the same bundling reason. Deliberately NOT used to
+   *   report init failures — see the file-level note.
+   * @param options - Resolved module options, read for the bootstrap warnings and
+   *   for each destination's effective level.
+   * @param health - Init-health record shared with the write fan-out.
    */
   constructor(
     @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly registered: readonly ILogDestination[],
     @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
-    @Inject(LOGGER_OPTIONS_TOKEN) private readonly options: ResolvedBymaxLoggerModuleOptions
+    @Inject(LOGGER_OPTIONS_TOKEN) private readonly options: ResolvedBymaxLoggerModuleOptions,
+    @Inject(DestinationHealth) private readonly health: DestinationHealth
   ) {}
 
   /**
    * Initialize every registered destination. A destination whose `onInit`
-   * rejects is skipped (not added to the active set) and reported — it must not
-   * block application bootstrap.
+   * rejects is skipped (not added to the active set), marked failed so the
+   * fan-out stops writing to it, and reported to stderr — it must not block
+   * application bootstrap.
+   *
+   * The loop completes BEFORE {@link announceBootstrap}, and that ordering is
+   * load-bearing rather than incidental: the health record is what lets a
+   * last-resort sink carry the bootstrap entries when every destination failed.
+   * Announcing first would emit them into a fan-out that has not yet been told
+   * anything is wrong, and `LOGGER_BOOTSTRAP_WARNING` — the signal that exists so
+   * a security review can see PII redaction was disabled — would be lost exactly
+   * when the configuration is already known to be broken.
    */
   async onModuleInit(): Promise<void> {
     for (const destination of this.registered) {
       try {
         await destination.onInit?.()
         this.active.push(destination)
+        this.health.markHealthy()
       } catch (cause) {
-        this.logger.errorStructured(
-          RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-          cause instanceof Error ? cause : new Error(String(cause)),
-          undefined,
-          { destination: destination.name }
-        )
+        this.health.markFailed(destination, destination.minLevel ?? this.options.level)
+        this.reportInitFailure(destination.name, cause)
       }
     }
     this.announceBootstrap()
+  }
+
+  /**
+   * Report one destination init failure as a structured
+   * `LOGGER_DESTINATION_INIT_FAILED` line on `process.stderr`.
+   *
+   * Shares {@link reportDestinationFailure} with the write-failure path rather
+   * than restating the shape, so an operator greps one `logKey` regardless of
+   * which stage failed — and the two cannot drift apart.
+   *
+   * @param name - The failing destination's name.
+   * @param cause - The thrown or rejected value.
+   */
+  private reportInitFailure(name: string, cause: unknown): void {
+    reportDestinationFailure(
+      RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+      name,
+      cause,
+      `Log destination "${name}" failed to initialize and will receive no entries. ` +
+        'If no destination initializes, entries fall back to raw NDJSON on stdout.'
+    )
   }
 
   /**
