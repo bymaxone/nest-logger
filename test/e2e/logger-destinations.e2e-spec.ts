@@ -197,9 +197,7 @@ describe('Logger E2E — custom destinations', () => {
    * stream — with the diagnostic explaining why delivered into the dead sink.
    *
    * Everything the run produces must now be accounted for: the entries fall back
-   * to raw NDJSON on stdout (including the bootstrap announcement, whose
-   * `LOGGER_BOOTSTRAP_WARNING` sibling exists so a security review can see that
-   * PII redaction was disabled), and stderr names the cause.
+   * to raw NDJSON on stdout, and stderr names the cause.
    */
   'falls back to raw NDJSON on stdout when every destination fails to initialize', async () => {
     const stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
@@ -216,6 +214,45 @@ describe('Logger E2E — custom destinations', () => {
       expect(stderrSpy.mock.calls.map((call) => call[0] as string).join('')).toContain(
         'LOGGER_DESTINATION_INIT_FAILED'
       )
+    } finally {
+      stdoutSpy.mockRestore()
+      stderrSpy.mockRestore()
+    }
+  })
+
+  it(/*
+   * REGRESSION — the audit signal itself, which the case above names as its
+   * justification but does not assert.
+   *
+   * `LOGGER_BOOTSTRAP_WARNING` exists so a security review can see that PII
+   * redaction was turned off, and losing it was the reason the silent-sink defect
+   * outranked the feature that surfaced it. The test above pins
+   * `LOGGER_BOOTSTRAP_OK` instead — the same path, so the guarantee is covered
+   * transitively, but a future reader could weaken that assertion without noticing
+   * which promise was surrendered. This one asserts the promise directly.
+   *
+   * Uses `shouldDisableDefaultRedact` rather than an absent `@opentelemetry/api`
+   * to make the warning fire: the OTel route depends on which peers happen to
+   * resolve in the runner, while this one is deterministic — and it is the warning
+   * with an actual audit consequence.
+   */
+  'rescues the PII-redaction-disabled warning when every destination fails', async () => {
+    const stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
+    const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+    try {
+      await bootApp({
+        destinations: [new FailingInitDestination()],
+        shouldDisableDefaultRedact: true
+      })
+
+      const warning = parseNdjson(stdoutSpy).find(
+        (entry) => entry['logKey'] === 'LOGGER_BOOTSTRAP_WARNING'
+      )
+      expect(warning).toBeDefined()
+      // The payload is what a reviewer reads, so the flag and the level are part
+      // of the guarantee, not just the key.
+      expect(warning?.['shouldDisableDefaultRedact']).toBe(true)
+      expect(warning?.['level']).toBe('warn')
     } finally {
       stdoutSpy.mockRestore()
       stderrSpy.mockRestore()

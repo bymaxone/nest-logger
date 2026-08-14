@@ -149,6 +149,17 @@ pnpm add @opentelemetry/api @opentelemetry/sdk-node
 
 ```
 
+> ⚠️ **`-D` does not make it absent in production.** Under pnpm, `pnpm prune --prod` removes the
+> **top-level link** but leaves the package in the store, linked beside this library as the resolved
+> optional peer — and `PrettyDevDestination` imports it lazily, relative to the library's own
+> directory, so it resolves. Verified inside a real pruned production image by a consumer who had
+> assumed the opposite.
+>
+> So "it is a devDependency, therefore this path cannot run in production" is **not** a safe premise.
+> A `PrettyDevDestination` left registered in production will not crash and will not warn: it renders
+> ANSI colour into a log pipeline that has silently failed to parse every line since the deploy. Gate
+> it on an explicit configuration value you can see, not on the packaging.
+
 > [!NOTE]
 > `@opentelemetry/api` is resolved lazily when the Pino instance is built. When it is absent the trace mixin silently steps aside — the logger never fails to start, and never warns, over an optional peer.
 
