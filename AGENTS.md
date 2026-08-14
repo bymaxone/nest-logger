@@ -44,7 +44,7 @@ Host App (NestJS)
 │
 ├── Consumer provides (via forRootAsync options):
 │   ├── service: { name, version }  (required)
-│   ├── destinations?: ILogDestination[]  (optional — defaults to stdout JSON)
+│   ├── destinations?: ILogDestination[]  (optional — REPLACES the stdout JSON default)
 │   └── level?, redactPaths?, http?, otel?, ...
 ```
 
@@ -52,8 +52,8 @@ Host App (NestJS)
 
 1. `BymaxLoggerModule.forRootAsync()` → `ConfigurableModuleBuilder` resolves options
 2. `validateOptions()` → `applyDefaults()` → `buildPinoInstance()` (with mixin for ALS + OTel)
-3. `DestinationRegistry.onModuleInit()` → calls `onInit()` on all destinations
-4. Bootstrap log: `LOGGER_BOOTSTRAP_OK` emitted
+3. `DestinationRegistry.onModuleInit()` → calls `onInit()` on all destinations; a rejection is recorded in `DestinationHealth` and reported to stderr, never through the logger
+4. Bootstrap log: `LOGGER_BOOTSTRAP_OK` emitted — **after** step 3, so a total init failure has already elected its stdout fallback and these entries survive it
 
 ### Request Flow
 
@@ -244,13 +244,14 @@ the strict `attw` profile, which covers that mode — never weaken it with
 
 ### Security
 
-| Pitfall                                | Fix                                                                |
-| -------------------------------------- | ------------------------------------------------------------------ |
-| Consumer disables default redact paths | Warn in JSDoc; require explicit `shouldDisableDefaultRedact: true` |
-| Raw OTel trace ID from HTTP headers    | Always validate with `isValidTraceId`                              |
-| Destination `write()` that throws      | Wrapped by `DestinationRegistry` — safe, logs meta-error           |
-| Logging full Error objects             | Use `sanitizeError(err)` before passing to Pino                    |
-| New sink that hands a string to Pino   | Route it through `toSingleLineMessage` — the escaping is per-sink  |
+| Pitfall                                | Fix                                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Consumer disables default redact paths | Warn in JSDoc; require explicit `shouldDisableDefaultRedact: true`                          |
+| Raw OTel trace ID from HTTP headers    | Always validate with `isValidTraceId`                                                       |
+| Destination `write()` that throws      | Wrapped by `destinationToStream` — contained, reported to stderr                            |
+| Destination whose `onInit()` rejects   | Dropped from the fan-out, reported to stderr; if NONE init, raw NDJSON falls back to stdout |
+| Logging full Error objects             | Use `sanitizeError(err)` before passing to Pino                                             |
+| New sink that hands a string to Pino   | Route it through `toSingleLineMessage` — the escaping is per-sink                           |
 
 ### Architecture
 

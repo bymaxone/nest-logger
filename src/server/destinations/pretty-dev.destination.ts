@@ -72,6 +72,15 @@ export class PrettyDevDestination implements ILogDestination {
       // ships as `export =`, so a dynamic `import(...).default` is not typed,
       // whereas `.build` is a declared namespace export with the same factory.
       //
+      // This runs pino-pretty as a MAIN-THREAD transform, which is a documented
+      // pino-pretty API but NOT the form Pino's own docs recommend — those show
+      // `transport: { target: 'pino-pretty' }`, a worker thread. That form is
+      // unreachable here by construction: this library owns the Pino instance and
+      // fans out through `pino.multistream`, which does not compose with
+      // `transport`. The cost is that prettifying happens on the logging thread,
+      // which is acceptable for the development-only sink this is and is the
+      // reason it should never be registered in production.
+      //
       // `destination: process.stdout` makes pino-pretty render the prettified
       // line through Node's stdout stream. Piping the transform's readable side
       // instead (`stream.pipe(process.stdout)`) would leak the RAW NDJSON to
@@ -86,9 +95,17 @@ export class PrettyDevDestination implements ILogDestination {
         destination: process.stdout
       })
     } catch {
-      // Mark as failed so subsequent writes are dropped (not fallen back to
-      // stdout): the registry drops this destination from its active set, and a
-      // failed pretty sink must not silently duplicate raw NDJSON to stdout.
+      // Mark as failed so subsequent writes are dropped rather than falling back
+      // to raw stdout here. Duplication is the reason: when a stdout sink IS also
+      // registered, a fallback would print every entry twice.
+      //
+      // Dropping is safe because it is no longer the last word. `DestinationHealth`
+      // now holds the only case where dropping would have meant silence — this
+      // sink being the ONLY one, which `destinations` replacing the default stdout
+      // sink makes easy to arrive at by accident — and rescues those entries as
+      // raw NDJSON from the fan-out, above this method. Before that existed, this
+      // line was the last link in a chain that lost every log the application
+      // produced.
       this.initFailed = true
       throw new Error(
         '[PrettyDevDestination] pino-pretty is not installed. Install it as a peer ' +
@@ -102,8 +119,10 @@ export class PrettyDevDestination implements ILogDestination {
    *
    * Three states:
    *   - initialized → forward to the pino-pretty transform;
-   *   - init failed → DROP (the destination was removed from the active set, so
-   *     it must not duplicate raw NDJSON to stdout);
+   *   - init failed → DROP, so a co-registered stdout sink is not duplicated. The
+   *     fan-out already skips a failed destination before reaching this method
+   *     (and rescues the entry when nothing else initialized); this branch is the
+   *     belt to that, for any caller holding the destination directly;
    *   - pre-init (transient window before {@link onInit}, e.g. a bootstrap log)
    *     → fall back to raw stdout so the entry is not lost.
    *

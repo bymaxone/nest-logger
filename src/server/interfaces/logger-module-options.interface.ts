@@ -148,15 +148,22 @@ export interface BymaxLoggerModuleOptions {
   redactCensor?: string
   /** Disable default redact paths (use with caution). Default: false. */
   shouldDisableDefaultRedact?: boolean
-  /** Custom destinations beyond `DefaultStdoutDestination`. */
-  destinations?: readonly ILogDestination[]
   /**
-   * @deprecated Currently inert — a `true` value does not change output on its
-   *   own. For pretty local logs add `new PrettyDevDestination()` to
-   *   `destinations` (and install the optional `pino-pretty` peer dep).
-   *   Default: `NODE_ENV !== 'production'`.
+   * The sinks every entry is written to.
+   *
+   * A non-empty list **REPLACES** `DefaultStdoutDestination` — it does not add to
+   * it. That is deliberate: a file-only or socket-only deployment has to be able
+   * to turn stdout off. It also means a sink supplied here may be the only one
+   * the application has, so a destination that fails `onInit` is reported on
+   * stderr and, if nothing else initialized, entries fall back to raw NDJSON on
+   * stdout rather than disappearing.
+   *
+   * Include `new DefaultStdoutDestination()` explicitly to keep structured stdout
+   * alongside a custom sink.
+   *
+   * Default: `[new DefaultStdoutDestination()]`.
    */
-  isPretty?: boolean
+  destinations?: readonly ILogDestination[]
   /** HTTP module configuration. */
   http?: HttpOptions
   /** OpenTelemetry integration tuning. */

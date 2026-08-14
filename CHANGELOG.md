@@ -11,6 +11,60 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-08-14
+
+### Fixed
+
+- **A destination that fails to initialize no longer silences the entire application.** Reported
+  by a consumer while wiring pretty local output, and reproduced end to end: `destinations`
+  **replaces** the default stdout sink, so `destinations: [new PrettyDevDestination()]` without the
+  optional `pino-pretty` installed left the app booting, running, exiting `0` and writing **not one
+  byte to stdout or stderr** — including the `LOGGER_DESTINATION_INIT_FAILED` entry that exists to
+  explain exactly this, which was delivered into the dead sink. Not a crash and not a degraded
+  mode: silence that looks like a quiet service.
+
+  Four independently reasonable behaviours composed into it — `destinations` replacing rather than
+  adding, the failure being reported through `this.logger`, the multistream being built from the
+  full registered list (it is wired while NestJS builds the DI graph, before any `onInit` runs), and
+  a failed sink dropping its writes. Three changes break the chain:
+
+  - the init failure is written **directly to `process.stderr`**, matching what the shutdown path
+    and the write path already do, and for the same reason — reporting a broken sink through the
+    sink set is a feedback loop;
+  - a destination whose `onInit` rejected is **excluded from the write fan-out**;
+  - when **no** destination initializes, entries **fall back to raw NDJSON on stdout**, so a
+    misconfiguration degrades visibly instead of going quiet. The fallback is elected before the
+    bootstrap entries are announced, so `LOGGER_BOOTSTRAP_WARNING` — the signal that PII redaction
+    was disabled — survives the failure it would otherwise have been lost to.
+
+  The defect belonged to `destinations` as a general contract, not to `PrettyDevDestination`: any
+  consumer-written sink that failed `onInit` as the only registered destination did the same thing.
+  `pino-pretty` remains an optional peer and nothing was added to `dependencies`, which stays `{}`.
+
+### Breaking
+
+- **`isPretty` is removed from `BymaxLoggerModuleOptions`.** It has been `@deprecated` and **inert**
+  — a `true` value never changed any output on its own. An option that does nothing is worse than
+  an absent one, because it is a knob a consumer turns and then reasons from.
+
+  **Migration:** delete the option. Nothing about your output changes, because nothing about your
+  output depended on it. For pretty local logs, add `new PrettyDevDestination()` to `destinations`
+  and install the optional `pino-pretty` peer — which is what the option's own documentation had
+  been telling you to do.
+
+  Type-level only: `applyDefaults` no longer emits the field, and no runtime behaviour is affected.
+
+### Documentation
+
+- **`destinations` documents that it REPLACES the default stdout sink**, rather than claiming to add
+  "custom destinations beyond `DefaultStdoutDestination`". Replacement is the correct behaviour — a
+  file-only or socket-only deployment must be able to turn stdout off — but the doc described the
+  opposite, and it is the assumption that makes the failure above easy to arrive at.
+- **`PrettyDevDestination` no longer implies it follows Pino's recommended transport form.** It runs
+  `pino-pretty` as a main-thread transform, a documented pino-pretty API; Pino's own docs recommend
+  `transport: { target: 'pino-pretty' }` in a worker, which is unreachable here because this library
+  owns the Pino instance and fans out through `pino.multistream`.
+
 ## [1.2.2] - 2026-08-13
 
 ### Added
@@ -814,7 +868,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/bymaxone/nest-logger/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/bymaxone/nest-logger/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/bymaxone/nest-logger/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/bymaxone/nest-logger/compare/v1.1.0...v1.2.0

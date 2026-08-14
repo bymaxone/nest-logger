@@ -21,6 +21,7 @@ import { REDACT_COMMON_FIELDS } from './constants/default-redact-paths.constants
 import type { ILogDestination } from './interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from './interfaces/logger-module-options.interface'
 import { createTraceContextMixin } from './mixins/trace-context.mixin'
+import type { DestinationHealth } from './services/destination-health.service'
 import type { LogContextService } from './services/log-context.service'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { destinationToStream } from './utils/destination-to-stream'
@@ -441,12 +442,17 @@ export function resolveRedactOption(
  * @param destinations - Non-empty list of sinks to fan out to. The registry
  *   (`DestinationRegistry`) owns their `onInit` / `onShutdown` lifecycle; this
  *   factory only wires their streams.
+ * @param health - Init-health record shared with the registry. This factory runs
+ *   while NestJS builds the DI graph — before any `onInit` — so the fan-out is
+ *   necessarily wired from the full list and each stream consults the record at
+ *   write time instead.
  * @returns A configured Pino logger writing structured JSON to every destination.
  */
 export function buildPinoInstance(
   options: ResolvedBymaxLoggerModuleOptions,
   logContext: LogContextService,
-  destinations: readonly ILogDestination[]
+  destinations: readonly ILogDestination[],
+  health: DestinationHealth
 ): PinoLogger {
   const maxBytes = options.maxEntrySizeBytes
   const redact = resolveNameRedactor(options)
@@ -547,7 +553,7 @@ export function buildPinoInstance(
 
   const streams = destinations.map((destination) => ({
     level: destination.minLevel ?? options.level,
-    stream: destinationToStream(destination)
+    stream: destinationToStream(destination, health)
   }))
 
   return pino(pinoOptions, pino.multistream(streams))

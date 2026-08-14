@@ -72,6 +72,21 @@ describe('Logger E2E — custom destinations', () => {
   })
 
   /** Boot the module with the given overrides and return the app. */
+  /**
+   * Parse the NDJSON entries a stream spy captured, ignoring anything that is not
+   * a JSON object.
+   *
+   * The app boots with `logger: false`, so today every byte on these streams is
+   * ours. The guard is for tomorrow: an unrelated line would otherwise fail the
+   * test with a `JSON.parse` error instead of the assertion that actually matters.
+   */
+  function parseNdjson(spy: jest.SpyInstance): Record<string, unknown>[] {
+    return spy.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.startsWith('{'))
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+  }
+
   async function bootApp(overrides: Partial<BymaxLoggerModuleOptions>): Promise<INestApplication> {
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -142,21 +157,68 @@ describe('Logger E2E — custom destinations', () => {
 
   it(/*
    * A destination whose `onInit` throws must NOT crash the app: boot succeeds, a
-   * `LOGGER_DESTINATION_INIT_FAILED` meta-log naming the offender is emitted, and
-   * the healthy destination keeps receiving subsequent logs.
+   * `LOGGER_DESTINATION_INIT_FAILED` report naming the offender reaches STDERR,
+   * and the healthy destination keeps receiving subsequent logs.
+   *
+   * The report goes to stderr rather than through the logger because the sinks
+   * that just failed may be the only ones the application has — see the
+   * total-failure case below, which is what that choice exists for.
    */
   'isolates a destination that fails to initialize', async () => {
-    const collector = new CollectorDestination()
-    const failing = new FailingInitDestination()
-    // Collector first so it initializes and remains active to capture the meta-log.
-    const booted = await bootApp({ destinations: [collector, failing] })
+    const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+    try {
+      const collector = new CollectorDestination()
+      const failing = new FailingInitDestination()
+      const booted = await bootApp({ destinations: [collector, failing] })
 
-    booted.get(PinoLoggerService, { strict: false }).info('AFTER_FAIL', 'still works')
+      booted.get(PinoLoggerService, { strict: false }).info('AFTER_FAIL', 'still works')
 
-    const entries = collector.entries()
-    const metaLog = entries.find((entry) => entry['logKey'] === 'LOGGER_DESTINATION_INIT_FAILED')
-    expect(metaLog).toBeDefined()
-    expect(metaLog?.['destination']).toBe('failing-init')
-    expect(entries.some((entry) => entry['logKey'] === 'AFTER_FAIL')).toBe(true)
+      const reports = parseNdjson(stderrSpy).filter(
+        (entry) => entry['logKey'] === 'LOGGER_DESTINATION_INIT_FAILED'
+      )
+      expect(reports).toHaveLength(1)
+      expect(reports[0]?.['destination']).toBe('failing-init')
+
+      const entries = collector.entries()
+      expect(entries.some((entry) => entry['logKey'] === 'AFTER_FAIL')).toBe(true)
+      // The healthy sink must not receive the failure report — routing it back
+      // through the logger is what created the feedback loop this replaced.
+      expect(entries.some((e) => e['logKey'] === 'LOGGER_DESTINATION_INIT_FAILED')).toBe(false)
+    } finally {
+      stderrSpy.mockRestore()
+    }
+  })
+
+  it(/*
+   * REGRESSION — the defect that motivated the health record, end to end. Reported
+   * by the community-core backend and reproduced here: `destinations` REPLACES the
+   * default stdout sink, so a sole destination that fails `onInit` used to leave
+   * the application booting, running, exiting 0 and writing NOTHING to either
+   * stream — with the diagnostic explaining why delivered into the dead sink.
+   *
+   * Everything the run produces must now be accounted for: the entries fall back
+   * to raw NDJSON on stdout (including the bootstrap announcement, whose
+   * `LOGGER_BOOTSTRAP_WARNING` sibling exists so a security review can see that
+   * PII redaction was disabled), and stderr names the cause.
+   */
+  'falls back to raw NDJSON on stdout when every destination fails to initialize', async () => {
+    const stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
+    const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+    try {
+      const booted = await bootApp({ destinations: [new FailingInitDestination()] })
+
+      booted.get(PinoLoggerService, { strict: false }).info('AFTER_TOTAL_FAIL', 'still works')
+
+      const rescued = parseNdjson(stdoutSpy)
+      expect(rescued.map((entry) => entry['logKey'])).toEqual(
+        expect.arrayContaining(['LOGGER_BOOTSTRAP_OK', 'AFTER_TOTAL_FAIL'])
+      )
+      expect(stderrSpy.mock.calls.map((call) => call[0] as string).join('')).toContain(
+        'LOGGER_DESTINATION_INIT_FAILED'
+      )
+    } finally {
+      stdoutSpy.mockRestore()
+      stderrSpy.mockRestore()
+    }
   })
 })

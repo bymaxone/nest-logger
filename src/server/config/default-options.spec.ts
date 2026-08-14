@@ -32,22 +32,19 @@ describe('applyDefaults', () => {
     expect(result.redactCensor).toBe('[REDACTED]')
     expect(result.shouldDisableDefaultRedact).toBe(false)
     expect(result.destinations).toEqual([])
-    expect(result.isPretty).toBe(true)
     expect(result.maxEntrySizeBytes).toBe(65_536)
     expect(typeof result.timestamp).toBe('function')
     expect(typeof result.timestamp()).toBe('string')
   })
 
   it(/*
-   * In production NODE_ENV the level default flips to `info` and pretty
-   * mode flips off — protects against accidental verbose / pretty logs
-   * being shipped to production.
+   * In production NODE_ENV the level default flips to `info` — protects
+   * against accidental verbose logs being shipped to production.
    */
-  'should default to info + pretty=false in production', () => {
+  'should default to info in production', () => {
     process.env['NODE_ENV'] = 'production'
     const result = applyDefaults(baseOptions)
     expect(result.level).toBe('info')
-    expect(result.isPretty).toBe(false)
   })
 
   it(/*
@@ -63,7 +60,6 @@ describe('applyDefaults', () => {
       redactPaths: ['*.foo'],
       redactCensor: '[X]',
       shouldDisableDefaultRedact: true,
-      isPretty: true,
       maxEntrySizeBytes: 1024
     })
     expect(result.level).toBe('warn')
@@ -72,7 +68,6 @@ describe('applyDefaults', () => {
     expect(result.redactPaths).toEqual(['*.foo'])
     expect(result.redactCensor).toBe('[X]')
     expect(result.shouldDisableDefaultRedact).toBe(true)
-    expect(result.isPretty).toBe(true)
     expect(result.maxEntrySizeBytes).toBe(1024)
   })
 

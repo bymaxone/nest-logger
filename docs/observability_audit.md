@@ -180,19 +180,19 @@ Legend: ✅ implemented correctly · ⚠️ implemented but should be improved �
 
 ### 2.1 Structured logging
 
-| Capability                   | Status | Notes                                                                                                                   |
-| ---------------------------- | :----: | ----------------------------------------------------------------------------------------------------------------------- |
-| Structured JSON output       |   ✅   | NDJSON, one object per line.                                                                                            |
-| Pino 10 integration          |   ✅   | Idiomatic: `mixin` for ambient data, `formatters.level`, `base`, `multistream`.                                         |
-| Consistent levels / severity |   ⚠️   | Six Pino levels, emitted as a **string label only**. No `SeverityNumber`. See [O-6](#o-6).                              |
-| Child loggers                |   ✅   | `PinoLoggerService.child()` + `@InjectLogger(ctx)` auto-provider. Avoids the singleton `setContext()` race correctly.   |
-| Contextual metadata          |   ⚠️   | Works, but ALS `userId` is silently dropped — [C-1](#c-1).                                                              |
-| Error serialization          |   ⚠️   | `{ type, message, stack }` under `err`. Loses `cause` / `AggregateError.errors`; not semconv-named. [O-4](#o-4)         |
-| Stack traces                 |   ✅   | Present; `sanitizeError` scrubs `node_modules/` frames.                                                                 |
-| Custom serializers           |   ✅   | `options.serializers`, each wrapped by the size-bounded envelope.                                                       |
-| Custom destinations          |   ✅   | `ILogDestination` with lifecycle + fail-soft write path. Genuinely good design.                                         |
-| Prod vs dev formatting       |   ⚠️   | Only via `PrettyDevDestination` opt-in. `isPretty` is a **deprecated inert option**. Level default flips on `NODE_ENV`. |
-| Machine-readable schema      |   ⚠️   | Stable and consistent at runtime — but the **published `LogEntry` type does not match it**. [C-2](#c-2)                 |
+| Capability                   | Status | Notes                                                                                                                 |
+| ---------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------- |
+| Structured JSON output       |   ✅   | NDJSON, one object per line.                                                                                          |
+| Pino 10 integration          |   ✅   | Idiomatic: `mixin` for ambient data, `formatters.level`, `base`, `multistream`.                                       |
+| Consistent levels / severity |   ⚠️   | Six Pino levels, emitted as a **string label only**. No `SeverityNumber`. See [O-6](#o-6).                            |
+| Child loggers                |   ✅   | `PinoLoggerService.child()` + `@InjectLogger(ctx)` auto-provider. Avoids the singleton `setContext()` race correctly. |
+| Contextual metadata          |   ⚠️   | Works, but ALS `userId` is silently dropped — [C-1](#c-1).                                                            |
+| Error serialization          |   ⚠️   | `{ type, message, stack }` under `err`. Loses `cause` / `AggregateError.errors`; not semconv-named. [O-4](#o-4)       |
+| Stack traces                 |   ✅   | Present; `sanitizeError` scrubs `node_modules/` frames.                                                               |
+| Custom serializers           |   ✅   | `options.serializers`, each wrapped by the size-bounded envelope.                                                     |
+| Custom destinations          |   ✅   | `ILogDestination` with lifecycle + fail-soft write path. Genuinely good design.                                       |
+| Prod vs dev formatting       |   ⚠️   | Only via `PrettyDevDestination` opt-in. `isPretty` was removed (inert). Level default flips on `NODE_ENV`.            |
+| Machine-readable schema      |   ⚠️   | Stable and consistent at runtime — but the **published `LogEntry` type does not match it**. [C-2](#c-2)               |
 
 ### 2.2 Request context
 
@@ -631,9 +631,9 @@ head/tail sampling is not, and correctly does not exist here.
    consequential naming question (semconv attribute names for service/HTTP/error fields).
 4. **`LogContextService.set()` throws; `get()` does not.** Asymmetric failure modes on a logging
    primitive.
-5. **Public options that do nothing.** `isPretty`, `shouldUseAsNestLogger` (both already
-   `@deprecated`), `@LogContext`, `LOGGER_ERROR_CODES`. Deprecation was the right call for the
-   first two; the other two are simply unfinished.
+5. **Public options that do nothing.** `isPretty` (**removed** — it was inert, and an option a
+   consumer turns and then reasons from is worse than an absent one), `shouldUseAsNestLogger`
+   (still `@deprecated`), `@LogContext`, `LOGGER_ERROR_CODES`. The last two are simply unfinished.
 6. **Async path is not at parity with sync.** `forRootAsync` never auto-registers
    `HttpExceptionFilter`. The reasoning is documented and sound, but the asymmetry is a
    permanent DX trap.
@@ -1200,9 +1200,10 @@ Live a privileged destination.
 **No major version is required.** Every P0 and P1 item is additive or fixes behaviour that
 contradicted its own documentation. The only genuine break is the `LogEntry` type, which is a
 correction of a type that never described the runtime — a minor with an explicit note is
-proportionate. Deprecate before removing: `isPretty` and `shouldUseAsNestLogger` are already
-`@deprecated` and should be removed only at `2.0`, alongside `LOGGER_ERROR_CODES` and, if the
-decision goes that way, `@LogContext`.
+proportionate. Deprecate before removing: `isPretty` **was removed in the Unreleased line** (inert,
+type-only break, migration documented in the CHANGELOG); `shouldUseAsNestLogger` is still
+`@deprecated` and should go alongside `LOGGER_ERROR_CODES` and, if the decision goes that way,
+`@LogContext`.
 
 ---
 

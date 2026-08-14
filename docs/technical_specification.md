@@ -273,7 +273,7 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
    - base { service: { name, version, namespace?, instance: { id }? }, deployment: { environment: { name } }? } — the resolved resource identity, or the flat dotted attribute names under `resourceFormat: 'flat'` →
 5. The root Pino is created with multi-stream transport:
    - stdout JSON (always, unless overridden)
-   - pretty stream (if NODE_ENV !== 'production' or option.isPretty) →
+   - pretty stream (opt-in via `PrettyDevDestination` in `destinations`) →
 6. Custom destinations (ILogDestination[]) become additional Pino transports →
 7. PinoLoggerService is instantiated with a reference to the root Pino →
 8. LogContextService initializes AsyncLocalStorage<LogContext> →
@@ -568,7 +568,6 @@ export interface BymaxLoggerModuleOptions {
    * Force pretty-print output (overrides NODE_ENV auto-detection).
    * @default undefined — pretty enabled when NODE_ENV !== 'production'
    */
-  isPretty?: boolean
 
   /**
    * HTTP module configuration.
@@ -647,7 +646,6 @@ export interface BymaxLoggerModuleOptions {
 | `redactCensor`                      | `string`                      | `'[REDACTED]'`                                               | String that replaces sensitive values                                                                                |
 | `shouldDisableDefaultRedact`        | `boolean`                     | `false`                                                      | ⚠️ Do not use in prod without a strong reason                                                                        |
 | `destinations`                      | `ILogDestination[]`           | `[DefaultStdoutDestination]`                                 | + `PrettyDevDestination` auto in dev                                                                                 |
-| `isPretty`                          | `boolean`                     | `NODE_ENV !== 'production'`                                  | Manual override                                                                                                      |
 | `http.isEnabled`                    | `boolean`                     | `false`                                                      | Enables HTTP interceptor + filter                                                                                    |
 | `http.shouldCaptureExceptions`      | `boolean`                     | `true` (if `enabled`)                                        | Enables the exception filter                                                                                         |
 | `http.shouldGenerateRequestId`      | `boolean`                     | `true` (if `enabled`)                                        | Auto-generates `x-request-id`                                                                                        |
@@ -2151,7 +2149,7 @@ Errors the lib may throw (or record as a warning):
 | --------------------------------- | ---------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | `LOGGER_INVALID_OPTIONS`          | Throws at initialization     | `service.name` or `service.version` missing                                      | Add the required fields                                   |
 | `LOGGER_INVALID_LEVEL`            | Throws                       | `level` is not a valid Pino value                                                | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`  |
-| `LOGGER_PRETTY_UNAVAILABLE`       | Warn at initialization       | `isPretty: true` but `pino-pretty` not installed                                 | Install `pino-pretty` or disable `isPretty`               |
+| `LOGGER_PRETTY_UNAVAILABLE`       | Warn at initialization       | `PrettyDevDestination` registered but `pino-pretty` not installed                | Install `pino-pretty` or drop the destination             |
 | `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap            | `otel.shouldAutoInjectTraceContext: true` but `@opentelemetry/api` not installed | Install or disable `shouldAutoInjectTraceContext`         |
 | `LOGGER_DESTINATION_INIT_FAILED`  | Error log emitted by the lib | `destination.onInit()` rejects                                                   | Destination is removed from the registry; others continue |
 | `LOGGER_DESTINATION_WRITE_FAILED` | Warn                         | `destination.write()` throws                                                     | Entry skipped for that destination; others continue       |
@@ -2417,7 +2415,6 @@ import { BymaxLoggerModule } from '@bymax-one/nest-logger'
       service: { name: 'my-app-dev', version: 'dev' },
       level: 'debug',
       http: { isEnabled: true }
-      // isPretty: true is the default in NODE_ENV !== 'production'
     })
   ]
 })

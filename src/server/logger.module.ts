@@ -35,6 +35,7 @@ import type {
 import { BymaxLoggerModuleBase, BUILDER_OPTIONS_TOKEN } from './logger.module.builder'
 import type { ASYNC_OPTIONS_TYPE, OPTIONS_TYPE } from './logger.module.builder'
 import { buildPinoInstance, resolveNameRedactor } from './pino-factory'
+import { DestinationHealth } from './services/destination-health.service'
 import { DestinationRegistry } from './services/destination-registry.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
@@ -42,6 +43,12 @@ import { PinoLoggerService } from './services/pino-logger.service'
 /**
  * Pick the active destinations: the consumer's list, or the default stdout sink
  * when none were supplied.
+ *
+ * A non-empty `destinations` REPLACES the default stdout sink rather than adding
+ * to it — deliberately, so a file-only or socket-only deployment can turn stdout
+ * off. The consequence is that a consumer's sink is then the ONLY one there is,
+ * which is why an `onInit` failure must degrade visibly (see `DestinationHealth`)
+ * instead of leaving the application with nowhere to write.
  *
  * @param options - Resolved module options.
  * @returns A non-empty destinations list.
@@ -66,6 +73,10 @@ function buildCommonProviders(): Provider[] {
   return [
     LogContextService,
     { provide: LOG_CONTEXT_TOKEN, useExisting: LogContextService },
+    // Shared by the Pino factory (which closes over it in every fan-out stream)
+    // and by DestinationRegistry (which writes to it during onModuleInit). Both
+    // depend on this provider and it depends on nothing, so there is no cycle.
+    DestinationHealth,
     {
       // The DEFAULT-coverage redactor, shared by the Pino factory's hooks and by
       // `PinoLoggerService.child()`. The latter needs it as a provider because
@@ -80,9 +91,15 @@ function buildCommonProviders(): Provider[] {
       useFactory: (
         options: ResolvedBymaxLoggerModuleOptions,
         logContext: LogContextService,
-        destinations: readonly ILogDestination[]
-      ) => buildPinoInstance(options, logContext, destinations),
-      inject: [LOGGER_OPTIONS_TOKEN, LogContextService, LOGGER_DESTINATIONS_TOKEN]
+        destinations: readonly ILogDestination[],
+        health: DestinationHealth
+      ) => buildPinoInstance(options, logContext, destinations, health),
+      inject: [
+        LOGGER_OPTIONS_TOKEN,
+        LogContextService,
+        LOGGER_DESTINATIONS_TOKEN,
+        DestinationHealth
+      ]
     },
     {
       provide: LOGGER_DESTINATIONS_TOKEN,
