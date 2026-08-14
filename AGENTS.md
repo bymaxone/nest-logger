@@ -107,10 +107,13 @@ class MyDestination implements ILogDestination {
 
   async onInit(): Promise<void> {
     // open connection / allocate buffer
+    // throwing here is legitimate: the sink is dropped from the fan-out and the
+    // reason is reported to stderr — it never aborts application bootstrap
   }
 
   write(payload: string): void {
-    // non-blocking; errors are caught by DestinationRegistry
+    // non-blocking; errors are contained by destinationToStream
+    // not called at all if onInit() rejected
   }
 
   async onShutdown(): Promise<void> {
@@ -121,17 +124,27 @@ class MyDestination implements ILogDestination {
 
 ### Error Handling — Never Crash the App
 
+Failures are contained in `destinationToStream`, the `Writable` wrapper each destination is given
+in the `pino.multistream` fan-out — NOT in `DestinationRegistry`, which owns only the
+`onInit`/`onShutdown` lifecycle.
+
 ```typescript
-// DestinationRegistry wraps every write():
+// destinationToStream wraps every write():
 try {
-  await destination.write(payload)
-} catch (err) {
-  metaLogger.error(
-    { logKey: LOGGER_ERROR_CODES.LOGGER_DESTINATION_WRITE_FAILED, err },
-    'Destination write failed'
-  )
+  destination.write(payload)
+} catch (cause) {
+  // stderr, NEVER through the logger — a broken sink must not be able to create
+  // a write → log → write feedback loop, and `destinations` REPLACES the default
+  // stdout sink, so the logger's own sinks may be the ones that are broken.
+  reportDestinationFailure(RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED, name, cause, msg)
 }
+// The stream callback is then invoked WITHOUT an error: propagating it would make
+// the wrapper emit an unhandled 'error' event, which crashes the host.
 ```
+
+The same reporting path serves `onInit` failures (`LOGGER_DESTINATION_INIT_FAILED`), so both stages
+share one wire shape. If **no** destination initializes, entries fall back to raw NDJSON on stdout
+rather than disappearing — see `DestinationHealth`.
 
 ---
 
