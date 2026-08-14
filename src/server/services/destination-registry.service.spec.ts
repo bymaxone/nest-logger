@@ -219,6 +219,47 @@ describe('DestinationRegistry', () => {
     })
 
     it(/*
+     * REGRESSION — the never-throw contract has to cover READING the rejected
+     * value, not just writing the report. A value whose `toString` throws was
+     * coerced outside the guard, so the exception escaped the registry's own
+     * catch and aborted application bootstrap: the failure handler became a
+     * harder failure than the one it was handling.
+     */
+    'survives a rejection value that throws while being coerced', async () => {
+      const hostile = {
+        toString(): string {
+          throw new Error('hostile toString')
+        }
+      }
+      const boom = makeDestination('boom', { onInit: jest.fn().mockRejectedValue(hostile) })
+      const registry = new DestinationRegistry([boom], logger, options, health)
+
+      await expect(registry.onModuleInit()).resolves.toBeUndefined()
+      // Still dropped from the fan-out — the unreadable value must not make the
+      // sink look healthy.
+      expect(health.isFailed(boom)).toBe(true)
+    })
+
+    it(/*
+     * Control characters in a consumer-named destination must not reach a
+     * terminal unescaped. `JSON.stringify` escapes C0 and nothing else, so DEL,
+     * C1 (U+0085 NEL), U+2028 and U+2029 would survive verbatim into a line an
+     * operator reads — enough to forge a rendered entry.
+     */
+    'escapes control characters in the reported destination name', async () => {
+      const sneaky = makeDestination('evil\u0085forged', {
+        onInit: jest.fn().mockRejectedValue(new Error('nope'))
+      })
+      const registry = new DestinationRegistry([sneaky], logger, options, health)
+
+      await registry.onModuleInit()
+
+      const line = stderrSpy.mock.calls[0]?.[0] as string
+      expect(line).not.toContain('\u0085')
+      expect(reportedInitFailure()['destination']).toContain('evil')
+    })
+
+    it(/*
      * Reporting a broken sink must never become the crash it exists to prevent —
      * stderr itself can be a closed pipe (`node app | head`), and EPIPE there must
      * be swallowed rather than aborting bootstrap.

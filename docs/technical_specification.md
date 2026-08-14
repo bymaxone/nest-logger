@@ -272,9 +272,9 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
    - ISO 8601 timestamp
    - base { service: { name, version, namespace?, instance: { id }? }, deployment: { environment: { name } }? } — the resolved resource identity, or the flat dotted attribute names under `resourceFormat: 'flat'` →
 5. The root Pino is created with multi-stream transport:
-   - stdout JSON (always, unless overridden)
+   - stdout JSON **only when `destinations` is empty** — a non-empty list REPLACES it
    - pretty stream (opt-in via `PrettyDevDestination` in `destinations`) →
-6. Custom destinations (ILogDestination[]) become additional Pino transports →
+6. Every destination in `destinations` becomes one stream of the multi-stream fan-out →
 7. PinoLoggerService is instantiated with a reference to the root Pino →
 8. LogContextService initializes AsyncLocalStorage<LogContext> →
 9. If http.isEnabled, HttpLoggingInterceptor + HttpExceptionFilter are registered as global →
@@ -563,11 +563,6 @@ export interface BymaxLoggerModuleOptions {
    * Multiple destinations are written to via Pino's multi-stream.
    */
   destinations?: ILogDestination[]
-
-  /**
-   * Force pretty-print output (overrides NODE_ENV auto-detection).
-   * @default undefined — pretty enabled when NODE_ENV !== 'production'
-   */
 
   /**
    * HTTP module configuration.
@@ -2145,16 +2140,16 @@ export const RESERVED_LOG_KEYS = {
 
 Errors the lib may throw (or record as a warning):
 
-| Code                              | Severity                     | When it occurs                                                                   | Recommended action                                        |
-| --------------------------------- | ---------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `LOGGER_INVALID_OPTIONS`          | Throws at initialization     | `service.name` or `service.version` missing                                      | Add the required fields                                   |
-| `LOGGER_INVALID_LEVEL`            | Throws                       | `level` is not a valid Pino value                                                | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`  |
-| `LOGGER_PRETTY_UNAVAILABLE`       | Warn at initialization       | `PrettyDevDestination` registered but `pino-pretty` not installed                | Install `pino-pretty` or drop the destination             |
-| `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap            | `otel.shouldAutoInjectTraceContext: true` but `@opentelemetry/api` not installed | Install or disable `shouldAutoInjectTraceContext`         |
-| `LOGGER_DESTINATION_INIT_FAILED`  | Error log emitted by the lib | `destination.onInit()` rejects                                                   | Destination is removed from the registry; others continue |
-| `LOGGER_DESTINATION_WRITE_FAILED` | Warn                         | `destination.write()` throws                                                     | Entry skipped for that destination; others continue       |
-| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Throws                       | `LogContextService.set()` called outside `run()`                                 | Wrap in `logContext.run({ ... }, () => ...)`              |
-| `LOGGER_ENTRY_TRUNCATED`          | Warn (logged as a meta-log)  | Entry exceeds `maxEntrySizeBytes`                                                | Reduce metadata or raise the limit                        |
+| Code                              | Severity                    | When it occurs                                                                   | Recommended action                                                                                                            |
+| --------------------------------- | --------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `LOGGER_INVALID_OPTIONS`          | Throws at initialization    | `service.name` or `service.version` missing                                      | Add the required fields                                                                                                       |
+| `LOGGER_INVALID_LEVEL`            | Throws                      | `level` is not a valid Pino value                                                | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`                                                                      |
+| `LOGGER_PRETTY_UNAVAILABLE`       | **Never emitted**           | Declared only in the unexported `logger-error-codes.constants.ts`                | Do not query it — the real signal is `LOGGER_DESTINATION_INIT_FAILED` on stderr, `destination: "pretty-dev"`                  |
+| `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap           | `otel.shouldAutoInjectTraceContext: true` but `@opentelemetry/api` not installed | Install or disable `shouldAutoInjectTraceContext`                                                                             |
+| `LOGGER_DESTINATION_INIT_FAILED`  | Written to **stderr**       | `destination.onInit()` rejects                                                   | Destination is dropped from the write fan-out; others continue. If NONE initialize, entries fall back to raw NDJSON on stdout |
+| `LOGGER_DESTINATION_WRITE_FAILED` | Written to **stderr**       | `destination.write()` throws                                                     | Entry skipped for that destination; others continue                                                                           |
+| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Throws                      | `LogContextService.set()` called outside `run()`                                 | Wrap in `logContext.run({ ... }, () => ...)`                                                                                  |
+| `LOGGER_ENTRY_TRUNCATED`          | Warn (logged as a meta-log) | Entry exceeds `maxEntrySizeBytes`                                                | Reduce metadata or raise the limit                                                                                            |
 
 ---
 

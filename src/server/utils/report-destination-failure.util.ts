@@ -14,6 +14,7 @@
  * One function rather than one per stage, so both reports share a wire shape and
  * an operator greps a single `logKey` regardless of which stage failed.
  */
+import { toSingleLineMessage } from './escape-log-text.util'
 import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.constants'
 
 /**
@@ -34,22 +35,38 @@ export function reportDestinationFailure(
   cause: unknown,
   msg: string
 ): void {
-  const err =
-    cause instanceof Error
-      ? { type: cause.name, message: cause.message }
-      : { type: 'UnknownError', message: String(cause) }
   try {
+    // Coercion is INSIDE the guard, not above it. `String(cause)` on a value
+    // with a throwing `toString`/`Symbol.toPrimitive`, and the `name`/`message`
+    // reads on an `Error` with hostile getters, both throw — and from
+    // `DestinationRegistry` this runs inside the catch that is supposed to keep
+    // a bad sink from mattering, so an escape there would abort application
+    // bootstrap. The never-throw contract has to cover reading the value, not
+    // just writing it.
+    const err =
+      cause instanceof Error
+        ? {
+            type: toSingleLineMessage(String(cause.name)),
+            message: toSingleLineMessage(String(cause.message))
+          }
+        : { type: 'UnknownError', message: toSingleLineMessage(String(cause)) }
+    // Escaped per sink, like every other path that can reach a terminal.
+    // `JSON.stringify` escapes C0 and nothing else, so DEL, the C1 range
+    // (U+0085 NEL included), U+2028 and U+2029 survive verbatim into a line an
+    // operator reads in a terminal — enough to drive it or to forge a rendered
+    // entry. `destination` is consumer-named and `cause` is often remote-derived.
     process.stderr.write(
       JSON.stringify({
         level: 'error',
         logKey,
-        destination: name,
+        destination: toSingleLineMessage(name),
         err,
-        msg
+        msg: toSingleLineMessage(msg)
       }) + '\n'
     )
   } catch {
-    // The safe sink itself can fail — e.g. EPIPE when stderr is a closed pipe.
-    // Swallow it: reporting a dropped log must never become a crash.
+    // Either the value resisted being read or the safe sink itself failed (EPIPE
+    // on a closed pipe). Nothing is reported rather than anything thrown:
+    // reporting a dropped log must never become a crash.
   }
 }

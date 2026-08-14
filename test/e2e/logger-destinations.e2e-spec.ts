@@ -71,7 +71,6 @@ describe('Logger E2E — custom destinations', () => {
     }
   })
 
-  /** Boot the module with the given overrides and return the app. */
   /**
    * Parse the NDJSON entries a stream spy captured, ignoring anything that is not
    * a JSON object.
@@ -87,6 +86,7 @@ describe('Logger E2E — custom destinations', () => {
       .map((line) => JSON.parse(line) as Record<string, unknown>)
   }
 
+  /** Boot the module with the given overrides and return the app. */
   async function bootApp(overrides: Partial<BymaxLoggerModuleOptions>): Promise<INestApplication> {
     const moduleRef = await Test.createTestingModule({
       imports: [
