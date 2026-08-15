@@ -556,7 +556,8 @@ error, `statusCode` from an HTTP layer, whatever domain fields you attached — 
 
 This matters because `code` is usually the field you alert on. Until 1.2.7 those properties survived
 only on the error handed to the log call and were dropped the moment the same error was wrapped as
-someone else's `cause` — which is what a `catch` in `main.ts` does routinely. They never shadow a
+someone else's `cause` — which is what any handler that wraps what it caught does before
+logging it. They never shadow a
 field the serializer derives, and they pass through the same name-based redaction and size bound as
 any other serializer output.
 
@@ -1042,6 +1043,21 @@ Trace context is never copied verbatim into a log entry. The OTel mixin reads th
 ### Destination failures are contained
 
 Every `write()` runs inside a try/catch. A destination that throws or rejects produces a `LOGGER_DESTINATION_WRITE_FAILED` line on `stderr` — never back through the logger, which would turn a broken sink into a write → log → write feedback loop — and the entry is dropped for that sink only. A destination whose `onInit()` rejects is reported as `LOGGER_DESTINATION_INIT_FAILED` and excluded from the shutdown sequence without blocking boot; it stays in the write fan-out, where the same fail-soft wrapper contains it. A logging backend going down degrades logging — it never takes the application with it.
+
+### What redaction covers, and what it cannot
+
+Redaction here matches **field names**, not values. A secret stored under a covered name is censored at any depth; the same secret **embedded inside a string** under an uncovered name travels intact. Measured:
+
+```json
+{
+  "password": "[REDACTED]",
+  "renderedBody": "Hi Ana, your reset code is 481920. Expires in 10 minutes."
+}
+```
+
+There is no name rule that reaches the second one, and scanning inside values for secret-shaped text would mean rewriting what you asked to be logged — wrong in both directions, silently. **The boundary is yours to hold:** do not put rendered bodies, raw provider responses or whole request payloads into a field, and be aware that attaching an upstream error as `cause` carries whatever that error carries. Since 1.2.7 preserves an error's own fields at every depth of the chain, a cause that quotes something it should not quote is now more visible, not less.
+
+`redactStrategy` governs **your** payload — the record you log, your child bindings, and the output of any serializer you supply. The built-in `err` serializer is the library's own output and is always name-walked, including under `'paths'`, because `fast-redact`'s four-wildcard ceiling cannot reach the depth a `cause` chain serializes to.
 
 ### A closed pipe does not kill the process
 

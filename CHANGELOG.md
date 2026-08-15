@@ -11,6 +11,44 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.8] - 2026-08-15
+
+### Documentation
+
+- **A hand-built `PinoLoggerService` is not this library's behaviour, and the constructor doc used to
+  invite one without saying so.** `new PinoLoggerService(pino({...}, sink))` does not throw — the
+  parameter default exists for exactly that — but the Pino instance you built has none of the wiring
+  `buildPinoInstance` installs, and the omissions are silent. No `err` serializer, so the `cause`
+  chain **disappears entirely**: no marker, no warning, and a shape that reads as "the field was
+  never set". Also no name-based redaction, no trace-context mixin, no size bound.
+
+  Found the honest way: a consumer hand-built one to check whether a `cause` carried its `code`,
+  measured absence, and went to read the built `dist` before reporting it — where they found their
+  harness was the cause. The doc now names what such an instance lacks and points at booting the
+  module for a faithful one.
+
+- **What redaction covers, stated as a boundary rather than left to be inferred.** It matches field
+  NAMES, not values: a secret under a covered name is censored at any depth, and the same secret
+  embedded **inside a string** under an uncovered name travels intact. Scanning values for
+  secret-shaped text would mean rewriting what a consumer asked to be logged, wrong in both
+  directions and silently — so the boundary is real and belongs in the open. It matters more since
+  `1.2.7`: preserving an error's own fields at every depth makes whatever a `cause` carries more
+  visible, including what should not be there.
+
+  The README also now says which redactor governs what — `redactStrategy` covers the consumer's
+  payload, their child bindings and any serializer they supply; the built-in `err` serializer is the
+  library's own output and is always name-walked, because `fast-redact`'s four-wildcard ceiling
+  cannot reach a serialized `cause` chain.
+
+- **The `1.2.7` notes used `a catch in main.ts` as the example, and it is the wrong one.** Not false
+  as a general statement — a handler that wraps and logs does exist — but it became the canonical
+  example of the motivating case, and for the consumer who reported that case it describes a path
+  that does not exist: their config validation rejects inside `NestFactory.create`, before the
+  logger is attached, and reports through `console.error` on stderr without touching the serializer.
+  A reader anchors on the example. Now "any handler that wraps what it caught before logging it".
+  Corrected in the README and in the `1.2.7` entry; the `v1.2.7` tag annotation is left as published,
+  since rewriting a published tag is worse than the imprecision it would fix.
+
 ## [1.2.7] - 2026-08-15
 
 ### Security
@@ -79,7 +117,8 @@ heading here.
 - **An error's own properties now survive at every depth of the `cause` chain, not just at the top.**
   `code`, `statusCode` and any domain field an application attaches were copied onto the error handed
   to the log call and **dropped the moment that same error was wrapped as someone else's `cause`** —
-  which is what a `catch` in `main.ts` does routinely. Measured on the published `1.2.6`:
+  which is what any handler that wraps what it caught does before logging it. Measured on the
+  published `1.2.6`:
 
   ```json
   {
@@ -1231,7 +1270,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.8...HEAD
+[1.2.8]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.8
 [1.2.7]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...v1.2.7
 [1.2.6]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/bymaxone/nest-logger/compare/v1.2.4...v1.2.5
