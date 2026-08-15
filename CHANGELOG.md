@@ -56,6 +56,24 @@ heading here.
   error that genuinely carries a `__proto__` field gets it logged as the data it is. Reported by
   Copilot on the pull request that introduced the deeper copy.
 
+### Documentation
+
+- **`ignore` needs an escaped dot for `event.name`, and every example here taught the opposite.**
+  `pino-pretty` reads a dot as a nested path, and this library emits `event.name` as a literal
+  top-level key — so `ignore: '…,event.name'` looks for an `event` object with a `name` inside,
+  finds neither, and hides nothing without a word of complaint. Measured on one entry with only the
+  option changing:
+
+  ```
+  ignore: '…,event.name'    → INFO: msg {"logKey":"X","event.name":"x"}   ← still there
+  ignore: '…,event\\.name'  → INFO: msg {"logKey":"X"}                    ← hidden
+  ```
+
+  Found by a consumer who copied the `1.2.6` example verbatim, configured it, and saw the field
+  still on screen. The escaped form is now in the `PrettyViewOptions` JSDoc — where an editor's
+  autocomplete shows it, which is where someone actually is when writing the option — in the README,
+  and in the `1.2.6` example itself, which is corrected rather than left to keep teaching it.
+
 ### Fixed
 
 - **An error's own properties now survive at every depth of the `cause` chain, not just at the top.**
@@ -113,7 +131,7 @@ heading here.
 
   ```ts
   new PrettyDevDestination({
-    view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event.name' }
+    view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event\\.name' }
   })
   ```
 

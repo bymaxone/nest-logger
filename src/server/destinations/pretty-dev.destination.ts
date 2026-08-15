@@ -41,7 +41,7 @@ import { writeStdoutSafely } from '../utils/safe-stdio.util'
  *   // One line per entry, with the fields a project repeats on every line hidden.
  *   const view: PrettyViewOptions = {
  *     singleLine: true,
- *     ignore: 'pid,hostname,service,deployment,event.name'
+ *     ignore: 'pid,hostname,service,deployment,event\\.name'
  *   }
  */
 export interface PrettyViewOptions {
@@ -56,6 +56,21 @@ export interface PrettyViewOptions {
    * what a real sink receives is untouched. Extend rather than replace when the
    * goal is quieter output — the default already hides the noisiest fields.
    * Default: `'pid,hostname,service'`.
+   *
+   * **A dot means "nested path", so a field name CONTAINING a dot has to escape
+   * it.** This library emits `event.name` as a literal top-level key, so the
+   * obvious spelling silently hides nothing — `pino-pretty` looks for an `event`
+   * object with a `name` inside and finds neither. Measured on one entry, only
+   * the option changing:
+   *
+   * ```
+   * ignore: '…,event.name'    → INFO: msg {"logKey":"X","event.name":"x"}   ← still there
+   * ignore: '…,event\\.name'  → INFO: msg {"logKey":"X"}                    ← hidden
+   * ```
+   *
+   * In a TypeScript string literal that is `'event\\.name'` — one real backslash
+   * reaching `pino-pretty`. Nested objects (`service`, `deployment`) need no
+   * escape; they really are paths.
    */
   ignore?: string
   /**
@@ -145,7 +160,7 @@ function writeRawToStdout(payload: string): void {
  *
  *   // One line per entry, with this project's repeated fields hidden.
  *   new PrettyDevDestination({
- *     view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event.name' }
+ *     view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event\\.name' }
  *   })
  *
  *   // Message-only, with the context pulled back into the line.
