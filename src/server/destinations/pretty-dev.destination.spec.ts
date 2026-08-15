@@ -367,6 +367,44 @@ describe('PrettyDevDestination', () => {
     })
 
     it(/*
+     * REGRESSION — the entry COUNT does not bound memory. A payload has no
+     * whole-record size limit (`maxEntrySizeBytes` bounds what a serializer emits
+     * for one field, not the entry), so entries carrying large metadata could
+     * retain far more than 1000 × "a log line" suggests — where the raw
+     * passthrough this buffer replaced retained nothing at all. A buffer added
+     * for legibility must not become a memory risk during boot.
+     */
+    'falls back to raw once the byte ceiling is reached, well before the count', () => {
+      const dest = new PrettyDevDestination()
+      // 512 KiB each: nine of these pass 4 MiB while the count is nowhere near
+      // 1000, so only the byte ceiling can be what stops the buffering.
+      const fat = 'x'.repeat(512 * 1024) + '\n'
+
+      for (let i = 0; i < 9; i += 1) {
+        dest.write(fat)
+      }
+
+      expect(stdoutSpy).toHaveBeenCalled()
+      expect(stdoutSpy.mock.calls.length).toBeLessThan(1000)
+    })
+
+    it(/*
+     * The ceiling is inclusive: an entry that lands EXACTLY on the limit is still
+     * held. Pinning the boundary rather than a value comfortably inside it — the
+     * comparison is the whole bound, and off-by-one there is the difference
+     * between "holds 4 MiB" and "holds 4 MiB minus one entry".
+     */
+    'still holds an entry that lands exactly on the byte ceiling', () => {
+      const dest = new PrettyDevDestination()
+      // Exactly 4 MiB of single-byte characters, newline included.
+      const exact = 'x'.repeat(4 * 1024 * 1024 - 1) + '\n'
+
+      dest.write(exact)
+
+      expect(stdoutSpy).not.toHaveBeenCalled()
+    })
+
+    it(/*
      * Shutdown before onInit ever ran: the held entries were buffered for a
      * transform that will now never exist, so they go out raw rather than dying
      * with the process.

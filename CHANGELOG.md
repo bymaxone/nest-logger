@@ -146,6 +146,41 @@ heading here.
   password it could not verify, and the `onRefreshTokenReuseDetected` hook, the tripwire for a stolen
   token. Both said something went wrong and threw away what.
 
+### Fixed
+
+- **A closed pipe can no longer crash the host, which the `try/catch` around
+  `process.stdout.write` never actually prevented.** Every fallback path in this library — the
+  last-resort NDJSON rescue, the pre-init drain, the destination failure reports — wrapped its raw
+  write in a `try/catch` and documented that as EPIPE protection. It is not, and this was measured
+  rather than argued:
+
+  ```
+  stdout error listeners at start: 0
+  sync result: no-throw          ← the try/catch caught nothing
+  UNCAUGHT:EPIPE                 ← arrived later, as an uncaught exception
+  child exit code: 42            ← the process died
+  ```
+
+  A closed pipe (`node app | head`) reports EPIPE **asynchronously**, through the stream's `'error'`
+  event, after `write()` has already returned. Node attaches no default handler, so the emit becomes
+  an uncaught exception. The guarantee was asserted in prose and absent from the code, on exactly the
+  paths whose purpose is to survive a broken sink.
+
+  All raw writes now go through one `safe-stdio` helper that installs a swallow-EPIPE handler on
+  first use, covering the asynchronous half; the `try/catch` remains for the synchronous half, since
+  either alone leaves a way to die. The handler is found by identity rather than remembered, so
+  anything that strips listeners from a process stream cannot silently disable the protection
+  permanently.
+
+  Reported by Copilot against the new pre-init buffer; the same ineffective pattern was already
+  shipped in `1.2.3` and `1.2.5`, so this corrects those paths too.
+
+- **The pre-init buffer is bounded by BYTES as well as entry count.** The count alone does not bound
+  memory: a payload has no whole-record size limit (`maxEntrySizeBytes` bounds what a serializer
+  emits for one field, not the entry), so 1000 held entries carrying large metadata could retain far
+  more than the count suggests — where the raw passthrough this buffer replaced retained nothing at
+  all. A 4 MiB ceiling now trips alongside the 1000-entry one, whichever comes first.
+
 ### Documentation
 
 - **The `pnpm prune --prod` note named the wrong mechanism.** It described the peer surviving as a

@@ -15,6 +15,7 @@
  * an operator greps a single `logKey` regardless of which stage failed.
  */
 import { toSingleLineMessage } from './escape-log-text.util'
+import { writeStderrSafely } from './safe-stdio.util'
 import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.constants'
 
 /**
@@ -55,7 +56,7 @@ export function reportDestinationFailure(
     // (U+0085 NEL included), U+2028 and U+2029 survive verbatim into a line an
     // operator reads in a terminal — enough to drive it or to forge a rendered
     // entry. `destination` is consumer-named and `cause` is often remote-derived.
-    process.stderr.write(
+    writeStderrSafely(
       JSON.stringify({
         level: 'error',
         logKey,
@@ -65,8 +66,8 @@ export function reportDestinationFailure(
       }) + '\n'
     )
   } catch {
-    // Either the value resisted being read or the safe sink itself failed (EPIPE
-    // on a closed pipe). Nothing is reported rather than anything thrown:
-    // reporting a dropped log must never become a crash.
+    // The value resisted being read — a hostile `toString` or getter. Nothing is
+    // reported rather than anything thrown. A broken stderr is handled one layer
+    // down by `writeStderrSafely`, which covers the ASYNC half a try/catch cannot.
   }
 }

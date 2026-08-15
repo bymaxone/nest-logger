@@ -35,6 +35,7 @@ import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { detectOtelTraceApi } from '../utils/otel-detector'
 import { reportDestinationFailure } from '../utils/report-destination-failure.util'
+import { writeStderrSafely } from '../utils/safe-stdio.util'
 
 /**
  * Coordinates destination initialization and graceful shutdown.
@@ -200,7 +201,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         await destination.onShutdown?.()
       } catch (cause) {
         const detail = cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)
-        process.stderr.write(
+        writeStderrSafely(
           `[DestinationRegistry] Shutdown failed for "${destination.name}": ${detail}\n`
         )
       }

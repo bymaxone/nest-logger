@@ -16,6 +16,7 @@ import type { Transform } from 'node:stream'
 
 import type { LogLevel } from '../../shared/types/log-level.type'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
+import { writeStdoutSafely } from '../utils/safe-stdio.util'
 
 /**
  * How the development terminal renders an entry — a VIEW over the record, never
@@ -98,21 +99,35 @@ const DEFAULT_VIEW: Required<
 const MAX_BUFFERED_ENTRIES = 1000
 
 /**
+ * Byte ceiling for the pre-init buffer, checked alongside the entry count.
+ *
+ * The count alone does not bound memory, and that gap was real: a payload has no
+ * whole-record size limit — `maxEntrySizeBytes` bounds what a SERIALIZER emits
+ * for one field, not the entry — so 1000 held entries carrying large metadata
+ * could retain far more than the count suggests, where the previous raw
+ * passthrough retained nothing at all. A buffer added for legibility must not
+ * become a memory risk during boot.
+ *
+ * 4 MiB is generous for a real boot (tens of entries, a few hundred bytes each)
+ * and small enough that the worst case is a brief allocation rather than a
+ * problem. Whichever limit trips first ends the buffering.
+ */
+const MAX_BUFFERED_BYTES = 4 * 1024 * 1024
+
+/**
  * Emit one entry as raw NDJSON on stdout — the fallback whenever a held entry
  * cannot be rendered.
  *
- * Errors from stdout are swallowed for the same reason every other sink in this
- * library swallows them: stdout can be a closed pipe (`node app | head`), and
- * salvaging a log line must never become the crash it exists to prevent.
+ * Routed through {@link writeStdoutSafely} rather than wrapping
+ * `process.stdout.write` in a `try/catch`. A closed pipe reports EPIPE
+ * ASYNCHRONOUSLY, after `write()` has returned, so the catch never sees it and
+ * the process dies of an uncaught exception — measured, not assumed. Salvaging a
+ * log line must not become the crash it exists to prevent.
  *
  * @param payload - The serialized, newline-terminated NDJSON entry.
  */
 function writeRawToStdout(payload: string): void {
-  try {
-    process.stdout.write(payload)
-  } catch {
-    // The safe sink itself can fail. The fail-soft contract is absolute.
-  }
+  writeStdoutSafely(payload)
 }
 
 /**
@@ -176,6 +191,12 @@ export class PrettyDevDestination implements ILogDestination {
    * the output stays in ORDER rather than replaying old entries after newer ones.
    */
   private bufferOverflowed = false
+
+  /**
+   * UTF-8 size of everything currently held, tracked incrementally so the bound
+   * costs one `Buffer.byteLength` per entry rather than a walk of the buffer.
+   */
+  private bufferedBytes = 0
 
   /**
    * @param opts.minLevel — Optional minimum level filter applied by the
@@ -296,7 +317,11 @@ export class PrettyDevDestination implements ILogDestination {
       writeRawToStdout(payload)
       return
     }
-    if (this.buffer.length >= MAX_BUFFERED_ENTRIES) {
+    const payloadBytes = Buffer.byteLength(payload, 'utf8')
+    if (
+      this.buffer.length >= MAX_BUFFERED_ENTRIES ||
+      this.bufferedBytes + payloadBytes > MAX_BUFFERED_BYTES
+    ) {
       // Give up buffering, and drain what is held BEFORE writing this entry.
       // Draining first is what keeps the output in order: holding the old entries
       // to render later would replay them after the newer raw ones, which reads
@@ -307,6 +332,7 @@ export class PrettyDevDestination implements ILogDestination {
       return
     }
     this.buffer.push(payload)
+    this.bufferedBytes += payloadBytes
   }
 
   /**
@@ -321,6 +347,7 @@ export class PrettyDevDestination implements ILogDestination {
   private flushBuffer(emit: (payload: string) => void): void {
     const held = this.buffer
     this.buffer = []
+    this.bufferedBytes = 0
     for (const payload of held) {
       emit(payload)
     }
