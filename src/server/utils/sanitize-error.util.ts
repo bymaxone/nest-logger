@@ -80,10 +80,11 @@ export interface SanitizedError {
  * as ordinary own keys, and copying them would emit the same value twice: once
  * derived (scrubbed, in the case of `stack`) and once raw.
  *
- * @internal Shared with `pino-factory`, whose `err` serializer renames `name` to
- *   the `type` key consumers query. NOT re-exported by the package barrel.
+ * Module-private: the only reader is {@link assignOwnErrorFields}, which is what
+ * `pino-factory` shares. An earlier draft exported this set for a version of that
+ * helper that took it as a parameter.
  */
-export const DERIVED_ERROR_FIELDS: ReadonlySet<string> = new Set([
+const DERIVED_ERROR_FIELDS: ReadonlySet<string> = new Set([
   'name',
   'message',
   'stack',
@@ -260,14 +261,47 @@ function toSanitizedError(
  * @internal Shared with `pino-factory`. NOT re-exported by the package barrel.
  * @param target - The node being built; mutated in place.
  * @param source - The object the node was derived from.
+ * @example
+ *   const node = { name: 'Error', message: 'config invalid' }
+ *   assignOwnErrorFields(node, Object.assign(new Error('config invalid'), {
+ *     code: 'BYMAX_CONFIG_VALIDATION',
+ *     message: 'ignored — the node derives this one'
+ *   }))
+ *   // node → { name: 'Error', message: 'config invalid', code: 'BYMAX_CONFIG_VALIDATION' }
+ * @example
+ *   // `__proto__` is stored as data, never applied as a prototype.
+ *   const node = {}
+ *   assignOwnErrorFields(node, JSON.parse('{"__proto__":{"toJSON":1}}'))
+ *   Object.getPrototypeOf(node) === Object.prototype  // true
  */
 export function assignOwnErrorFields(target: Record<string, unknown>, source: object): void {
   try {
     const own = Array.isArray(source) ? {} : (source as Record<string, unknown>)
     for (const [key, value] of Object.entries(own)) {
       if (!Object.hasOwn(target, key) && !DERIVED_ERROR_FIELDS.has(key)) {
-        // `Reflect` keeps the dynamic write off the object-injection sink list.
-        Reflect.set(target, key, value)
+        // `defineProperty` rather than `Reflect.set`, and `__proto__` is the whole
+        // reason. It is an accessor inherited from `Object.prototype`, so a SET
+        // walks the chain and invokes that setter — replacing the node's prototype
+        // instead of storing a field. An error-like object arriving from JSON (a
+        // worker boundary, a queue, an HTTP body) carries `__proto__` as an OWN
+        // enumerable key, and `Object.entries` hands it over like any other.
+        //
+        // Measured: the node's prototype really is replaced, and with
+        // `{"__proto__": null}` it loses `hasOwnProperty` and `toString`, which
+        // then THROW for anything downstream that touches them — inside the one
+        // path whose contract is that logging never crashes the application.
+        // `Object.prototype` itself is never touched, so this is prototype
+        // injection into one node rather than global pollution.
+        //
+        // Defining an own data property makes the key inert AND keeps its value:
+        // an error that genuinely carries a `__proto__` field gets it logged as
+        // the data it is.
+        Object.defineProperty(target, key, {
+          value,
+          writable: true,
+          enumerable: true,
+          configurable: true
+        })
       }
     }
   } catch {

@@ -13,6 +13,26 @@ heading here.
 
 ## [1.2.7] - 2026-08-15
 
+### Security
+
+- **An own `__proto__` key on an error is now stored as data instead of being applied as a
+  prototype.** The own-property copy assigned each key, and `__proto__` is an accessor inherited
+  from `Object.prototype` — so the assignment walked the chain, invoked that setter, and replaced
+  the sanitized node's prototype. An error-like object arriving from JSON (a worker boundary, a
+  queue, an HTTP body) carries `__proto__` as an ordinary own enumerable key, and `Object.entries`
+  hands it over like any other.
+
+  Measured rather than assumed. `Object.prototype` itself is never touched, so this is prototype
+  injection into a single log node rather than global pollution, and with a JSON-sourced payload the
+  emitted line was unchanged — `JSON.stringify` ignores inherited fields. The live hazard is the
+  node: given `{"__proto__": null}` it loses `hasOwnProperty` and `toString`, which then **throw**
+  for anything downstream that touches them, inside the one path whose contract is that logging
+  never crashes the application.
+
+  The copy now defines an own data property, which makes the key inert and keeps its value — an
+  error that genuinely carries a `__proto__` field gets it logged as the data it is. Reported by
+  Copilot on the pull request that introduced the deeper copy.
+
 ### Fixed
 
 - **An error's own properties now survive at every depth of the `cause` chain, not just at the top.**

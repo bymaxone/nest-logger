@@ -101,6 +101,49 @@ describe('sanitizeError', () => {
   })
 
   it(/*
+   * SECURITY — an own `__proto__` key must be stored as DATA, never applied as a
+   * prototype. `__proto__` is an accessor inherited from `Object.prototype`, so
+   * assigning it walks the chain and invokes that setter; an error-like object
+   * arriving from JSON (a worker boundary, a queue, an HTTP body) carries it as
+   * an own enumerable key and `Object.entries` hands it over like any other.
+   *
+   * Measured before the fix: the node's prototype really was replaced, and with
+   * `{"__proto__": null}` the node lost `hasOwnProperty` and `toString`, which
+   * then throw for anything downstream that touches them — inside the one path
+   * whose contract is that logging never crashes the application.
+   */
+  'should store an own __proto__ key as data instead of applying it', () => {
+    const hostile = JSON.parse(
+      String.raw`{"name":"E","message":"m","__proto__":{"injected":"yes"}}`
+    ) as unknown
+
+    const result = sanitizeError(hostile)
+
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype)
+    expect(Object.hasOwn(result, '__proto__')).toBe(true)
+    expect((result as { injected?: unknown }).injected).toBeUndefined()
+    // The node stays an ordinary object: the methods downstream code calls on it
+    // are still there.
+    expect(typeof result.hasOwnProperty).toBe('function')
+  })
+
+  it(/*
+   * The same through a NESTED cause, which is the depth this release started
+   * carrying own properties at — and therefore the depth where the hazard was
+   * introduced rather than inherited.
+   */
+  'should neutralize an own __proto__ key on a nested cause', () => {
+    const hostile = JSON.parse(
+      String.raw`{"name":"E","message":"inner","__proto__":null}`
+    ) as object
+    const result = sanitizeError(new Error('outer', { cause: hostile }))
+
+    const cause = result.cause as Record<string, unknown>
+    expect(Object.getPrototypeOf(cause)).toBe(Object.prototype)
+    expect(typeof cause['hasOwnProperty']).toBe('function')
+  })
+
+  it(/*
    * A hostile own property must degrade its own node rather than the entry. The
    * copy runs inside the same never-throw contract as the rest of the walk, and
    * a getter that throws is the shape an attacker controls most easily.
