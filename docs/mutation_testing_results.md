@@ -11,14 +11,34 @@
 | **Global mutation score**                              | **100.00 %**                |
 | Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅ |
 | Aspirational target (`thresholds.high`)                | 99 % → **reached**          |
-| Killed                                                 | 794                         |
+| Killed                                                 | 792                         |
 | Survived                                               | **0**                       |
 | Timeout (counts as detected)                           | 11                          |
-| Ignored — documented `// Stryker disable`              | 20                          |
+| Ignored — documented `// Stryker disable`              | 15                          |
 | Ignored — static mutants (`ignoreStatic: true`)        | 128                         |
-| Compile/runtime errors (type-system-guarded, excluded) | 506                         |
+| Compile/runtime errors (type-system-guarded, excluded) | 503                         |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `805 / 805 = 100.00 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `803 / 803 = 100.00 %`.
+
+### 2026-08-15 — a simplification deleted a suppression instead of moving it
+
+The `1.2.7` fix (an error's own fields at every depth of the `cause` chain) unified into one function
+the copy that existed twice — in the `err` serializer and in the sanitizer's node walk. The side
+effect shows up in the table above: documented suppressions fell from **20 mutants to 15**.
+
+The five that went were a single `// Stryker disable next-line ConditionalExpression` over the guard
+`typeof source === 'object' && source !== null && !Array.isArray(source)`. With both call sites now
+handing over an object, the parameter is typed `object` and the guard shrank to `Array.isArray(source)`
+— the `null` and non-object branches stopped existing, and with them the need to explain why no test
+kills them.
+
+**Worth recording because it is the better outcome and the rarer one:** the answer to "this mutant is
+equivalent" almost always becomes a well-written suppression comment. Here the right question was a
+different one — _why does this code need this branch?_ — and the answer deleted the branch. One fewer
+suppression beats one more justified suppression, because the type system now guarantees what the
+prose was guaranteeing.
+
+---
 
 ### 2026-08-15 — the incremental run was reporting a score the cold run did not
 
@@ -166,8 +186,8 @@ someone has to keep honest.
 There are none, and there are no genuine coverage gaps. The equivalent mutants that used to be
 counted here as 10 survivors are now excluded at the line they apply to, by a
 `// Stryker disable next-line <Mutator>: <reason>` comment carrying its justification — the
-suppression policy in [`mutation_testing_plan.md`](./mutation_testing_plan.md). 20 mutants are excluded that way
-across the tree; the other 128 of the 148 ignored are static mutants dropped by
+suppression policy in [`mutation_testing_plan.md`](./mutation_testing_plan.md). 15 mutants are excluded that way
+across the tree; the other 128 of the 143 ignored are static mutants dropped by
 `ignoreStatic: true`, which is a `perTest` attribution limit rather than a judgment about any
 of them.
 
