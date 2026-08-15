@@ -248,6 +248,102 @@ describe('PinoLoggerService', () => {
       const [payload] = spy.mock.calls[0] ?? []
       expect(payload).toMatchObject({ context: 'JobRunner' })
     })
+
+    describe('an Error is never dropped, whatever level or position', () => {
+      /*
+       * REGRESSION — reported from a real run, not reproduced from a unit test.
+       *
+       * NestJS types the trailing slot as `stack?: string`, so this bridge read it
+       * as a string and discarded anything else. Passing the `Error` itself is what
+       * callers actually do — `@bymax-one/nest-auth` does it at 37 call sites — so a
+       * caller supplied a cause and the entry carried none: no `err`, no `stack`, no
+       * warning. An SMTP failure logged `delivery failed for "…"` with the reason
+       * discarded, while the response was 204 and nothing had been delivered. In CI
+       * you can raise the level and re-run; in production nobody runs at `debug`, so
+       * the reason was never written at all.
+       *
+       * Measured before the fix: ELEVEN of these twelve combinations lost the Error,
+       * with `error(err)` the only surviving path — every other level routes through
+       * a shared helper that handled no Error in either position. `fatal` is the
+       * worst of them: the level a caller reaches for when the process is dying.
+       */
+      const LEVELS = [
+        ['log', 'info'],
+        ['warn', 'warn'],
+        ['debug', 'debug'],
+        ['verbose', 'trace'],
+        ['fatal', 'fatal'],
+        ['error', 'error']
+      ] as const
+
+      it.each(LEVELS)('%s() keeps an Error passed as the message', (method, pinoLevel) => {
+        const spy = jest.spyOn(rawLogger, pinoLevel)
+        const cause = new Error('the-cause')
+
+        service[method](cause)
+
+        const [payload, message] = spy.mock.calls[0] ?? []
+        expect(payload).toMatchObject({ err: cause })
+        // The message is the Error's own text, not `String(error)` — otherwise it
+        // would carry the redundant `"Error: "` prefix beside the `err` object.
+        expect(message).toBe('the-cause')
+      })
+
+      it.each(LEVELS)('%s() keeps an Error passed after the message', (method, pinoLevel) => {
+        const spy = jest.spyOn(rawLogger, pinoLevel)
+        const cause = new Error('the-cause')
+
+        service[method]('delivery failed', cause)
+
+        const [payload, message] = spy.mock.calls[0] ?? []
+        expect(payload).toMatchObject({ err: cause })
+        expect(message).toBe('delivery failed')
+      })
+
+      it(/*
+       * The real nest-auth shape: message, Error, then a context string. The
+       * context must still be resolved and the cause must still survive — the
+       * Error sits between them and must not be mistaken for either.
+       */
+      'keeps the Error and the context when both trail the message', () => {
+        const spy = jest.spyOn(rawLogger, 'error')
+        const cause = new Error('the-cause')
+
+        service.error('delivery failed', cause, 'MailProvider')
+
+        const [payload] = spy.mock.calls[0] ?? []
+        expect(payload).toMatchObject({ err: cause, context: 'MailProvider' })
+      })
+
+      it(/*
+       * The documented string-stack call must be untouched by the fix: a string in
+       * the trailing slot is still a stack, and no `err` is invented for it. This is
+       * what keeps every existing caller's output identical.
+       */
+      'still treats a trailing string as the stack and adds no err', () => {
+        const spy = jest.spyOn(rawLogger, 'error')
+
+        service.error('boom', 'at foo (bar.js:1:1)')
+
+        const [payload] = spy.mock.calls[0] ?? []
+        expect(payload).toMatchObject({ stack: 'at foo (bar.js:1:1)' })
+        expect(payload).not.toHaveProperty('err')
+      })
+
+      it(/*
+       * `stack` is not populated from an Error: the `err` serializer derives the
+       * stack from the Error itself, so writing both would emit the same trace
+       * under two names.
+       */
+      'does not duplicate the stack when the cause is an Error', () => {
+        const spy = jest.spyOn(rawLogger, 'error')
+
+        service.error('boom', new Error('the-cause'))
+
+        const [payload] = spy.mock.calls[0] ?? []
+        expect(payload).not.toHaveProperty('stack')
+      })
+    })
   })
 
   describe('helpers and lifecycle', () => {

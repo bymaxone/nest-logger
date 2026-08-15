@@ -11,6 +11,82 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-08-14
+
+### Fixed
+
+- **An `Error` handed to the NestJS logger methods is no longer silently dropped.** Reported from a
+  real run rather than a unit test. `@bymax-one/nest-auth` logs the cause the way every caller does,
+  an SMTP `STARTTLS 502` failed, and this is what came out:
+
+  ```js
+  // the call site, nest-auth
+  this.logger.error(`delivery failed for "${subject}"`, error)
+  ```
+
+  ```json
+  {
+    "level": "error",
+    "context": "DefaultAuthEmailProvider",
+    "msg": "delivery failed for \"Verify your email address\""
+  }
+  ```
+
+  No `err`, no `stack`, no warning. The cause existed the whole time and was discarded. The dispatch
+  is fire-and-forget, so the HTTP response was `204` while nothing had been delivered: **the log was
+  the only surface where that failure could appear, and it appeared without its reason.** In CI you
+  can raise the level and re-run; in production nobody runs at `debug`, so the reason was never
+  written at all.
+
+  Neither side was obviously wrong, which is what made it survive. NestJS types the slot as
+  `error(message, stack?: string, context?: string)`, so this library read a string and discarded
+  anything else — implementing the contract faithfully. Passing the `Error` itself is what callers
+  actually do, because every other logger in the ecosystem accepts it.
+
+  **Measured before the fix: eleven of the twelve level/position combinations lost the `Error`.**
+  Only `error(err)` survived — every other level (`log`, `warn`, `debug`, `verbose`, `fatal`) routes
+  through a shared helper that handled no `Error` in either position. `fatal` was the worst of them,
+  being the level a caller reaches for when the process is about to die.
+
+  An `Error` anywhere in the variadic tail is now attached as `err`, the same field the leading-`Error`
+  branch already wrote, at every level. A trailing _string_ is still the `stack`, and `stack` is never
+  populated from an `Error` — the `err` serializer derives it, so writing both would emit the same
+  trace under two names.
+
+  **Two output changes to expect, since "additive" would overstate it.** Nothing is removed or
+  renamed, and a caller passing a string stack is untouched. But a caller who was passing an `Error`
+  necessarily sees a difference, because that is the defect:
+
+  - entries that silently dropped a cause now carry an `err` object — a **new field** on lines that
+    previously had none, which a strict log-pipeline schema will see;
+  - `warn(new Error('x'))` and the other non-`error` levels now emit `msg: "x"` instead of
+    `msg: "Error: x"`, matching what `error(new Error('x'))` already produced. A query grepping for
+    the `"Error: "` prefix on those levels will stop matching.
+
+  Both are the point of the change rather than side effects, but neither is invisible.
+
+  Scope, as measured by the reporting consumer across the ten `@bymax-one/*` packages that backend
+  installs at its pinned versions: **37 affected call sites, all of them in `nest-auth`**, none
+  elsewhere. Two are security-relevant — a breach check that fails open and logs that it admitted a
+  password it could not verify, and the `onRefreshTokenReuseDetected` hook, the tripwire for a stolen
+  token. Both said something went wrong and threw away what.
+
+### Documentation
+
+- **The `pnpm prune --prod` note named the wrong mechanism.** It described the peer surviving as a
+  _residue_ of an incomplete prune. A second consumer whose Dockerfile never prunes — a clean
+  `pnpm install --prod --frozen-lockfile` in a fresh runtime stage — measured the peer present anyway.
+  pnpm resolves an optional peer as part of a production install, so it is there **by construction**.
+  The distinction matters because "we do a clean prod install, not a prune" reads like an exemption
+  and is not one; it is what that consumer expected before measuring their own image.
+
+  The note now also says what is different **elsewhere**: under npm's or yarn's flat `node_modules` a
+  pruned devDependency really is gone, so the warning must not be read as universal. And it records
+  the probe that nearly produced the opposite conclusion — `require.resolve` from the library's
+  app-visible path returns `MODULE_NOT_FOUND` while the lazy import still succeeds, because the
+  library resolves from its real `.pnpm/` path. Verify by behaviour, not from a path the library
+  never uses.
+
 ## [1.2.4] - 2026-08-14
 
 ### Documentation
@@ -922,7 +998,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.4...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...HEAD
+[1.2.5]: https://github.com/bymaxone/nest-logger/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/bymaxone/nest-logger/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/bymaxone/nest-logger/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/bymaxone/nest-logger/compare/v1.2.1...v1.2.2

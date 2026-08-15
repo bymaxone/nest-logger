@@ -149,16 +149,28 @@ pnpm add @opentelemetry/api @opentelemetry/sdk-node
 
 ```
 
-> ⚠️ **`-D` does not make it absent in production.** Under pnpm, `pnpm prune --prod` removes the
-> **top-level link** but leaves the package in the store, linked beside this library as the resolved
-> optional peer — and `PrettyDevDestination` imports it lazily, relative to the library's own
-> directory, so it resolves. Verified inside a real pruned production image by a consumer who had
-> assumed the opposite.
+> ⚠️ **Under pnpm, `-D` does not make it absent in production.** pnpm resolves an optional peer as
+> part of a production install, so the package is present **by construction** — not left behind by an
+> incomplete prune. Both routes were measured in real production images by consumers who had assumed
+> otherwise: `pnpm prune --prod` keeps the store entry, and a clean
+> `pnpm install --prod --frozen-lockfile` in a fresh stage installs it too. `PrettyDevDestination`
+> imports it lazily, relative to the library's own directory under `.pnpm/`, where it is a sibling —
+> so it resolves.
 >
-> So "it is a devDependency, therefore this path cannot run in production" is **not** a safe premise.
-> A `PrettyDevDestination` left registered in production will not crash and will not warn: it renders
-> ANSI colour into a log pipeline that has silently failed to parse every line since the deploy. Gate
-> it on an explicit configuration value you can see, not on the packaging.
+> The clean-install case is worth stating separately, because "we do a fresh prod install, not a
+> prune" reads like an exemption and is not one. It is what one of those consumers concluded before
+> measuring their own image.
+>
+> **On other package managers this is different**, and the difference cuts the other way: under npm's
+> or yarn's flat `node_modules`, a pruned devDependency really is gone. If you install with those,
+> do not read this warning as universal.
+>
+> Either way, the rule that survives both layouts: **"it is a devDependency, therefore this path
+> cannot run in production" is not a safe premise, because the premise is about someone else's
+> install command.** A `PrettyDevDestination` left registered in production will not crash and will
+> not warn — it renders ANSI colour into a log pipeline that has silently failed to parse every line
+> since the deploy, which is indistinguishable from a service that went quiet. Gate it on an explicit
+> configuration value you can see, not on the packaging.
 
 > [!NOTE]
 > `@opentelemetry/api` is resolved lazily when the Pino instance is built. When it is absent the trace mixin silently steps aside — the logger never fails to start, and never warns, over an optional peer.
