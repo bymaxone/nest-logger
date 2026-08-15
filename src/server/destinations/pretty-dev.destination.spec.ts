@@ -44,6 +44,28 @@ describe('PrettyDevDestination', () => {
     })
 
     it(/*
+     * The library installs NO stdout `'error'` listener of its own here, and this
+     * pins that as a decision rather than leaving it to drift. pino-pretty's
+     * `build({ destination: process.stdout })` attaches two listeners itself, and
+     * a child process piped to a closed reader survived and exited 0 with nothing
+     * from this library on the stream — so a guard here would be code whose need
+     * is disproven. If pino-pretty ever stops attaching them this case goes red,
+     * which is the signal to revisit rather than to relax the number.
+     */
+    'leaves the stdout guard to pino-pretty, which attaches its own', async () => {
+      const before = process.stdout.listenerCount('error')
+
+      await jest.isolateModulesAsync(async () => {
+        const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
+        const dest = new Fresh()
+        await dest.onInit()
+        await dest.onShutdown()
+      })
+
+      expect(process.stdout.listenerCount('error')).toBeGreaterThan(before)
+    })
+
+    it(/*
      * When pino-pretty is not installed, onInit must throw an actionable error
      * (not a cryptic module-resolution failure) so the consumer knows to either
      * install the peer dep or drop this destination — it must NOT crash boot

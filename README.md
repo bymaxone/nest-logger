@@ -1008,6 +1008,14 @@ Trace context is never copied verbatim into a log entry. The OTel mixin reads th
 
 Every `write()` runs inside a try/catch. A destination that throws or rejects produces a `LOGGER_DESTINATION_WRITE_FAILED` line on `stderr` — never back through the logger, which would turn a broken sink into a write → log → write feedback loop — and the entry is dropped for that sink only. A destination whose `onInit()` rejects is reported as `LOGGER_DESTINATION_INIT_FAILED` and excluded from the shutdown sequence without blocking boot; it stays in the write fan-out, where the same fail-soft wrapper contains it. A logging backend going down degrades logging — it never takes the application with it.
 
+### A closed pipe does not kill the process
+
+`node app | head` closes the read end of stdout while the application is still writing. The stream reports that as `EPIPE` **asynchronously**, through its `'error'` event, after `write()` has already returned — so a `try/catch` around the write catches nothing, and because Node attaches no default handler to `process.stdout`, the emit becomes an uncaught exception and the process dies. Measured, not assumed: `0` listeners, no synchronous throw, `UNCAUGHT:EPIPE`, exit 42.
+
+Every write this library makes to a process stream — the default stdout sink, the last-resort rescue, the pre-init drain, the `stderr` failure reports — installs a swallowing `'error'` listener on first use. **The side effect is worth knowing:** that listener is on the shared `process.stdout`, so after the first log line an EPIPE raised by _your_ writes stops being an uncaught exception too. The alternative is the crash above. Your own `'error'` listener is never removed or replaced — this only ever adds one.
+
+If you write to `process.stdout` from a custom `ILogDestination`, do the same in your own sink; the [destinations guide](./docs/guidelines/DESTINATIONS-IMPLEMENTATION-GUIDELINES.md) has the exact pattern.
+
 ### Bounded field size
 
 Every serializer — the default `err` one and any you supply — is wrapped so a field whose serialized JSON exceeds `maxEntrySizeBytes` (64 KB by default) is replaced by a compact envelope: `_truncated`, `_logKey: 'LOGGER_ENTRY_TRUNCATED'`, `_originalSize`, and a 200-character `_preview`. An accidentally logged webhook payload costs a bounded number of bytes and leaves a record that truncation happened, instead of flooding the sink.

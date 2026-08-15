@@ -220,6 +220,14 @@ export class PrettyDevDestination implements ILogDestination {
    *   message telling the consumer to install it or drop this destination.
    */
   async onInit(): Promise<void> {
+    // No stdout EPIPE guard is installed here, and that is a measured decision
+    // rather than an oversight. pino-pretty writes to `process.stdout` itself, so
+    // nothing in this library can wrap those writes — but `build({ destination:
+    // process.stdout })` attaches two `'error'` listeners of its own, and a child
+    // process piped to a closed reader survived and exited 0 with no listener
+    // from us at all. Adding one would be code whose need is disproven. The
+    // paths this destination DOES own — the pre-init drain and the raw
+    // fallbacks — go through `writeStdoutSafely`, which guards lazily.
     try {
       // The named `build` export is used instead of the default: `pino-pretty`
       // ships as `export =`, so a dynamic `import(...).default` is not typed,

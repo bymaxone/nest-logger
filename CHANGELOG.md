@@ -92,14 +92,33 @@ heading here.
   an uncaught exception. The guarantee was asserted in prose and absent from the code, on exactly the
   paths whose purpose is to survive a broken sink.
 
-  All raw writes now go through one `safe-stdio` helper that installs a swallow-EPIPE handler on
-  first use, covering the asynchronous half; the `try/catch` remains for the synchronous half, since
-  either alone leaves a way to die. The handler is found by identity rather than remembered, so
-  anything that strips listeners from a process stream cannot silently disable the protection
-  permanently.
+  Every library-owned write to a process stream now goes through one `safe-stdio` helper that
+  installs a swallow-EPIPE handler on first use, covering the asynchronous half; the `try/catch`
+  remains for the synchronous half, since either alone leaves a way to die. The handler is found by
+  identity rather than remembered, so anything that strips listeners from a process stream cannot
+  silently disable the protection permanently.
 
-  Reported by Copilot against the new pre-init buffer; the same ineffective pattern was already
-  shipped in `1.2.3` and `1.2.5`, so this corrects those paths too.
+  **This includes `DefaultStdoutDestination`, and that is the half that actually mattered.** The
+  first version of the fix guarded only the fallback paths — the rescue, the drain, the failure
+  reports — none of which a healthy application ever takes. The default sink, which is what a
+  consumer gets when they configure nothing, still called `process.stdout.write` directly, so the
+  ordinary install was exactly as crashable as before. Caught in review and then reproduced against
+  the built artifact: `0` listeners, no synchronous throw, `UNCAUGHT:EPIPE`, exit 42. Re-measured
+  after the fix: survived, exit 0.
+
+  `PrettyDevDestination` is deliberately **not** guarded by this library. `pino-pretty` receives
+  `process.stdout` and attaches two `'error'` listeners of its own; a child piped to a closed reader
+  survived and exited 0 with nothing from us on the stream, so a guard there would be code whose
+  need is disproven. A test pins that, and goes red if `pino-pretty` ever stops attaching them.
+
+  One consequence worth stating rather than burying: after the first log line, `process.stdout` has a
+  swallowing `'error'` listener that belongs to this library, so an EPIPE raised by **your** writes
+  to stdout also stops being an uncaught exception. That is the trade — the alternative is the crash
+  above — and your own `'error'` listener is never removed or replaced.
+
+  Reported by Copilot against the new pre-init buffer, then a second time against the incomplete
+  fix; the same ineffective pattern was already shipped in `1.2.3` and `1.2.5`, so this corrects
+  those paths too.
 
 - **A write after a failed init is verifiably dropped, not merely silent.** Adding the buffer made
   "dropped" and "held" observationally identical — the existing case asserted only that nothing

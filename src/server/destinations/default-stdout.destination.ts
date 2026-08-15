@@ -12,6 +12,7 @@ import { Injectable } from '@nestjs/common'
 
 import type { LogLevel } from '../../shared/types/log-level.type'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
+import { writeStdoutSafely } from '../utils/safe-stdio.util'
 
 /**
  * Canonical destination that writes log payloads to `process.stdout`.
@@ -38,8 +39,16 @@ export class DefaultStdoutDestination implements ILogDestination {
 
   /**
    * Write a serialized JSON log entry (terminated with `\n`) to `stdout`.
+   *
+   * Routed through {@link writeStdoutSafely} rather than calling
+   * `process.stdout.write` directly. This is the sink a consumer gets when they
+   * configure nothing, so it is the path that decides whether a closed pipe
+   * (`node app | head`) kills the application — and unguarded, it did: EPIPE
+   * arrives asynchronously through the stream's `'error'` event, Node attaches no
+   * default handler, and the emit becomes an uncaught exception. Measured on the
+   * built artifact, exit code 42.
    */
   write(payload: string): void {
-    process.stdout.write(payload)
+    writeStdoutSafely(payload)
   }
 }

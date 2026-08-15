@@ -1,10 +1,23 @@
 /**
  * Raw writes to `process.stdout` / `process.stderr` that cannot crash the host.
  *
- * Layer: server/utils — the single mechanism every fallback path in this library
- * uses when it has to emit a line without a destination behind it: the
- * last-resort NDJSON rescue, the pre-init buffer drain, and the destination
- * failure reports.
+ * Layer: server/utils — the single mechanism behind every library-owned write to
+ * a process stream. That is EVERY path, not only the fallbacks: the default
+ * stdout sink, the last-resort NDJSON rescue, the pre-init buffer drain, and the
+ * destination failure reports. The one exception is measured rather than
+ * overlooked — `PrettyDevDestination` hands `process.stdout` to `pino-pretty`,
+ * which attaches two `'error'` listeners of its own and survived the same closed
+ * pipe with nothing from this library on the stream.
+ *
+ * Covering only the fallbacks was the first version of this module, and it was
+ * wrong in the way that mattered most — reported in review and then reproduced
+ * against the built artifact. `DefaultStdoutDestination` is what a consumer gets
+ * when they configure nothing, it wrote through `process.stdout.write` directly,
+ * and no fallback runs in a healthy application. So the ordinary install — the
+ * one the release note claimed was fixed — still died on `node app | head`:
+ * 0 listeners, no synchronous throw, `UNCAUGHT:EPIPE`, exit 42. A guard that
+ * only arms itself once something has already gone wrong protects the paths
+ * least likely to be taken.
  *
  * **A `try/catch` around `process.stdout.write` does not do this**, and that was
  * measured rather than assumed. Writing to a closed pipe (`node app | head`)
@@ -25,13 +38,17 @@
  * whole purpose is to survive a broken sink.
  *
  * The handler is what actually provides it. It is installed once, lazily, on the
- * first raw write, and it swallows the error: this library's central promise is
- * that logging cannot crash the application, and a logger that dies because a
- * reader closed a pipe breaks that promise at the worst moment.
+ * first library-owned write — which in a default install is the first log line —
+ * and it swallows the error: this library's central promise is that logging
+ * cannot crash the application, and a logger that dies because a reader closed a
+ * pipe breaks that promise at the worst moment.
  *
- * Installing a listener on a process-wide stream is a real side effect, so it is
- * done deliberately and only when a fallback path is actually exercised — a
- * consumer who never loses a destination never gets one.
+ * Installing a listener on a process-wide stream is a real side effect, and it is
+ * the consumer's `process.stdout` too: after the first log line, an EPIPE raised
+ * by THEIR writes stops being an uncaught exception as well. That is a deliberate
+ * trade rather than a leak — the alternative is the crash above — and it is
+ * documented in the README under the same reasoning. A consumer's own `'error'`
+ * listener is untouched; this only ever adds.
  */
 
 /**
