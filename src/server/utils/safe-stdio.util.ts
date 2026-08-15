@@ -9,16 +9,6 @@
  * which attaches two `'error'` listeners of its own and survived the same closed
  * pipe with nothing from this library on the stream.
  *
- * Covering only the fallbacks was the first version of this module, and it was
- * wrong in the way that mattered most — reported in review and then reproduced
- * against the built artifact. `DefaultStdoutDestination` is what a consumer gets
- * when they configure nothing, it wrote through `process.stdout.write` directly,
- * and no fallback runs in a healthy application. So the ordinary install — the
- * one the release note claimed was fixed — still died on `node app | head`:
- * 0 listeners, no synchronous throw, `UNCAUGHT:EPIPE`, exit 42. A guard that
- * only arms itself once something has already gone wrong protects the paths
- * least likely to be taken.
- *
  * **A `try/catch` around `process.stdout.write` does not do this**, and that was
  * measured rather than assumed. Writing to a closed pipe (`node app | head`)
  * reports EPIPE **asynchronously**, through the stream's `'error'` event, after
@@ -42,6 +32,13 @@
  * and it swallows the error: this library's central promise is that logging
  * cannot crash the application, and a logger that dies because a reader closed a
  * pipe breaks that promise at the worst moment.
+ *
+ * "Every path" is the correction that made this module work. Its first version
+ * covered only the fallbacks, which sounds cautious and is the opposite:
+ * `DefaultStdoutDestination` wrote directly, no fallback runs in a healthy
+ * application, and the trace above is that ordinary install dying — after the
+ * release note already said it was fixed. A guard that arms itself only once
+ * something has gone wrong protects the paths least likely to be taken.
  *
  * Installing a listener on a process-wide stream is a real side effect, and it is
  * the consumer's `process.stdout` too: after the first log line, an EPIPE raised
