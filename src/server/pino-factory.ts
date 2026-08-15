@@ -32,7 +32,7 @@ import {
   extraServiceFields,
   resolveServiceMetadata
 } from './utils/resolve-resource.util'
-import { sanitizeError, scrubStack } from './utils/sanitize-error.util'
+import { assignOwnErrorFields, sanitizeError, scrubStack } from './utils/sanitize-error.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
@@ -100,24 +100,6 @@ export function leafNameOf(path: string): string | undefined {
 }
 
 /**
- * Fields the serializer derives itself, excluded from the own-property copy.
- *
- * A real `Error` keeps `name` / `message` / `stack` non-enumerable, so they never
- * reach the copy loop. An error-LIKE plain object — what `HttpExceptionFilter`
- * produces, and what any error crossing a worker boundary becomes — carries them
- * as ordinary own keys, and copying them would emit `name` beside the `type`
- * derived from it: the same value under two names, one of which no consumer
- * queries.
- */
-const DERIVED_ERROR_FIELDS: ReadonlySet<string> = new Set([
-  'name',
-  'message',
-  'stack',
-  'cause',
-  'errors'
-])
-
-/**
  * The `err` serializer, replacing `pino.stdSerializers.err`.
  *
  * Two defects made the standard serializer the wrong tool here.
@@ -169,33 +151,16 @@ export function serializeErrorValue(value_: unknown): Record<string, unknown> {
   // An error's OWN enumerable properties are part of the contract. Node puts
   // `code` on system errors, HTTP layers put `statusCode`, and application code
   // attaches domain fields — `pino.stdSerializers.err` copied all of them, so
-  // dropping them here would have been a silent compatibility loss. They are
-  // copied only where they do not shadow a field this serializer owns, and they
-  // pass through the same redaction and size bound as any other serializer
-  // output, which is what keeps a secret attached to an error from escaping.
-  try {
-    // Own properties are copied only off a PLAIN object. `Object.entries` on a
-    // thrown STRING spreads its characters as indexed keys — a real record
-    // carried `{"0":"a","1":" ",…}` beside the UnknownError envelope — and on a
-    // thrown ARRAY it spreads the elements the same way. Neither is an
-    // error-like value with fields worth preserving; both are already fully
-    // represented by the envelope's stringified message.
-    const source =
-      // Stryker disable next-line ConditionalExpression: equivalent BY CONSTRUCTION, not untested — the never-throw catch below makes the mutant observationally identical: with the null check flipped to true, `Object.entries(null)` throws, the catch swallows it, and the emitted envelope is byte-for-byte the same. The guard stays because routing the ordinary null case through exception control flow would trade an explicit branch for a hidden one.
-      typeof value_ === 'object' && value_ !== null && !Array.isArray(value_)
-        ? (value_ as Record<string, unknown>)
-        : {}
-    for (const [key, value] of Object.entries(source)) {
-      if (!Object.hasOwn(serialized, key) && !DERIVED_ERROR_FIELDS.has(key)) {
-        // `Reflect` keeps the dynamic write off the object-injection sink list.
-        Reflect.set(serialized, key, value)
-      }
-    }
-  } catch {
-    // A hostile own-property enumeration degrades to the fields already read
-    // rather than failing the entry: something is better than nothing, and the
-    // never-throw contract on this path is absolute.
-  }
+  // dropping them here would have been a silent compatibility loss. They pass
+  // through the same redaction and size bound as any other serializer output,
+  // which is what keeps a secret attached to an error from escaping.
+  //
+  // Copied from the SANITIZED node rather than from the raw value, which is the
+  // same set of fields by a shorter route: `sanitizeError` now performs that copy
+  // at every depth, so reading the raw value again here would be the identical
+  // walk written twice — and the version that drifts is always the one further
+  // from the bug report.
+  assignOwnErrorFields(serialized, sanitized)
   return serialized
 }
 
@@ -389,6 +354,43 @@ export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): 
   if (options.redactStrategy !== 'names') {
     return PASS_THROUGH
   }
+  return buildNameRedactor(options)
+}
+
+/**
+ * Build the name-walk redactor from the configured coverage.
+ *
+ * This is what SERIALIZER output is redacted with, ungated — it ignores
+ * `redactStrategy` on purpose.
+ *
+ * `redactStrategy: 'paths'` is an escape hatch for a consumer who depends on
+ * `fast-redact`'s exact path-matching over THEIR OWN payload. It was never a
+ * statement about the fields this library synthesizes — and treating it as one
+ * opened a hole the moment error serialization started carrying an error's own
+ * properties at every depth of the `cause` chain.
+ *
+ * Measured, on the built artifact, with `redactStrategy: 'paths'` and a password
+ * attached to the deepest link of `err.errors[0].cause.cause`:
+ *
+ * ```
+ * {"type":"AggregateError", … ,"cause":{"name":"Error","message":"deep",
+ *  "password":"LEAK-deep"}}
+ * ```
+ *
+ * `DEFAULT_REDACT_PATHS` reaches `*.*.*.*.password` — four wildcard levels — and
+ * the serialized shape goes deeper than that, so `fast-redact` never saw the
+ * field. The name walk has no depth ceiling, which is why it is the right tool
+ * for output this library produces regardless of what the consumer chose for
+ * their own record.
+ *
+ * `shouldDisableDefaultRedact` is still honoured: a consumer who explicitly
+ * turned the default coverage off gets only the leaf names of their own
+ * `redactPaths`.
+ *
+ * @param options - Fully-defaulted module options.
+ * @returns A redaction function; the identity function when no name is covered.
+ */
+function buildNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
   const names = [
     ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
     ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
@@ -455,10 +457,24 @@ export function buildPinoInstance(
   health: DestinationHealth
 ): PinoLogger {
   const maxBytes = options.maxEntrySizeBytes
-  const redact = resolveNameRedactor(options)
+  // TWO redactors, deliberately, because they answer to different owners.
+  //   - `redactRecord` honours `redactStrategy`: the caller's record is the
+  //     caller's payload, and `'paths'` is their documented escape hatch (an e2e
+  //     case pins its four-level ceiling as expected behaviour).
+  //   - `redactSerialized` ignores it: serializer output is what THIS library
+  //     synthesizes, and the ceiling cannot reach the depth a cause chain
+  //     serializes to. Collapsing these two into one binding is what broke that
+  //     e2e case, which is the check that caught it.
+  const redactRecord = resolveNameRedactor(options)
+  const redactSerialized = buildNameRedactor(options)
 
   // Every serializer (default `err` + any consumer-supplied) is composed as
   // size-bound(redact(serialize)). Two orderings matter here:
+  //   0. The redactor here is `buildNameRedactor`, applied ungated: it ignores
+  //      `redactStrategy`. That strategy is the consumer's choice about THEIR
+  //      OWN payload; this output is what the library synthesizes, and
+  //      `fast-redact`'s four-wildcard ceiling cannot reach the depth a cause
+  //      chain serializes to.
   //   1. Redaction runs on the serializer's OUTPUT. This is NOT a redundant
   //      second pass over data the `formatters.log` walk already saw — a
   //      serializer PRODUCES a value, and can synthesize fields that existed
@@ -472,7 +488,7 @@ export function buildPinoInstance(
   // `Object.fromEntries` avoids a dynamic `obj[key] =` write (which would trip
   // the object-injection lint rule).
   const bound = <T>(serializer: (input: T) => unknown): ((input: T) => unknown) =>
-    createSizeBoundedSerializer((input: T) => redact(serializer(input)), maxBytes)
+    createSizeBoundedSerializer((input: T) => redactSerialized(serializer(input)), maxBytes)
   const serializers = {
     err: bound(serializeErrorValue),
     ...Object.fromEntries(
@@ -510,7 +526,7 @@ export function buildPinoInstance(
       // consumer's extra metadata instead of silently dropping it. Runs ONCE, at
       // logger construction — no per-entry cost. `true`: bindings are a record
       // root, iterated rather than serialized.
-      bindings: (bindings) => redact(bindings, true) as Record<string, unknown>,
+      bindings: (bindings) => redactRecord(bindings, true) as Record<string, unknown>,
       // The name-walk redactor runs here, on the merged record (mixin output +
       // the caller's object), which is exactly the surface a caller controls.
       // `base` and child bindings are NOT visible at this hook — they are
@@ -518,7 +534,10 @@ export function buildPinoInstance(
       // sensitive, which `pino-factory.spec.ts` pins.
       log: (record) =>
         withSemconvException(
-          withEventName(redact(record, true) as Record<string, unknown>, options.eventNameField),
+          withEventName(
+            redactRecord(record, true) as Record<string, unknown>,
+            options.eventNameField
+          ),
           options.errorFormat
         )
     },

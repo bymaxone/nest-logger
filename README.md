@@ -534,6 +534,32 @@ any other field. `AggregateError` members reach the entry as `err.errors`. There
 OpenTelemetry attribute for a cause chain, so these stay namespaced under `err` rather than
 inventing an `exception.cause` the spec does not define.
 
+**An error's own enumerable properties travel with it at every depth** — `code` on a Node system
+error, `statusCode` from an HTTP layer, whatever domain fields you attached — including on a nested
+`cause` and on each `AggregateError` member:
+
+```json
+{
+  "err": {
+    "type": "Error",
+    "message": "bootstrap failed",
+    "code": "EBOOT",
+    "cause": {
+      "name": "Error",
+      "message": "config invalid",
+      "code": "BYMAX_CONFIG_VALIDATION",
+      "issues": [{ "variable": "DATABASE_URL", "code": "invalid_url" }]
+    }
+  }
+}
+```
+
+This matters because `code` is usually the field you alert on. Until 1.2.7 those properties survived
+only on the error handed to the log call and were dropped the moment the same error was wrapped as
+someone else's `cause` — which is what a `catch` in `main.ts` does routinely. They never shadow a
+field the serializer derives, and they pass through the same name-based redaction and size bound as
+any other serializer output.
+
 An error's own enumerable properties (`code`, `statusCode`, domain fields) are carried through, as
 Pino's standard serializer did.
 
@@ -760,7 +786,7 @@ So the common accident — adding `new PrettyDevDestination()` without installin
 ```typescript
 // One line per entry, with the fields your project repeats on every line hidden.
 new PrettyDevDestination({
-  view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event.name' }
+  view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event\\.name' }
 })
 
 // Message only, with the context pulled back into the line.
@@ -779,6 +805,15 @@ new PrettyDevDestination({
 | `colorize`      | `true`                   | ANSI colour                                                                  |
 
 > **`hideObject` hides it everywhere.** In pretty mode there is no JSON copy behind the rendering, because `destinations` **replaces** stdout — so a field hidden here, `logKey` included, is not visible anywhere. That is what the option is for; `messageFormat` is how you pull a specific field back.
+
+> **A dot in `ignore` means "nested path", so a field name that CONTAINS a dot must escape it.** This library emits `event.name` as a literal top-level key, so the obvious spelling hides nothing at all — `pino-pretty` looks for an `event` object with a `name` inside, finds neither, and says nothing. Measured on one entry with only the option changing:
+>
+> ```
+> ignore: '…,event.name'    → INFO: msg {"logKey":"X","event.name":"x"}   ← still there
+> ignore: '…,event\\.name'  → INFO: msg {"logKey":"X"}                    ← hidden
+> ```
+>
+> In a TypeScript string literal that is `'event\\.name'` — one real backslash reaching `pino-pretty`. `service` and `deployment` need no escape; they really are nested objects. Reported by a consumer who copied the example above when it still had the unescaped form.
 
 The shape is exported as `PrettyViewOptions` when you want to build the view separately — it is this library's own interface, not a re-export of `pino-pretty`'s `PrettyOptions`, so type-checking without the optional peer installed still resolves.
 

@@ -281,6 +281,74 @@ describe('buildPinoInstance', () => {
   })
 
   it(/*
+   * SECURITY — the serializer's output is redacted under `redactStrategy:
+   * 'paths'` too, which is NOT what that option controls.
+   *
+   * Carrying own properties at every depth (1.2.7) opened a hole here and the
+   * suite did not see it: under `'paths'` the name walk is a pass-through, so
+   * redaction fell to `fast-redact` and `DEFAULT_REDACT_PATHS` reaches
+   * `*.*.*.*.password` — four wildcard levels. A password on the deepest link of
+   * `err.errors[0].cause.cause` sits below that ceiling, and it was emitted in
+   * clear. Measured on the built artifact, and confirmed absent from 1.2.6 —
+   * where the field was not carried at all — so it was a regression this release
+   * introduced rather than one it inherited.
+   *
+   * The strategy is the consumer's choice about THEIR OWN payload; what a
+   * serializer synthesizes is this library's output, and the name walk (which has
+   * no depth ceiling) covers it either way.
+   */
+  'redacts serializer output even under the legacy paths strategy', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(
+      applyDefaults({ ...baseOptions, redactStrategy: 'paths' }),
+      new LogContextService(),
+      [capture.destination]
+    )
+    const deep = Object.assign(new Error('deep'), { password: 'LEAK-deep' })
+    const member = new Error('member', { cause: new Error('mid', { cause: deep }) })
+
+    logger.error({ err: new AggregateError([member], 'all failed') }, 'msg')
+
+    const line = JSON.stringify(capture.entries()[0])
+    expect(line).not.toContain('LEAK-deep')
+    expect(line).toContain('[REDACTED]')
+  })
+
+  it(/*
+   * SECURITY — an error's own properties now travel at EVERY depth of the cause
+   * chain (1.2.7), which widened what reaches a sink: a secret attached to an
+   * error two levels down used to be dropped by accident, and is now carried on
+   * purpose. Redaction has to reach it, or the fix would have opened a leak
+   * while closing an observability gap.
+   *
+   * Asserted through the wired factory rather than the serializer alone, because
+   * the property belongs to the composition — `size-bound(redact(serialize))` —
+   * and a serializer that stopped being wrapped would still pass a direct test.
+   */
+  'redacts an own property carried on a nested cause', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
+      capture.destination
+    ])
+    const inner = Object.assign(new Error('auth failed'), {
+      password: 'hunter2',
+      apiKey: 'sk-live-123',
+      safe: 'keep-me'
+    })
+
+    logger.error({ err: new Error('outer', { cause: inner }) }, 'msg')
+
+    const cause = (capture.entries()[0]?.['err'] as Record<string, unknown>)['cause'] as Record<
+      string,
+      unknown
+    >
+    expect(cause['password']).toBe('[REDACTED]')
+    expect(cause['apiKey']).toBe('[REDACTED]')
+    // The point of carrying them at all: a non-secret field still arrives.
+    expect(cause['safe']).toBe('keep-me')
+  })
+
+  it(/*
    * The converse, so the root exception stays surgical: a NESTED value with a
    * `toJSON` is still inspected through that method, because `JSON.stringify`
    * will call it.

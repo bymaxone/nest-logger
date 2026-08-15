@@ -11,6 +11,107 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-08-15
+
+### Security
+
+- **Serializer output is redacted by name under `redactStrategy: 'paths'` too.** Carrying an
+  error's own properties at every depth of the `cause` chain (below) opened a hole in that legacy
+  mode: the name walk is a pass-through there, so redaction fell entirely to `fast-redact`, and
+  `DEFAULT_REDACT_PATHS` reaches `*.*.*.*.password` — four wildcard levels. A serialized cause chain
+  goes deeper. Measured on the built artifact with a password on the deepest link of
+  `err.errors[0].cause.cause`:
+
+  ```json
+  { "cause": { "name": "Error", "message": "deep", "password": "LEAK-deep" } }
+  ```
+
+  Confirmed absent from `1.2.6`, where the field was not carried at all — so this was a regression
+  introduced inside this release rather than an inherited one, and it never reached a published
+  artifact.
+
+  `redactStrategy` is the consumer's choice about **their own payload**; what a serializer
+  synthesizes is this library's output, and the name walk — which has no depth ceiling — now covers
+  it either way. The caller's record is untouched by this: `'paths'` still means exactly what it
+  documented, four-level ceiling included, and the e2e case that pins that ceiling is what caught
+  the first attempt at this fix collapsing both hooks onto one redactor.
+
+  Reported by Copilot on the pull request that introduced the deeper copy.
+
+- **An own `__proto__` key on an error is now stored as data instead of being applied as a
+  prototype.** The own-property copy assigned each key, and `__proto__` is an accessor inherited
+  from `Object.prototype` — so the assignment walked the chain, invoked that setter, and replaced
+  the sanitized node's prototype. An error-like object arriving from JSON (a worker boundary, a
+  queue, an HTTP body) carries `__proto__` as an ordinary own enumerable key, and `Object.entries`
+  hands it over like any other.
+
+  Measured rather than assumed. `Object.prototype` itself is never touched, so this is prototype
+  injection into a single log node rather than global pollution, and with a JSON-sourced payload the
+  emitted line was unchanged — `JSON.stringify` ignores inherited fields. The live hazard is the
+  node: given `{"__proto__": null}` it loses `hasOwnProperty` and `toString`, which then **throw**
+  for anything downstream that touches them, inside the one path whose contract is that logging
+  never crashes the application.
+
+  The copy now defines an own data property, which makes the key inert and keeps its value — an
+  error that genuinely carries a `__proto__` field gets it logged as the data it is. Reported by
+  Copilot on the pull request that introduced the deeper copy.
+
+### Documentation
+
+- **`ignore` needs an escaped dot for `event.name`, and every example here taught the opposite.**
+  `pino-pretty` reads a dot as a nested path, and this library emits `event.name` as a literal
+  top-level key — so `ignore: '…,event.name'` looks for an `event` object with a `name` inside,
+  finds neither, and hides nothing without a word of complaint. Measured on one entry with only the
+  option changing:
+
+  ```
+  ignore: '…,event.name'    → INFO: msg {"logKey":"X","event.name":"x"}   ← still there
+  ignore: '…,event\\.name'  → INFO: msg {"logKey":"X"}                    ← hidden
+  ```
+
+  Found by a consumer who copied the `1.2.6` example verbatim, configured it, and saw the field
+  still on screen. The escaped form is now in the `PrettyViewOptions` JSDoc — where an editor's
+  autocomplete shows it, which is where someone actually is when writing the option — in the README,
+  and in the `1.2.6` example itself, which is corrected rather than left to keep teaching it.
+
+### Fixed
+
+- **An error's own properties now survive at every depth of the `cause` chain, not just at the top.**
+  `code`, `statusCode` and any domain field an application attaches were copied onto the error handed
+  to the log call and **dropped the moment that same error was wrapped as someone else's `cause`** —
+  which is what a `catch` in `main.ts` does routinely. Measured on the published `1.2.6`:
+
+  ```json
+  {
+    "type": "Error",
+    "message": "bootstrap failed",
+    "code": "EBOOT",
+    "cause": { "name": "Error", "message": "config invalid" }
+  }
+  ```
+
+  The inner error carried `code: "BYMAX_CONFIG_VALIDATION"` and an `issues` array holding one entry
+  per invalid variable. Both vanished. The reporting consumer framed the severity exactly right:
+  because `message` survives and their message is the full aggregated report, **the human stayed
+  served while the machine went blind** — the text an operator reads was intact, and the fields an
+  alert or a dashboard keys on were gone.
+
+  Nothing justified the asymmetry. The reason own properties are "part of the contract" at the top —
+  `pino.stdSerializers.err` copied them, so dropping them is a silent compatibility loss — is the
+  same reason one level down, and a wrapped error is the common case rather than the exotic one.
+  They still never shadow a field the serializer derives, and they still pass through the same
+  name-based redaction and size bound as any other serializer output.
+
+  Found by following up an asymmetry noticed while answering a consumer's question about how to pass
+  an error through the NestJS bridge — not by a bug report.
+
+### Changed
+
+- **The own-property copy lives in one place instead of two.** The `err` serializer read the raw
+  thrown value and walked its properties itself, duplicating what the sanitizer now does at every
+  node; it copies from the sanitized node instead. Same fields, one walk — and no second copy to
+  drift away from the first.
+
 ## [1.2.6] - 2026-08-15
 
 ### Added
@@ -30,7 +131,7 @@ heading here.
 
   ```ts
   new PrettyDevDestination({
-    view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event.name' }
+    view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event\\.name' }
   })
   ```
 
@@ -1130,7 +1231,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...HEAD
+[1.2.7]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...v1.2.7
 [1.2.6]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/bymaxone/nest-logger/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/bymaxone/nest-logger/compare/v1.2.3...v1.2.4
