@@ -358,7 +358,9 @@ export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): 
 }
 
 /**
- * Resolve the redactor applied to SERIALIZER output, which ignores
+ * Build the name-walk redactor from the configured coverage.
+ *
+ * This is what SERIALIZER output is redacted with, ungated — it ignores
  * `redactStrategy` on purpose.
  *
  * `redactStrategy: 'paths'` is an escape hatch for a consumer who depends on
@@ -384,20 +386,6 @@ export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): 
  * `shouldDisableDefaultRedact` is still honoured: a consumer who explicitly
  * turned the default coverage off gets only the leaf names of their own
  * `redactPaths`.
- *
- * @internal Exported only for unit testing. NOT re-exported by the package barrel.
- * @param options - Fully-defaulted module options.
- * @returns A redaction function; the identity function when nothing is covered.
- * @example
- *   resolveSerializerRedactor({ ...options, redactStrategy: 'paths' })
- *   // → a name-walk redactor, NOT a pass-through
- */
-export function resolveSerializerRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
-  return buildNameRedactor(options)
-}
-
-/**
- * Build the name-walk redactor from the configured coverage.
  *
  * @param options - Fully-defaulted module options.
  * @returns A redaction function; the identity function when no name is covered.
@@ -478,11 +466,11 @@ export function buildPinoInstance(
   //     serializes to. Collapsing these two into one binding is what broke that
   //     e2e case, which is the check that caught it.
   const redactRecord = resolveNameRedactor(options)
-  const redactSerialized = resolveSerializerRedactor(options)
+  const redactSerialized = buildNameRedactor(options)
 
   // Every serializer (default `err` + any consumer-supplied) is composed as
   // size-bound(redact(serialize)). Two orderings matter here:
-  //   0. The redactor here is `resolveSerializerRedactor`, which ignores
+  //   0. The redactor here is `buildNameRedactor`, applied ungated: it ignores
   //      `redactStrategy`. That strategy is the consumer's choice about THEIR
   //      OWN payload; this output is what the library synthesizes, and
   //      `fast-redact`'s four-wildcard ceiling cannot reach the depth a cause
