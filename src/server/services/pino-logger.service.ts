@@ -26,6 +26,7 @@ import {
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
 import { toSingleLineMessage } from '../utils/escape-log-text.util'
 import type { Redactor } from '../utils/redact-by-name.util'
+import { isErrorLike } from '../utils/sanitize-error.util'
 
 /** Pino level methods the NestJS-style variadic path dispatches to (error is handled separately). */
 type PinoLevelMethod = 'info' | 'warn' | 'debug' | 'trace' | 'fatal'
@@ -116,6 +117,14 @@ function safeErrorMessage(error: Error): string {
  * "delivery failed" with the reason discarded, while the HTTP response was 204
  * and nothing had been delivered.
  *
+ * Detected STRUCTURALLY rather than with `instanceof Error`, which is realm-local:
+ * an error from a `vm` context or one already normalized into a plain
+ * `{ name, message, stack }` — what `HttpExceptionFilter` produces, and what any
+ * error crossing a process or worker boundary becomes — is not an `Error`
+ * instance. Dropping those would leave the exact hole this function exists to
+ * close. `isErrorLike` is the same detector `sanitizeError` uses, shared so the
+ * two cannot disagree about what an error is.
+ *
  * Scanned rather than read positionally, because the convention is not positional:
  * callers write `(message, error)` and `(message, error, context)` alike, and a
  * `context` string sits in the same tail.
@@ -124,7 +133,7 @@ function safeErrorMessage(error: Error): string {
  * @returns The first `Error` found, or `undefined` when the tail holds none.
  */
 function findErrorParam(optionalParams: unknown[]): Error | undefined {
-  return optionalParams.find((param): param is Error => param instanceof Error)
+  return optionalParams.find((param): param is Error => isErrorLike(param))
 }
 
 /**
@@ -213,7 +222,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * @param optionalParams - NestJS trailing params (`stack` at index 0, `context` at index 1).
    */
   error(message: unknown, ...optionalParams: unknown[]): void {
-    if (message instanceof Error) {
+    if (isErrorLike(message)) {
       const payload: Record<string, unknown> = { err: message }
       assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
       this.pino.error(payload, safeErrorMessage(message))
@@ -446,7 +455,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     // cause handed to `warn` or `fatal` is exactly as much a cause as one handed
     // to `error`, and `fatal` is the worst place to drop it: it is the level a
     // caller reaches for when the process is about to die.
-    const leading = message instanceof Error ? message : undefined
+    const leading = isErrorLike(message) ? message : undefined
     assignIfDefined(payload, 'err', leading ?? findErrorParam(optionalParams))
     // A leading `Error` becomes the message, matching what `error(err)` emits —
     // `String(error)` would have produced the `"Error: …"` prefix instead.

@@ -1,3 +1,5 @@
+import { runInNewContext } from 'node:vm'
+
 import pino from 'pino'
 import type { Logger } from 'pino'
 
@@ -328,6 +330,53 @@ describe('PinoLoggerService', () => {
         const [payload] = spy.mock.calls[0] ?? []
         expect(payload).toMatchObject({ stack: 'at foo (bar.js:1:1)' })
         expect(payload).not.toHaveProperty('err')
+      })
+
+      it(/*
+       * REGRESSION — `instanceof Error` is realm-local, and this codebase already
+       * learned that (`sanitize-error.util.ts` calls it "too narrow, and the gap
+       * was a live defect"). A genuine Error built in a `vm` context fails
+       * `instanceof` for reasons that have nothing to do with it being an error,
+       * so a cause-preserving fix built on `instanceof` would still drop exactly
+       * the errors that crossed a boundary — the population most likely to be
+       * carrying the reason something failed.
+       */
+      'keeps a genuine Error from another realm', () => {
+        const spy = jest.spyOn(rawLogger, 'error')
+        const foreign = runInNewContext('new Error("from another realm")') as Error
+        // Precondition: this is the condition the old check got wrong.
+        expect(foreign instanceof Error).toBe(false)
+
+        service.error('delivery failed', foreign)
+
+        expect(spy.mock.calls[0]?.[0]).toMatchObject({ err: foreign })
+      })
+
+      it(/*
+       * The other half of the same gap: an error ALREADY normalized into a plain
+       * `{ name, message, stack }` — what `HttpExceptionFilter` produces, and what
+       * any error crossing a process or worker boundary becomes.
+       */
+      'keeps an error normalized into a plain object', () => {
+        const spy = jest.spyOn(rawLogger, 'warn')
+        const normalized = { name: 'TimeoutError', message: 'upstream timed out', stack: 'at x' }
+
+        service.warn('gateway call failed', normalized)
+
+        expect(spy.mock.calls[0]?.[0]).toMatchObject({ err: normalized })
+      })
+
+      it(/*
+       * The detector's bar stays narrow: an ordinary object must NOT be mistaken
+       * for a cause, or every metadata bag passed by a caller would be reshaped
+       * into an error and lose its fields.
+       */
+      'does not mistake an ordinary object for a cause', () => {
+        const spy = jest.spyOn(rawLogger, 'error')
+
+        service.error('boom', { userId: 'u_1', attempts: 3 })
+
+        expect(spy.mock.calls[0]?.[0]).not.toHaveProperty('err')
       })
 
       it(/*

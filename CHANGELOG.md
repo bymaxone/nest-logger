@@ -53,6 +53,16 @@ heading here.
   populated from an `Error` — the `err` serializer derives it, so writing both would emit the same
   trace under two names.
 
+  **Detection is structural, not `instanceof`.** The first version of this fix used
+  `instanceof Error`, which is realm-local — so it would still have dropped a genuine `Error` built in
+  a `vm` context, and one already normalized into a plain `{ name, message, stack }`, which is what
+  `HttpExceptionFilter` produces and what any error crossing a process or worker boundary becomes.
+  That is the population most likely to be carrying the reason something failed, and this repository
+  had already recorded the same lesson in `sanitizeError` ("too narrow, and the gap was a live
+  defect"). The bridge now shares `isErrorLike` with `sanitizeError`, so the two cannot disagree about
+  what an error is. The bar stays deliberately narrow — string `name` AND string `message` — so an
+  ordinary metadata object is not mistaken for a cause.
+
   **Two output changes to expect, since "additive" would overstate it.** Nothing is removed or
   renamed, and a caller passing a string stack is untouched. But a caller who was passing an `Error`
   necessarily sees a difference, because that is the defect:
