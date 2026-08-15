@@ -60,7 +60,7 @@ pnpm add @bymax-one/nest-logger
 - ✅ **Structured JSON** — every entry has `level`, `time`, `service`, `logKey`, `msg`, and arbitrary metadata fields
 - ✅ **`MODULE_ACTION_RESULT` Log Keys** — a naming convention enforced by an exported regex for CI validation
 - ✅ **NestJS `LoggerService` Bridge** — drop-in replacement; all NestJS internal logs flow through Pino
-- ✅ **Pretty-Print in Dev** — opt-in `PrettyDevDestination` for readable local output (requires optional `pino-pretty`)
+- ✅ **Pretty-Print in Dev** — opt-in `PrettyDevDestination` with a configurable `view` (single-line, hidden fields, message-only) for readable local output (requires optional `pino-pretty`)
 - ✅ **Field Size Guard** — a serialized field over the ceiling (default 64 KB) is replaced by a compact truncation envelope instead of flooding the sink
 
 ### 🛡️ Security & Privacy
@@ -752,6 +752,37 @@ The consequence worth knowing: a sink you supply may be the **only** one the app
 - **If _every_ destination fails to initialize, entries fall back to raw NDJSON on `stdout`.** Degraded and ugly, but visible; nothing is lost, including the bootstrap entries.
 
 So the common accident — adding `new PrettyDevDestination()` without installing the optional `pino-pretty` — costs you colours and a line on stderr telling you why, never your logs.
+
+### Choosing how the dev terminal renders
+
+`PrettyDevDestination` takes a `view`. Every field defaults to what it rendered before, so `new PrettyDevDestination()` is unchanged — the options exist because the default view is deliberately verbose, and one entry can be seven lines.
+
+```typescript
+// One line per entry, with the fields your project repeats on every line hidden.
+new PrettyDevDestination({
+  view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event.name' }
+})
+
+// Message only, with the context pulled back into the line.
+new PrettyDevDestination({
+  view: { hideObject: true, messageFormat: '[{context}] {msg}' }
+})
+```
+
+| Field           | Default                  | Notes                                                                        |
+| --------------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `singleLine`    | `false`                  | The single biggest change to how a terminal reads                            |
+| `ignore`        | `'pid,hostname,service'` | Display-only — what a real sink receives is untouched                        |
+| `hideObject`    | `false`                  | Hides the record entirely; see the caveat below                              |
+| `messageFormat` | —                        | e.g. `'[{context}] {msg}'`; how to keep one field visible under `hideObject` |
+| `translateTime` | `'SYS:HH:MM:ss.l'`       | Or `false` for the raw timestamp                                             |
+| `colorize`      | `true`                   | ANSI colour                                                                  |
+
+> **`hideObject` hides it everywhere.** In pretty mode there is no JSON copy behind the rendering, because `destinations` **replaces** stdout — so a field hidden here, `logKey` included, is not visible anywhere. That is what the option is for; `messageFormat` is how you pull a specific field back.
+
+> **`destination` is not exposed, by design.** The library owns where entries go — a redirected stream would route around the fan-out and the last-resort rescue above. It is absent from the type and applied after your options are merged, so it cannot be overridden from untyped JavaScript either.
+
+**The first entries of a boot are held, not lost.** The transform cannot exist until `onInit` — loading the optional peer is async — so everything NestJS emits while instantiating providers arrives before it. Those entries are buffered and then rendered through the transform in arrival order. If the peer is missing, the bound is reached, or the app shuts down before init, they are written as raw NDJSON instead: degraded, never dropped.
 
 ### Postgres destination (Prisma)
 

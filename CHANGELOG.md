@@ -11,6 +11,64 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-08-15
+
+### Added
+
+- **`PrettyDevDestination` takes a `view`, so the terminal rendering is the consumer's choice.**
+  Requested with the measurement that makes the case — one real entry rendered three ways through
+  `pino-pretty`, where only the options differ:
+
+  ```
+  A) the built-in view                                   7 lines for one entry
+  B) singleLine + an extended ignore list                1 line, fields kept
+  C) hideObject + messageFormat '[{context}] {msg}'      1 line, message only
+  ```
+
+  All of it was reachable in `pino-pretty` and none of it was reachable through this library, which
+  hard-coded five options and read only `minLevel` from its constructor.
+
+  ```ts
+  new PrettyDevDestination({
+    view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event.name' }
+  })
+  ```
+
+  `PrettyViewOptions` covers `singleLine`, `ignore`, `hideObject`, `messageFormat`, `translateTime`
+  and `colorize`. **Additive** — every field defaults to what it rendered before, so
+  `new PrettyDevDestination()` is unchanged.
+
+  **`destination` is deliberately not exposed.** The library owns where entries go; a redirected
+  stream would route around the multistream fan-out and the last-resort rescue. It is absent from
+  the type AND applied after the consumer's options are spread, so an untyped JavaScript caller
+  cannot smuggle one in either — omitting it from a type is a suggestion, ordering the spread is the
+  guarantee.
+
+  The options bag is this library's **own** interface rather than `pino-pretty`'s `PrettyOptions`,
+  and that is load-bearing rather than stylistic: a type import from the peer emits a hard
+  `import { PrettyOptions } from 'pino-pretty'` on line 4 of the published `.d.ts`, so every consumer
+  who type-checks without the optional peer installed would hit an unresolved module. That would make
+  an optional peer effectively required. Measured on the built artifact.
+
+### Fixed
+
+- **Entries emitted before the pretty transform exists are now rendered, not dumped raw.** A real
+  boot put **43 raw NDJSON lines on screen before the first rendered one** — every entry NestJS emits
+  while instantiating providers, because the transform cannot be built until `onInit` (loading the
+  optional peer is async). Nothing was ever lost, but a developer who had just enabled pretty output
+  saw a screen of JSON and concluded it had not worked. That is what was reported.
+
+  Those entries are now held and flushed **through** the transform once it exists, in arrival order.
+  Nothing is lost on any path, which is the property the raw passthrough had and the buffer had to
+  keep:
+
+  - **init fails** → the held entries are drained raw, because the renderer they were waiting for is
+    never coming;
+  - **the bound is reached** (1000 entries — nothing guarantees `onInit` ever runs) → the buffer
+    drains raw _before_ the entry that tripped it, so output stays in order rather than replaying old
+    entries after newer ones;
+  - **shutdown before init** → drained raw rather than dying with the process.
+
 ## [1.2.5] - 2026-08-14
 
 ### Fixed
@@ -1014,7 +1072,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...HEAD
+[1.2.6]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/bymaxone/nest-logger/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/bymaxone/nest-logger/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/bymaxone/nest-logger/compare/v1.2.2...v1.2.3
