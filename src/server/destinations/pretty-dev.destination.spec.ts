@@ -1,4 +1,5 @@
 import { PrettyDevDestination } from './pretty-dev.destination'
+import type { PrettyViewOptions } from './pretty-dev.destination'
 
 /** A syntactically valid Pino NDJSON line `pino-pretty` can parse and format. */
 const VALID_NDJSON_LINE =
@@ -139,8 +140,14 @@ describe('PrettyDevDestination', () => {
         }))
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const hijack = { write: (): void => undefined }
-        // The shape an untyped caller could pass; `PrettyViewOptions` has no such field.
-        await new Fresh({ view: { destination: hijack } as never }).onInit()
+        // Attached at RUNTIME rather than cast into the type. A cast would assert
+        // something false to the compiler; this is what an untyped JavaScript
+        // caller actually does — the property is simply there, and the type never
+        // claimed otherwise.
+        const view: PrettyViewOptions = {}
+        Object.assign(view, { destination: hijack })
+
+        await new Fresh({ view }).onInit()
         expect(captured[0]?.['destination']).toBe(process.stdout)
         expect(captured[0]?.['destination']).not.toBe(hijack)
       })
