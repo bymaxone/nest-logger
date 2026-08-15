@@ -281,6 +281,40 @@ describe('buildPinoInstance', () => {
   })
 
   it(/*
+   * SECURITY — an error's own properties now travel at EVERY depth of the cause
+   * chain (1.2.7), which widened what reaches a sink: a secret attached to an
+   * error two levels down used to be dropped by accident, and is now carried on
+   * purpose. Redaction has to reach it, or the fix would have opened a leak
+   * while closing an observability gap.
+   *
+   * Asserted through the wired factory rather than the serializer alone, because
+   * the property belongs to the composition — `size-bound(redact(serialize))` —
+   * and a serializer that stopped being wrapped would still pass a direct test.
+   */
+  'redacts an own property carried on a nested cause', () => {
+    const capture = createCapture()
+    const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
+      capture.destination
+    ])
+    const inner = Object.assign(new Error('auth failed'), {
+      password: 'hunter2',
+      apiKey: 'sk-live-123',
+      safe: 'keep-me'
+    })
+
+    logger.error({ err: new Error('outer', { cause: inner }) }, 'msg')
+
+    const cause = (capture.entries()[0]?.['err'] as Record<string, unknown>)['cause'] as Record<
+      string,
+      unknown
+    >
+    expect(cause['password']).toBe('[REDACTED]')
+    expect(cause['apiKey']).toBe('[REDACTED]')
+    // The point of carrying them at all: a non-secret field still arrives.
+    expect(cause['safe']).toBe('keep-me')
+  })
+
+  it(/*
    * The converse, so the root exception stays surgical: a NESTED value with a
    * `toJSON` is still inspected through that method, because `JSON.stringify`
    * will call it.
