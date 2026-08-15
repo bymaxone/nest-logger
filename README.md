@@ -149,13 +149,16 @@ pnpm add @opentelemetry/api @opentelemetry/sdk-node
 
 ```
 
-> ⚠️ **Under pnpm, `-D` does not make it absent in production.** pnpm resolves an optional peer as
-> part of a production install, so the package is present **by construction** — not left behind by an
-> incomplete prune. Both routes were measured in real production images by consumers who had assumed
-> otherwise: `pnpm prune --prod` keeps the store entry, and a clean
-> `pnpm install --prod --frozen-lockfile` in a fresh stage installs it too. `PrettyDevDestination`
-> imports it lazily, relative to the library's own directory under `.pnpm/`, where it is a sibling —
-> so it resolves.
+> ⚠️ **Under pnpm, `-D` may not make it absent in production — measure, do not assume.** Two
+> consumers who had assumed otherwise measured the peer **present** in their real production images,
+> by two different build routes: `pnpm prune --prod` keeps the store entry, and a clean
+> `pnpm install --prod --frozen-lockfile` in a fresh stage installs it too. In both, the peer was
+> recorded in the lockfile. `PrettyDevDestination` imports it lazily, relative to the library's own
+> directory under `.pnpm/`, where it is a sibling — so it resolves.
+>
+> That is two measurements, not a law of pnpm: whether a production install always carries an optional
+> peer, however the lockfile was produced, has not been tested here. The advice below does not depend
+> on it.
 >
 > The clean-install case is worth stating separately, because "we do a fresh prod install, not a
 > prune" reads like an exemption and is not one. It is what one of those consumers concluded before

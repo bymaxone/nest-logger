@@ -76,9 +76,15 @@ heading here.
 - **The `pnpm prune --prod` note named the wrong mechanism.** It described the peer surviving as a
   _residue_ of an incomplete prune. A second consumer whose Dockerfile never prunes — a clean
   `pnpm install --prod --frozen-lockfile` in a fresh runtime stage — measured the peer present anyway.
-  pnpm resolves an optional peer as part of a production install, so it is there **by construction**.
-  The distinction matters because "we do a clean prod install, not a prune" reads like an exemption
-  and is not one; it is what that consumer expected before measuring their own image.
+  In both images the peer was recorded in the lockfile and pnpm placed it in the store for a
+  production-only install. The distinction matters because "we do a clean prod install, not a prune"
+  reads like an exemption and is not one; it is what that consumer expected before measuring their
+  own image.
+
+  The note is now phrased as **two measurements rather than a law of pnpm** — whether a prod install
+  always carries an optional peer, however the lockfile was produced, has not been tested here. The
+  first version of this note over-generalized from the evidence, which is the same class of error as
+  the two corrections it documents.
 
   The note now also says what is different **elsewhere**: under npm's or yarn's flat `node_modules` a
   pruned devDependency really is gone, so the warning must not be read as universal. And it records
