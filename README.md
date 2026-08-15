@@ -534,6 +534,32 @@ any other field. `AggregateError` members reach the entry as `err.errors`. There
 OpenTelemetry attribute for a cause chain, so these stay namespaced under `err` rather than
 inventing an `exception.cause` the spec does not define.
 
+**An error's own enumerable properties travel with it at every depth** — `code` on a Node system
+error, `statusCode` from an HTTP layer, whatever domain fields you attached — including on a nested
+`cause` and on each `AggregateError` member:
+
+```json
+{
+  "err": {
+    "type": "Error",
+    "message": "bootstrap failed",
+    "code": "EBOOT",
+    "cause": {
+      "name": "Error",
+      "message": "config invalid",
+      "code": "BYMAX_CONFIG_VALIDATION",
+      "issues": [{ "variable": "DATABASE_URL", "code": "invalid_url" }]
+    }
+  }
+}
+```
+
+This matters because `code` is usually the field you alert on. Until 1.2.7 those properties survived
+only on the error handed to the log call and were dropped the moment the same error was wrapped as
+someone else's `cause` — which is what a `catch` in `main.ts` does routinely. They never shadow a
+field the serializer derives, and they pass through the same name-based redaction and size bound as
+any other serializer output.
+
 An error's own enumerable properties (`code`, `statusCode`, domain fields) are carried through, as
 Pino's standard serializer did.
 

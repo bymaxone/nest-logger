@@ -58,7 +58,38 @@ export interface SanitizedError {
   cause?: SanitizedChild
   /** Sanitized `AggregateError.errors`, each possibly truncated or circular. */
   errors?: SanitizedChild[]
+  /**
+   * The error's own enumerable properties, copied verbatim — `code` on a Node
+   * system error, `statusCode` from an HTTP layer, whatever domain fields the
+   * application attached.
+   *
+   * The index signature exists because these keys are not knowable in advance.
+   * It is the price of carrying them at all, and the alternative — nesting them
+   * under a fixed key — would put the same field at two different paths
+   * depending on its depth in the chain.
+   */
+  [key: string]: unknown
 }
+
+/**
+ * Fields a sanitized node derives itself, excluded from the own-property copy.
+ *
+ * A real `Error` keeps `name` / `message` / `stack` non-enumerable, so they never
+ * reach the copy loop. An error-LIKE plain object — what `HttpExceptionFilter`
+ * produces, and what any error crossing a worker boundary becomes — carries them
+ * as ordinary own keys, and copying them would emit the same value twice: once
+ * derived (scrubbed, in the case of `stack`) and once raw.
+ *
+ * @internal Shared with `pino-factory`, whose `err` serializer renames `name` to
+ *   the `type` key consumers query. NOT re-exported by the package barrel.
+ */
+export const DERIVED_ERROR_FIELDS: ReadonlySet<string> = new Set([
+  'name',
+  'message',
+  'stack',
+  'cause',
+  'errors'
+])
 
 /**
  * A nested sanitized value: a full {@link SanitizedError}, a truncation marker
@@ -191,11 +222,58 @@ function toSanitizedError(
       }
     }
 
+    // At EVERY depth, not only the top. The `err` serializer used to copy own
+    // properties itself, so `code` survived on the error handed to the log call
+    // and vanished the moment that same error was wrapped as someone else's
+    // `cause` — measured on the published 1.2.6, where a nested cause kept
+    // `name`/`message`/`stack` and dropped both `code` and the error's entire
+    // structured payload. Nothing justified the asymmetry: the reason own
+    // properties are "part of the contract" at the top is the reason they are
+    // part of it one level down, and a wrapped error is the common case, not the
+    // exotic one. The reporting consumer put it precisely — the human stayed
+    // served, because the message survives, while the machine went blind.
+    assignOwnErrorFields(result, value)
+
     return result
   } catch {
     // Never throw on the error path: the value carried a hostile getter or
     // otherwise resisted serialization. Degrade this node to a safe shape.
     return { name: 'SanitizeFailed', message: 'Failed to sanitize the thrown value' }
+  }
+}
+
+/**
+ * Copy a source error's OWN enumerable properties onto a serialized node.
+ *
+ * Skips any key the node already holds and any key in {@link DERIVED_ERROR_FIELDS},
+ * so a derived field is never shadowed by the raw one it was derived from.
+ *
+ * ARRAYS are skipped. `Object.entries` on an array spreads its elements as
+ * indexed keys, and `isErrorLike` is structural — an array carrying string
+ * `name` and `message` own properties passes it — so an array can reach here and
+ * would otherwise smuggle `{"0":…,"1":…}` into the node. The same spread once
+ * happened with a thrown STRING, in a real record that carried
+ * `{"0":"a","1":" ",…}` beside the `UnknownError` envelope; strings can no longer
+ * arrive, because the parameter is typed `object` and both callers hand over a
+ * value that already passed `isErrorLike` or a node this module built.
+ *
+ * @internal Shared with `pino-factory`. NOT re-exported by the package barrel.
+ * @param target - The node being built; mutated in place.
+ * @param source - The object the node was derived from.
+ */
+export function assignOwnErrorFields(target: Record<string, unknown>, source: object): void {
+  try {
+    const own = Array.isArray(source) ? {} : (source as Record<string, unknown>)
+    for (const [key, value] of Object.entries(own)) {
+      if (!Object.hasOwn(target, key) && !DERIVED_ERROR_FIELDS.has(key)) {
+        // `Reflect` keeps the dynamic write off the object-injection sink list.
+        Reflect.set(target, key, value)
+      }
+    }
+  } catch {
+    // A hostile own-property enumeration degrades to the fields already read
+    // rather than failing the entry: something is better than nothing, and the
+    // never-throw contract on this path is absolute.
   }
 }
 

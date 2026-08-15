@@ -32,7 +32,7 @@ import {
   extraServiceFields,
   resolveServiceMetadata
 } from './utils/resolve-resource.util'
-import { sanitizeError, scrubStack } from './utils/sanitize-error.util'
+import { assignOwnErrorFields, sanitizeError, scrubStack } from './utils/sanitize-error.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
@@ -100,24 +100,6 @@ export function leafNameOf(path: string): string | undefined {
 }
 
 /**
- * Fields the serializer derives itself, excluded from the own-property copy.
- *
- * A real `Error` keeps `name` / `message` / `stack` non-enumerable, so they never
- * reach the copy loop. An error-LIKE plain object — what `HttpExceptionFilter`
- * produces, and what any error crossing a worker boundary becomes — carries them
- * as ordinary own keys, and copying them would emit `name` beside the `type`
- * derived from it: the same value under two names, one of which no consumer
- * queries.
- */
-const DERIVED_ERROR_FIELDS: ReadonlySet<string> = new Set([
-  'name',
-  'message',
-  'stack',
-  'cause',
-  'errors'
-])
-
-/**
  * The `err` serializer, replacing `pino.stdSerializers.err`.
  *
  * Two defects made the standard serializer the wrong tool here.
@@ -169,33 +151,16 @@ export function serializeErrorValue(value_: unknown): Record<string, unknown> {
   // An error's OWN enumerable properties are part of the contract. Node puts
   // `code` on system errors, HTTP layers put `statusCode`, and application code
   // attaches domain fields — `pino.stdSerializers.err` copied all of them, so
-  // dropping them here would have been a silent compatibility loss. They are
-  // copied only where they do not shadow a field this serializer owns, and they
-  // pass through the same redaction and size bound as any other serializer
-  // output, which is what keeps a secret attached to an error from escaping.
-  try {
-    // Own properties are copied only off a PLAIN object. `Object.entries` on a
-    // thrown STRING spreads its characters as indexed keys — a real record
-    // carried `{"0":"a","1":" ",…}` beside the UnknownError envelope — and on a
-    // thrown ARRAY it spreads the elements the same way. Neither is an
-    // error-like value with fields worth preserving; both are already fully
-    // represented by the envelope's stringified message.
-    const source =
-      // Stryker disable next-line ConditionalExpression: equivalent BY CONSTRUCTION, not untested — the never-throw catch below makes the mutant observationally identical: with the null check flipped to true, `Object.entries(null)` throws, the catch swallows it, and the emitted envelope is byte-for-byte the same. The guard stays because routing the ordinary null case through exception control flow would trade an explicit branch for a hidden one.
-      typeof value_ === 'object' && value_ !== null && !Array.isArray(value_)
-        ? (value_ as Record<string, unknown>)
-        : {}
-    for (const [key, value] of Object.entries(source)) {
-      if (!Object.hasOwn(serialized, key) && !DERIVED_ERROR_FIELDS.has(key)) {
-        // `Reflect` keeps the dynamic write off the object-injection sink list.
-        Reflect.set(serialized, key, value)
-      }
-    }
-  } catch {
-    // A hostile own-property enumeration degrades to the fields already read
-    // rather than failing the entry: something is better than nothing, and the
-    // never-throw contract on this path is absolute.
-  }
+  // dropping them here would have been a silent compatibility loss. They pass
+  // through the same redaction and size bound as any other serializer output,
+  // which is what keeps a secret attached to an error from escaping.
+  //
+  // Copied from the SANITIZED node rather than from the raw value, which is the
+  // same set of fields by a shorter route: `sanitizeError` now performs that copy
+  // at every depth, so reading the raw value again here would be the identical
+  // walk written twice — and the version that drifts is always the one further
+  // from the bug report.
+  assignOwnErrorFields(serialized, sanitized)
   return serialized
 }
 

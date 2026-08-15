@@ -11,6 +11,46 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-08-15
+
+### Fixed
+
+- **An error's own properties now survive at every depth of the `cause` chain, not just at the top.**
+  `code`, `statusCode` and any domain field an application attaches were copied onto the error handed
+  to the log call and **dropped the moment that same error was wrapped as someone else's `cause`** —
+  which is what a `catch` in `main.ts` does routinely. Measured on the published `1.2.6`:
+
+  ```json
+  {
+    "type": "Error",
+    "message": "bootstrap failed",
+    "code": "EBOOT",
+    "cause": { "name": "Error", "message": "config invalid" }
+  }
+  ```
+
+  The inner error carried `code: "BYMAX_CONFIG_VALIDATION"` and an `issues` array holding one entry
+  per invalid variable. Both vanished. The reporting consumer framed the severity exactly right:
+  because `message` survives and their message is the full aggregated report, **the human stayed
+  served while the machine went blind** — the text an operator reads was intact, and the fields an
+  alert or a dashboard keys on were gone.
+
+  Nothing justified the asymmetry. The reason own properties are "part of the contract" at the top —
+  `pino.stdSerializers.err` copied them, so dropping them is a silent compatibility loss — is the
+  same reason one level down, and a wrapped error is the common case rather than the exotic one.
+  They still never shadow a field the serializer derives, and they still pass through the same
+  name-based redaction and size bound as any other serializer output.
+
+  Found by following up an asymmetry noticed while answering a consumer's question about how to pass
+  an error through the NestJS bridge — not by a bug report.
+
+### Changed
+
+- **The own-property copy lives in one place instead of two.** The `err` serializer read the raw
+  thrown value and walked its properties itself, duplicating what the sanitizer now does at every
+  node; it copies from the sanitized node instead. Same fields, one walk — and no second copy to
+  drift away from the first.
+
 ## [1.2.6] - 2026-08-15
 
 ### Added
@@ -1130,7 +1170,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...HEAD
+[1.2.7]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...v1.2.7
 [1.2.6]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/bymaxone/nest-logger/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/bymaxone/nest-logger/compare/v1.2.3...v1.2.4

@@ -17,6 +17,110 @@ describe('sanitizeError', () => {
   })
 
   it(/*
+   * REGRESSION — a NESTED cause must keep the error's own enumerable properties,
+   * not only name/message/stack.
+   *
+   * Measured on the published 1.2.6: `code` survived on the error handed to the
+   * log call and vanished the moment that same error was wrapped as someone
+   * else's `cause`, which is what a `catch` in `main.ts` does routinely. The
+   * consumer that reported it lost `code` (its programmatic discriminator
+   * between "config invalid" and any other boot failure) AND the whole `issues`
+   * array — the structured payload of the error. The human stayed served,
+   * because the message survives; the machine went blind.
+   */
+  'should keep own enumerable properties on a nested cause', () => {
+    const inner = Object.assign(new Error('config invalid'), {
+      code: 'BYMAX_CONFIG_VALIDATION',
+      issues: [{ variable: 'DATABASE_URL', code: 'invalid_url' }]
+    })
+    const outer = Object.assign(new Error('bootstrap failed', { cause: inner }), { code: 'EBOOT' })
+
+    const result = sanitizeError(outer)
+
+    expect(result['code']).toBe('EBOOT')
+    expect(result.cause).toMatchObject({
+      message: 'config invalid',
+      code: 'BYMAX_CONFIG_VALIDATION',
+      issues: [{ variable: 'DATABASE_URL', code: 'invalid_url' }]
+    })
+  })
+
+  it(/*
+   * The same for an AggregateError member, which reaches the identical node
+   * builder by a different branch. Without this, a fix applied to the `cause`
+   * walk alone would leave `Promise.any` fan-out losing the same fields.
+   */
+  'should keep own enumerable properties on an aggregate member', () => {
+    const member = Object.assign(new Error('member failed'), { code: 'ECONNREFUSED' })
+    const result = sanitizeError(new AggregateError([member], 'all failed'))
+
+    expect(result.errors?.[0]).toMatchObject({ message: 'member failed', code: 'ECONNREFUSED' })
+  })
+
+  it(/*
+   * A derived field must never be shadowed by the raw own property it was
+   * derived from. An error-LIKE plain object — what `HttpExceptionFilter`
+   * produces, and what any error crossing a worker boundary becomes — carries
+   * name/message/stack as ordinary own keys, so copying them blindly would emit
+   * the scrubbed stack beside the raw one.
+   */
+  'should not let own properties shadow the derived fields', () => {
+    const raw = {
+      name: 'HttpException',
+      message: 'Forbidden',
+      stack: 'Error: Forbidden\n    at /app/node_modules/@nestjs/core/x.js:1:1',
+      statusCode: 403
+    }
+
+    const result = sanitizeError(raw)
+
+    expect(result.name).toBe('HttpException')
+    expect(result['statusCode']).toBe(403)
+    // The scrubbed stack, not the raw one the object carried.
+    expect(result.stack).not.toContain('node_modules')
+  })
+
+  it(/*
+   * An ARRAY that passes the structural error check must not have its elements
+   * spread into the node as indexed keys. `isErrorLike` asks only for string
+   * `name` and `message`, which an array can carry, and `Object.entries` on an
+   * array yields `{"0":…,"1":…}` — the exact shape that once reached a real
+   * record beside an `UnknownError` envelope.
+   */
+  'should not spread array elements into the node', () => {
+    const arrayLike = Object.assign(['first', 'second'], {
+      name: 'WeirdError',
+      message: 'from an array'
+    })
+
+    const result = sanitizeError(arrayLike)
+
+    expect(result.name).toBe('WeirdError')
+    expect(result).not.toHaveProperty('0')
+    expect(result).not.toHaveProperty('1')
+  })
+
+  it(/*
+   * A hostile own property must degrade its own node rather than the entry. The
+   * copy runs inside the same never-throw contract as the rest of the walk, and
+   * a getter that throws is the shape an attacker controls most easily.
+   */
+  'should survive a throwing getter among the own properties', () => {
+    const hostile = new Error('boom')
+    Object.defineProperty(hostile, 'evil', {
+      enumerable: true,
+      get() {
+        throw new Error('gotcha')
+      }
+    })
+
+    const result = sanitizeError(hostile)
+
+    expect(result.message).toBe('boom')
+    expect(result).not.toHaveProperty('evil')
+  })
+
+  it(/*
    * Native subclasses must keep their own constructor name so error
    * dashboards can group by type (TypeError vs RangeError vs SyntaxError).
    */
