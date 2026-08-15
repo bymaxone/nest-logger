@@ -26,6 +26,7 @@ import {
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
 import { toSingleLineMessage } from '../utils/escape-log-text.util'
 import type { Redactor } from '../utils/redact-by-name.util'
+import { isErrorLike } from '../utils/sanitize-error.util'
 
 /** Pino level methods the NestJS-style variadic path dispatches to (error is handled separately). */
 type PinoLevelMethod = 'info' | 'warn' | 'debug' | 'trace' | 'fatal'
@@ -103,6 +104,36 @@ function safeErrorMessage(error: Error): string {
   } catch {
     return 'Unreadable error message'
   }
+}
+
+/**
+ * The first `Error` among a NestJS variadic call's trailing parameters.
+ *
+ * NestJS types that slot as `stack?: string`, so this library read it as a string
+ * and discarded anything else — but passing the `Error` itself is what callers
+ * actually do, because every other logger in the ecosystem accepts it. The result
+ * was that a caller supplied a cause and the entry carried none: no `err`, no
+ * `stack`, no warning. Reported from a real run where an SMTP failure logged
+ * "delivery failed" with the reason discarded, while the HTTP response was 204
+ * and nothing had been delivered.
+ *
+ * Detected STRUCTURALLY rather than with `instanceof Error`, which is realm-local:
+ * an error from a `vm` context or one already normalized into a plain
+ * `{ name, message, stack }` — what `HttpExceptionFilter` produces, and what any
+ * error crossing a process or worker boundary becomes — is not an `Error`
+ * instance. Dropping those would leave the exact hole this function exists to
+ * close. `isErrorLike` is the same detector `sanitizeError` uses, shared so the
+ * two cannot disagree about what an error is.
+ *
+ * Scanned rather than read positionally, because the convention is not positional:
+ * callers write `(message, error)` and `(message, error, context)` alike, and a
+ * `context` string sits in the same tail.
+ *
+ * @param optionalParams - The variadic tail of a NestJS logger call.
+ * @returns The first `Error` found, or `undefined` when the tail holds none.
+ */
+function findErrorParam(optionalParams: unknown[]): Error | undefined {
+  return optionalParams.find((param): param is Error => isErrorLike(param))
 }
 
 /**
@@ -191,7 +222,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * @param optionalParams - NestJS trailing params (`stack` at index 0, `context` at index 1).
    */
   error(message: unknown, ...optionalParams: unknown[]): void {
-    if (message instanceof Error) {
+    if (isErrorLike(message)) {
       const payload: Record<string, unknown> = { err: message }
       assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
       this.pino.error(payload, safeErrorMessage(message))
@@ -206,6 +237,12 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const payload: Record<string, unknown> = {}
     assignIfDefined(payload, 'context', context)
     assignIfDefined(payload, 'stack', stack)
+    // An `Error` in the tail is attached as `err`, the same field the
+    // leading-`Error` branch above writes, so `logger.error(msg, err)` and
+    // `logger.error(err)` produce the same queryable shape. `stack` stays the
+    // string case: the `err` serializer derives the stack from the Error itself,
+    // so writing both would emit the same trace under two names.
+    assignIfDefined(payload, 'err', findErrorParam(optionalParams))
     this.pino.error(
       payload,
       toSingleLineMessage(typeof message === 'string' ? message : String(message))
@@ -412,7 +449,20 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   private emitNestStyle(level: PinoLevelMethod, message: unknown, optionalParams: unknown[]): void {
     const payload: Record<string, unknown> = {}
     assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
-    const msg = toSingleLineMessage(typeof message === 'string' ? message : String(message))
+    // Every level except `error` routes through here, so before this all of them
+    // lost an `Error` in BOTH positions — measured at eleven of the twelve
+    // level/position combinations, with `error(err)` the only surviving path. A
+    // cause handed to `warn` or `fatal` is exactly as much a cause as one handed
+    // to `error`, and `fatal` is the worst place to drop it: it is the level a
+    // caller reaches for when the process is about to die.
+    const leading = isErrorLike(message) ? message : undefined
+    assignIfDefined(payload, 'err', leading ?? findErrorParam(optionalParams))
+    // A leading `Error` becomes the message, matching what `error(err)` emits —
+    // `String(error)` would have produced the `"Error: …"` prefix instead.
+    const msg =
+      leading === undefined
+        ? toSingleLineMessage(typeof message === 'string' ? message : String(message))
+        : safeErrorMessage(leading)
     switch (level) {
       case 'info':
         this.pino.info(payload, msg)

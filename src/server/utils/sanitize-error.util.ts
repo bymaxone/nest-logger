@@ -125,10 +125,15 @@ export function sanitizeError(err: unknown, options?: SanitizeErrorOptions): San
  * arbitrary object does not get mistaken for an error and silently lose its
  * fields to the `{ name, message, stack }` shape.
  *
+ * @internal Exported for the NestJS variadic bridge, which has to make the same
+ *   judgement about a value handed to `logger.error(message, cause)` and must not
+ *   make it differently — a normalized or cross-realm error dropped there is a
+ *   lost cause, which is the defect that bridge exists to prevent. NOT re-exported
+ *   by the package barrel.
  * @param value - The candidate value.
  * @returns `true` when the value carries a readable error shape.
  */
-function isErrorLike(value: unknown): value is Error {
+export function isErrorLike(value: unknown): value is Error {
   // No `instanceof Error` fast path. Every real `Error` carries string `name` and
   // `message` through its prototype, so the structural test below already
   // accepts one — the fast path decided nothing the structural test would not

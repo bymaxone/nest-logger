@@ -1,6 +1,6 @@
 {
   "name": "@bymax-one/nest-logger",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Structured JSON logging for NestJS based on Pino 10, with optional OpenTelemetry correlation.",
   "author": "Bymax One <support@bymax.one>",
   "license": "MIT",

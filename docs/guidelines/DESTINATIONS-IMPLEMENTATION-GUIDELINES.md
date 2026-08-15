@@ -273,15 +273,25 @@ export class PrettyDevDestination implements ILogDestination {
 
 ### An optional peer is still resolvable after `pnpm prune --prod`
 
-Do not reason "the peer is a `devDependency`, so `pnpm prune --prod` strips it, so this destination cannot run in production." **It is false under pnpm**, and it was disproved inside a real pruned production image after two consumers had assumed it independently:
+Do not reason "the peer is a `devDependency`, so a production install strips it, so this destination cannot run in production." **It is false under pnpm**, disproved in real production images by two consumers who had assumed it independently — and by two _different_ build routes:
 
 ```
-require.resolve('pino-pretty')                       → MODULE_NOT_FOUND   (from the app root)
-require.resolve('pino-pretty', { paths: [<libdir>] }) → resolves in the store
-container booted with the pretty sink registered      → ANSI output, healthy
+pnpm prune --prod                       → store entry kept, peer still linked
+pnpm install --prod --frozen-lockfile   → peer installed in a CLEAN stage
+  (fresh runtime stage, no prune anywhere)
+
+require.resolve('pino-pretty')                        → MODULE_NOT_FOUND   (from the app root)
+require.resolve('pino-pretty', { paths: [<libdir>] })  → resolves under .pnpm/
+container booted with the pretty sink registered       → ANSI output, healthy
 ```
 
-`prune --prod` removes the **top-level link**; the package stays in the store, linked beside the library as the resolved optional peer. A lazy `import()` inside the library resolves relative to the library's own directory, so it succeeds.
+The mechanism is **not** "prune left something behind" — the second image never prunes. In both, the peer was recorded in the lockfile and pnpm placed it in the store for a production-only install; the lazy `import()` inside the library then resolves relative to the library's real path under `.pnpm/`, where the peer is a sibling.
+
+**Stated as what was measured, not as a law of pnpm:** two production images, two different build routes, both with the peer in the lockfile. Whether a prod install always carries an optional peer regardless of how the lockfile was produced has not been tested here, and the advice does not depend on it — what matters is that "we do a clean prod install rather than a prune" is not the exemption it reads like. That reasoning is exactly what made the second consumer expect a different answer before measuring their own image.
+
+A caution when checking this yourself: `require.resolve` from the library's **app-visible** path returns `MODULE_NOT_FOUND` while the import still succeeds, because the library resolves from its real `.pnpm/` path instead. A consumer nearly published the opposite conclusion from exactly that probe. Verify by behaviour — does the sink render? — not by resolving from a path the library never uses.
+
+**Other package managers differ, in the opposite direction.** Under npm's or yarn's flat `node_modules` a pruned devDependency really is absent. Do not carry this warning across ecosystems.
 
 The consequence for a destination author is general, not specific to pretty: **packaging is not a guard.** If your destination must not run in a given environment, gate it on an explicit configuration value that is visible and validated — never on the assumption that its dependency will be missing. The failure mode when you get this wrong is the quiet kind: nothing crashes, nothing warns, and a log pipeline silently fails to parse every line.
 
