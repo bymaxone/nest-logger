@@ -49,8 +49,12 @@ describe('PrettyDevDestination', () => {
      * `build({ destination: process.stdout })` attaches two listeners itself, and
      * a child process piped to a closed reader survived and exited 0 with nothing
      * from this library on the stream — so a guard here would be code whose need
-     * is disproven. If pino-pretty ever stops attaching them this case goes red,
-     * which is the signal to revisit rather than to relax the number.
+     * is disproven.
+     *
+     * What is asserted is the weaker, durable half: at least one listener appears.
+     * The exact count is pino-pretty's business and would churn with its version.
+     * If it ever stops attaching any, this goes red — and the answer then is to
+     * guard the stream here, not to weaken the assertion.
      */
     'leaves the stdout guard to pino-pretty, which attaches its own', async () => {
       const before = process.stdout.listenerCount('error')
