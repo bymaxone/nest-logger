@@ -69,6 +69,13 @@ heading here.
     entries after newer ones;
   - **shutdown before init** → drained raw rather than dying with the process.
 
+- **A write after a failed init is verifiably dropped, not merely silent.** Adding the buffer made
+  "dropped" and "held" observationally identical — the existing case asserted only that nothing
+  reached stdout, and buffering produces the same silence. A **cold** mutation run caught it
+  (the incremental runs had been reporting 100% while the cold run read 99.62%, with all three
+  survivors in this file). The case now shuts down after the failed init, which drains anything
+  still held: a merely-buffered entry surfaces there, a dropped one does not.
+
 ## [1.2.5] - 2026-08-14
 
 ### Fixed

@@ -216,6 +216,16 @@ describe('PrettyDevDestination', () => {
         const stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
         dest.write('should-be-dropped\n')
         expect(stdoutSpy).not.toHaveBeenCalled()
+
+        // Dropped is not the same as HELD, and "nothing on stdout" cannot tell
+        // them apart — buffering is silent too. Shutting down drains anything
+        // still held, so an entry that was merely buffered would surface here.
+        // Before this assertion the pre-init buffer had quietly weakened this
+        // case: flipping `initFailed` to false left the test passing, because a
+        // write that took the buffer path produced exactly the same silence.
+        // A cold mutation run is what exposed it.
+        await dest.onShutdown()
+        expect(stdoutSpy).not.toHaveBeenCalled()
       })
       jest.dontMock('pino-pretty')
     })

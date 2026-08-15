@@ -1,6 +1,6 @@
 # Mutation Testing Results
 
-> **Last run:** 2026-08-12 (`pnpm mutation:full` — cold, baseline deleted)
+> **Last run:** 2026-08-15 (`pnpm mutation:full` — cold, baseline deleted)
 > **Command:** Stryker 9, jest runner, `coverageAnalysis: perTest`, `ignoreStatic: true`
 > **Report:** [`reports/mutation/mutation.html`](../reports/mutation/mutation.html)
 
@@ -11,13 +11,44 @@
 | **Global mutation score**                              | **100.00 %**                |
 | Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅ |
 | Aspirational target (`thresholds.high`)                | 99 % → **reached**          |
-| Killed                                                 | 448                         |
+| Killed                                                 | 777                         |
 | Survived                                               | **0**                       |
-| Timeout (counts as detected)                           | 5                           |
-| Ignored via documented `// Stryker disable`            | 103                         |
-| Compile/runtime errors (type-system-guarded, excluded) | 313                         |
+| Timeout (counts as detected)                           | 11                          |
+| Ignored via documented `// Stryker disable`            | 148                         |
+| Compile/runtime errors (type-system-guarded, excluded) | 505                         |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `453 / 453 = 100.00 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `788 / 788 = 100.00 %`.
+
+### 2026-08-15 — the incremental run was reporting a score the cold run did not
+
+Refreshing this document is what caught it. Every mutation run during the `1.2.3`–`1.2.6` work
+was `pnpm mutation` (incremental), and every one reported **100.00 %**. The cold run reported
+**99.62 %** — three survivors, all in code added hours earlier:
+
+```
+pretty-dev.destination.ts:237  [BooleanLiteral]        this.initFailed = true → false
+pretty-dev.destination.ts:292  [ConditionalExpression] if (this.initFailed)   → false
+pretty-dev.destination.ts:292  [BlockStatement]        the drop branch        → {}
+```
+
+All three are one gap, and the gap was **introduced by a fix**. The pre-init buffer added in
+`1.2.6` made "dropped" and "held" observationally identical: an existing case asserted only that
+a write after a failed init produced nothing on stdout, and after the buffer existed, buffering
+produced nothing on stdout either. Flipping `initFailed` to `false` left that case passing.
+
+So a change that added a guarantee quietly weakened the test protecting a different one, and the
+incremental baseline — which had those mutants recorded as killed from a run before the buffer
+existed — did not re-test them.
+
+Fixed by making the case distinguish the two states rather than assert their shared symptom: after
+the failed init it now also shuts down, which drains anything still held. A merely-buffered entry
+surfaces there; a dropped one does not. Cold run back to 100.00 % with 0 survivors.
+
+**The operating lesson, which is why this is recorded rather than just fixed:** an incremental
+score is a claim about the mutants Stryker chose to re-run, not about the suite. `CLAUDE.md`
+already says `mutation:full` "measures the truth" — this is what that sentence costs when the
+distinction is treated as a performance note. Any score quoted as a result, in a release note or
+to a reviewer, should come from a cold run.
 
 ### 2026-08-12 — the P0 remediation, and what it cost before it paid
 
