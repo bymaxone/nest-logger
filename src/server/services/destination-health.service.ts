@@ -79,10 +79,15 @@ export class DestinationHealth {
    */
   markHealthy(effectiveLevel: LogLevel): void {
     this.hasHealthy = true
-    const level = LOG_LEVEL_PRIORITY.indexOf(effectiveLevel)
-    if (level < this.lowestHealthyLevel) {
-      this.lowestHealthyLevel = level
-    }
+    // `Math.min` rather than a compare-and-assign branch. The branch left two
+    // mutants alive that no test could kill: `<` → `<=` reassigns the identical
+    // value, and the guard exists only to keep the smallest. Expressing "keep the
+    // smallest" directly removes the branch instead of documenting why nothing
+    // can observe it.
+    this.lowestHealthyLevel = Math.min(
+      this.lowestHealthyLevel,
+      LOG_LEVEL_PRIORITY.indexOf(effectiveLevel)
+    )
   }
 
   /**

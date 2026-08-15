@@ -167,4 +167,18 @@ describe('DestinationHealth', () => {
 
     expect(health.deliveredByHealthySink('info')).toBe(true)
   })
+
+  it(/*
+   * The same in the OTHER order, which is the direction that can regress: a
+   * later, higher-level sink must not raise the recorded floor. Registering
+   * `debug` then `error` has to keep `debug` — otherwise an `info` destination
+   * would be told its entries were delivered by a sink that never saw them.
+   */
+  'does not let a later higher-level sink raise the floor', () => {
+    const health = new DestinationHealth()
+    health.markHealthy('debug')
+    health.markHealthy('error')
+
+    expect(health.deliveredByHealthySink('info')).toBe(true)
+  })
 })

@@ -22,6 +22,13 @@ heading here.
   producing a second copy of every boot line. Measured on the supported
   `[DefaultStdoutDestination(), PrettyDevDestination()]` pair: two occurrences of one entry.
 
+  **You were affected only if you registered pretty ALONGSIDE another destination** — the shape a
+  derived backend reaches by adding an HTTP or file sink beside pretty for local development. A
+  one-element `destinations` list is structurally immune, because the option REPLACES the default
+  sink rather than adding to it, so pretty-alone and stdout-alone can never produce the pair.
+  Worth stating explicitly: "duplicated boot lines" is not a symptom from which a reader would guess
+  the triggering configuration.
+
   The destination could not decide this alone: at `onInit` failure it has no way to know what became
   of the entries. The decision moves to a new optional `ILogDestination.onRegistryReady`, which the
   registry calls once every `onInit` has settled, carrying three facts — and it takes three, not

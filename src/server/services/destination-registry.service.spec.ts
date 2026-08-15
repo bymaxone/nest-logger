@@ -536,6 +536,10 @@ describe('DestinationRegistry', () => {
       const line = stderrSpy.mock.calls.map(([l]) => String(l)).join('')
       expect(line).toContain('threw from onRegistryReady')
       expect(line).toContain('remains active')
+      // BOTH halves of the concatenated message: the second one carries the
+      // operator-facing consequence, and emptying it left a mutant alive.
+      expect(line).toContain('keeps receiving entries')
+      expect(line).toContain('holding from before init')
       expect(line).not.toContain('will receive no entries')
       stderrSpy.mockRestore()
     })
