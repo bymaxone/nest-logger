@@ -296,12 +296,20 @@ export function assignOwnErrorFields(target: Record<string, unknown>, source: ob
         // Defining an own data property makes the key inert AND keeps its value:
         // an error that genuinely carries a `__proto__` field gets it logged as
         // the data it is.
-        Object.defineProperty(target, key, {
-          value,
-          writable: true,
-          enumerable: true,
-          configurable: true
-        })
+        //
+        // The descriptor is deliberately minimal — no `writable`, no
+        // `configurable`. Both would default to `true` under assignment and
+        // neither is observable here, because the node is built once and handed
+        // on: the redaction walk is copy-on-write, verified on the built artifact
+        // (a nested `password` still comes out `[REDACTED]`), and nothing else
+        // writes to a node after this loop. Mutation testing is what forces the
+        // question — two `BooleanLiteral` mutants survived on those flags — and
+        // the answer here matches the one this repo already reached on its other
+        // property descriptors: delete the redundant literal rather than document
+        // why no test can kill it. If a future change ever needs to rewrite a
+        // field in place, it has to add `writable` back, because a silent
+        // assignment would throw under the module's strict mode.
+        Object.defineProperty(target, key, { value, enumerable: true })
       }
     }
   } catch {

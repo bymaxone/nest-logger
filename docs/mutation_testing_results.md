@@ -11,14 +11,35 @@
 | **Global mutation score**                              | **100.00 %**                |
 | Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅ |
 | Aspirational target (`thresholds.high`)                | 99 % → **reached**          |
-| Killed                                                 | 792                         |
+| Killed                                                 | 794                         |
 | Survived                                               | **0**                       |
 | Timeout (counts as detected)                           | 11                          |
 | Ignored — documented `// Stryker disable`              | 15                          |
 | Ignored — static mutants (`ignoreStatic: true`)        | 128                         |
 | Compile/runtime errors (type-system-guarded, excluded) | 503                         |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `803 / 803 = 100.00 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `805 / 805 = 100.00 %`.
+
+### 2026-08-15 — the descriptor flags nobody could kill, deleted rather than excused
+
+The `__proto__` hardening (also `1.2.7`) replaced an assignment with
+`Object.defineProperty(target, key, { value, writable: true, enumerable: true, configurable: true })`,
+and the cold run dropped to **99.75 %** with two survivors — `BooleanLiteral` on `writable` and
+`configurable`. Neither is observable: the node is built once and handed on.
+
+**The precedent for this exact shape already existed in this file** (2026-08-12, property descriptors
+in the redaction work), and it says delete the redundant literal rather than document why no test can
+kill it. What made applying it a decision rather than a reflex is the consequence: omitting `writable`
+leaves the property read-only, and under the module's strict mode a later in-place write would
+**throw** — inside the never-crash path.
+
+So it was verified rather than assumed, on the built artifact and not only in the suite: a nested
+`password` still comes out `[REDACTED]`, which means the redaction walk is copy-on-write and never
+writes to the node. The descriptor is now `{ value, enumerable: true }`, back to 100.00 % with 0
+survivors, and the comment states the invariant so a future change that needs an in-place write knows
+it has to add `writable` back.
+
+---
 
 ### 2026-08-15 — a simplification deleted a suppression instead of moving it
 
