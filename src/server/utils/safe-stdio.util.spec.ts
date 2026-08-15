@@ -1,17 +1,40 @@
 import { writeStderrSafely, writeStdoutSafely } from './safe-stdio.util'
 
 describe('safe stdio', () => {
-  afterEach(() => {
-    jest.restoreAllMocks()
+  // Listeners added by a case are removed after it, restoring the exact baseline.
+  //
+  // An earlier version of this file left them attached on purpose, and documented
+  // why: cleaning up had once broken the guarantee under test, because the module
+  // remembered which streams it had guarded and a removed listener left it
+  // believing it was still protected. That rationale is now stale — the same pull
+  // request made `ensureGuarded` inspect the stream's ACTUAL listener list, which
+  // is what makes reattachment self-healing and cleanup safe.
+  //
+  // Leaving them was not free: every `isolateModulesAsync` load creates a DISTINCT
+  // handler, so the file accumulated one per case on the shared `process.stdout`,
+  // where they outlive this suite. A later spec asserting that an unhandled stream
+  // error propagates would be silently satisfied by a handler this file forgot.
+  let stdoutBaseline: unknown[]
+  let stderrBaseline: unknown[]
+
+  beforeEach(() => {
+    stdoutBaseline = process.stdout.listeners('error')
+    stderrBaseline = process.stderr.listeners('error')
   })
 
-  // No listener cleanup between cases, deliberately. Each case captures the count
-  // immediately before it acts and asserts a DELTA, so a handler left by an
-  // earlier case is already inside its baseline. An earlier version did clean up,
-  // by removing listeners through an untyped `.at(-1)` cast — and it broke the
-  // very guarantee under test: the module then believed the stream was still
-  // guarded while the listener was gone, which is the failure mode that made
-  // `ensureGuarded` self-healing in the first place.
+  afterEach(() => {
+    jest.restoreAllMocks()
+    for (const [stream, baseline] of [
+      [process.stdout, stdoutBaseline],
+      [process.stderr, stderrBaseline]
+    ] as const) {
+      for (const listener of stream.listeners('error')) {
+        if (!baseline.includes(listener)) {
+          stream.removeListener('error', listener as (...args: unknown[]) => void)
+        }
+      }
+    }
+  })
 
   it(/*
    * The ordinary path: the payload reaches the stream unchanged. A guard that

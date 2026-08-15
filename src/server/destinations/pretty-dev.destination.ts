@@ -74,16 +74,39 @@ export interface PrettyViewOptions {
    */
   ignore?: string
   /**
-   * Render only the message line, hiding the record entirely. In pretty mode
-   * there is no JSON copy behind it (`destinations` REPLACES stdout), so a field
-   * hidden here is not visible anywhere — including `logKey`. That is the point
-   * of the option rather than a caveat; use `messageFormat` to pull a specific
-   * field back into the line. Default: `false`.
+   * Render only the message line, hiding the record entirely. Display-only, and
+   * scoped to THIS destination: a field hidden here is still delivered in full to
+   * every other destination registered alongside it.
+   *
+   * When pretty is the ONLY destination, that scope makes it total — `destinations`
+   * replaces the default stdout sink, so there is no JSON copy behind the
+   * rendering and a hidden field, `logKey` included, is not visible anywhere. That
+   * is the point of the option rather than a caveat; use `messageFormat` to pull a
+   * specific field back into the line. Default: `false`.
    */
   hideObject?: boolean
   /**
    * Template for the message line, e.g. `'[{context}] {msg}'`. The way to keep a
    * chosen field visible when `hideObject` is on.
+   *
+   * **Every placeholder EXCEPT `{msg}` is interpolated raw, and that reopens
+   * terminal log forging.** This library normalizes line separators and control
+   * characters in `msg` and in the stack — not in metadata, because escaping data
+   * would mean rewriting what you asked to be logged. `pino-pretty` substitutes
+   * whatever the field holds, so a newline in an interpolated field splits one
+   * entry into two, and the second reads like a genuine record. Measured, with a
+   * newline in `context`:
+   *
+   * ```
+   * linhas produced by ONE entry: 2
+   *   1: "[10:35:14.484] INFO: [Auth"
+   *   2: "[10:00:00.000] INFO: FORGED admin promoted] real entry …"
+   * ```
+   *
+   * So: interpolate only fields whose values your own code sets. Never a field
+   * carrying user input — `{tenantId}`, `{userId}`, a header, a query value. If
+   * you need one of those visible, leave it in the record instead of the format
+   * string, where it is rendered as JSON and cannot forge a line.
    */
   messageFormat?: string
   /** Timestamp format, or `false` to leave it raw. Default: `'SYS:HH:MM:ss.l'`. */
@@ -279,13 +302,18 @@ export class PrettyDevDestination implements ILogDestination {
       // word — `DestinationHealth` covers the case where it would have meant
       // silence (this sink being the only one) by rescuing from the fan-out above.
       this.initFailed = true
-      // Buffered entries are emitted RAW rather than discarded. They were held
-      // to be rendered; the renderer never arrived, and holding them was this
-      // destination's decision — losing a boot log because of it would be a
-      // regression the buffer introduced.
-      this.flushBuffer((payload) => {
-        writeRawToStdout(payload)
-      })
+      // The buffer is NOT drained here, and that is the fix for a duplicate this
+      // destination used to create. Draining now would be deciding alone, and at
+      // this moment the answer is unknowable: the fan-out already handed every
+      // held entry to every OTHER destination, so if any of them is live the
+      // entries are on a sink and a raw copy is a second one. Measured on the
+      // supported `[DefaultStdoutDestination(), PrettyDevDestination()]` pair —
+      // every boot entry printed twice.
+      //
+      // The decision moves to {@link onRegistryReady}, which the registry calls
+      // once every `onInit` has settled and `hasHealthySink` is a fact. Nothing
+      // is lost by waiting: `onShutdown` still drains raw for a destination that
+      // was never registered, so the hook never running is also covered.
       throw new Error(
         '[PrettyDevDestination] pino-pretty is not installed. Install it as a peer ' +
           'dependency (`pnpm add -D pino-pretty`) or remove PrettyDevDestination from `destinations`.'
@@ -356,6 +384,27 @@ export class PrettyDevDestination implements ILogDestination {
     }
     this.buffer.push(payload)
     this.bufferedBytes += payloadBytes
+  }
+
+  /**
+   * Resolve anything still held, now that the registry knows whether a sink is
+   * live. The difference is whether emitting would create a SECOND copy: the
+   * fan-out already handed every held entry to every other destination.
+   *
+   * Another sink initialized → discard (it is delivered; printing raw duplicated
+   * each boot line). Nothing initialized → drain raw (the per-write rescue never
+   * fired for entries written before anything was marked failed).
+   *
+   * A no-op once {@link onInit} succeeded — the buffer was flushed there.
+   *
+   * @param status.hasHealthySink - Whether any destination initialized.
+   */
+  onRegistryReady(status: { readonly hasHealthySink: boolean }): void {
+    if (status.hasHealthySink) {
+      this.flushBuffer(() => undefined)
+      return
+    }
+    this.flushBuffer(writeRawToStdout)
   }
 
   /**

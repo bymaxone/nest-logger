@@ -418,6 +418,85 @@ describe('DestinationRegistry', () => {
       expect(registry.getActive()).toEqual([])
     })
   })
+
+  describe('onRegistryReady notification', () => {
+    it(/*
+     * REGRESSION (1.2.6) — a destination holding pre-init entries must be told
+     * whether anyone else can deliver them, and told AFTER every onInit settled.
+     * Deciding alone made a supported stdout+pretty pair print each boot entry
+     * twice. The FAILED destination is notified too — it is precisely the one
+     * still holding entries.
+     */
+    'tells every registered destination whether a sink survived', async () => {
+      const healthy = makeDestination('healthy')
+      const failing = {
+        ...makeDestination('failing'),
+        onInit: jest.fn().mockRejectedValue(new Error('nope'))
+      }
+      const seen: { name: string; status: { hasHealthySink: boolean } }[] = []
+      const notify =
+        (name: string) =>
+        (status: { hasHealthySink: boolean }): void => {
+          seen.push({ name, status })
+        }
+      const withHook = [
+        { ...healthy, onRegistryReady: notify('healthy') },
+        { ...failing, onRegistryReady: notify('failing') }
+      ]
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+      await new DestinationRegistry(withHook, logger, options, health).onModuleInit()
+
+      expect(seen).toEqual([
+        { name: 'healthy', status: { hasHealthySink: true } },
+        { name: 'failing', status: { hasHealthySink: true } }
+      ])
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * With nothing live, the flag says so — which is what tells a buffering
+     * destination its held entries exist nowhere else and must go out degraded
+     * rather than be discarded.
+     */
+    'reports no healthy sink when every destination failed', async () => {
+      const failing = {
+        ...makeDestination('failing'),
+        onInit: jest.fn().mockRejectedValue(new Error('nope')),
+        onRegistryReady: jest.fn()
+      }
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+      await new DestinationRegistry([failing], logger, options, health).onModuleInit()
+
+      expect(failing.onRegistryReady).toHaveBeenCalledWith({ hasHealthySink: false })
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * A destination that throws from the hook must not cost the bootstrap entry
+     * or the remaining destinations. Failing at a courtesy notification cannot be
+     * allowed to be more expensive than the notification was worth.
+     */
+    'contains a throwing hook and still notifies the rest', async () => {
+      const hostile = {
+        ...makeDestination('hostile'),
+        onRegistryReady: jest.fn(() => {
+          throw new Error('hook exploded')
+        })
+      }
+      const later = { ...makeDestination('later'), onRegistryReady: jest.fn() }
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+      await expect(
+        new DestinationRegistry([hostile, later], logger, options, health).onModuleInit()
+      ).resolves.toBeUndefined()
+
+      expect(later.onRegistryReady).toHaveBeenCalled()
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('hook exploded'))
+      stderrSpy.mockRestore()
+    })
+  })
 })
 
 describe('DestinationRegistry — OTel availability warning', () => {

@@ -791,6 +791,7 @@ new PrettyDevDestination({
 })
 
 // Message only, with the context pulled back into the line.
+// See the messageFormat warning below before interpolating any other field.
 new PrettyDevDestination({
   view: { hideObject: true, messageFormat: '[{context}] {msg}' }
 })
@@ -805,7 +806,7 @@ new PrettyDevDestination({
 | `translateTime` | `'SYS:HH:MM:ss.l'`       | Or `false` for the raw timestamp                                             |
 | `colorize`      | `true`                   | ANSI colour                                                                  |
 
-> **`hideObject` hides it everywhere.** In pretty mode there is no JSON copy behind the rendering, because `destinations` **replaces** stdout — so a field hidden here, `logKey` included, is not visible anywhere. That is what the option is for; `messageFormat` is how you pull a specific field back.
+> **`hideObject` hides it from THIS destination.** Any other destination you registered still receives the complete entry — the option is display-only and scoped to the pretty renderer. When pretty is your **only** destination that scope becomes total: `destinations` **replaces** stdout, so there is no JSON copy behind the rendering and a hidden field, `logKey` included, is not visible anywhere. That is what the option is for; `messageFormat` is how you pull a specific field back.
 
 > **A dot in `ignore` means "nested path", so a field name that CONTAINS a dot must escape it.** This library emits `event.name` as a literal top-level key, so the obvious spelling hides nothing at all — `pino-pretty` looks for an `event` object with a `name` inside, finds neither, and says nothing. Measured on one entry with only the option changing:
 >
@@ -817,6 +818,16 @@ new PrettyDevDestination({
 > In a TypeScript string literal that is `'event\\.name'` — one real backslash reaching `pino-pretty`. `service` and `deployment` need no escape; they really are nested objects. Reported by a consumer who copied the example above when it still had the unescaped form.
 
 The shape is exported as `PrettyViewOptions` when you want to build the view separately — it is this library's own interface, not a re-export of `pino-pretty`'s `PrettyOptions`, so type-checking without the optional peer installed still resolves.
+
+> **`messageFormat` interpolates every placeholder except `{msg}` raw — that can forge a terminal entry.** This library normalizes line separators and control characters in `msg` and in the stack, never in metadata, because escaping data would mean rewriting what you asked to be logged. `pino-pretty` substitutes whatever the field holds, so a newline in an interpolated field splits one entry into two and the second reads like a genuine record. Measured, with a newline in `context`:
+>
+> ```
+> lines produced by ONE entry: 2
+>   1: "[10:35:14.484] INFO: [Auth"
+>   2: "[10:00:00.000] INFO: FORGED admin promoted] real entry …"
+> ```
+>
+> Interpolate only fields your own code sets. Never one carrying user input — `{tenantId}`, `{userId}`, a header, a query value. If you need one of those visible, leave it in the record, where it is rendered as JSON and cannot forge a line.
 
 > **`destination` is not exposed, by design.** The library owns where entries go — a redirected stream would route around the fan-out and the last-resort rescue above. It is absent from the type and applied after your options are merged, so it cannot be overridden from untyped JavaScript either.
 

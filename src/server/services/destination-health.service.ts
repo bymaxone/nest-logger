@@ -121,4 +121,14 @@ export class DestinationHealth {
   shouldRescue(destination: ILogDestination): boolean {
     return !this.hasHealthy && this.rescuer === destination
   }
+
+  /**
+   * Whether any destination initialized — the fleet-wide fact, meaningful only
+   * once every `onInit` has run, where `shouldRescue` is per-write and per-sink.
+   *
+   * @returns `true` when at least one destination is live.
+   */
+  hasHealthySink(): boolean {
+    return this.hasHealthy
+  }
 }

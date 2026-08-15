@@ -305,14 +305,34 @@ describe('PrettyDevDestination', () => {
 
   describe('pre-init buffer', () => {
     let stdoutSpy: jest.SpyInstance
+    let stdoutBaseline: unknown[]
 
     beforeEach(() => {
       stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
+      stdoutBaseline = process.stdout.listeners('error')
     })
 
+    // Several cases here take a raw fallback path, and each `isolateModulesAsync`
+    // load installs a DISTINCT stdout `'error'` handler. Restoring the exact
+    // baseline keeps them from outliving this suite, where a later spec asserting
+    // that an unhandled stream error propagates would be silently satisfied by a
+    // handler this file forgot.
     afterEach(() => {
       stdoutSpy.mockRestore()
       jest.dontMock('pino-pretty')
+      for (const listener of process.stdout.listeners('error')) {
+        if (!stdoutBaseline.includes(listener)) {
+          process.stdout.removeListener('error', listener as (...args: unknown[]) => void)
+        }
+      }
+    })
+
+    it(/*
+     * The invariant the cleanup above exists for, asserted rather than trusted:
+     * this block leaves the shared stream exactly as it found it.
+     */
+    'leaves no stdout error listener behind', () => {
+      expect(process.stdout.listeners('error')).toEqual(stdoutBaseline)
     })
 
     it(/*
@@ -349,10 +369,16 @@ describe('PrettyDevDestination', () => {
 
     it(/*
      * REGRESSION — the buffer must never become a way to LOSE entries the old
-     * raw-passthrough would have printed. When onInit fails the renderer never
-     * arrives, so everything held goes out raw.
+     * raw-passthrough would have printed. When init fails AND nothing else
+     * initialized, everything held goes out raw.
+     *
+     * The drain happens at `onRegistryReady`, not in the `onInit` catch: at catch
+     * time this destination cannot know whether another sink already received the
+     * same entries from the fan-out, and deciding there is what produced a
+     * duplicate. Asserting nothing was written BEFORE the hook is half of this
+     * case — without it, the drain could move back into the catch and still pass.
      */
-    'flushes the buffer raw when init fails', async () => {
+    'flushes the buffer raw when init fails and no sink survived', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
           throw new Error("Cannot find module 'pino-pretty'")
@@ -362,8 +388,40 @@ describe('PrettyDevDestination', () => {
         dest.write('boot-entry\n')
 
         await expect(dest.onInit()).rejects.toThrow(/pino-pretty is not installed/)
+        expect(stdoutSpy).not.toHaveBeenCalled()
+
+        dest.onRegistryReady({ hasHealthySink: false })
 
         expect(stdoutSpy).toHaveBeenCalledWith('boot-entry\n')
+      })
+    })
+
+    it(/*
+     * REGRESSION (1.2.6) — the counterpart, and the defect this hook exists for:
+     * when ANOTHER sink initialized, the held entries are already delivered,
+     * because the fan-out hands every entry to every registered destination.
+     * Printing the buffered copy raw duplicated every boot line in the supported
+     * `[DefaultStdoutDestination(), PrettyDevDestination()]` pair — measured on
+     * the published 1.2.6 as two occurrences of one entry.
+     */
+    'discards the buffer when another sink initialized', async () => {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('pino-pretty', () => {
+          throw new Error("Cannot find module 'pino-pretty'")
+        })
+        const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
+        const dest = new Fresh()
+        dest.write('boot-entry\n')
+
+        await expect(dest.onInit()).rejects.toThrow(/pino-pretty is not installed/)
+        dest.onRegistryReady({ hasHealthySink: true })
+
+        expect(stdoutSpy).not.toHaveBeenCalled()
+
+        // And the buffer is EMPTIED rather than left held, so the shutdown drain
+        // cannot resurrect the duplicate later.
+        await dest.onShutdown()
+        expect(stdoutSpy).not.toHaveBeenCalled()
       })
     })
 
@@ -491,9 +549,9 @@ describe('PrettyDevDestination', () => {
 
     it(/*
      * A flush must EMPTY the buffer, so a second flush emits nothing. Both drain
-     * paths can run for one destination — init fails and drains raw, then shutdown
-     * finds no stream and drains again — and an entry emitted twice on a failure
-     * path is a log that contradicts itself about how many times something
+     * paths can run for one destination — the registry hook drains raw, then
+     * shutdown finds no stream and drains again — and an entry emitted twice on a
+     * failure path is a log that contradicts itself about how many times something
      * happened. Mutation testing found this: emptying was untested, because a
      * single flush cannot observe it.
      */
@@ -507,6 +565,7 @@ describe('PrettyDevDestination', () => {
         dest.write('boot-entry\n')
 
         await expect(dest.onInit()).rejects.toThrow()
+        dest.onRegistryReady({ hasHealthySink: false })
         expect(stdoutSpy).toHaveBeenCalledTimes(1)
 
         // Second drain path for the same destination.

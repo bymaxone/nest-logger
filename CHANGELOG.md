@@ -13,7 +13,65 @@ heading here.
 
 ## [1.2.8] - 2026-08-15
 
+### Fixed
+
+- **A pretty destination registered alongside another sink no longer prints every boot entry twice.**
+  The fan-out hands each entry to every registered destination, so entries buffered before
+  `PrettyDevDestination.onInit` had ALSO been delivered to the co-destination. When the pretty sink
+  then failed to initialize — or shut down before initializing — it drained its buffer raw to stdout,
+  producing a second copy of every boot line. Measured on the supported
+  `[DefaultStdoutDestination(), PrettyDevDestination()]` pair: two occurrences of one entry.
+
+  The destination could not decide this alone: at `onInit` failure it has no way to know whether
+  anyone else is live. The decision moves to a new optional `ILogDestination.onRegistryReady`, which
+  the registry calls once every `onInit` has settled, carrying `hasHealthySink`. Another sink live →
+  the held copies are discarded; nothing live → they still drain raw, because the fan-out's
+  per-write rescue never fired for entries written before anything was marked failed. Nothing is
+  lost on either branch, which is the property the buffer was added for.
+
+  Reported by Copilot on the `1.2.6` pull request, in a review body rather than as an inline
+  comment — see the note below.
+
+### Security
+
+- **`messageFormat` interpolates every placeholder except `{msg}` raw, and that reopens terminal
+  log forging.** This library normalizes line separators and control characters in `msg` and in the
+  stack, never in metadata — escaping data would mean rewriting what a consumer asked to be logged.
+  `pino-pretty` substitutes whatever the field holds, so a newline in an interpolated field splits
+  one entry into two, and the second reads like a genuine record. Measured with a newline in
+  `context`:
+
+  ```
+  lines produced by ONE entry: 2
+    1: "[10:35:14.484] INFO: [Auth"
+    2: "[10:00:00.000] INFO: FORGED admin promoted] real entry …"
+  ```
+
+  The option stays — rejecting non-`msg` placeholders would remove the feature, and the interpolation
+  happens inside `pino-pretty` where this library cannot escape it. What changes is that the JSDoc
+  now says so, and the README no longer recommends the pattern without the warning: interpolate only
+  fields your own code sets, never one carrying user input.
+
 ### Documentation
+
+- **`hideObject` is scoped to the pretty destination, not to the entry.** The doc said a field hidden
+  there "is not visible anywhere", which holds only when pretty is the sole destination. Registered
+  alongside another sink, that sink still receives the complete entry.
+
+- **The `safe-stdio` specs no longer leave `'error'` listeners on the shared process streams.** They
+  did so deliberately, with a rationale that the same pull request had already made stale: cleanup
+  had once broken the guarantee under test because the module remembered which streams it guarded,
+  and `ensureGuarded` was then changed to inspect the actual listener list. Every
+  `isolateModulesAsync` load installs a distinct handler, so the file accumulated one per case on a
+  stream that outlives the suite — where a later spec asserting an unhandled stream error propagates
+  would be silently satisfied. Each block now restores its exact baseline, and asserts that it did.
+
+- **A process note, recorded because it cost two releases.** Copilot reports some findings inside a
+  `Suppressed comments` block in the review BODY, where they never become review threads. Checking
+  `reviewThreads` for `isResolved == false` — the documented way to avoid trusting the page — reports
+  zero open and is telling the truth about threads while missing these entirely. Ten such findings
+  sat unread on the `1.2.6` pull request, including the two fixed above. Reviews are now read
+  alongside threads.
 
 - **A hand-built `PinoLoggerService` is not this library's behaviour, and the constructor doc used to
   invite one without saying so.** `new PinoLoggerService(pino({...}, sink))` does not throw — the

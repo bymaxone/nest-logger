@@ -99,7 +99,27 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         this.reportInitFailure(destination.name, cause)
       }
     }
+    this.notifyRegistryReady()
     this.announceBootstrap()
+  }
+
+  /**
+   * Tell every REGISTERED destination — live or failed — whether any sink
+   * survived. The failed ones matter most; see `ILogDestination.onRegistryReady`
+   * for what a destination does with the answer.
+   *
+   * Each notification is isolated: one that throws is reported and skipped rather
+   * than costing the others or the bootstrap entry.
+   */
+  private notifyRegistryReady(): void {
+    const status = { hasHealthySink: this.health.hasHealthySink() }
+    for (const destination of this.registered) {
+      try {
+        destination.onRegistryReady?.(status)
+      } catch (cause) {
+        this.reportInitFailure(destination.name, cause)
+      }
+    }
   }
 
   /**
