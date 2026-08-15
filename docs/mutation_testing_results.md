@@ -11,14 +11,14 @@
 | **Global mutation score**                              | **100.00 %**                |
 | Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅ |
 | Aspirational target (`thresholds.high`)                | 99 % → **reached**          |
-| Killed                                                 | 794                         |
+| Killed                                                 | 801                         |
 | Survived                                               | **0**                       |
 | Timeout (counts as detected)                           | 11                          |
 | Ignored — documented `// Stryker disable`              | 15                          |
 | Ignored — static mutants (`ignoreStatic: true`)        | 128                         |
-| Compile/runtime errors (type-system-guarded, excluded) | 503                         |
+| Compile/runtime errors (type-system-guarded, excluded) | 507                         |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `805 / 805 = 100.00 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `812 / 812 = 100.00 %`.
 
 ### 2026-08-15 — the descriptor flags nobody could kill, deleted rather than excused
 
