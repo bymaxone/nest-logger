@@ -35,6 +35,13 @@ import type { ILogDestination } from '../interfaces/log-destination.interface'
  * the last-resort rescue. Omitting it from this type states the intent — applying
  * the library's own value AFTER the spread in {@link PrettyDevDestination.onInit}
  * is what enforces it, including against an untyped JavaScript caller.
+ *
+ * @example
+ *   // One line per entry, with the fields a project repeats on every line hidden.
+ *   const view: PrettyViewOptions = {
+ *     singleLine: true,
+ *     ignore: 'pid,hostname,service,deployment,event.name'
+ *   }
  */
 export interface PrettyViewOptions {
   /**
@@ -221,7 +228,6 @@ export class PrettyDevDestination implements ILogDestination {
         // and the last-resort rescue.
         destination: process.stdout
       })
-      this.flushBuffer((payload) => this.stream?.write(payload))
     } catch {
       // Mark as failed so subsequent writes are dropped rather than falling back
       // to raw stdout here: with a stdout sink also registered, a fallback would
@@ -241,6 +247,25 @@ export class PrettyDevDestination implements ILogDestination {
           'dependency (`pnpm add -D pino-pretty`) or remove PrettyDevDestination from `destinations`.'
       )
     }
+
+    // Replayed OUTSIDE the catch above, and guarded per entry. Both matter:
+    //
+    //   - inside it, a throwing transform write would have been reported as
+    //     "pino-pretty is not installed" — a diagnosis that is simply false, sent
+    //     to an operator who would then go install a package that is already there;
+    //   - and because `flushBuffer` detaches the whole buffer before emitting, the
+    //     catch-path raw flush would have found nothing left to recover, losing the
+    //     entry that threw AND every entry after it. The buffer exists to stop a
+    //     boot log being lost; a replay that loses one is worse than no buffer.
+    //
+    // A single failed write degrades that entry to raw and the replay continues.
+    this.flushBuffer((payload) => {
+      try {
+        this.stream?.write(payload)
+      } catch {
+        writeRawToStdout(payload)
+      }
+    })
   }
 
   /**

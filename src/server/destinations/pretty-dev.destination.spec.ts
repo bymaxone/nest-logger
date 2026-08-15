@@ -374,6 +374,48 @@ describe('PrettyDevDestination', () => {
     })
 
     it(/*
+     * REGRESSION — a transform write that throws during the replay must not be
+     * reported as a missing peer, and must not take the rest of the buffer with it.
+     *
+     * The replay used to sit inside the catch that reports `pino-pretty` as
+     * missing, so a throwing write produced a diagnosis that was simply false —
+     * sent to an operator who would go install a package that is already there.
+     * Worse, `flushBuffer` detaches the whole buffer before emitting, so the
+     * catch-path raw flush found nothing left: the entry that threw AND every
+     * entry after it were lost. A buffer that loses a boot log is worse than no
+     * buffer, since losing them is the thing it was added to prevent.
+     */
+    'degrades one failing replay write to raw and keeps replaying', async () => {
+      await jest.isolateModulesAsync(async () => {
+        const rendered: string[] = []
+        jest.doMock('pino-pretty', () => ({
+          build: () => ({
+            write: (line: string) => {
+              if (line === 'second\n') {
+                throw new Error('transform write failed')
+              }
+              rendered.push(line)
+            },
+            end: () => undefined,
+            once: () => undefined
+          })
+        }))
+        const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
+        const dest = new Fresh()
+        dest.write('first\n')
+        dest.write('second\n')
+        dest.write('third\n')
+
+        // Not a missing peer, so onInit must not claim one — and must not reject.
+        await expect(dest.onInit()).resolves.toBeUndefined()
+
+        // The two that could render did; the one that threw fell back to raw.
+        expect(rendered).toEqual(['first\n', 'third\n'])
+        expect(stdoutSpy).toHaveBeenCalledWith('second\n')
+      })
+    })
+
+    it(/*
      * A flush must EMPTY the buffer, so a second flush emits nothing. Both drain
      * paths can run for one destination — init fails and drains raw, then shutdown
      * finds no stream and drains again — and an entry emitted twice on a failure
