@@ -11,14 +11,14 @@
 | **Global mutation score**                              | **100.00 %**                |
 | Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅ |
 | Aspirational target (`thresholds.high`)                | 99 % → **reached**          |
-| Killed                                                 | 801                         |
+| Killed                                                 | 814                         |
 | Survived                                               | **0**                       |
 | Timeout (counts as detected)                           | 11                          |
 | Ignored — documented `// Stryker disable`              | 15                          |
 | Ignored — static mutants (`ignoreStatic: true`)        | 128                         |
-| Compile/runtime errors (type-system-guarded, excluded) | 507                         |
+| Compile/runtime errors (type-system-guarded, excluded) | 510                         |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `812 / 812 = 100.00 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `825 / 825 = 100.00 %`.
 
 ### 2026-08-15 — the descriptor flags nobody could kill, deleted rather than excused
 
@@ -38,6 +38,29 @@ So it was verified rather than assumed, on the built artifact and not only in th
 writes to the node. The descriptor is now `{ value, enumerable: true }`, back to 100.00 % with 0
 survivors, and the comment states the invariant so a future change that needs an in-place write knows
 it has to add `writable` back.
+
+---
+
+### 2026-08-15 — the third branch deleted rather than suppressed, in the same week
+
+The readiness-hook work dropped the cold run to **99.64 %** with three survivors, and two of them
+were one compare-and-assign branch:
+
+```
+destination-health.service.ts:83  [ConditionalExpression]  if (level < lowest) → true/false
+destination-health.service.ts:83  [EqualityOperator]       `<` → `<=`
+```
+
+`<` → `<=` reassigns the identical value, so no test can distinguish it. The branch existed only to
+keep the smallest level, and `Math.min` says that directly — the branch stops existing, and both
+mutants with it. **Third time this week the answer to "is this mutant equivalent?" was "why does
+this code need this branch?"**, and the third time deleting beat documenting.
+
+The third survivor was different and worth separating: a `StringLiteral` in the hook-failure message.
+Not equivalent at all — the assertions simply covered the FIRST half of a concatenation and left the
+second, the half carrying the operator-facing consequence, unasserted. A survivor on a string literal
+is almost always a missing assertion rather than an equivalent mutant, and treating the two the same
+way is how a suppression gets written for a real gap.
 
 ---
 
