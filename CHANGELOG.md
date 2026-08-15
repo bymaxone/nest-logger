@@ -11,6 +11,122 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-08-15
+
+### Added
+
+- **`PrettyDevDestination` takes a `view`, so the terminal rendering is the consumer's choice.**
+  Requested with the measurement that makes the case — one real entry rendered three ways through
+  `pino-pretty`, where only the options differ:
+
+  ```
+  A) the built-in view                                   7 lines for one entry
+  B) singleLine + an extended ignore list                1 line, fields kept
+  C) hideObject + messageFormat '[{context}] {msg}'      1 line, message only
+  ```
+
+  All of it was reachable in `pino-pretty` and none of it was reachable through this library, which
+  hard-coded five options and read only `minLevel` from its constructor.
+
+  ```ts
+  new PrettyDevDestination({
+    view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event.name' }
+  })
+  ```
+
+  `PrettyViewOptions` covers `singleLine`, `ignore`, `hideObject`, `messageFormat`, `translateTime`
+  and `colorize`. **Additive** — every field defaults to what it rendered before, so
+  `new PrettyDevDestination()` is unchanged.
+
+  **`destination` is deliberately not exposed.** The library owns where entries go; a redirected
+  stream would route around the multistream fan-out and the last-resort rescue. It is absent from
+  the type AND applied after the consumer's options are spread, so an untyped JavaScript caller
+  cannot smuggle one in either — omitting it from a type is a suggestion, ordering the spread is the
+  guarantee.
+
+  The options bag is this library's **own** interface rather than `pino-pretty`'s `PrettyOptions`,
+  and that is load-bearing rather than stylistic: a type import from the peer emits a hard
+  `import { PrettyOptions } from 'pino-pretty'` on line 4 of the published `.d.ts`, so every consumer
+  who type-checks without the optional peer installed would hit an unresolved module. That would make
+  an optional peer effectively required. Measured on the built artifact.
+
+### Fixed
+
+- **Entries emitted before the pretty transform exists are now rendered, not dumped raw.** A real
+  boot put **43 raw NDJSON lines on screen before the first rendered one** — every entry NestJS emits
+  while instantiating providers, because the transform cannot be built until `onInit` (loading the
+  optional peer is async). Nothing was ever lost, but a developer who had just enabled pretty output
+  saw a screen of JSON and concluded it had not worked. That is what was reported.
+
+  Those entries are now held and flushed **through** the transform once it exists, in arrival order.
+  Nothing is lost on any path, which is the property the raw passthrough had and the buffer had to
+  keep:
+
+  - **init fails** → the held entries are drained raw, because the renderer they were waiting for is
+    never coming;
+  - **a bound is reached** (1000 entries or 4 MiB, whichever trips first — nothing guarantees
+    `onInit` ever runs) → the buffer drains raw _before_ the entry that tripped it, so output stays
+    in order rather than replaying old entries after newer ones;
+  - **shutdown before init** → drained raw rather than dying with the process.
+
+  The byte ceiling is there because the entry count alone does not bound memory: a payload has no
+  whole-record size limit (`maxEntrySizeBytes` bounds what a serializer emits for one field, not the
+  entry), so 1000 held entries carrying large metadata could retain far more than the count suggests
+  — where the raw passthrough this buffer replaced retained nothing at all.
+
+- **A closed pipe can no longer crash the host, which the `try/catch` around
+  `process.stdout.write` never actually prevented.** Every fallback path in this library — the
+  last-resort NDJSON rescue, the pre-init drain, the destination failure reports — wrapped its raw
+  write in a `try/catch` and documented that as EPIPE protection. It is not, and this was measured
+  rather than argued:
+
+  ```
+  stdout error listeners at start: 0
+  sync result: no-throw          ← the try/catch caught nothing
+  UNCAUGHT:EPIPE                 ← arrived later, as an uncaught exception
+  child exit code: 42            ← the process died
+  ```
+
+  A closed pipe (`node app | head`) reports EPIPE **asynchronously**, through the stream's `'error'`
+  event, after `write()` has already returned. Node attaches no default handler, so the emit becomes
+  an uncaught exception. The guarantee was asserted in prose and absent from the code, on exactly the
+  paths whose purpose is to survive a broken sink.
+
+  Every library-owned write to a process stream now goes through one `safe-stdio` helper that
+  installs a swallow-EPIPE handler on first use, covering the asynchronous half; the `try/catch`
+  remains for the synchronous half, since either alone leaves a way to die. The handler is found by
+  identity rather than remembered, so anything that strips listeners from a process stream cannot
+  silently disable the protection permanently.
+
+  **This includes `DefaultStdoutDestination`, and that is the half that actually mattered.** The
+  first version of the fix guarded only the fallback paths — the rescue, the drain, the failure
+  reports — none of which a healthy application ever takes. The default sink, which is what a
+  consumer gets when they configure nothing, still called `process.stdout.write` directly, so the
+  ordinary install was exactly as crashable as before. Caught in review and then reproduced against
+  the built artifact: `0` listeners, no synchronous throw, `UNCAUGHT:EPIPE`, exit 42. Re-measured
+  after the fix: survived, exit 0.
+
+  `PrettyDevDestination` is deliberately **not** guarded by this library. `pino-pretty` receives
+  `process.stdout` and attaches two `'error'` listeners of its own; a child piped to a closed reader
+  survived and exited 0 with nothing from us on the stream, so a guard there would be code whose
+  need is disproven. A test pins that, and goes red if `pino-pretty` ever stops attaching them.
+
+  One consequence worth stating rather than burying: after the first log line, `process.stdout` has a
+  swallowing `'error'` listener that belongs to this library, so an EPIPE raised by **your** writes
+  to stdout also stops being an uncaught exception. That is the trade — the alternative is the crash
+  above — and your own `'error'` listener is never removed or replaced.
+
+  Reported by Copilot against the new pre-init buffer, then a second time against the incomplete
+  fix; the same ineffective pattern was already shipped in `1.2.3` and `1.2.5`, so this corrects
+  those paths too.
+
+- **A write after a failed init is verifiably dropped, not merely silent.** Adding the buffer made
+  "dropped" and "held" observationally identical — the existing case asserted only that nothing
+  reached stdout, and buffering produces the same silence. A **cold** mutation run caught it
+  (the incremental runs had been reporting 100% while the cold run read 99.62%, with all three
+  survivors in this file). The case now shuts down after the failed init, which drains anything
+  still held: a merely-buffered entry surfaces there, a dropped one does not.
+
 ## [1.2.5] - 2026-08-14
 
 ### Fixed
@@ -1014,7 +1130,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...HEAD
+[1.2.6]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/bymaxone/nest-logger/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/bymaxone/nest-logger/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/bymaxone/nest-logger/compare/v1.2.2...v1.2.3

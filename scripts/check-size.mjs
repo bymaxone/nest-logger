@@ -33,6 +33,22 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-08-15 — server: 21.66 KiB real -> 22.5 KiB budget (~3.9% headroom).
+//     SECOND raise in two days, which is worth naming rather than burying: the
+//     tripwire has now moved twice for the same body of work, and a budget that
+//     follows the code is not a budget. It is raised anyway because the +0.16 KiB
+//     is a crash-prevention fix rather than feature surface — `safe-stdio.util.ts`,
+//     which installs the swallow-EPIPE handler that the `try/catch` in three
+//     already-shipped paths only CLAIMED to provide. Measured: a closed pipe gave
+//     no synchronous throw, an asynchronous UNCAUGHT:EPIPE, and exit 42. Refusing
+//     the 0.16 KiB would mean keeping a documented guarantee that does not exist.
+//     Trimming was tried first and recovered EXACTLY ZERO: this module's JSDoc is
+//     absent from the built `.mjs` (0 occurrences of its header text), so unlike
+//     the 2026-08-14 entry the cost here is entirely code. Worth remembering the
+//     next time comments are suspected — tsup does not preserve every comment, and
+//     the assumption that it does is itself measurable.
+//     If the next change also needs a raise, the right move is to question the
+//     growth rather than the number.
 //   - 2026-08-14 — server: 20.59 KiB real -> 21.5 KiB budget (~4.4% headroom).
 //     This RE-TIGHTENS the deliberately-wide 18% headroom the entry below asked
 //     to have re-tightened "once that lands and the artifact stops moving": the
@@ -102,7 +118,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 21.5 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 22.5 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 

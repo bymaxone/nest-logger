@@ -24,6 +24,7 @@
 import { Writable } from 'node:stream'
 
 import { reportDestinationFailure } from './report-destination-failure.util'
+import { writeStdoutSafely } from './safe-stdio.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { DestinationHealth } from '../services/destination-health.service'
@@ -61,12 +62,7 @@ function reportWriteFailure(name: string, cause: unknown): void {
  * @param payload - The serialized, newline-terminated NDJSON entry.
  */
 function rescueToStdout(payload: string): void {
-  try {
-    process.stdout.write(payload)
-  } catch {
-    // Same EPIPE reasoning as reportWriteFailure: the safe sink can be a closed
-    // pipe, and that must not escalate into a crash.
-  }
+  writeStdoutSafely(payload)
 }
 
 /**

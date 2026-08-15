@@ -60,7 +60,7 @@ pnpm add @bymax-one/nest-logger
 - ✅ **Structured JSON** — every entry has `level`, `time`, `service`, `logKey`, `msg`, and arbitrary metadata fields
 - ✅ **`MODULE_ACTION_RESULT` Log Keys** — a naming convention enforced by an exported regex for CI validation
 - ✅ **NestJS `LoggerService` Bridge** — drop-in replacement; all NestJS internal logs flow through Pino
-- ✅ **Pretty-Print in Dev** — opt-in `PrettyDevDestination` for readable local output (requires optional `pino-pretty`)
+- ✅ **Pretty-Print in Dev** — opt-in `PrettyDevDestination` with a configurable `view` (single-line, hidden fields, message-only) for readable local output (requires optional `pino-pretty`)
 - ✅ **Field Size Guard** — a serialized field over the ceiling (default 64 KB) is replaced by a compact truncation envelope instead of flooding the sink
 
 ### 🛡️ Security & Privacy
@@ -753,6 +753,39 @@ The consequence worth knowing: a sink you supply may be the **only** one the app
 
 So the common accident — adding `new PrettyDevDestination()` without installing the optional `pino-pretty` — costs you colours and a line on stderr telling you why, never your logs.
 
+### Choosing how the dev terminal renders
+
+`PrettyDevDestination` takes a `view`. Every field defaults to what it rendered before, so `new PrettyDevDestination()` is unchanged — the options exist because the default view is deliberately verbose, and one entry can be seven lines.
+
+```typescript
+// One line per entry, with the fields your project repeats on every line hidden.
+new PrettyDevDestination({
+  view: { singleLine: true, ignore: 'pid,hostname,service,deployment,event.name' }
+})
+
+// Message only, with the context pulled back into the line.
+new PrettyDevDestination({
+  view: { hideObject: true, messageFormat: '[{context}] {msg}' }
+})
+```
+
+| Field           | Default                  | Notes                                                                        |
+| --------------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `singleLine`    | `false`                  | The single biggest change to how a terminal reads                            |
+| `ignore`        | `'pid,hostname,service'` | Display-only — what a real sink receives is untouched                        |
+| `hideObject`    | `false`                  | Hides the record entirely; see the caveat below                              |
+| `messageFormat` | —                        | e.g. `'[{context}] {msg}'`; how to keep one field visible under `hideObject` |
+| `translateTime` | `'SYS:HH:MM:ss.l'`       | Or `false` for the raw timestamp                                             |
+| `colorize`      | `true`                   | ANSI colour                                                                  |
+
+> **`hideObject` hides it everywhere.** In pretty mode there is no JSON copy behind the rendering, because `destinations` **replaces** stdout — so a field hidden here, `logKey` included, is not visible anywhere. That is what the option is for; `messageFormat` is how you pull a specific field back.
+
+The shape is exported as `PrettyViewOptions` when you want to build the view separately — it is this library's own interface, not a re-export of `pino-pretty`'s `PrettyOptions`, so type-checking without the optional peer installed still resolves.
+
+> **`destination` is not exposed, by design.** The library owns where entries go — a redirected stream would route around the fan-out and the last-resort rescue above. It is absent from the type and applied after your options are merged, so it cannot be overridden from untyped JavaScript either.
+
+**The first entries of a boot are held, not lost.** The transform cannot exist until `onInit` — loading the optional peer is async — so everything NestJS emits while instantiating providers arrives before it. Those entries are buffered and then rendered through the transform in arrival order. If the peer is missing, the bound is reached, or the app shuts down before init, they are written as raw NDJSON instead: degraded, never dropped.
+
 ### Postgres destination (Prisma)
 
 ```typescript
@@ -974,6 +1007,14 @@ Trace context is never copied verbatim into a log entry. The OTel mixin reads th
 ### Destination failures are contained
 
 Every `write()` runs inside a try/catch. A destination that throws or rejects produces a `LOGGER_DESTINATION_WRITE_FAILED` line on `stderr` — never back through the logger, which would turn a broken sink into a write → log → write feedback loop — and the entry is dropped for that sink only. A destination whose `onInit()` rejects is reported as `LOGGER_DESTINATION_INIT_FAILED` and excluded from the shutdown sequence without blocking boot; it stays in the write fan-out, where the same fail-soft wrapper contains it. A logging backend going down degrades logging — it never takes the application with it.
+
+### A closed pipe does not kill the process
+
+`node app | head` closes the read end of stdout while the application is still writing. The stream reports that as `EPIPE` **asynchronously**, through its `'error'` event, after `write()` has already returned — so a `try/catch` around the write catches nothing, and because Node attaches no default handler to `process.stdout`, the emit becomes an uncaught exception and the process dies. Measured, not assumed: `0` listeners, no synchronous throw, `UNCAUGHT:EPIPE`, exit 42.
+
+Every write this library makes to a process stream — the default stdout sink, the last-resort rescue, the pre-init drain, the `stderr` failure reports — installs a swallowing `'error'` listener on first use. **The side effect is worth knowing:** that listener is on the shared `process.stdout`, so after the first log line an EPIPE raised by _your_ writes stops being an uncaught exception too. The alternative is the crash above. Your own `'error'` listener is never removed or replaced — this only ever adds one.
+
+If you write to `process.stdout` from a custom `ILogDestination`, do the same in your own sink; the [destinations guide](./docs/guidelines/DESTINATIONS-IMPLEMENTATION-GUIDELINES.md) has the exact pattern.
 
 ### Bounded field size
 

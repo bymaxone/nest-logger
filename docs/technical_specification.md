@@ -153,10 +153,10 @@ The community lib [`nestjs-pino`](https://github.com/iamolegga/nestjs-pino) (Iam
 
 #### Additional destinations (opt-in)
 
-| Destination                  | Activation                                     | Use case                                                        |
-| ---------------------------- | ---------------------------------------------- | --------------------------------------------------------------- |
-| `PrettyDevDestination`       | `NODE_ENV !== 'production'` or explicit config | Human-readable colorized console in dev                         |
-| Custom via `ILogDestination` | Consumer implements                            | Loki, Datadog, Postgres, S3 archive, any stream-friendly target |
+| Destination                  | Activation                                              | Use case                                                                   |
+| ---------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `PrettyDevDestination`       | Explicit only — added to `destinations` by the consumer | Human-readable colorized console in dev; rendering configurable via `view` |
+| Custom via `ILogDestination` | Consumer implements                                     | Loki, Datadog, Postgres, S3 archive, any stream-friendly target            |
 
 ---
 
@@ -479,6 +479,7 @@ export type {
 // Destinations
 export { DefaultStdoutDestination } from './destinations/default-stdout.destination'
 export { PrettyDevDestination } from './destinations/pretty-dev.destination'
+export type { PrettyViewOptions } from './destinations/pretty-dev.destination'
 
 // Injection tokens
 export {

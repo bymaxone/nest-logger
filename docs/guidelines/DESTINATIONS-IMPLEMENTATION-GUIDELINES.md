@@ -183,6 +183,8 @@ export class LokiDestination implements ILogDestination {
 
 A destination that **throws** in `write()` breaks Pino multi-stream — a failure in one destination MUST NOT affect the others. **Principle**: catch every error in `write` (try/catch) and log it via `process.stderr.write` only. Never via the logger itself (infinite loop).
 
+> **A `try/catch` around `process.stderr.write` is not EPIPE protection**, and this was measured rather than assumed. When the reader closes the pipe (`node app | head`), the stream reports `EPIPE` **asynchronously** through its `'error'` event, after `write()` has already returned — so the `catch` sees nothing, and because Node attaches no default handler to these streams the emit becomes an uncaught exception that kills the process (measured: 0 listeners, no synchronous throw, exit code 42). If your destination writes to `process.stdout`/`process.stderr` directly, attach a swallowing `'error'` listener to the stream once, in addition to the `try/catch` — the catch covers the synchronous half (a destroyed stream can still throw from `write()`), the listener covers the asynchronous one, and either alone leaves a way to die. The library's own fallback paths route every raw write through one internal helper that does exactly this.
+
 ---
 
 ## 4. Lifecycle
@@ -246,26 +248,48 @@ export class DefaultStdoutDestination implements ILogDestination {
 
 ### 5.2 Pretty (dev only)
 
-```typescript
-import pretty from 'pino-pretty'
+> **This section previously showed a simplified sketch that does not match the shipped destination, and two of its lines taught patterns the real implementation exists to avoid.** It is replaced below by the shape that is actually correct. If you copied the old example into a destination of your own, the two notes at the end are the ones to check.
 
+```typescript
 export class PrettyDevDestination implements ILogDestination {
   readonly name = 'pretty-dev'
-  private readonly stream = pretty({ colorize: true, translateTime: 'SYS:HH:MM:ss.l' })
+  private stream?: Transform
 
-  constructor() {
-    this.stream.pipe(process.stdout)
+  // The transform is built in onInit, NOT in a field initializer or the
+  // constructor: the peer is optional, so resolving it is `await import(...)`,
+  // and a constructor cannot await. Entries that arrive before this runs are
+  // buffered and flushed through the transform here.
+  async onInit(): Promise<void> {
+    const { build } = await import('pino-pretty')
+    this.stream = build({
+      ...defaults,
+      ...consumerView,
+      // AFTER the consumer's options: the library owns the sink.
+      destination: process.stdout
+    })
+    this.flushBuffer((payload) => this.stream?.write(payload))
   }
 
   write(payload: string): void {
-    this.stream.write(payload)
+    if (this.stream !== undefined) {
+      this.stream.write(payload)
+      return
+    }
+    // Held to be rendered, not printed raw — see §4 for where held entries end
+    // up when the transform never arrives.
+    this.buffer.push(payload)
   }
 
-  onShutdown(): void {
-    this.stream.end()
+  async onShutdown(): Promise<void> {
+    /* flush + end the transform; drain the buffer raw if it never initialized */
   }
 }
 ```
+
+Two things the old sketch got wrong, both worth stating because they are easy to reproduce:
+
+- **`stream.pipe(process.stdout)` leaks the raw NDJSON.** `pino-pretty` writes the _formatted_ text to its `destination` and passes the original chunk through unchanged, so piping the readable side prints both the prettified line and the raw JSON. Pass `destination` instead.
+- **Building the transform eagerly makes the optional peer mandatory.** A field initializer or constructor call runs at `new`, so a consumer who has not installed `pino-pretty` crashes on construction rather than getting the actionable `onInit` failure and the degraded-but-visible fallback described in §4.
 
 > `pino-pretty` is an **optional peer dep**. If it is absent, `PrettyDevDestination.onInit()` **throws** with an actionable message, and the generic init-failure path takes over (§4): the failure is reported as `LOGGER_DESTINATION_INIT_FAILED` on stderr, the destination is dropped from the fan-out, and — if it was the only one registered — entries fall back to raw NDJSON on stdout.
 >

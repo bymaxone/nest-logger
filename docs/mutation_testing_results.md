@@ -1,6 +1,6 @@
 # Mutation Testing Results
 
-> **Last run:** 2026-08-12 (`pnpm mutation:full` — cold, baseline deleted)
+> **Last run:** 2026-08-15 (`pnpm mutation:full` — cold, baseline deleted)
 > **Command:** Stryker 9, jest runner, `coverageAnalysis: perTest`, `ignoreStatic: true`
 > **Report:** [`reports/mutation/mutation.html`](../reports/mutation/mutation.html)
 
@@ -11,13 +11,45 @@
 | **Global mutation score**                              | **100.00 %**                |
 | Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅ |
 | Aspirational target (`thresholds.high`)                | 99 % → **reached**          |
-| Killed                                                 | 448                         |
+| Killed                                                 | 794                         |
 | Survived                                               | **0**                       |
-| Timeout (counts as detected)                           | 5                           |
-| Ignored via documented `// Stryker disable`            | 103                         |
-| Compile/runtime errors (type-system-guarded, excluded) | 313                         |
+| Timeout (counts as detected)                           | 11                          |
+| Ignored — documented `// Stryker disable`              | 20                          |
+| Ignored — static mutants (`ignoreStatic: true`)        | 128                         |
+| Compile/runtime errors (type-system-guarded, excluded) | 506                         |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `453 / 453 = 100.00 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `805 / 805 = 100.00 %`.
+
+### 2026-08-15 — the incremental run was reporting a score the cold run did not
+
+Refreshing this document is what caught it. Every mutation run during the `1.2.3`–`1.2.6` work
+was `pnpm mutation` (incremental), and every one reported **100.00 %**. The cold run reported
+**99.62 %** — three survivors, all in code added hours earlier:
+
+```
+pretty-dev.destination.ts:237  [BooleanLiteral]        this.initFailed = true → false
+pretty-dev.destination.ts:292  [ConditionalExpression] if (this.initFailed)   → false
+pretty-dev.destination.ts:292  [BlockStatement]        the drop branch        → {}
+```
+
+All three are one gap, and the gap was **introduced by a fix**. The pre-init buffer added in
+`1.2.6` made "dropped" and "held" observationally identical: an existing case asserted only that
+a write after a failed init produced nothing on stdout, and after the buffer existed, buffering
+produced nothing on stdout either. Flipping `initFailed` to `false` left that case passing.
+
+So a change that added a guarantee quietly weakened the test protecting a different one, and the
+incremental baseline — which had those mutants recorded as killed from a run before the buffer
+existed — did not re-test them.
+
+Fixed by making the case distinguish the two states rather than assert their shared symptom: after
+the failed init it now also shuts down, which drains anything still held. A merely-buffered entry
+surfaces there; a dropped one does not. Cold run back to 100.00 % with 0 survivors.
+
+**The operating lesson, which is why this is recorded rather than just fixed:** an incremental
+score is a claim about the mutants Stryker chose to re-run, not about the suite. `CLAUDE.md`
+already says `mutation:full` "measures the truth" — this is what that sentence costs when the
+distinction is treated as a performance note. Any score quoted as a result, in a release note or
+to a reviewer, should come from a cold run.
 
 ### 2026-08-12 — the P0 remediation, and what it cost before it paid
 
@@ -75,8 +107,13 @@ Targeted assertions were added to kill ~40 runtime survivors across the tree, e.
 - **validate-options**: non-string `service.name` / `service.version` tests + comma-space format in `level` error message.
 - **logger.module**: bootstrap message content assertion; `error.cause` assertion in `useNestLogger`.
 
-**Equivalent mutants** (documented here rather than with inline `// Stryker
-disable`, which would ship in the unminified bundle — see the size note above):
+**Equivalent mutants.** The list below is the record of what was found and why. The
+**canonical** justification now lives in the source, on the line each one applies to, as
+`// Stryker disable next-line <Mutator>: <reason>` — the policy in
+[`mutation_testing_plan.md`](./mutation_testing_plan.md), shared across the `@bymax-one/nest-*`
+libraries. That reverses the note this paragraph used to carry: the comments do ship in the
+unminified bundle, the measured cost is +0.10 kB brotli for seven of them, and a justification
+sitting only in a document is one an editor never sees.
 
 - `destination-to-stream.ts` `decodeStrings: false` → `true`: the `true` variant
   re-encodes the string to a Buffer that `write()` decodes back to the identical
@@ -102,26 +139,42 @@ disable`, which would ship in the unminified bundle — see the size note above)
 
 **`ignoreStatic: true`** was enabled — the Stryker-documented fix for `perTest`
 static mutants, which are module-load literals that perTest cannot attribute to a
-killing test and are a well-known false-positive source. This excluded 89 such
+killing test and are a well-known false-positive source. This excluded 128 such
 mutants that are nonetheless covered behaviorally by the suite.
 
 ## Critical paths
 
-| File                           | Score        | Note                      |
-| ------------------------------ | ------------ | ------------------------- |
-| `normalize-url.util.ts`        | **100 %** ✅ |                           |
-| `compile-redact-paths.util.ts` | **100 %** ✅ |                           |
-| `http-logging.interceptor.ts`  | **100 %** ✅ | unit + integration tests  |
-| `services/*`                   | **100 %** ✅ |                           |
-| `trace-context.mixin.ts`       | 92.86 %      | 1 equivalent (see above)  |
-| `sanitize-error.util.ts`       | 88.89 %      | 4 equivalents (see above) |
-| `truncate-large-entries.ts`    | 88.89 %      | 1 equivalent (see above)  |
+Every file below is at **100 %** in the 2026-08-15 cold run. The `Equivalents` column counts
+mutants excluded by a documented `// Stryker disable` comment, not survivors — the score is the
+same either way, but the number says how much of the file's protection rests on a suppression
+someone has to keep honest.
 
-## Residual survivors (10)
+| File                           | Score        | Equivalents | Note                     |
+| ------------------------------ | ------------ | ----------- | ------------------------ |
+| `normalize-url.util.ts`        | **100 %** ✅ | 23          |                          |
+| `compile-redact-paths.util.ts` | **100 %** ✅ | 0           |                          |
+| `http-logging.interceptor.ts`  | **100 %** ✅ | 0           | unit + integration tests |
+| `services/*`                   | **100 %** ✅ | 4           |                          |
+| `trace-context.mixin.ts`       | **100 %** ✅ | 2           | was 92.86 % as survivors |
+| `sanitize-error.util.ts`       | **100 %** ✅ | 6           | was 88.89 % as survivors |
+| `truncate-large-entries.ts`    | **100 %** ✅ | 2           | was 88.89 % as survivors |
+| `safe-stdio.util.ts`           | **100 %** ✅ | 0           | new in `1.2.6`           |
+| `pretty-dev.destination.ts`    | **100 %** ✅ | 0           |                          |
 
-**All 10 are equivalent mutants** (documented above) — not killable by definition.
-There are zero genuine coverage gaps remaining. The maximum theoretical score without
-`// Stryker disable` comments is 97.42 % (= 378/388).
+## Residual survivors (0)
+
+There are none, and there are no genuine coverage gaps. The equivalent mutants that used to be
+counted here as 10 survivors are now excluded at the line they apply to, by a
+`// Stryker disable next-line <Mutator>: <reason>` comment carrying its justification — the
+suppression policy in [`mutation_testing_plan.md`](./mutation_testing_plan.md). 20 mutants are excluded that way
+across the tree; the other 128 of the 148 ignored are static mutants dropped by
+`ignoreStatic: true`, which is a `perTest` attribution limit rather than a judgment about any
+of them.
+
+The three rows above marked "was …" are the visible half of that move: nothing about those files
+got safer when their score went from 88.89 % to 100 %, the equivalents simply stopped being
+reported as failures. Read the score as "no gap the suite could close", never as "every mutant
+died".
 
 ---
 
