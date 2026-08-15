@@ -15,6 +15,29 @@ heading here.
 
 ### Security
 
+- **Serializer output is redacted by name under `redactStrategy: 'paths'` too.** Carrying an
+  error's own properties at every depth of the `cause` chain (below) opened a hole in that legacy
+  mode: the name walk is a pass-through there, so redaction fell entirely to `fast-redact`, and
+  `DEFAULT_REDACT_PATHS` reaches `*.*.*.*.password` — four wildcard levels. A serialized cause chain
+  goes deeper. Measured on the built artifact with a password on the deepest link of
+  `err.errors[0].cause.cause`:
+
+  ```json
+  { "cause": { "name": "Error", "message": "deep", "password": "LEAK-deep" } }
+  ```
+
+  Confirmed absent from `1.2.6`, where the field was not carried at all — so this was a regression
+  introduced inside this release rather than an inherited one, and it never reached a published
+  artifact.
+
+  `redactStrategy` is the consumer's choice about **their own payload**; what a serializer
+  synthesizes is this library's output, and the name walk — which has no depth ceiling — now covers
+  it either way. The caller's record is untouched by this: `'paths'` still means exactly what it
+  documented, four-level ceiling included, and the e2e case that pins that ceiling is what caught
+  the first attempt at this fix collapsing both hooks onto one redactor.
+
+  Reported by Copilot on the pull request that introduced the deeper copy.
+
 - **An own `__proto__` key on an error is now stored as data instead of being applied as a
   prototype.** The own-property copy assigned each key, and `__proto__` is an accessor inherited
   from `Object.prototype` — so the assignment walked the chain, invoked that setter, and replaced
