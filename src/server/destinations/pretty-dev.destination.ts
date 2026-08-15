@@ -387,15 +387,23 @@ export class PrettyDevDestination implements ILogDestination {
   }
 
   /**
-   * Resolve anything still held, now that the registry knows whether a sink is
-   * live. The difference is whether emitting would create a SECOND copy: the
-   * fan-out already handed every held entry to every other destination.
+   * Resolve anything still held, now that the registry knows whether any sink is
+   * live.
    *
-   * Another sink initialized → discard (it is delivered; printing raw duplicated
-   * each boot line). Nothing initialized → drain raw (the per-write rescue never
-   * fired for entries written before anything was marked failed).
+   * Two outcomes, and the difference is whether a second copy would be created —
+   * the fan-out already handed every held entry to every OTHER destination:
    *
-   * A no-op once {@link onInit} succeeded — the buffer was flushed there.
+   *   - **another sink initialized** → DISCARD. Those entries are delivered;
+   *     printing the buffered copy raw duplicated each boot line, which is what
+   *     the supported `[DefaultStdoutDestination(), PrettyDevDestination()]` pair
+   *     did while this destination decided alone;
+   *   - **nothing initialized** → drain RAW. The held entries exist nowhere else:
+   *     the fan-out's last-resort rescue is decided per write, and these were
+   *     written before anything had been marked failed, so it never fired for
+   *     them. Degraded output beats the silence the buffer was built to prevent.
+   *
+   * A no-op once {@link onInit} succeeded — the buffer was flushed through the
+   * transform there and is already empty.
    *
    * @param status.hasHealthySink - Whether any destination initialized.
    */

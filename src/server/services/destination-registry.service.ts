@@ -105,11 +105,17 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
 
   /**
    * Tell every REGISTERED destination — live or failed — whether any sink
-   * survived. The failed ones matter most; see `ILogDestination.onRegistryReady`
-   * for what a destination does with the answer.
+   * survived, before the first post-init entry is emitted.
    *
-   * Each notification is isolated: one that throws is reported and skipped rather
-   * than costing the others or the bootstrap entry.
+   * The failed ones matter most here: a destination that buffered entries before
+   * its own `onInit` cannot know whether they were also delivered elsewhere, and
+   * the fan-out hands every entry to every destination. Deciding alone made a
+   * supported `[DefaultStdoutDestination(), PrettyDevDestination()]` pair print
+   * each boot entry twice when the pretty sink failed to initialize.
+   *
+   * Each notification is isolated: a destination that throws here is reported and
+   * skipped rather than aborting the remaining ones or the bootstrap entry.
+   * Failing at this hook cannot be allowed to cost more than the hook was worth.
    */
   private notifyRegistryReady(): void {
     const status = { hasHealthySink: this.health.hasHealthySink() }

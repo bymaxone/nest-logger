@@ -123,8 +123,13 @@ export class DestinationHealth {
   }
 
   /**
-   * Whether any destination initialized — the fleet-wide fact, meaningful only
-   * once every `onInit` has run, where `shouldRescue` is per-write and per-sink.
+   * Whether any destination initialized successfully.
+   *
+   * Read once by the registry after the whole init loop, to tell a destination
+   * holding pre-init entries whether anyone else can deliver them. `shouldRescue`
+   * answers a narrower question — "is THIS one the elected last resort" — and is
+   * consulted per write; this one is the fleet-wide fact, and it is only
+   * meaningful once every `onInit` has run.
    *
    * @returns `true` when at least one destination is live.
    */
