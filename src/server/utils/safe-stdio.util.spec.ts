@@ -1,22 +1,17 @@
 import { writeStderrSafely, writeStdoutSafely } from './safe-stdio.util'
 
 describe('safe stdio', () => {
-  /** Listener count before this spec ran, so its own installs can be undone. */
-  const baselineStdout = process.stdout.listenerCount('error')
-  const baselineStderr = process.stderr.listenerCount('error')
-
   afterEach(() => {
     jest.restoreAllMocks()
-    // Each isolated module instance attaches its own handler to the SHARED
-    // process stream. Left in place they accumulate across cases and make the
-    // counts above meaningless for whichever test runs next.
-    while (process.stdout.listenerCount('error') > baselineStdout) {
-      process.stdout.removeListener('error', process.stdout.listeners('error').at(-1) as () => void)
-    }
-    while (process.stderr.listenerCount('error') > baselineStderr) {
-      process.stderr.removeListener('error', process.stderr.listeners('error').at(-1) as () => void)
-    }
   })
+
+  // No listener cleanup between cases, deliberately. Each case captures the count
+  // immediately before it acts and asserts a DELTA, so a handler left by an
+  // earlier case is already inside its baseline. An earlier version did clean up,
+  // by removing listeners through an untyped `.at(-1)` cast — and it broke the
+  // very guarantee under test: the module then believed the stream was still
+  // guarded while the listener was gone, which is the failure mode that made
+  // `ensureGuarded` self-healing in the first place.
 
   it(/*
    * The ordinary path: the payload reaches the stream unchanged. A guard that
