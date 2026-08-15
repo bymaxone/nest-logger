@@ -183,6 +183,8 @@ export class LokiDestination implements ILogDestination {
 
 A destination that **throws** in `write()` breaks Pino multi-stream — a failure in one destination MUST NOT affect the others. **Principle**: catch every error in `write` (try/catch) and log it via `process.stderr.write` only. Never via the logger itself (infinite loop).
 
+> **A `try/catch` around `process.stderr.write` is not EPIPE protection**, and this was measured rather than assumed. When the reader closes the pipe (`node app | head`), the stream reports `EPIPE` **asynchronously** through its `'error'` event, after `write()` has already returned — so the `catch` sees nothing, and because Node attaches no default handler to these streams the emit becomes an uncaught exception that kills the process (measured: 0 listeners, no synchronous throw, exit code 42). If your destination writes to `process.stdout`/`process.stderr` directly, attach a swallowing `'error'` listener to the stream once, in addition to the `try/catch` — the catch covers the synchronous half (a destroyed stream can still throw from `write()`), the listener covers the asynchronous one, and either alone leaves a way to die. The library's own fallback paths route every raw write through one internal helper that does exactly this.
+
 ---
 
 ## 4. Lifecycle

@@ -780,6 +780,8 @@ new PrettyDevDestination({
 
 > **`hideObject` hides it everywhere.** In pretty mode there is no JSON copy behind the rendering, because `destinations` **replaces** stdout — so a field hidden here, `logKey` included, is not visible anywhere. That is what the option is for; `messageFormat` is how you pull a specific field back.
 
+The shape is exported as `PrettyViewOptions` when you want to build the view separately — it is this library's own interface, not a re-export of `pino-pretty`'s `PrettyOptions`, so type-checking without the optional peer installed still resolves.
+
 > **`destination` is not exposed, by design.** The library owns where entries go — a redirected stream would route around the fan-out and the last-resort rescue above. It is absent from the type and applied after your options are merged, so it cannot be overridden from untyped JavaScript either.
 
 **The first entries of a boot are held, not lost.** The transform cannot exist until `onInit` — loading the optional peer is async — so everything NestJS emits while instantiating providers arrives before it. Those entries are buffered and then rendered through the transform in arrival order. If the peer is missing, the bound is reached, or the app shuts down before init, they are written as raw NDJSON instead: degraded, never dropped.
