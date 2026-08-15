@@ -64,20 +64,32 @@ export interface ILogDestination {
    * has settled, successfully or not, and before the bootstrap entry is emitted.
    *
    * Only useful to a destination that holds entries written before its own
-   * `onInit` ran: until this point it cannot know whether anyone else delivered
-   * them. The fan-out hands each entry to every registered destination, so a
-   * buffered copy is a SECOND copy whenever another sink is live — and printing
-   * it anyway is what made a supported `[DefaultStdoutDestination(),
-   * PrettyDevDestination()]` pair emit every boot entry twice when the pretty
-   * sink failed to initialize.
+   * `onInit` ran: until this point it cannot know what became of them. The
+   * fan-out hands each entry to every registered destination whose level accepts
+   * it, so a held copy may be a SECOND copy — printing it anyway is what made a
+   * supported `[DefaultStdoutDestination(), PrettyDevDestination()]` pair emit
+   * every boot entry twice when the pretty sink failed to initialize.
    *
    * Called on failed destinations too, which is the point: the one that could not
    * initialize is exactly the one still holding entries.
    *
-   * @param status.hasHealthySink - Whether any destination initialized. `false`
-   *   means nothing else can deliver, so a held entry is yours to emit or lose.
+   * @param status.heldEntriesDeliveredElsewhere - Whether a LIVE sink accepted
+   *   everything this destination accepted, so anything held is already
+   *   delivered. `false` does not mean nothing survived — it also covers a live
+   *   sink whose level is HIGHER than yours, which never saw your lower-severity
+   *   entries.
+   * @param status.hasHealthySink - Whether any destination is live at all. Read
+   *   with the flag above: "someone is alive" and "someone got what I got" differ
+   *   exactly when a live sink's level sits above yours.
+   * @param status.isElectedRescuer - When nothing survived, whether YOU are the
+   *   single destination elected to speak. Two buffering destinations hold the
+   *   same entries, so draining from both would recreate the duplicate.
    */
-  onRegistryReady?(status: { readonly hasHealthySink: boolean }): void
+  onRegistryReady?(status: {
+    readonly heldEntriesDeliveredElsewhere: boolean
+    readonly hasHealthySink: boolean
+    readonly isElectedRescuer: boolean
+  }): void
 
   /**
    * Optional lifecycle hook — called during NestJS `onApplicationShutdown`.

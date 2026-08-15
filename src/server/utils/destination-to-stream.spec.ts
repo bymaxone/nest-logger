@@ -197,7 +197,7 @@ describe('destinationToStream', () => {
     'does not write to a destination that failed onInit', async () => {
       const destination: ILogDestination = { name: 'failed', write: jest.fn() }
       const health = new DestinationHealth()
-      health.markHealthy() // a healthy sink exists elsewhere
+      health.markHealthy('info') // a healthy sink exists elsewhere
       health.markFailed(destination, 'info')
       const stream = destinationToStream(destination, health)
 

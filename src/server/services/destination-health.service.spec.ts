@@ -34,7 +34,7 @@ describe('DestinationHealth', () => {
   'keys failures by identity rather than by name', () => {
     const failed = makeDestination('same-name')
     const healthy = makeDestination('same-name')
-    health.markHealthy()
+    health.markHealthy('info')
     health.markFailed(failed, 'info')
 
     expect(health.isFailed(failed)).toBe(true)
@@ -49,7 +49,7 @@ describe('DestinationHealth', () => {
   'never rescues while any destination is healthy', () => {
     const failed = makeDestination('failed')
     health.markFailed(failed, 'info')
-    health.markHealthy()
+    health.markHealthy('info')
 
     expect(health.shouldRescue(failed)).toBe(false)
   })
@@ -120,8 +120,51 @@ describe('DestinationHealth', () => {
     const health = new DestinationHealth()
     expect(health.hasHealthySink()).toBe(false)
 
-    health.markHealthy()
+    health.markHealthy('info')
 
     expect(health.hasHealthySink()).toBe(true)
+  })
+
+  it(/*
+   * REGRESSION — "a sink survived" is NOT "your entries were delivered".
+   * `pino.multistream` filters per stream, so a healthy `error` sink never saw
+   * the `info` boot entries a destination at `info` was holding. Discarding them
+   * because something else was alive loses them, which is the failure the buffer
+   * exists to prevent. Reported by Copilot against the first version of the
+   * readiness hook, which carried only a boolean.
+   */
+  'reports delivery by LEVEL, not merely by a sink being alive', () => {
+    const health = new DestinationHealth()
+    health.markHealthy('error')
+
+    // An `info` destination accepted entries the `error` sink never received.
+    expect(health.deliveredByHealthySink('info')).toBe(false)
+    // A `fatal` one accepted a subset of what the `error` sink took.
+    expect(health.deliveredByHealthySink('fatal')).toBe(true)
+    // Same level: a superset by definition.
+    expect(health.deliveredByHealthySink('error')).toBe(true)
+  })
+
+  it(/*
+   * With nothing live there is no delivery to claim, at any level — the flag must
+   * not answer `true` off a stale lowest-level comparison.
+   */
+  'reports no delivery when nothing initialized', () => {
+    const health = new DestinationHealth()
+
+    expect(health.deliveredByHealthySink('fatal')).toBe(false)
+    expect(health.hasHealthySink()).toBe(false)
+  })
+
+  it(/*
+   * The LOWEST healthy level wins, so a later high-level sink cannot narrow what
+   * an earlier permissive one already accepted.
+   */
+  'keeps the lowest level among several healthy sinks', () => {
+    const health = new DestinationHealth()
+    health.markHealthy('error')
+    health.markHealthy('debug')
+
+    expect(health.deliveredByHealthySink('info')).toBe(true)
   })
 })

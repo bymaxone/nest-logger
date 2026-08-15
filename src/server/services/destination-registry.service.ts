@@ -93,7 +93,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       try {
         await destination.onInit?.()
         this.active.push(destination)
-        this.health.markHealthy()
+        this.health.markHealthy(destination.minLevel ?? this.options.level)
       } catch (cause) {
         this.health.markFailed(destination, destination.minLevel ?? this.options.level)
         this.reportInitFailure(destination.name, cause)
@@ -104,28 +104,61 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
   }
 
   /**
-   * Tell every REGISTERED destination — live or failed — whether any sink
-   * survived, before the first post-init entry is emitted.
+   * Tell every REGISTERED destination — live or failed — what happened to the
+   * entries it may be holding, before the first post-init entry is emitted.
    *
-   * The failed ones matter most here: a destination that buffered entries before
-   * its own `onInit` cannot know whether they were also delivered elsewhere, and
-   * the fan-out hands every entry to every destination. Deciding alone made a
-   * supported `[DefaultStdoutDestination(), PrettyDevDestination()]` pair print
-   * each boot entry twice when the pretty sink failed to initialize.
+   * Two facts, and each answers a question the destination cannot answer alone:
+   *
+   *   - `heldEntriesDeliveredElsewhere` — whether a LIVE sink accepted everything
+   *     this destination accepted. Not "did any sink survive": `pino.multistream`
+   *     filters per stream, so a healthy `error` sink never saw the `info` boot
+   *     entries a pretty sink at `info` buffered, and discarding them because
+   *     something else was alive would lose them.
+   *   - `isElectedRescuer` — when NOTHING survived, which single destination
+   *     speaks. Two buffering destinations hold the same entries, so telling both
+   *     to drain recreates the duplicate this hook exists to remove. The election
+   *     is the one `DestinationHealth` already runs for per-write rescue.
    *
    * Each notification is isolated: a destination that throws here is reported and
    * skipped rather than aborting the remaining ones or the bootstrap entry.
    * Failing at this hook cannot be allowed to cost more than the hook was worth.
    */
   private notifyRegistryReady(): void {
-    const status = { hasHealthySink: this.health.hasHealthySink() }
     for (const destination of this.registered) {
       try {
-        destination.onRegistryReady?.(status)
+        destination.onRegistryReady?.({
+          heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
+            destination.minLevel ?? this.options.level
+          ),
+          hasHealthySink: this.health.hasHealthySink(),
+          isElectedRescuer: this.health.shouldRescue(destination)
+        })
       } catch (cause) {
-        this.reportInitFailure(destination.name, cause)
+        this.reportHookFailure(destination.name, cause)
       }
     }
+  }
+
+  /**
+   * Report a failure from the readiness hook — a DIFFERENT diagnostic from the
+   * init one, because the situation is different and the wrong message misleads.
+   *
+   * By this point `onInit` has already succeeded and the destination is in the
+   * active set: it keeps receiving entries. Reusing the init message would tell
+   * an operator it "will receive no entries", sending them to look for silence
+   * that is not there.
+   *
+   * @param name - The destination whose hook threw.
+   * @param cause - The thrown value.
+   */
+  private reportHookFailure(name: string, cause: unknown): void {
+    reportDestinationFailure(
+      RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+      name,
+      cause,
+      `Log destination "${name}" threw from onRegistryReady. It remains active and ` +
+        'keeps receiving entries; only anything it was holding from before init may be affected.'
+    )
   }
 
   /**

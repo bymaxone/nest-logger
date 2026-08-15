@@ -58,9 +58,31 @@ export class DestinationHealth {
    */
   private rescuerLevel = Number.POSITIVE_INFINITY
 
-  /** Record that a destination initialized successfully. */
-  markHealthy(): void {
+  /**
+   * The LOWEST effective level among destinations that initialized, as an index
+   * into {@link LOG_LEVEL_PRIORITY}. Starts above every real level so the first
+   * `markHealthy` always wins.
+   *
+   * A level rather than a boolean because `pino.multistream` filters PER stream:
+   * an entry reaches a destination only when its severity clears that
+   * destination's own level. So "a sink survived" does not mean "your entry went
+   * somewhere" — a healthy `error` sink never saw the `info` boot entries a
+   * pretty sink at `info` was holding.
+   */
+  private lowestHealthyLevel = Number.POSITIVE_INFINITY
+
+  /**
+   * Record that a destination initialized successfully.
+   *
+   * @param effectiveLevel - Its multistream level: `minLevel` when set, otherwise
+   *   the module-wide `level`.
+   */
+  markHealthy(effectiveLevel: LogLevel): void {
     this.hasHealthy = true
+    const level = LOG_LEVEL_PRIORITY.indexOf(effectiveLevel)
+    if (level < this.lowestHealthyLevel) {
+      this.lowestHealthyLevel = level
+    }
   }
 
   /**
@@ -123,17 +145,33 @@ export class DestinationHealth {
   }
 
   /**
-   * Whether any destination initialized successfully.
+   * Whether ANY destination initialized, regardless of level.
    *
-   * Read once by the registry after the whole init loop, to tell a destination
-   * holding pre-init entries whether anyone else can deliver them. `shouldRescue`
-   * answers a narrower question — "is THIS one the elected last resort" — and is
-   * consulted per write; this one is the fleet-wide fact, and it is only
-   * meaningful once every `onInit` has run.
+   * Read together with {@link deliveredByHealthySink}: "a sink is alive" and "a
+   * sink received what I received" are different facts, and the gap between them
+   * is a live sink whose level sits ABOVE the asking destination's.
    *
    * @returns `true` when at least one destination is live.
    */
   hasHealthySink(): boolean {
     return this.hasHealthy
+  }
+
+  /**
+   * Whether a LIVE sink received everything a destination at `effectiveLevel`
+   * received — the question a destination holding pre-init entries actually has
+   * before discarding them.
+   *
+   * Not "did any sink survive": `pino.multistream` filters per stream, so a
+   * healthy `error` sink never saw the `info` entries a pretty sink at `info`
+   * buffered. Discarding those because something else was alive would lose them,
+   * which is the failure the buffer exists to prevent. A healthy sink whose level
+   * is at or below this one accepted a superset, so those entries are delivered.
+   *
+   * @param effectiveLevel - The asking destination's multistream level.
+   * @returns `true` when a live sink accepted everything this destination did.
+   */
+  deliveredByHealthySink(effectiveLevel: LogLevel): boolean {
+    return this.hasHealthy && this.lowestHealthyLevel <= LOG_LEVEL_PRIORITY.indexOf(effectiveLevel)
   }
 }

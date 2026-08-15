@@ -317,6 +317,11 @@ describe('PrettyDevDestination', () => {
     // baseline keeps them from outliving this suite, where a later spec asserting
     // that an unhandled stream error propagates would be silently satisfied by a
     // handler this file forgot.
+    // Asserted AFTER removal, not in a case of its own: a case comparing the list
+    // to a baseline captured moments earlier in `beforeEach` is tautological — it
+    // passes whether or not the cleanup works, and cannot see a listener leaked by
+    // the preceding case. Here the assertion runs once per case, after the removal
+    // it is checking, so a broken cleanup fails the case that caused it.
     afterEach(() => {
       stdoutSpy.mockRestore()
       jest.dontMock('pino-pretty')
@@ -325,13 +330,6 @@ describe('PrettyDevDestination', () => {
           process.stdout.removeListener('error', listener as (...args: unknown[]) => void)
         }
       }
-    })
-
-    it(/*
-     * The invariant the cleanup above exists for, asserted rather than trusted:
-     * this block leaves the shared stream exactly as it found it.
-     */
-    'leaves no stdout error listener behind', () => {
       expect(process.stdout.listeners('error')).toEqual(stdoutBaseline)
     })
 
@@ -390,9 +388,68 @@ describe('PrettyDevDestination', () => {
         await expect(dest.onInit()).rejects.toThrow(/pino-pretty is not installed/)
         expect(stdoutSpy).not.toHaveBeenCalled()
 
-        dest.onRegistryReady({ hasHealthySink: false })
+        dest.onRegistryReady({
+          heldEntriesDeliveredElsewhere: false,
+          hasHealthySink: false,
+          isElectedRescuer: true
+        })
 
         expect(stdoutSpy).toHaveBeenCalledWith('boot-entry\n')
+      })
+    })
+
+    it(/*
+     * REGRESSION — a live sink at a HIGHER level never received these entries, so
+     * "something survived" is not "your entries were delivered".
+     * `pino.multistream` filters per stream: a healthy `error` sink never saw the
+     * `info` boot entries this destination buffered. The first version of the hook
+     * carried a single boolean and would have discarded them — losing exactly what
+     * the buffer exists to protect. Found by Copilot on the readiness hook itself.
+     */
+    'drains raw when the only live sink sits above its level', async () => {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('pino-pretty', () => {
+          throw new Error("Cannot find module 'pino-pretty'")
+        })
+        const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
+        const dest = new Fresh()
+        dest.write('boot-entry\n')
+
+        await expect(dest.onInit()).rejects.toThrow()
+        dest.onRegistryReady({
+          heldEntriesDeliveredElsewhere: false,
+          hasHealthySink: true,
+          isElectedRescuer: false
+        })
+
+        expect(stdoutSpy).toHaveBeenCalledWith('boot-entry\n')
+      })
+    })
+
+    it(/*
+     * REGRESSION — with nothing live, only the ELECTED destination drains. Two
+     * buffering destinations hold the same entries, so draining from both
+     * recreates the duplicate this hook exists to remove; `DestinationHealth`
+     * already elects exactly one for the per-write rescue. Also found by Copilot
+     * against the first version of the hook.
+     */
+    'stays silent when nothing is live and another destination was elected', async () => {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('pino-pretty', () => {
+          throw new Error("Cannot find module 'pino-pretty'")
+        })
+        const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
+        const dest = new Fresh()
+        dest.write('boot-entry\n')
+
+        await expect(dest.onInit()).rejects.toThrow()
+        dest.onRegistryReady({
+          heldEntriesDeliveredElsewhere: false,
+          hasHealthySink: false,
+          isElectedRescuer: false
+        })
+
+        expect(stdoutSpy).not.toHaveBeenCalled()
       })
     })
 
@@ -414,7 +471,11 @@ describe('PrettyDevDestination', () => {
         dest.write('boot-entry\n')
 
         await expect(dest.onInit()).rejects.toThrow(/pino-pretty is not installed/)
-        dest.onRegistryReady({ hasHealthySink: true })
+        dest.onRegistryReady({
+          heldEntriesDeliveredElsewhere: true,
+          hasHealthySink: true,
+          isElectedRescuer: false
+        })
 
         expect(stdoutSpy).not.toHaveBeenCalled()
 
@@ -565,7 +626,11 @@ describe('PrettyDevDestination', () => {
         dest.write('boot-entry\n')
 
         await expect(dest.onInit()).rejects.toThrow()
-        dest.onRegistryReady({ hasHealthySink: false })
+        dest.onRegistryReady({
+          heldEntriesDeliveredElsewhere: false,
+          hasHealthySink: false,
+          isElectedRescuer: true
+        })
         expect(stdoutSpy).toHaveBeenCalledTimes(1)
 
         // Second drain path for the same destination.

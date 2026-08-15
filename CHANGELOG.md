@@ -22,12 +22,23 @@ heading here.
   producing a second copy of every boot line. Measured on the supported
   `[DefaultStdoutDestination(), PrettyDevDestination()]` pair: two occurrences of one entry.
 
-  The destination could not decide this alone: at `onInit` failure it has no way to know whether
-  anyone else is live. The decision moves to a new optional `ILogDestination.onRegistryReady`, which
-  the registry calls once every `onInit` has settled, carrying `hasHealthySink`. Another sink live →
-  the held copies are discarded; nothing live → they still drain raw, because the fan-out's
-  per-write rescue never fired for entries written before anything was marked failed. Nothing is
-  lost on either branch, which is the property the buffer was added for.
+  The destination could not decide this alone: at `onInit` failure it has no way to know what became
+  of the entries. The decision moves to a new optional `ILogDestination.onRegistryReady`, which the
+  registry calls once every `onInit` has settled, carrying three facts — and it takes three, not
+  one, because two subtler ways to get this wrong surfaced in review:
+
+  - `heldEntriesDeliveredElsewhere` — whether a live sink accepted **everything this one accepted**.
+    Not "did a sink survive": `pino.multistream` filters per stream, so a healthy `error` sink never
+    saw the `info` boot entries a pretty sink at `info` was holding. Discarding those because
+    something else was alive would lose them — the exact failure the buffer exists to prevent.
+  - `hasHealthySink` — whether anything is live at all, which is what separates "delivered" from
+    "a live sink exists but sits above my level".
+  - `isElectedRescuer` — when nothing survived, which single destination speaks. Two buffering
+    destinations hold the same entries, so draining from both would recreate the duplicate from the
+    other side; `DestinationHealth` already elects exactly one for the per-write rescue.
+
+  Uncertainty drains: the only discard paths are "delivered elsewhere" and "nothing live and someone
+  else was elected". Nothing is lost on any branch, which is the property the buffer was added for.
 
   Reported by Copilot on the `1.2.6` pull request, in a review body rather than as an inline
   comment — see the note below.

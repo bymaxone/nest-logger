@@ -98,7 +98,7 @@ export interface PrettyViewOptions {
    * newline in `context`:
    *
    * ```
-   * linhas produced by ONE entry: 2
+   * lines produced by ONE entry: 2
    *   1: "[10:35:14.484] INFO: [Auth"
    *   2: "[10:00:00.000] INFO: FORGED admin promoted] real entry …"
    * ```
@@ -387,32 +387,39 @@ export class PrettyDevDestination implements ILogDestination {
   }
 
   /**
-   * Resolve anything still held, now that the registry knows whether any sink is
-   * live.
+   * Resolve anything still held, now that the registry knows what became of it.
    *
-   * Two outcomes, and the difference is whether a second copy would be created —
-   * the fan-out already handed every held entry to every OTHER destination:
+   * Three outcomes, and uncertainty always drains:
    *
-   *   - **another sink initialized** → DISCARD. Those entries are delivered;
-   *     printing the buffered copy raw duplicated each boot line, which is what
-   *     the supported `[DefaultStdoutDestination(), PrettyDevDestination()]` pair
-   *     did while this destination decided alone;
-   *   - **nothing initialized** → drain RAW. The held entries exist nowhere else:
-   *     the fan-out's last-resort rescue is decided per write, and these were
-   *     written before anything had been marked failed, so it never fired for
-   *     them. Degraded output beats the silence the buffer was built to prevent.
+   *   - **delivered elsewhere** → DISCARD. A live sink accepted everything this
+   *     one accepted, so the held copies are second copies; printing them raw
+   *     duplicated each boot line, which is what the supported
+   *     `[DefaultStdoutDestination(), PrettyDevDestination()]` pair did while
+   *     this destination decided alone.
+   *   - **not delivered, but a sink IS live** → drain RAW. That live sink's level
+   *     sits above this one's, so it never saw these entries — `pino.multistream`
+   *     filters per stream. Discarding them because "something survived" is the
+   *     subtler half of the same mistake.
+   *   - **nothing live** → drain RAW only if elected. Two buffering destinations
+   *     hold the same entries, so draining from both would recreate the duplicate
+   *     from the other side; `DestinationHealth` already elects exactly one.
    *
    * A no-op once {@link onInit} succeeded — the buffer was flushed through the
    * transform there and is already empty.
    *
-   * @param status.hasHealthySink - Whether any destination initialized.
+   * @param status.heldEntriesDeliveredElsewhere - A live sink accepted everything
+   *   this destination accepted.
+   * @param status.hasHealthySink - Any destination is live at all.
+   * @param status.isElectedRescuer - Nothing survived and this one speaks.
    */
-  onRegistryReady(status: { readonly hasHealthySink: boolean }): void {
-    if (status.hasHealthySink) {
-      this.flushBuffer(() => undefined)
-      return
-    }
-    this.flushBuffer(writeRawToStdout)
+  onRegistryReady(status: {
+    readonly heldEntriesDeliveredElsewhere: boolean
+    readonly hasHealthySink: boolean
+    readonly isElectedRescuer: boolean
+  }): void {
+    const shouldEmit =
+      !status.heldEntriesDeliveredElsewhere && (status.hasHealthySink || status.isElectedRescuer)
+    this.flushBuffer(shouldEmit ? writeRawToStdout : (): void => undefined)
   }
 
   /**

@@ -433,10 +433,10 @@ describe('DestinationRegistry', () => {
         ...makeDestination('failing'),
         onInit: jest.fn().mockRejectedValue(new Error('nope'))
       }
-      const seen: { name: string; status: { hasHealthySink: boolean } }[] = []
+      const seen: { name: string; status: Record<string, boolean> }[] = []
       const notify =
         (name: string) =>
-        (status: { hasHealthySink: boolean }): void => {
+        (status: Record<string, boolean>): void => {
           seen.push({ name, status })
         }
       const withHook = [
@@ -448,8 +448,22 @@ describe('DestinationRegistry', () => {
       await new DestinationRegistry(withHook, logger, options, health).onModuleInit()
 
       expect(seen).toEqual([
-        { name: 'healthy', status: { hasHealthySink: true } },
-        { name: 'failing', status: { hasHealthySink: true } }
+        {
+          name: 'healthy',
+          status: {
+            heldEntriesDeliveredElsewhere: true,
+            hasHealthySink: true,
+            isElectedRescuer: false
+          }
+        },
+        {
+          name: 'failing',
+          status: {
+            heldEntriesDeliveredElsewhere: true,
+            hasHealthySink: true,
+            isElectedRescuer: false
+          }
+        }
       ])
       stderrSpy.mockRestore()
     })
@@ -469,7 +483,11 @@ describe('DestinationRegistry', () => {
 
       await new DestinationRegistry([failing], logger, options, health).onModuleInit()
 
-      expect(failing.onRegistryReady).toHaveBeenCalledWith({ hasHealthySink: false })
+      expect(failing.onRegistryReady).toHaveBeenCalledWith({
+        heldEntriesDeliveredElsewhere: false,
+        hasHealthySink: false,
+        isElectedRescuer: true
+      })
       stderrSpy.mockRestore()
     })
 
@@ -495,6 +513,58 @@ describe('DestinationRegistry', () => {
       expect(later.onRegistryReady).toHaveBeenCalled()
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('hook exploded'))
       stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * REGRESSION — a hook failure must NOT reuse the init-failure message. By this
+     * point `onInit` already succeeded and the destination is in the active set,
+     * so telling an operator it "will receive no entries" sends them looking for
+     * a silence that is not there. Reported by Copilot against the first version
+     * of this loop, which shared the init reporter.
+     */
+    'reports a hook failure as still-active rather than as an init failure', async () => {
+      const hostile = {
+        ...makeDestination('hostile'),
+        onRegistryReady: jest.fn(() => {
+          throw new Error('hook exploded')
+        })
+      }
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+      await new DestinationRegistry([hostile], logger, options, health).onModuleInit()
+
+      const line = stderrSpy.mock.calls.map(([l]) => String(l)).join('')
+      expect(line).toContain('threw from onRegistryReady')
+      expect(line).toContain('remains active')
+      expect(line).not.toContain('will receive no entries')
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * The readiness facts are computed PER destination, not shared: a sink whose
+     * level sits above another's did not receive what the lower one received.
+     * Without this, one status object for the whole fleet would tell an `info`
+     * destination its entries were delivered by an `error` sink.
+     */
+    'computes delivery per destination level', async () => {
+      const errorSink = { ...makeDestination('error-sink'), minLevel: 'error' as const }
+      // The info sink FAILS: it is the one holding entries, and the question is
+      // whether the surviving `error` sink received them. It did not — multistream
+      // filters per stream — so it must be told so.
+      const infoSink = {
+        ...makeDestination('info-sink'),
+        minLevel: 'info' as const,
+        onInit: jest.fn().mockRejectedValue(new Error('nope')),
+        onRegistryReady: jest.fn()
+      }
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+      await new DestinationRegistry([errorSink, infoSink], logger, options, health).onModuleInit()
+      stderrSpy.mockRestore()
+
+      expect(infoSink.onRegistryReady).toHaveBeenCalledWith(
+        expect.objectContaining({ heldEntriesDeliveredElsewhere: false, hasHealthySink: true })
+      )
     })
   })
 })
