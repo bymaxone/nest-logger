@@ -22,7 +22,7 @@
 
 `@bymax-one/nest-logger` is a **public npm library** — not an application. It provides structured JSON logging for the Bymax SaaS ecosystem and any NestJS 11 consumer.
 
-**Features:** `PinoLoggerService` with NestJS `LoggerService` interface compatibility, structured API following `MODULE_ACTION_RESULT` convention, optional OpenTelemetry trace context injection, `AsyncLocalStorage` context propagation (`requestId`, `tenantId`, `userId`), HTTP logging interceptor + exception filter, `PrettyDevDestination` + `DefaultStdoutDestination`, pluggable destinations via `ILogDestination`, decorators `@InjectLogger` / `@LogContext` / `@LogPerformance`, PII redaction with `DEFAULT_REDACT_PATHS`.
+**Features:** `PinoLoggerService` with NestJS `LoggerService` interface compatibility, structured API following `MODULE_ACTION_RESULT` convention, optional OpenTelemetry trace context injection, `AsyncLocalStorage` context propagation (`requestId`, `tenantId`, `userId`), HTTP logging interceptor + exception filter, `PrettyDevDestination` (configurable `view`) + `DefaultStdoutDestination`, pluggable destinations via `ILogDestination`, decorators `@InjectLogger` / `@LogContext` / `@LogPerformance`, PII redaction with `DEFAULT_REDACT_PATHS`.
 
 **What it does NOT do:** No database connections, no network I/O, no opinion on log aggregation backend — consumers plug in their own destinations.
 
