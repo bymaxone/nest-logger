@@ -3228,8 +3228,10 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 >
 > ```typescript
 > const streams = destinations.map((d) => ({
->   level: d.minLevel ?? options.level,
->   stream: destinationToStream(d)
+>   // Guarded and pinned — see `safeMinLevel`: this runs at provider construction,
+>   // before any fail-soft path, and the registry must record the same answer.
+>   level: safeMinLevel(d) ?? options.level,
+>   stream: destinationToStream(d, health)
 > }))
 > const pinoInstance = pino(pinoOpts, pino.multistream(streams))
 > ```

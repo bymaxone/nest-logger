@@ -952,7 +952,11 @@ import pino from 'pino'
 // The LEVEL is attached here, not returned by the adapter: `pino.multistream`
 // filters per entry, and the adapter's only job is the write fan-out.
 const entries = destinations.map((d) => ({
-  level: d.minLevel ?? options.level,
+  // Guarded: this runs at provider construction, before any lifecycle hook, so a
+  // throwing `minLevel` getter would fail the factory and the application would
+  // never start. The guard also pins the answer, so this level and the one the
+  // registry records for the same destination cannot diverge.
+  level: safeMinLevel(d) ?? options.level,
   stream: destinationToStream(d, health)
 }))
 const multistream = pino.multistream(entries, { dedupe: false })
@@ -1380,12 +1384,18 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
    *  level and the destination's own `minLevel`. */
   private effectiveLevelOf(dest: ILogDestination): LogLevel {
     const moduleLevel = this.options.level
-    if (dest.minLevel === undefined) return moduleLevel
+    // Read ONCE, through the guard: `minLevel` is consumer-defined and may be a
+    // getter that throws — this runs on both branches of the init loop, including
+    // the catch that keeps a failing destination from aborting bootstrap — and it
+    // may be stateful, which is why the guard pins the first answer so the factory
+    // and this recording cannot disagree about the same destination's level.
+    const configured = safeMinLevel(dest)
+    if (configured === undefined) return moduleLevel
     // `LOG_LEVEL_PRIORITY.indexOf`, mirroring the implementation. `PINO_LEVEL_NUMBERS`
     // would order identically — both run trace→fatal — but the specification exists to
     // describe the shipped code, not an equivalent way of writing it.
-    return LOG_LEVEL_PRIORITY.indexOf(dest.minLevel) > LOG_LEVEL_PRIORITY.indexOf(moduleLevel)
-      ? dest.minLevel
+    return LOG_LEVEL_PRIORITY.indexOf(configured) > LOG_LEVEL_PRIORITY.indexOf(moduleLevel)
+      ? configured
       : moduleLevel
   }
 

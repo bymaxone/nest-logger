@@ -99,6 +99,14 @@ export function reportDestinationFailure(
  * safeDestinationName(hostile) // 'unknown', instead of throwing at the call site
  * ```
  */
+export function safeDestinationName(destination: { readonly name: string }): string {
+  try {
+    return String(destination.name)
+  } catch {
+    return 'unknown'
+  }
+}
+
 /**
  * Read a destination's `minLevel` without letting that read abort the caller.
  *
@@ -109,9 +117,19 @@ export function reportDestinationFailure(
  * registry's init loop, on both branches including the catch that exists so a
  * failing destination cannot abort bootstrap.
  *
+ * The first answer is CACHED per destination, and that is the point rather than an
+ * optimisation. Nothing stops the getter being stateful, and the value is read by
+ * two independent consumers: the factory, which fixes the multistream entry's level,
+ * and the registry, which records the same destination's health level. A getter
+ * returning `info` to one and `error` to the other would let an `error` sink be
+ * credited with covering held `info` entries — and a buffering destination would
+ * discard its only copy of them. Pinning the first read makes the two agree by
+ * construction. `readonly minLevel?: LogLevel` says it should not change anyway.
+ *
  * @param destination - The destination whose configured level is needed.
  * @returns The configured level, or `undefined` when absent OR unreadable — the
- *   same answer, since both mean "no usable per-destination level".
+ *   same answer, since both mean "no usable per-destination level". Stable across
+ *   calls for a given destination.
  *
  * @example
  * ```ts
@@ -123,18 +141,18 @@ export function reportDestinationFailure(
  * safeMinLevel(hostile) // undefined, instead of throwing at the call site
  * ```
  */
-export function safeMinLevel(destination: { readonly minLevel?: LogLevel }): LogLevel | undefined {
-  try {
-    return destination.minLevel
-  } catch {
-    return undefined
-  }
-}
+const resolvedMinLevels = new WeakMap<object, LogLevel | undefined>()
 
-export function safeDestinationName(destination: { readonly name: string }): string {
-  try {
-    return String(destination.name)
-  } catch {
-    return 'unknown'
+export function safeMinLevel(destination: { readonly minLevel?: LogLevel }): LogLevel | undefined {
+  if (resolvedMinLevels.has(destination)) {
+    return resolvedMinLevels.get(destination)
   }
+  let resolved: LogLevel | undefined
+  try {
+    resolved = destination.minLevel
+  } catch {
+    resolved = undefined
+  }
+  resolvedMinLevels.set(destination, resolved)
+  return resolved
 }

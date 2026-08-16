@@ -72,8 +72,12 @@ import pino from 'pino'
 
 // Inside DestinationRegistry — reads providers bound to LOGGER_DESTINATIONS_TOKEN
 const streams = destinations.map((dest) => ({
-  level: dest.minLevel ?? 'trace',
-  stream: destinationToStream(dest) // internal helper — adapts ILogDestination → Writable stream
+  // `safeMinLevel`, not a direct read: `minLevel` is consumer-defined and this runs
+  // at provider construction, before any fail-soft path exists. The guard also pins
+  // the answer so this level and the one the registry records cannot diverge.
+  level: safeMinLevel(dest) ?? 'trace',
+  // The adapter takes the shared health tracker — it gates every write on it.
+  stream: destinationToStream(dest, health)
 }))
 
 const logger = pino({ level: 'trace' }, pino.multistream(streams))
