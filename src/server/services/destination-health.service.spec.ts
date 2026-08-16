@@ -111,10 +111,10 @@ describe('DestinationHealth', () => {
   })
 
   it(/*
-   * `hasHealthySink` is the fleet-wide fact the registry reads once, after every
+   * `deliveredByHealthySink` is the fact the registry reads once, after every
    * onInit settled, to tell a destination holding pre-init entries whether anyone
-   * else delivered them. `shouldRescue` answers a narrower per-write question, so
-   * one cannot stand in for the other.
+   * else provably took them. `shouldRescue` answers a narrower per-write question,
+   * so one cannot stand in for the other.
    */
   'reports whether any destination initialized', () => {
     const health = new DestinationHealth()
