@@ -1236,6 +1236,7 @@ pnpm typecheck
 >
 > ```typescript
 > import { Injectable } from '@nestjs/common'
+> import type { DestinationHealth } from '../services/destination-health.service'
 > import type { ILogDestination } from '../interfaces/log-destination.interface'
 > import type { LogLevel } from '../../shared/types/log-level.type'
 >
@@ -3157,13 +3158,17 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 >   safeDestinationName
 > } from '../utils/report-destination-failure.util'
 >
-> export function destinationToStream(dest: ILogDestination): Writable {
+> export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
 >   return new Writable({
 >     write(chunk, _enc, callback) {
 >       // A failure is CONTAINED: report it and complete the write as successful.
 >       // `callback(err)` makes the Writable emit 'error', which with no listener
 >       // terminates the host — the opposite of the fail-soft contract.
 >       const reportAndContinue = (err: unknown): void => {
+>         // RECORDED, not only reported. Without `markWriteFailed` the readiness
+>         // accounting still counts this sink as having taken the entry, and another
+>         // destination may discard the only copy it was holding.
+>         health.markWriteFailed(dest)
 >         // `reportDestinationFailure`, not a formatted write: a guarded WRITER still
 >         // evaluates `String(err)` first, and a hostile coercion hook would throw
 >         // before `callback()` — an unhandled rejection from inside the containment.
@@ -3184,7 +3189,21 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 >         // reported and then completed WITHOUT an error — `callback(err)` makes the
 >         // stream emit 'error' and takes the host down. See CHANGELOG 1.2.9.
 >         if (r === undefined) callback()
->         else Promise.resolve(r).then(() => callback(), reportAndContinue)
+>         else {
+>           // Counted while IN FLIGHT: readiness can run before this settles, and a
+>           // pending write must read as unproven rather than as silent success.
+>           health.markWritePending(dest)
+>           Promise.resolve(r).then(
+>             () => {
+>               health.markWriteSettled(dest)
+>               callback()
+>             },
+>             (err) => {
+>               health.markWriteSettled(dest)
+>               reportAndContinue(err)
+>             }
+>           )
+>         }
 >       } catch (err) {
 >         reportAndContinue(err)
 >       }

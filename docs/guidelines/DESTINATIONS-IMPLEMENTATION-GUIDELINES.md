@@ -235,10 +235,25 @@ export function reportToStderrSafely(line: string): void {
     process.stderr.on('error', swallowStderrError)
   }
   try {
-    process.stderr.write(line)
+    // ESCAPED at the sink. `JSON.stringify` escapes C0 and nothing else, so DEL,
+    // the C1 range (U+0085 NEL included), U+2028 and U+2029 survive verbatim into
+    // a line an operator reads in a terminal — enough to drive it, or to forge a
+    // rendered entry. The failure text here is remote-derived, so this is the last
+    // point that can neutralize it. The record's final LF is preserved.
+    process.stderr.write(escapeTerminalControls(line))
   } catch {
     // A destroyed stream throws synchronously; a report is never worth a crash.
   }
+}
+
+/** Everything a terminal can act on, except the record's own line feed. */
+const TERMINAL_CONTROLS = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/g
+
+function escapeTerminalControls(text: string): string {
+  return text.replace(
+    TERMINAL_CONTROLS,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
+  )
 }
 ```
 
