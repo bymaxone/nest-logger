@@ -229,8 +229,13 @@ export function reportToStderrSafely(record: string): void {
   // try/catch the synchronous one. Either alone still leaves a way to die.
   //
   // Checked against the actual listener list, and it only ever ADDS: a consumer's
-  // own `'error'` handler is left alone, and its presence is not taken as proof
-  // that the stream is guarded, because their handler may well rethrow.
+  // own `'error'` handler is left alone.
+  //
+  // What this DOES cover: the no-listener case, where Node turns the emit into an
+  // uncaught exception. What it does NOT: a consumer handler that rethrows.
+  // `EventEmitter` invokes every listener, so their throw still escapes — measured,
+  // not assumed. Adding ours cannot neutralize theirs, and claiming otherwise would
+  // be the kind of overstated guarantee this guide exists to avoid.
   if (!process.stderr.listeners('error').includes(swallowStderrError)) {
     process.stderr.on('error', swallowStderrError)
   }
@@ -662,6 +667,16 @@ See §3 — pattern with buffer + flush timer + batch.
 ```typescript
 import type { PrismaClient } from '@prisma/client'
 
+/** Reject once `ms` elapses, so a query with no cancellation cannot stall forever. */
+function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`query exceeded ${ms}ms`)), ms).unref()
+    )
+  ])
+}
+
 /** Cap on entries held while the database is unreachable — see the note in `flush`. */
 const POSTGRES_MAX_BUFFERED = 10_000
 
@@ -672,7 +687,11 @@ export class PrismaPostgresDestination implements ILogDestination {
 
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly opts: { batchSize?: number; flushIntervalMs?: number } = {}
+    private readonly opts: {
+      batchSize?: number
+      flushIntervalMs?: number
+      queryTimeoutMs?: number
+    } = {}
   ) {}
 
   /** The background flush currently running, so shutdown can wait for it. */
@@ -727,16 +746,23 @@ export class PrismaPostgresDestination implements ILogDestination {
     if (this.buffer.length === 0) return
     const batch = this.buffer.splice(0, this.buffer.length)
     try {
-      await this.prisma.log.createMany({
-        data: batch.map((entry) => ({
-          level: String(entry.level ?? 'info'),
-          message: String(entry.msg ?? ''),
-          logKey: String(entry.logKey ?? 'unknown'),
-          metadata: entry,
-          timestamp: new Date(Number(entry.time))
-        })),
-        skipDuplicates: true
-      })
+      // A DEADLINE, like the HTTP example. Without one a stalled query never
+      // settles: `flushPending` never clears, `write` keeps discarding at the cap
+      // with nothing ever reported, and `onShutdown` hangs awaiting `inFlight`.
+      // Prisma takes no AbortSignal here, so the deadline is raced explicitly.
+      await withDeadline(
+        this.prisma.log.createMany({
+          data: batch.map((entry) => ({
+            level: String(entry.level ?? 'info'),
+            message: String(entry.msg ?? ''),
+            logKey: String(entry.logKey ?? 'unknown'),
+            metadata: entry,
+            timestamp: new Date(Number(entry.time))
+          })),
+          skipDuplicates: true
+        }),
+        this.opts.queryTimeoutMs ?? 10_000
+      )
     } catch (err) {
       // Retained, but BOUNDED. Requeueing every failed batch while `write` keeps
       // appending is an unbounded queue: a sustained outage then ends in an OOM,

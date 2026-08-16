@@ -3344,11 +3344,19 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         await dest.onInit?.()
         this.active.push(dest)
       } catch (err) {
-        this.logger.errorStructured(
+        // NOT through the logger: at this point the destination that just failed is
+        // part of the fan-out the logger writes to, so reporting the failure through
+        // it can feed the failure back into itself. Straight to stderr, with the
+        // name read under a guard because `readonly name: string` does not stop a
+        // consumer implementing it as a throwing getter — and this runs inside the
+        // catch that exists so a bad sink cannot abort bootstrap.
+        this.health.markFailed(dest, this.effectiveLevelOf(dest))
+        const name = safeDestinationName(dest)
+        reportDestinationFailure(
           RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-          err instanceof Error ? err : new Error(String(err)),
-          undefined,
-          { destination: dest.name }
+          name,
+          err,
+          `Log destination "${name}" failed to initialize and was skipped`
         )
       }
     }
@@ -3360,8 +3368,10 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       try {
         await dest.onShutdown?.()
       } catch (err) {
-        // Best-effort during shutdown; log via console fallback
-        console.error(`[DestinationRegistry] Shutdown failure for ${dest.name}:`, err)
+        // NOT `console.*` — this repository forbids it, and it is unguarded besides:
+        // `${dest.name}` is read before the call, so a throwing getter would abort
+        // the teardown of every destination still queued behind this one.
+        this.reportShutdownFailure(dest, err)
       }
     }
   }
