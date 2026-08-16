@@ -27,10 +27,12 @@ import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common'
 import { DestinationHealth } from './destination-health.service'
 import { PinoLoggerService } from './pino-logger.service'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+import type { LogLevel } from '../../shared/types/log-level.type'
 import {
   LOGGER_DESTINATIONS_TOKEN,
   LOGGER_OPTIONS_TOKEN
 } from '../constants/injection-tokens.constants'
+import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { detectOtelTraceApi } from '../utils/otel-detector'
@@ -93,9 +95,9 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       try {
         await destination.onInit?.()
         this.active.push(destination)
-        this.health.markHealthy(destination, destination.minLevel ?? this.options.level)
+        this.health.markHealthy(destination, this.effectiveLevelOf(destination))
       } catch (cause) {
-        this.health.markFailed(destination, destination.minLevel ?? this.options.level)
+        this.health.markFailed(destination, this.effectiveLevelOf(destination))
         this.reportInitFailure(destination.name, cause)
       }
     }
@@ -128,13 +130,39 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         await destination.onRegistryReady?.({
           heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
             destination,
-            destination.minLevel ?? this.options.level
+            this.effectiveLevelOf(destination)
           )
         })
       } catch (cause) {
         this.reportHookFailure(destination, cause)
       }
     }
+  }
+
+  /**
+   * The severity a destination actually receives: the STRICTER of the module
+   * level and its own `minLevel`.
+   *
+   * Pino filters at the instance level BEFORE `pino.multistream` sees an entry,
+   * so a `minLevel` below the global one cannot widen what a destination gets —
+   * the factory's own docs say so. Recording the raw `minLevel` therefore
+   * understated delivery: with a global `error` and a healthy sink at `info`,
+   * both sinks in fact receive the same `error` entries, but a pretty sink
+   * declared at `trace` compared as `trace`, delivery read as unproven, and the
+   * buffer drained raw — a duplicate produced by arithmetic rather than by any
+   * real gap.
+   *
+   * @param destination - The destination whose threshold is being computed.
+   * @returns The level entries must clear to reach it.
+   */
+  private effectiveLevelOf(destination: ILogDestination): LogLevel {
+    const configured = destination.minLevel
+    if (configured === undefined) {
+      return this.options.level
+    }
+    return LOG_LEVEL_PRIORITY.indexOf(configured) > LOG_LEVEL_PRIORITY.indexOf(this.options.level)
+      ? configured
+      : this.options.level
   }
 
   /**

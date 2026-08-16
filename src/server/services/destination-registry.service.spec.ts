@@ -593,6 +593,44 @@ describe('DestinationRegistry', () => {
     })
 
     it(/*
+     * REGRESSION — a `minLevel` BELOW the module level does not widen what a
+     * destination receives: Pino filters at the instance level before
+     * `pino.multistream` sees an entry. Recording the raw `minLevel` understated
+     * delivery and produced a duplicate raw drain out of arithmetic rather than
+     * any real gap — with a global `error`, a healthy sink at `info` and a failed
+     * pretty at `trace`, both in fact received the same entries. Found by Copilot
+     * in a suppressed review body.
+     */
+    'compares on the stricter of the module and destination levels', async () => {
+      const strictOptions = applyDefaults({
+        service: { name: 'app', version: '1.0.0' },
+        level: 'error'
+      })
+      const healthy = { ...makeDestination('healthy'), minLevel: 'info' as const }
+      const permissive = {
+        ...makeDestination('permissive'),
+        minLevel: 'trace' as const,
+        onInit: jest.fn().mockRejectedValue(new Error('nope')),
+        onRegistryReady: jest.fn()
+      }
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+      await new DestinationRegistry(
+        [healthy, permissive],
+        logger,
+        strictOptions,
+        health
+      ).onModuleInit()
+      stderrSpy.mockRestore()
+
+      // Both are gated at `error` by the instance, so the healthy sink DID take
+      // everything the failed one would have taken.
+      expect(permissive.onRegistryReady).toHaveBeenCalledWith({
+        heldEntriesDeliveredElsewhere: true
+      })
+    })
+
+    it(/*
      * The readiness facts are computed PER destination, not shared: a sink whose
      * level sits above another's did not receive what the lower one received.
      * Without this, one status object for the whole fleet would tell an `info`
