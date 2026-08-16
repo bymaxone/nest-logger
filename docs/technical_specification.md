@@ -1357,9 +1357,11 @@ Manages the lifecycle of registered destinations:
 ```typescript
 @Injectable()
 class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
-  /** The subset that initialized successfully. Writes and shutdown target this;
-   *  `destinations` stays the full REGISTERED set, which is what the readiness
-   *  hook iterates. */
+  /** The subset that initialized successfully — used for SHUTDOWN, not for writes.
+   *  The fan-out is built from the full registered set and gates each write on
+   *  `DestinationHealth.isFailed`, so a failed sink is skipped per write rather
+   *  than removed from the streams. `onShutdown` runs over this subset because a
+   *  destination that never initialized may have no resources to close. */
   private readonly active: ILogDestination[] = []
 
   // Every provider carries an explicit `@Inject`, including the class-typed one:
@@ -1405,9 +1407,11 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
         )
       }
     }
-    // The registered set is NOT truncated to the survivors. Writes target `active`;
-    // a destination that failed `onInit` stays registered because it is the sink
-    // most likely to be holding entries it now has to resolve, and dropping it here
+    // The registered set is NOT truncated to the survivors, and nothing else needs
+    // it to be: the fan-out covers every registered destination and `destinationToStream`
+    // skips a failed one per write via `health.isFailed` (see the adapter above).
+    // Keeping it registered matters because a sink that failed `onInit` is the one
+    // most likely to be holding entries it now has to resolve — dropping it here
     // would strand them and silently break the guarantee below.
 
     // Called for EVERY registered destination, healthy and failed alike, once all

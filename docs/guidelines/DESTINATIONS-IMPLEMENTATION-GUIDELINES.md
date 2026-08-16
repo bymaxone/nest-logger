@@ -286,7 +286,9 @@ export class LokiDestination implements ILogDestination {
   private inFlight: Promise<void> = Promise.resolve()
   /** Guards against queueing a second flush behind one that has not settled. */
   private flushPending = false
-  /** Entries discarded at the cap, reported with the next failure. */
+  /** Entries discarded at the cap. Emitted by `reportDropped` from `flush`'s
+   *  `finally`, so a successful flush reports them too — a stalled request that
+   *  overflowed and then succeeded would otherwise lose them silently. */
   private dropped = 0
 
   onInit(): void {
@@ -673,7 +675,9 @@ export class PrismaPostgresDestination implements ILogDestination {
   private inFlight: Promise<void> = Promise.resolve()
   /** Guards against queueing a second flush behind one that has not settled. */
   private flushPending = false
-  /** Entries discarded at the cap, reported with the next failure. */
+  /** Entries discarded at the cap. Emitted by `reportDropped` from `flush`'s
+   *  `finally`, so a successful flush reports them too — a stalled request that
+   *  overflowed and then succeeded would otherwise lose them silently. */
   private dropped = 0
 
   onInit(): void {
