@@ -37,7 +37,9 @@ import type { DestinationHealth } from '../services/destination-health.service'
  * {@link reportDestinationFailure}, shared with the registry's init-failure path
  * so both stages emit the same wire shape.
  *
- * @param name - The failing destination's name.
+ * @param destination - The failing destination. Passed whole so its `name` is read
+ *   under `safeDestinationName` here rather than at the call site, which sits
+ *   inside the catch and the rejection handler.
  * @param cause - The thrown or rejected value.
  */
 function reportWriteFailure(destination: ILogDestination, cause: unknown): void {

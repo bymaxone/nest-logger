@@ -820,12 +820,12 @@ export interface ILogDestination {
 
 ```typescript
 import { Writable } from 'node:stream'
-import type { ILogDestination, LogLevel } from '../interfaces/log-destination.interface'
 
-interface MultistreamEntry {
-  stream: Writable
-  level: LogLevel
-}
+import { reportDestinationFailure, safeDestinationName } from './report-destination-failure.util'
+import { writeStdoutSafely } from './safe-stdio.util'
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+import type { ILogDestination } from '../interfaces/log-destination.interface'
+import type { DestinationHealth } from '../services/destination-health.service'
 
 /**
  * Internal helper: wrap an ILogDestination in a Writable suitable for pino.multistream.

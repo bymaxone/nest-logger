@@ -1232,7 +1232,6 @@ src/server/destinations/
 
 ```typescript
 import { Injectable } from '@nestjs/common'
-import type { DestinationHealth } from '../services/destination-health.service'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { LogLevel } from '../../shared/types/log-level.type'
 
@@ -3384,6 +3383,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
 // src/server/utils/destination-to-stream.ts
 import { Writable } from 'node:stream'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
+import type { DestinationHealth } from '../services/destination-health.service'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import {
   reportDestinationFailure,
