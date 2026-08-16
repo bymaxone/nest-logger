@@ -109,11 +109,15 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * Tell every REGISTERED destination — live or failed — what happened to the
    * entries it may be holding, before the first post-init entry is emitted.
    *
-   * The fact it carries is one the destination cannot compute: whether ANOTHER
-   * live sink provably accepted everything this one accepted. `pino.multistream`
-   * filters per stream, a destination is not its own witness, a sink whose write
-   * threw did not receive that entry, and one whose write has not settled has not
-   * proven anything yet — all of which live in `deliveredByHealthySink`.
+   * The signal it carries is one the destination cannot compute: whether ANOTHER
+   * live sink appears to have accepted everything this one accepted.
+   * `pino.multistream` filters per stream, a destination is not its own witness, a
+   * sink whose write threw did not receive that entry, and one whose write has not
+   * settled has shown nothing yet — all of which live in `deliveredByHealthySink`.
+   *
+   * A signal rather than a proof, deliberately: a write still queued inside the
+   * `Writable` adapter is invisible to that accounting, so the flag says which
+   * risk is smaller, not that the entry is safe. See `ILogDestination.onRegistryReady`.
    *
    * Each notification is isolated: a destination that throws here is reported and
    * skipped rather than aborting the remaining ones or the bootstrap entry.

@@ -408,8 +408,9 @@ export class PrettyDevDestination implements ILogDestination {
    * A no-op once {@link onInit} succeeded — the buffer was flushed through the
    * transform there and is already empty.
    *
-   * @param status.heldEntriesDeliveredElsewhere - Another live sink provably took
-   *   everything this one took.
+   * @param status.heldEntriesDeliveredElsewhere - Another live sink appears to
+   *   have taken everything this one took. A deduplication signal, not a proof —
+   *   see `ILogDestination.onRegistryReady` for what it cannot see.
    */
   onRegistryReady(status: { readonly heldEntriesDeliveredElsewhere: boolean }): void {
     this.flushBuffer(
