@@ -76,6 +76,15 @@ heading here.
 
 ### Fixed
 
+- **The shutdown reporter could be made to forge a second stderr record.** Its guard used
+  `escapeControlCharacters`, which preserves newlines ON PURPOSE because a stack trace is
+  legitimately multi-line — but it was applied to `cause.message` when no stack existed, and to any
+  non-Error thrown value. A destination rejecting with `'failed\n[forged entry]'` therefore wrote a
+  second raw line that an operator reads as a genuine record. The two escapers are not
+  interchangeable: a stack goes through `escapeControlCharacters`, a message or a non-Error value
+  through `toSingleLineMessage`. The regression asserts the emitted text is ONE line, not merely that
+  an escape appears in it.
+
 - **A failing `onShutdown` could abort the teardown of every destination behind it.** The registry
   built its stderr report by coercing the thrown value ABOVE the guard: reading `stack`/`message` on
   an `Error` with hostile getters, or `String(cause)` on a value with a throwing `Symbol.toPrimitive`,

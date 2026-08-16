@@ -481,6 +481,39 @@ describe('DestinationRegistry', () => {
     })
 
     it(/*
+     * REGRESSION — a newline-bearing cause WITHOUT a stack must not forge a second
+     * stderr record. `escapeControlCharacters` preserves newlines on purpose, since
+     * a stack is legitimately multi-line; routing a `message` or a non-Error value
+     * through it let `failed\n[forged entry]` become a line an operator reads as a
+     * genuine one. Single-line fields go through `toSingleLineMessage` instead.
+     *
+     * Asserted on the emitted text being ONE line, not merely on the escape being
+     * present.
+     */
+    'never lets a newline in a stackless cause open a second stderr line', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const stackless = new Error('failed\n[forged entry]')
+      delete stackless.stack
+      const dest = makeDestination('forge', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn().mockRejectedValue(stackless)
+      })
+      const registry = new DestinationRegistry([dest], logger, options, health)
+      await registry.onModuleInit()
+
+      await registry.onApplicationShutdown()
+
+      const line = stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('forge'))
+      // `toSingleLineMessage` renders a line terminator as the two-character escape
+      // `\n`, not as `\u000a` — checked against the util rather than assumed.
+      expect(line).toContain('failed\\n[forged entry]')
+      // Exactly one terminating newline, and none inside: the record cannot be split.
+      expect(line?.endsWith('\n')).toBe(true)
+      expect(line?.slice(0, -1)).not.toContain('\n')
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
      * REGRESSION — the destination's own `name` is read inside the guard too.
      * `readonly name: string` does not stop a consumer implementing it as a
      * getter, and reading it at the call site would put it back inside the

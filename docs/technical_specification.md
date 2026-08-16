@@ -279,9 +279,11 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
 8. LogContextService initializes AsyncLocalStorage<LogContext> →
 9. If http.isEnabled, HttpLoggingInterceptor + HttpExceptionFilter are registered as global →
 10. The lib emits its initial log: { logKey: 'LOGGER_BOOTSTRAP_OK', level, destinations: [...] } →
-11. On onApplicationShutdown(signal): the lib flushes all destinations
-    (`await Promise.allSettled(destinations.map(d => d.onShutdown?.()))`)
-    and emits LOGGER_SHUTDOWN_OK with { signal, flushedDestinations } before resolving.
+11. On onApplicationShutdown(): the lib emits LOGGER_SHUTDOWN_OK with { destinations }
+    FIRST — an entry written after the sinks closed would have nowhere to go — then
+    flushes the ACTIVE destinations in reverse registration order, sequentially, each
+    `onShutdown` wrapped in its own try/catch so one failure cannot cost the others.
+    It takes no signal argument and resolves `void`.
 ```
 
 ### 2.3 Log flow
@@ -1464,7 +1466,6 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
         this.reportShutdownFailure(dest, err)
       }
     }
-    return { signal, flushedDestinations: this.active.length }
   }
 
   /**
@@ -1480,9 +1481,16 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
     const name = toSingleLineMessage(safeDestinationName(dest))
     let detail = 'UnknownError'
     try {
-      detail = escapeControlCharacters(
-        isErrorLike(cause) ? String(cause.stack ?? cause.message) : String(cause)
-      )
+      // The two escapers are NOT interchangeable: `escapeControlCharacters` keeps
+      // newlines because a stack is legitimately multi-line, so it may only be used
+      // ON a stack. A message, or a non-Error value, is a single-line field —
+      // routing it through the multi-line escaper lets `failed\n[forged entry]`
+      // write a second raw line an operator reads as genuine.
+      const stack = isErrorLike(cause) ? cause.stack : undefined
+      detail =
+        stack === undefined
+          ? toSingleLineMessage(isErrorLike(cause) ? String(cause.message) : String(cause))
+          : escapeControlCharacters(String(stack))
     } catch {
       // A value that cannot be read is still worth a line naming the destination.
     }

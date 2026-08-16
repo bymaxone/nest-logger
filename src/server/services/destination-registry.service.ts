@@ -342,9 +342,17 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
     const name = toSingleLineMessage(safeDestinationName(destination))
     let detail = 'UnknownError'
     try {
-      detail = escapeControlCharacters(
-        isErrorLike(cause) ? String(cause.stack ?? cause.message) : String(cause)
-      )
+      // The two escapers are NOT interchangeable. `escapeControlCharacters` keeps
+      // newlines because a stack is legitimately multi-line — so it may only be
+      // used ON a stack. A `message`, or an arbitrary non-Error value, is a
+      // single-line field: passing it through the multi-line escaper lets
+      // `'failed\n[forged entry]'` write a second raw line that an operator reads
+      // as a genuine record.
+      const stack = isErrorLike(cause) ? cause.stack : undefined
+      detail =
+        stack === undefined
+          ? toSingleLineMessage(isErrorLike(cause) ? String(cause.message) : String(cause))
+          : escapeControlCharacters(String(stack))
     } catch {
       // Left as `UnknownError`: a value that cannot be read is still worth a line
       // naming the destination, and this path must never throw.
