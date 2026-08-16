@@ -18,8 +18,8 @@ heading here.
 - **A pretty destination registered alongside another sink no longer prints every boot entry twice.**
   The fan-out hands each entry to every registered destination, so entries buffered before
   `PrettyDevDestination.onInit` had ALSO been delivered to the co-destination. When the pretty sink
-  then failed to initialize — or shut down before initializing — it drained its buffer raw to stdout,
-  producing a second copy of every boot line. Measured on the supported
+  then failed to initialize, it drained its buffer raw to stdout, producing a second copy of every
+  boot line. Measured on the supported
   `[DefaultStdoutDestination(), PrettyDevDestination()]` pair: two occurrences of one entry.
 
   **You were affected only if you registered pretty ALONGSIDE another destination** — the shape a
@@ -46,6 +46,14 @@ heading here.
 
   Uncertainty drains: the only discard paths are "delivered elsewhere" and "nothing live and someone
   else was elected". Nothing is lost on any branch, which is the property the buffer was added for.
+
+  **One case is NOT deduplicated, and the first draft of this note claimed it was.** A shutdown that
+  happens before the registry's `onModuleInit` ran — the application aborting mid-bootstrap — still
+  drains the buffer raw. The multistream is wired by a provider factory while NestJS assembles the
+  graph, so entries can already have reached a co-destination by then, but the readiness hook has not
+  run and the destination has no way to learn that. It drains, because between a duplicated boot line
+  and a lost one this library picks the duplicate. Narrowing the claim rather than widening the fix:
+  making that path registry-aware would require the registry, which by definition has not run.
 
   Reported by Copilot on the `1.2.6` pull request, in a review body rather than as an inline
   comment — see the note below.

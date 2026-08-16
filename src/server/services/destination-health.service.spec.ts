@@ -190,6 +190,28 @@ describe('DestinationHealth', () => {
   })
 
   it(/*
+   * REGRESSION — a sink that THREW on a write did not receive that entry, so it
+   * cannot stand as proof of delivery. Init health says a destination is live;
+   * it says nothing about whether its writes landed. Without this, a buffering
+   * destination would be told its held copies are safe with a sink that has been
+   * dropping them. Found by Copilot against the level-only check.
+   */
+  'does not credit delivery to a sink whose write failed', () => {
+    const health = new DestinationHealth()
+    const asker = makeDestination('asker')
+    const throwing = makeDestination('throwing')
+    health.markHealthy(throwing, 'debug')
+
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(true)
+
+    health.markWriteFailed(throwing)
+
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(false)
+    // Still live, though — it keeps receiving entries and may recover.
+    expect(health.hasHealthySink()).toBe(true)
+  })
+
+  it(/*
    * The same in the OTHER order, which is the direction that can regress: a
    * later, higher-level sink must not raise the recorded floor. Registering
    * `debug` then `error` has to keep `debug` — otherwise an `info` destination

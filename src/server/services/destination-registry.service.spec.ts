@@ -572,6 +572,43 @@ describe('DestinationRegistry', () => {
     })
 
     it(/*
+     * REGRESSION — an ASYNC hook is awaited, and its rejection is contained.
+     * TypeScript accepts an `async` implementation where a void-returning member
+     * is declared, so a hook that was not awaited would reject into nothing and
+     * let the bootstrap entry be emitted before the buffer it was resolving had
+     * been drained. Found by Copilot on the hook's own signature.
+     */
+    'awaits an async hook and contains its rejection', async () => {
+      const order: string[] = []
+      const slow = {
+        ...makeDestination('slow'),
+        onRegistryReady: jest.fn(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+          order.push('hook')
+        })
+      }
+      const rejecting = {
+        ...makeDestination('rejecting'),
+        onRegistryReady: jest.fn(async () => {
+          await Promise.reject(new Error('async hook exploded'))
+        })
+      }
+      infoSpy.mockImplementation(() => {
+        order.push('bootstrap')
+      })
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+      await expect(
+        new DestinationRegistry([slow, rejecting], logger, options, health).onModuleInit()
+      ).resolves.toBeUndefined()
+
+      // The slow hook finished BEFORE the bootstrap entry went out.
+      expect(order).toEqual(['hook', 'bootstrap'])
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('async hook exploded'))
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
      * The readiness facts are computed PER destination, not shared: a sink whose
      * level sits above another's did not receive what the lower one received.
      * Without this, one status object for the whole fleet would tell an `info`

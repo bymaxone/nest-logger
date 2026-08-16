@@ -54,6 +54,18 @@ export class DestinationHealth {
    */
   private readonly healthy = new Map<ILogDestination, number>()
 
+  /**
+   * Destinations whose `write()` threw or rejected at least once.
+   *
+   * Init health says a sink is LIVE; it does not say the sink accepted anything.
+   * A destination that throws on write is reported and skipped per entry, so
+   * inferring delivery from level alone would credit it with entries it dropped.
+   * Uncertainty drains, so any write failure disqualifies it as proof of delivery
+   * for the whole window — coarser than per-entry tracking, and wrong only in the
+   * direction that duplicates rather than loses.
+   */
+  private readonly writeFailed = new Set<ILogDestination>()
+
   /** The failed destination designated to rescue entries, if any. */
   private rescuer: ILogDestination | undefined
 
@@ -69,6 +81,19 @@ export class DestinationHealth {
    * @param effectiveLevel - Its multistream level: `minLevel` when set, otherwise
    *   the module-wide `level`.
    */
+  /**
+   * Record that a destination's `write()` threw or rejected.
+   *
+   * Called from the fan-out's failure path, which already reports the entry as
+   * dropped. This is what stops {@link deliveredByHealthySink} from crediting a
+   * throwing sink with entries it never accepted.
+   *
+   * @param destination - The destination whose write failed.
+   */
+  markWriteFailed(destination: ILogDestination): void {
+    this.writeFailed.add(destination)
+  }
+
   markHealthy(destination: ILogDestination, effectiveLevel: LogLevel): void {
     this.healthy.set(destination, LOG_LEVEL_PRIORITY.indexOf(effectiveLevel))
   }
@@ -162,7 +187,7 @@ export class DestinationHealth {
   deliveredByHealthySink(asking: ILogDestination, effectiveLevel: LogLevel): boolean {
     const level = LOG_LEVEL_PRIORITY.indexOf(effectiveLevel)
     for (const [destination, healthyLevel] of this.healthy) {
-      if (destination !== asking && healthyLevel <= level) {
+      if (destination !== asking && !this.writeFailed.has(destination) && healthyLevel <= level) {
         return true
       }
     }

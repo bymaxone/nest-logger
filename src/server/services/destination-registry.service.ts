@@ -99,7 +99,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         this.reportInitFailure(destination.name, cause)
       }
     }
-    this.notifyRegistryReady()
+    await this.notifyRegistryReady()
     this.announceBootstrap()
   }
 
@@ -123,10 +123,15 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * skipped rather than aborting the remaining ones or the bootstrap entry.
    * Failing at this hook cannot be allowed to cost more than the hook was worth.
    */
-  private notifyRegistryReady(): void {
+  private async notifyRegistryReady(): Promise<void> {
     for (const destination of this.registered) {
       try {
-        destination.onRegistryReady?.({
+        // AWAITED. The hook is declared `void | Promise<void>` because TypeScript
+        // accepts an `async` implementation where a void-returning member is
+        // declared: not awaiting one would let its rejection escape as an
+        // unhandled promise, and let the bootstrap entry be emitted before the
+        // buffer it is resolving had been drained.
+        await destination.onRegistryReady?.({
           heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
             destination,
             destination.minLevel ?? this.options.level

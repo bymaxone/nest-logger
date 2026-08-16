@@ -84,12 +84,17 @@ export interface ILogDestination {
    * @param status.isElectedRescuer - When nothing survived, whether YOU are the
    *   single destination elected to speak. Two buffering destinations hold the
    *   same entries, so draining from both would recreate the duplicate.
+   * @returns Nothing, or a promise the library AWAITS. Returning one is
+   *   supported deliberately: TypeScript accepts an `async` implementation where
+   *   a void-returning member is declared, so a hook that was not awaited would
+   *   reject into nothing and let the bootstrap entry be emitted before the
+   *   buffer had been resolved.
    */
   onRegistryReady?(status: {
     readonly heldEntriesDeliveredElsewhere: boolean
     readonly hasHealthySink: boolean
     readonly isElectedRescuer: boolean
-  }): void
+  }): void | Promise<void>
 
   /**
    * Optional lifecycle hook — called during NestJS `onApplicationShutdown`.
