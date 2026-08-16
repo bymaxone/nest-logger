@@ -1387,11 +1387,13 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
   }
 
   async onModuleInit() {
-    // Each onInit() is wrapped in try/catch. On failure the destination is never
-    // added to the ACTIVE list — so no entry is written to it — and it is recorded
-    // as failed, with LOGGER_DESTINATION_INIT_FAILED reported via stderr (Pino is
-    // not yet wired at this point). It stays REGISTERED. The lib NEVER throws to
-    // abort boot — degraded mode is preferred over crash.
+    // Each onInit() is wrapped in try/catch. On failure the destination is recorded
+    // as FAILED in `DestinationHealth`, and that recording is what keeps entries away
+    // from it: the adapter checks `isFailed` on every write. Being absent from
+    // `active` has nothing to do with it — `active` drives shutdown. The destination
+    // stays REGISTERED so the readiness hook still reaches it.
+    // `LOGGER_DESTINATION_INIT_FAILED` goes to stderr because Pino is not yet wired
+    // at this point. The lib NEVER throws to abort boot — degraded mode over crash.
     for (const dest of this.destinations) {
       try {
         await dest.onInit?.()

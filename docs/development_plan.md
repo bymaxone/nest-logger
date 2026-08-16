@@ -3384,6 +3384,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
 import { Writable } from 'node:stream'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { DestinationHealth } from '../services/destination-health.service'
+import { writeStdoutSafely } from '../utils/safe-stdio.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import {
   reportDestinationFailure,
@@ -3415,7 +3416,18 @@ export function destinationToStream(dest: ILogDestination, health: DestinationHe
         callback()
       }
       try {
-        const r = dest.write(typeof chunk === 'string' ? chunk : chunk.toString('utf-8'))
+        const payload = typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
+        // A sink that failed `onInit` never became live, so it is SKIPPED rather than
+        // written to — its `write()` may assume resources it never acquired. The
+        // fan-out holds a stream for every REGISTERED destination, so this branch is
+        // what keeps a failed one out of it. When NOTHING initialized, the elected
+        // rescuer emits the raw entry to stdout so one bad sink cannot silence the app.
+        if (health.isFailed(dest)) {
+          if (health.shouldRescue(dest)) writeStdoutSafely(payload)
+          callback()
+          return
+        }
+        const r = dest.write(payload)
         // Branch on `undefined`: `instanceof Promise` is realm-local and misses a
         // cross-realm promise or a plain thenable, losing the entry. A rejection is
         // reported and then completed WITHOUT an error — `callback(err)` makes the
