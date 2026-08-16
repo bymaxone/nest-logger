@@ -45,14 +45,29 @@ heading here.
   This library learned the realm-local lesson once already, from `instanceof Error`, which is why
   `isErrorLike` exists. The same mistake sat one file away.
 
+### Changed
+
+- **`ILogDestination` accepts `void | PromiseLike<void>` instead of `void | Promise<void>`,** on
+  `write`, `onInit`, `onRegistryReady` and `onShutdown`. The fix above supports a thenable at
+  runtime; the public type still forbade one, so a TypeScript consumer could not return the very
+  shape the release claims to handle — the tests needed casts precisely because of that gap, and the
+  casts are gone. A widening, so nothing that compiled before stops compiling.
+
 ### Documentation
 
 - **`heldEntriesDeliveredElsewhere` is documented as best-effort rather than as proof.** The JSDoc
   said `true` requires no write still in flight, which reads as complete accounting — while the
   `1.2.8` note already admitted that writes queued inside the `Writable` adapter are invisible until
   `destination.write()` is called. Both statements shipped in the same release, and they contradict
-  each other. The contract now says what it covers and what it does not, and tells a consumer to emit
-  when in doubt.
+  each other.
+
+  Calling it best-effort was not enough on its own: the surrounding prose still framed the decision
+  as "discard only on proof", which is the same contradiction one paragraph up. The contract is now
+  stated as what it is — a **deduplication signal**, where `true` means the smaller risk is dropping
+  the held copy, not that the entry is safe. The library's own destinations dedupe on it because a
+  duplicated boot line is a smaller harm than a lost one; a destination that cannot tolerate any loss
+  is told to ignore the flag and always emit. The guide, the specification and the JSDoc now say the
+  same thing, so a reader meets one story instead of three.
 
 ## [1.2.8] - 2026-08-15
 
@@ -76,9 +91,9 @@ heading here.
   of the entries. The decision moves to a new optional `ILogDestination.onRegistryReady`, which the
   registry calls once every `onInit` has settled.
 
-  **The policy is: never lose an entry; duplication is the accepted cost.** The hook carries ONE
-  fact — whether another live sink provably accepted everything this destination accepted — and the
-  destination discards only on that. `true` requires all of: another destination, initialized, at or
+  **The policy is: prefer a duplicated line over a lost one.** The hook carries ONE signal — whether
+  another live sink appears to have accepted everything this destination accepted — and the
+  destination dedupes only on that. `true` requires all of: another destination, initialized, at or
   below this level, with no write failure and nothing still in flight. Anything less certain reads as
   `false`, and the entries are emitted.
 
@@ -1411,7 +1426,7 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
   `release.yml`, Dependabot, and issue templates
 
 [Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.9...HEAD
-[1.2.9]: https://github.com/bymaxone/nest-logger/compare/v1.2.8...v1.2.9
+[1.2.9]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.9
 [1.2.8]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.8
 [1.2.7]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...v1.2.7
 [1.2.6]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...v1.2.6

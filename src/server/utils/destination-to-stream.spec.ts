@@ -194,15 +194,22 @@ describe('destinationToStream', () => {
     'contains a rejection from a non-Promise thenable', async () => {
       const destination: ILogDestination = {
         name: 'thenable',
-        write: (): Promise<void> =>
-          // A valid thenable that is NOT `instanceof Promise` — what a worker
-          // boundary or a hand-rolled deferred returns. Cast at the seam because
-          // the declared contract is narrower than what runtime can hand over.
-          ({
-            then: (_resolve: () => void, reject: (cause: unknown) => void): void => {
-              setTimeout(() => reject(new Error('async write failed')), 1)
-            }
-          }) as unknown as Promise<void>
+        // A valid thenable that is NOT `instanceof Promise` — what a worker
+        // boundary or a hand-rolled deferred returns. No cast: the contract is
+        // `void | PromiseLike<void>`, so this is exactly what it permits.
+        write: (): PromiseLike<void> => ({
+          // `then` is typed the way `PromiseLike` declares it, so no cast is
+          // needed anywhere: the contract is `void | PromiseLike<void>`, and this
+          // is precisely what that permits. The returned promise never settles —
+          // `Promise.resolve` ignores it, and nothing here awaits it.
+          then: <TResult1 = void, TResult2 = never>(
+            _onfulfilled?: ((value: void) => TResult1 | PromiseLike<TResult1>) | null,
+            onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
+          ): PromiseLike<TResult1 | TResult2> => {
+            setTimeout(() => onrejected?.(new Error('async write failed')), 1)
+            return new Promise<TResult1 | TResult2>(() => undefined)
+          }
+        })
       }
       const health = new DestinationHealth()
       health.markHealthy(destination, 'info')
@@ -226,16 +233,14 @@ describe('destinationToStream', () => {
       let settle: (() => void) | undefined
       const destination: ILogDestination = {
         name: 'thenable',
-        write: (): Promise<void> =>
-          // Same cast, same reason as the case above: the declared contract is
-          // narrower than what runtime can hand over, and that gap IS the defect
-          // under test. It launders nothing — the type is not wrong, the world is
-          // wider than it.
-          ({
-            then: (resolve: () => void): void => {
-              settle = resolve
-            }
-          }) as unknown as Promise<void>
+        write: (): PromiseLike<void> => ({
+          then: <TResult1 = void, TResult2 = never>(
+            onfulfilled?: ((value: void) => TResult1 | PromiseLike<TResult1>) | null
+          ): PromiseLike<TResult1 | TResult2> => {
+            settle = (): void => void onfulfilled?.()
+            return new Promise<TResult1 | TResult2>(() => undefined)
+          }
+        })
       }
       const asker: ILogDestination = { name: 'asker', write: jest.fn() }
       const health = new DestinationHealth()

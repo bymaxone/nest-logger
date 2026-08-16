@@ -790,9 +790,13 @@ export interface ILogDestination {
   /**
    * Called once after EVERY destination's `onInit` has settled, and awaited. Only
    * useful to a destination holding entries written before its own `onInit` ran:
-   * `heldEntriesDeliveredElsewhere` says whether another live sink took them, so
-   * a held copy can be dropped instead of duplicating a line. Best-effort —
-   * discard only on proof, emit otherwise.
+   * `heldEntriesDeliveredElsewhere` says whether another live sink appears to have
+   * taken them, so a held copy can be dropped instead of duplicating a line. It is
+   * a DEDUPLICATION SIGNAL, not a proof — writes still queued inside the Writable
+   * adapter are not represented in it, so `true` can precede a queued write that
+   * later fails. The library's destinations dedupe on it because a duplicated line
+   * beats a lost one; a destination that cannot tolerate any loss should always
+   * emit.
    */
   onRegistryReady?(status: {
     readonly heldEntriesDeliveredElsewhere: boolean

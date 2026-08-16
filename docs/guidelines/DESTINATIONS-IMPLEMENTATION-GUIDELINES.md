@@ -212,9 +212,14 @@ so a held copy may be a second copy — emitting it duplicates a line, and dropp
 
 The library answers it for you, once, after every `onInit` has settled:
 
+This example takes the library's own trade — **dedupe when the signal says another sink took the
+entries, emit otherwise** — and it is a trade, not a proof. Read the limits below before copying it
+into a destination that cannot tolerate any loss.
+
 ```ts
 onRegistryReady(status: { readonly heldEntriesDeliveredElsewhere: boolean }): void {
-  // Discard ONLY on proof. Emit otherwise.
+  // Best-effort deduplication: drop the held copies when another sink appears to
+  // have taken them, emit otherwise. See the residual risk below.
   if (status.heldEntriesDeliveredElsewhere) {
     this.buffer.length = 0
     return
@@ -227,11 +232,16 @@ onRegistryReady(status: { readonly heldEntriesDeliveredElsewhere: boolean }): vo
 below your effective level, has had no write failure, and has no write still in flight. Anything less
 certain is reported as `false`.
 
-**It is best-effort, not a proof, and the difference matters if you are about to drop your only
-copy.** The accounting covers writes the library has handed to a destination; one still queued inside
-the `Writable` adapter, behind a slow async sink not yet called, is invisible. It normally arrives —
-queued, not lost — but when in doubt, emit. The library's own policy is that a duplicated line beats
-a lost one.
+**It is a deduplication signal, not a proof, and the difference matters because you may be dropping
+your only copy.** The accounting covers writes the library has handed to a destination; one still
+queued inside the `Writable` adapter, behind a slow async sink not yet called, is invisible — so
+`true` can precede a queued write that later fails, and nothing distinguishes that case for you. It
+normally arrives, being queued rather than lost.
+
+So pick deliberately: the library's own destinations dedupe on `true` because a duplicated boot line
+is a smaller harm than a lost one. **If your destination cannot tolerate ANY loss, ignore the flag
+and always emit** — you will duplicate lines in the common configuration, and you will never drop
+one.
 
 Two more things this hook guarantees, because they were each a defect first:
 
