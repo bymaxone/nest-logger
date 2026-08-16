@@ -649,6 +649,49 @@ describe('DestinationRegistry', () => {
     })
 
     it(/*
+     * REGRESSION — the readiness reporter reads the destination's `name` under a
+     * guard, like the init, write and shutdown reporters do. This was the one
+     * changed call site without such a test: every other hook case uses a plain
+     * name, so replacing `safeDestinationName(destination)` with
+     * `destination.name` would have passed them all while a throwing getter
+     * escaped this catch and cost the REMAINING destinations their notification
+     * and the bootstrap entry.
+     *
+     * Asserted on the later destination still being notified, not merely on the
+     * absence of a throw.
+     */
+    'still notifies the rest when a failing hook destination cannot report its name', async () => {
+      const hostile = {
+        ...makeDestination('hostile'),
+        onRegistryReady: jest.fn(() => {
+          throw new Error('hook exploded')
+        })
+      }
+      Object.defineProperty(hostile, 'name', {
+        get() {
+          throw new Error('name getter exploded')
+        }
+      })
+      const later = { ...makeDestination('later'), onRegistryReady: jest.fn() }
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+      await expect(
+        new DestinationRegistry([hostile, later], logger, options, health).onModuleInit()
+      ).resolves.toBeUndefined()
+
+      expect(later.onRegistryReady).toHaveBeenCalled()
+      const report: unknown = JSON.parse(
+        stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('unknown')) ?? '{}'
+      )
+      expect(report).toMatchObject({
+        logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+        destination: 'unknown',
+        err: { type: 'Error', message: 'hook exploded' }
+      })
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
      * REGRESSION — a hook failure must NOT reuse the init-failure message. By this
      * point `onInit` already succeeded and the destination is in the active set,
      * so telling an operator it "will receive no entries" sends them looking for

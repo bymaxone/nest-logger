@@ -1378,7 +1378,10 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
   private effectiveLevelOf(dest: ILogDestination): LogLevel {
     const moduleLevel = this.options.level
     if (dest.minLevel === undefined) return moduleLevel
-    return PINO_LEVEL_NUMBERS[dest.minLevel] > PINO_LEVEL_NUMBERS[moduleLevel]
+    // `LOG_LEVEL_PRIORITY.indexOf`, mirroring the implementation. `PINO_LEVEL_NUMBERS`
+    // would order identically — both run trace→fatal — but the specification exists to
+    // describe the shipped code, not an equivalent way of writing it.
+    return LOG_LEVEL_PRIORITY.indexOf(dest.minLevel) > LOG_LEVEL_PRIORITY.indexOf(moduleLevel)
       ? dest.minLevel
       : moduleLevel
   }
