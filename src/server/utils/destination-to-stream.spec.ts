@@ -177,6 +177,79 @@ describe('destinationToStream', () => {
     expect(stderrSpy).toHaveBeenCalled()
   })
 
+  describe('a write that returns a thenable rather than a Promise', () => {
+    it(/*
+     * REGRESSION — `instanceof Promise` is realm-local and answers `false` for a
+     * promise built in another realm (worker, vm context) and for any
+     * structurally valid thenable. Both were measured. Such a write took the
+     * SYNCHRONOUS path: the callback fired immediately, a later rejection escaped
+     * as an unhandled rejection instead of being reported, and the write was
+     * never counted as pending — so readiness could tell a buffering sink to
+     * discard its only copy of an entry that was about to fail. Losing an entry
+     * is the one outcome this library does not accept.
+     *
+     * This repo already learned the realm-local lesson from `instanceof Error`,
+     * which is why `isErrorLike` exists; the same mistake sat one file away.
+     */
+    'contains a rejection from a non-Promise thenable', async () => {
+      const destination: ILogDestination = {
+        name: 'thenable',
+        write: (): Promise<void> =>
+          // A valid thenable that is NOT `instanceof Promise` — what a worker
+          // boundary or a hand-rolled deferred returns. Cast at the seam because
+          // the declared contract is narrower than what runtime can hand over.
+          ({
+            then: (_resolve: () => void, reject: (cause: unknown) => void): void => {
+              setTimeout(() => reject(new Error('async write failed')), 1)
+            }
+          }) as unknown as Promise<void>
+      }
+      const health = new DestinationHealth()
+      health.markHealthy(destination, 'info')
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+      const stream = destinationToStream(destination, health)
+
+      await expect(writeOnce(stream, 'entry\n')).resolves.toBeUndefined()
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      // Reported rather than escaping as an unhandled rejection.
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('async write failed'))
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * And it must be counted as in flight while it is, so readiness cannot claim
+     * delivery from a sink whose write has not settled — the reason the pending
+     * counter exists at all.
+     */
+    'counts a thenable write as pending until it settles', async () => {
+      let settle: (() => void) | undefined
+      const destination: ILogDestination = {
+        name: 'thenable',
+        write: (): Promise<void> =>
+          ({
+            then: (resolve: () => void): void => {
+              settle = resolve
+            }
+          }) as unknown as Promise<void>
+      }
+      const asker: ILogDestination = { name: 'asker', write: jest.fn() }
+      const health = new DestinationHealth()
+      health.markHealthy(destination, 'info')
+      const stream = destinationToStream(destination, health)
+
+      stream.write('entry\n')
+      await new Promise((resolve) => setImmediate(resolve))
+
+      expect(health.deliveredByHealthySink(asker, 'info')).toBe(false)
+
+      settle?.()
+      await new Promise((resolve) => setImmediate(resolve))
+
+      expect(health.deliveredByHealthySink(asker, 'info')).toBe(true)
+    })
+  })
+
   describe('init health', () => {
     let stdoutSpy: jest.SpyInstance
 

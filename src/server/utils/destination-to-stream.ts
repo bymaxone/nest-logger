@@ -118,13 +118,28 @@ export function destinationToStream(
           return
         }
         const result = destination.write(payload)
-        if (result instanceof Promise) {
+        // Branch on `undefined`, NOT on `instanceof Promise`. The declared return
+        // is `void | Promise<void>`, but `instanceof` is realm-local and answers
+        // `false` for a promise from another realm (a worker, a vm context) and
+        // for any structurally valid thenable — measured, both. Either would take
+        // the synchronous path here: the callback would fire immediately, a later
+        // rejection would escape as an unhandled rejection instead of being
+        // reported, and the write would never be counted as pending — so readiness
+        // could tell a buffering sink to discard its only copy of an entry that
+        // was about to fail. This library already learned the realm-local lesson
+        // once, from `instanceof Error`, which is why `isErrorLike` exists.
+        //
+        // `Promise.resolve` assimilates both shapes. Synchronous writes keep the
+        // synchronous path, so the back-pressure contract is unchanged.
+        if (result === undefined) {
+          callback()
+        } else {
           // Counted while in flight. A rejection is only recorded when the promise
           // settles, and readiness can be computed before that — so a pending
           // write has to read as UNPROVEN rather than as silent success, or a
           // buffering sink discards its copy moments before this one rejects.
           health.markWritePending(destination)
-          result.then(
+          Promise.resolve(result).then(
             () => {
               health.markWriteSettled(destination)
               callback()
@@ -134,8 +149,6 @@ export function destinationToStream(
               onFailure(cause)
             }
           )
-        } else {
-          callback()
         }
       } catch (cause) {
         onFailure(cause)

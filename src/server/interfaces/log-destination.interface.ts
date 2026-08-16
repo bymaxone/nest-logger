@@ -78,10 +78,18 @@ export interface ILogDestination {
    * initialize is exactly the one still holding entries.
    *
    * @param status.heldEntriesDeliveredElsewhere - Whether ANOTHER live sink
-   *   provably accepted everything this destination accepted. It is `true` only
-   *   when that sink is not this one, initialized, sits at or below this level,
-   *   has had no write failure, and has no write still in flight — anything less
-   *   certain is reported as `false`, and you emit.
+   *   accepted everything this destination accepted, as far as this library can
+   *   see. It is `true` only when that sink is not this one, initialized, sits at
+   *   or below this level, has had no write failure, and has no write still in
+   *   flight — anything less certain is reported as `false`, and you emit.
+   *
+   *   **Best-effort, not a proof.** The accounting covers writes this library has
+   *   handed to a destination. One still QUEUED inside the `Writable` adapter,
+   *   behind a slow async sink that has not been called yet, is invisible to it:
+   *   this can read `true` while such an entry has not reached that sink. It
+   *   normally arrives — queued, not lost — and the residual risk is a queued
+   *   write that later fails. Weigh that before discarding your only copy; when
+   *   in doubt, emit.
    * @returns Nothing, or a promise the library AWAITS. Returning one is
    *   supported deliberately: TypeScript accepts an `async` implementation where
    *   a void-returning member is declared, so a hook that was not awaited would

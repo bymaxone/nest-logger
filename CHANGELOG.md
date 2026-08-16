@@ -11,6 +11,44 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-08-16
+
+### Fixed
+
+- **A write returning a thenable that is not `instanceof Promise` no longer takes the synchronous
+  path, where its rejection escaped and its entry could be discarded.** `instanceof` is realm-local:
+  it answers `false` for a promise built in another realm — a worker, a `vm` context — and for any
+  structurally valid thenable. Measured, both:
+
+  ```
+  thenable instanceof Promise?                    false
+  promise from another realm instanceof Promise?  false
+  Promise.resolve() assimilates both?             true
+  ```
+
+  Such a write took the branch meant for synchronous sinks: the stream callback fired immediately, a
+  later rejection surfaced as an **unhandled rejection** instead of a reported
+  `LOGGER_DESTINATION_WRITE_FAILED`, and the write was never counted as in flight — so `1.2.8`'s
+  readiness check could tell a buffering destination that delivery was proven and let it discard its
+  only copy of an entry that was about to fail. Losing an entry is the one outcome this path does not
+  accept.
+
+  The branch is now on `undefined`, which is what the declared `void | Promise<void>` actually
+  distinguishes, and the result goes through `Promise.resolve` — which assimilates both shapes.
+  Synchronous writes keep the synchronous path, so back-pressure is unchanged.
+
+  This library learned the realm-local lesson once already, from `instanceof Error`, which is why
+  `isErrorLike` exists. The same mistake sat one file away.
+
+### Documentation
+
+- **`heldEntriesDeliveredElsewhere` is documented as best-effort rather than as proof.** The JSDoc
+  said `true` requires no write still in flight, which reads as complete accounting — while the
+  `1.2.8` note already admitted that writes queued inside the `Writable` adapter are invisible until
+  `destination.write()` is called. Both statements shipped in the same release, and they contradict
+  each other. The contract now says what it covers and what it does not, and tells a consumer to emit
+  when in doubt.
+
 ## [1.2.8] - 2026-08-15
 
 ### Fixed
@@ -1367,7 +1405,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.8...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.9...HEAD
+[1.2.9]: https://github.com/bymaxone/nest-logger/compare/v1.2.8...v1.2.9
 [1.2.8]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.8
 [1.2.7]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...v1.2.7
 [1.2.6]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...v1.2.6
