@@ -146,14 +146,21 @@ heading here.
 ### Documentation
 
 - **Snippets that referenced symbols which were not there are now caught by a parser, not by
-  eye.** Four review rounds each found another documented example using `safeMinLevel`,
-  `LOGGER_OPTIONS_TOKEN`, `PREVIEW_LENGTH` or `this.reportShutdownFailure` with nothing to
-  resolve them, so `pnpm check:docs` parses every TypeScript block and fails when it uses one of
-  this package's own symbols without importing or declaring it, or calls a `this.member` the class
-  shown does not define. It reads the syntax tree rather than the text, so a name in a comment is
-  a mention and not a use. The 37 pre-existing cases in the planning documents are recorded in a
-  baseline the check can only shrink — an entry that stops reproducing fails too, so a fixed
-  snippet cannot leave a stale line behind.
+  eye.** Five review rounds each found another documented example using `safeMinLevel`,
+  `LOGGER_OPTIONS_TOKEN`, `PREVIEW_LENGTH`, `this.reportShutdownFailure` or an outright invented
+  `RESERVED_LOG_KEYS.LOGGER_DESTINATION_SHUTDOWN_FAILED` with nothing to resolve them. `pnpm
+check:docs` parses every TypeScript block — both `ts` and `typescript` fences — and fails on
+  three things: a symbol this package declares in `src/` used without being imported or declared,
+  a `this.member` the class shown does not define, and a `CONSTANT.KEY` the real constant does not
+  have. It reads the syntax tree rather than the text, so a name in a comment is a mention and not
+  a use. It runs in CI and in `prepublishOnly`, because a gate nothing executes is not a gate.
+
+  The 40 pre-existing cases in the planning documents sit in a baseline that shrinks and does not
+  grow: regenerating writes the intersection with what still reproduces, so a defect introduced in
+  the same edit is never adopted, and an entry that stops reproducing fails too rather than
+  lingering. Widening what the check looks at is the one case where the list legitimately grows,
+  and it takes a separate `--adopt-new` flag so that decision is stated rather than taken
+  silently.
 
 - **The specification gave the wrong reason for reporting init failures on stderr.** It said Pino
   was not yet wired at that point. It is — the instance is built during provider construction,

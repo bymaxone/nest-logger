@@ -10,31 +10,44 @@
  * `PREVIEW_LENGTH` or `this.reportShutdownFailure` with nothing to resolve them.
  * Reviewing prose by eye does not catch it; parsing does.
  *
- * How it decides. Two questions, both answered from the syntax tree rather than from
+ * How it decides. Three questions, all answered from the syntax tree rather than from
  * a regular expression, because a name inside a comment or a string is a MENTION and
  * only a name in an expression is a USE:
  *
  *   1. Does the snippet use a symbol this package declares in `src/` — an export or a
  *      module-level constant — while neither importing nor declaring it?
  *   2. Does it read `this.member` while declaring the enclosing class itself?
+ *   3. Does it read `SOME_CONSTANT.KEY` for a key that constant does not define?
  *
  * Question 2 is asked only of snippets that show a complete class. A snippet that is
  * openly an excerpt of one method has no class to check against, and demanding one
  * would push every excerpt toward being a full file.
  *
+ * Question 3 exists because question 1 cannot see it: a property is not a reference, so
+ * an invented `RESERVED_LOG_KEYS.LOGGER_DESTINATION_SHUTDOWN_FAILED` reads as a use of
+ * `RESERVED_LOG_KEYS` — which IS imported — and passes. It reached this documentation
+ * exactly that way.
+ *
  * Deliberately NOT checked: a free local like `health` in an excerpt whose scope the
  * prose introduces. Flagging those means flagging every excerpt variable, and the
  * noise would retire the check. That case stays a matter of writing the prose well.
  *
- * The baseline. The planning documents carry 66 of these occurrences from before the
- * check existed — 37 distinct file-and-symbol pairs, since one missing import usually
- * shows up in several snippets of the same document. Fixing all of them is not the same
- * job as stopping new ones, so they are recorded in
- * `doc-snippets-baseline.json`, which this script can only ever shrink: a
- * finding outside it fails, and an entry inside it that no longer reproduces ALSO
- * fails, so a fixed snippet cannot leave a stale line behind. Regenerate with
- * `--write-baseline` — a command to run when you fixed something, never to make a new
- * finding go away.
+ * The baseline. The planning documents carry 40 distinct file-and-symbol pairs from
+ * before the check existed — fewer than the raw occurrence count, since one missing
+ * import usually shows up in several snippets of the same document. Fixing all of them
+ * is not the same job as stopping new ones, so they are recorded in
+ * `doc-snippets-baseline.json`: a finding outside it fails, and an entry inside it that
+ * no longer reproduces ALSO fails, so a fixed snippet cannot leave a stale line behind.
+ * Regenerate with
+ * `--write-baseline` — which writes the INTERSECTION of the old baseline and what still
+ * reproduces, so it can only remove entries. A defect introduced in the same edit is
+ * not adopted by it; the run still fails.
+ *
+ * Widening what the check looks at is the one case where the list legitimately grows —
+ * accepting `ts` fences alongside `typescript` surfaced three pre-existing findings that
+ * were nobody's regression. That takes `--adopt-new`, a separate flag precisely so the
+ * decision is made on purpose and stated in the commit rather than taken silently by the
+ * routine command.
  *
  * Baseline entries are keyed by file and symbol, not by line, so editing prose above a
  * snippet does not churn the file. The cost of that choice is one real gap: a NEW
@@ -99,7 +112,90 @@ function internalSymbols() {
   return names
 }
 
-/** Extract every ```typescript block, with the line its fence opens on. */
+/**
+ * Find the object literal inside an initializer, seeing through the wrappers this
+ * repository actually uses: `{...} as const`, `{...} satisfies T`, parentheses, and
+ * `Object.freeze({...} as const)` — which is how the reserved log keys are declared,
+ * and the reason a first version of this function found no constants at all.
+ *
+ * @param node - The initializer expression to unwrap.
+ * @returns The object literal, or `undefined` when the initializer is not one.
+ */
+function unwrapObjectLiteral(node) {
+  let current = node
+  for (;;) {
+    if (current === undefined) return undefined
+    if (ts.isObjectLiteralExpression(current)) return current
+    if (
+      ts.isAsExpression(current) ||
+      ts.isSatisfiesExpression(current) ||
+      ts.isParenthesizedExpression(current)
+    ) {
+      current = current.expression
+      continue
+    }
+    // `Object.freeze(x)` / `Object.seal(x)`: the literal is the argument. Named
+    // explicitly rather than accepting any one-argument call, because those two are
+    // the only ones that RETURN their argument. Unwrapping `pino({...})` the same way
+    // would hand this script the options object as the variable's members, and every
+    // `logger.info(...)` in the documentation would be reported as an undefined key.
+    if (
+      ts.isCallExpression(current) &&
+      current.arguments.length === 1 &&
+      ts.isPropertyAccessExpression(current.expression) &&
+      ts.isIdentifier(current.expression.expression) &&
+      current.expression.expression.text === 'Object' &&
+      (current.expression.name.text === 'freeze' || current.expression.name.text === 'seal')
+    ) {
+      current = current.arguments[0]
+      continue
+    }
+    return undefined
+  }
+}
+
+/**
+ * The keys of every module-level constant object literal in `src/`, by object name.
+ * A snippet writing `RESERVED_LOG_KEYS.NO_SUCH_KEY` names something that does not
+ * exist, which is how an invented constant reached this documentation once already —
+ * the identifier check cannot see it, because a property is not a reference.
+ */
+function constantMembers() {
+  const members = new Map()
+  for (const file of walk(SRC, (f) => extname(f) === '.ts' && !f.includes('.spec.'))) {
+    const source = ts.createSourceFile(
+      file,
+      readFileSync(file, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true
+    )
+    for (const statement of source.statements) {
+      if (!ts.isVariableStatement(statement)) continue
+      for (const decl of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(decl.name) || !decl.initializer) continue
+        const literal = unwrapObjectLiteral(decl.initializer)
+        if (literal === undefined) continue
+        const keys = new Set()
+        for (const property of literal.properties) {
+          if (
+            property.name &&
+            (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+          ) {
+            keys.add(property.name.text)
+          }
+        }
+        if (keys.size > 0) members.set(decl.name.text, keys)
+      }
+    }
+  }
+  return members
+}
+
+/**
+ * Extract every TypeScript block, with the line its fence opens on. Both spellings
+ * count: `ts` and `typescript` are the same language to every renderer, and taking
+ * only the long one left nine blocks silently outside the check.
+ */
 function snippetsOf(markdown) {
   const blocks = []
   const lines = markdown.split('\n')
@@ -110,7 +206,7 @@ function snippetsOf(markdown) {
     // quote most of theirs, and skipping them hid three of the reported defects.
     const bare = line.replace(/^>\s?/, '')
     if (start === -1) {
-      if (/^```typescript\s*$/.test(bare)) {
+      if (/^```(?:ts|typescript)\s*$/.test(bare)) {
         start = index + 1
         buffer = []
       }
@@ -178,6 +274,45 @@ function usedIn(source) {
   return names
 }
 
+/**
+ * The names a snippet IMPORTS, as opposed to the ones it declares itself.
+ *
+ * The distinction decides whether `RESERVED_LOG_KEYS.SOMETHING` is checked against the
+ * package's constant: an import means it IS that constant, while a local `const` of the
+ * same name means the snippet's own object and must be left alone.
+ *
+ * @param source - The parsed snippet.
+ * @returns The set of imported binding names.
+ */
+function importedIn(source) {
+  const names = new Set()
+  const visit = (node) => {
+    if (ts.isImportSpecifier(node) || ts.isImportClause(node) || ts.isNamespaceImport(node)) {
+      if (node.name && ts.isIdentifier(node.name)) names.add(node.name.text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return names
+}
+
+/** `OBJECT.KEY` reads, so a key that the real constant does not define can be caught. */
+function constantReads(source) {
+  const reads = []
+  const visit = (node) => {
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      ts.isIdentifier(node.name)
+    ) {
+      reads.push({ object: node.expression.text, key: node.name.text })
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return reads
+}
+
 /** `this.x` reads, paired with the members every class in the snippet declares. */
 function thisUsage(source) {
   const used = new Set()
@@ -212,6 +347,7 @@ function thisUsage(source) {
 }
 
 const symbols = internalSymbols()
+const constants = constantMembers()
 const findings = []
 /** `file::symbol` for every finding, so the baseline survives line shifts. */
 const keys = new Set()
@@ -223,6 +359,7 @@ for (const file of walk(DOCS, (f) => extname(f) === '.md')) {
     // given and never touches the filesystem, so no snippet is written to disk.
     const source = ts.createSourceFile(`${file}:${line}.ts`, code, ts.ScriptTarget.Latest, true)
     const declared = declaredIn(source)
+    const imported = importedIn(source)
     const relative = file.slice(ROOT.length)
 
     for (const name of usedIn(source)) {
@@ -230,6 +367,22 @@ for (const file of walk(DOCS, (f) => extname(f) === '.md')) {
         findings.push({
           key: `${relative}::${name}`,
           text: `${relative}:${line} — uses \`${name}\` without importing or declaring it`
+        })
+      }
+    }
+
+    for (const { object, key } of constantReads(source)) {
+      // A snippet that declares the name ITSELF means its own object, not the
+      // package's — checking a local `const options = {...}` against a same-named
+      // constant in `src/` would report every one of its own keys as undefined. An
+      // IMPORT is the opposite case: it says this IS the package's constant, which is
+      // precisely when the key must be checked.
+      if (declared.has(object) && !imported.has(object)) continue
+      const known = constants.get(object)
+      if (known && !known.has(key)) {
+        findings.push({
+          key: `${relative}::${object}.${key}`,
+          text: `${relative}:${line} — reads \`${object}.${key}\`, which that constant does not define`
         })
       }
     }
@@ -252,19 +405,37 @@ for (const finding of findings) keys.add(finding.key)
 
 const baselinePath = join(ROOT, 'scripts', 'doc-snippets-baseline.json')
 
-if (process.argv.includes('--write-baseline')) {
-  writeFileSync(baselinePath, `${JSON.stringify([...keys].sort(), null, 2)}\n`)
-  console.log(`Baseline written: ${keys.size} known findings.`)
-  process.exit(0)
-}
-
 let baseline = []
 try {
   baseline = JSON.parse(readFileSync(baselinePath, 'utf8'))
 } catch {
-  console.error(`Missing or unreadable baseline: ${baselinePath}`)
-  console.error('Generate it with: node scripts/check-doc-snippets.mjs --write-baseline')
-  process.exit(1)
+  // Absent baseline is only tolerable when adopting one for the first time.
+  if (!process.argv.includes('--adopt-new')) {
+    console.error(`Missing or unreadable baseline: ${baselinePath}`)
+    console.error('Adopt one with: node scripts/check-doc-snippets.mjs --adopt-new')
+    process.exit(1)
+  }
+}
+
+if (process.argv.includes('--write-baseline')) {
+  // Writes the INTERSECTION, never the current findings: regenerating from whatever
+  // is failing right now would quietly adopt a defect introduced in the same edit,
+  // which is the one way a shrink-only baseline can be made to grow.
+  const kept = baseline.filter((key) => keys.has(key))
+  writeFileSync(baselinePath, `${JSON.stringify(kept.sort(), null, 2)}\n`)
+  console.log(`Baseline rewritten: ${baseline.length} → ${kept.length} known findings.`)
+  process.exit(0)
+}
+
+if (process.argv.includes('--adopt-new')) {
+  // The deliberate exception: widening what the check LOOKS AT (a new fence label, a
+  // new question) surfaces pre-existing findings that were never anyone's regression.
+  // Adopting them is a decision to make on purpose and to state in the commit, which
+  // is why it is a separate flag and not what the routine command silently does.
+  const adopted = [...keys].sort()
+  writeFileSync(baselinePath, `${JSON.stringify(adopted, null, 2)}\n`)
+  console.log(`Baseline adopted: ${baseline.length} → ${adopted.length} known findings.`)
+  process.exit(0)
 }
 
 const known = new Set(baseline)

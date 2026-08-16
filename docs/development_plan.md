@@ -3340,6 +3340,7 @@ import {
   safeMinLevel
 } from '../utils/report-destination-failure.util'
 import { escapeControlCharacters, toSingleLineMessage } from '../utils/escape-log-text.util'
+import { writeStderrSafely } from '../utils/safe-stdio.util'
 import { isErrorLike } from '../utils/sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
@@ -3417,19 +3418,30 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * catch that keeps one bad sink from stranding the teardown of those still queued.
    */
   private reportShutdownFailure(dest: ILogDestination, cause: unknown): void {
-    const name = safeDestinationName(dest)
-    // A stack keeps its newlines (`escapeControlCharacters`); a message or a non-Error
-    // is pinned to ONE line (`toSingleLineMessage`), so a value carrying a newline plus
-    // a fake JSON record cannot forge a second entry on stderr.
-    const detail = isErrorLike(cause)
-      ? escapeControlCharacters(cause.stack ?? toSingleLineMessage(cause.message))
-      : toSingleLineMessage(String(cause))
-    reportDestinationFailure(
-      RESERVED_LOG_KEYS.LOGGER_DESTINATION_SHUTDOWN_FAILED,
-      name,
-      detail,
-      `Log destination "${name}" failed to shut down cleanly`
-    )
+    const name = toSingleLineMessage(safeDestinationName(dest))
+    // The COERCION is inside the try, not just the read: `String(cause)` runs a
+    // consumer's `toString`/`Symbol.toPrimitive`, which can throw from within the
+    // catch that exists to keep one bad sink from stranding the teardown of the
+    // destinations still queued behind it. A value that cannot be read is still
+    // worth a line naming the destination, so the detail degrades instead.
+    let detail = 'UnknownError'
+    try {
+      // The two escapers are NOT interchangeable. `escapeControlCharacters` keeps
+      // newlines because a stack is legitimately multi-line, so it may only be used
+      // ON a stack. A message, or any non-Error value, is a single-line field:
+      // passing it through the multi-line escaper lets `'failed\n[forged entry]'`
+      // write a second raw line an operator reads as a genuine record.
+      const stack = isErrorLike(cause) ? cause.stack : undefined
+      detail =
+        stack === undefined
+          ? toSingleLineMessage(isErrorLike(cause) ? String(cause.message) : String(cause))
+          : escapeControlCharacters(String(stack))
+    } catch {
+      // Deliberately empty — this path must never throw.
+    }
+    // Straight to stderr rather than through `reportDestinationFailure`: shutdown has
+    // no reserved log key, and inventing one would name a constant that does not exist.
+    writeStderrSafely(`[DestinationRegistry] Shutdown failed for "${name}": ${detail}\n`)
   }
 
   /**
