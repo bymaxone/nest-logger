@@ -160,6 +160,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
     if (configured === undefined) {
       return this.options.level
     }
+    // Stryker disable next-line EqualityOperator: equivalent — `>` and `>=` differ only when the two indices are EQUAL, and then both branches return the same LEVEL: `configured` and `options.level` are the same string at that point, so the function's result is identical for every input. Expressing it without a comparison was tried and trades this for an unreachable branch of its own — `LOG_LEVEL_PRIORITY[Math.max(a, b)]` is `LogLevel | undefined` under noUncheckedIndexedAccess and needs a fallback nothing can reach, besides being the value-keyed index the object-injection rule flags.
     return LOG_LEVEL_PRIORITY.indexOf(configured) > LOG_LEVEL_PRIORITY.indexOf(this.options.level)
       ? configured
       : this.options.level
