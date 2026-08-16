@@ -145,6 +145,22 @@ heading here.
 
 ### Documentation
 
+- **Snippets that referenced symbols which were not there are now caught by a parser, not by
+  eye.** Four review rounds each found another documented example using `safeMinLevel`,
+  `LOGGER_OPTIONS_TOKEN`, `PREVIEW_LENGTH` or `this.reportShutdownFailure` with nothing to
+  resolve them, so `pnpm check:docs` parses every TypeScript block and fails when it uses one of
+  this package's own symbols without importing or declaring it, or calls a `this.member` the class
+  shown does not define. It reads the syntax tree rather than the text, so a name in a comment is
+  a mention and not a use. The 37 pre-existing cases in the planning documents are recorded in a
+  baseline the check can only shrink — an entry that stops reproducing fails too, so a fixed
+  snippet cannot leave a stale line behind.
+
+- **The specification gave the wrong reason for reporting init failures on stderr.** It said Pino
+  was not yet wired at that point. It is — the instance is built during provider construction,
+  which is why the same method emits `LOGGER_BOOTSTRAP_OK` through the logger a few lines later.
+  The actual reason is the fan-out: the logger writes to the very set containing the sink that
+  just failed. An implementer reading the old text would have inferred the wrong lifecycle order.
+
 - **The shipped `README.md` no longer teaches the old contract.** Its `ILogDestination` reference
   still declared `Promise<void>` on `write`, `onInit` and `onShutdown`, and omitted `onRegistryReady`
   entirely — so the one document most consumers read described types incompatible with the interface

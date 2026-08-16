@@ -3224,7 +3224,7 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 > }
 > ```
 >
-> Modify `src/server/pino-factory.ts` to receive an additional `destinations: readonly ILogDestination[]` and configure `pino.multistream`:
+> Modify `src/server/pino-factory.ts` to receive two further arguments — `destinations: readonly ILogDestination[]` and the shared `health: DestinationHealth` the registry holds — and configure `pino.multistream`. Both are required: the adapter gates every write on health, so a second `DestinationHealth` instance would let the fan-out and the registry disagree about which sinks are live.
 >
 > ```typescript
 > import { destinationToStream } from './utils/destination-to-stream'

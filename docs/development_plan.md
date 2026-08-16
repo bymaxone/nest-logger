@@ -3339,6 +3339,8 @@ import {
   safeDestinationName,
   safeMinLevel
 } from '../utils/report-destination-failure.util'
+import { escapeControlCharacters, toSingleLineMessage } from '../utils/escape-log-text.util'
+import { isErrorLike } from '../utils/sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 @Injectable()
@@ -3371,6 +3373,11 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       try {
         await dest.onInit?.()
         this.active.push(dest)
+        // Recorded on SUCCESS too, not only on failure: `DestinationHealth` answers
+        // "did any healthy sink take this entry?", and a registry that only ever
+        // marks failures leaves `healthy` empty — so the last-resort stdout rescue
+        // fires even though a live sink was available, and readiness cannot credit it.
+        this.health.markHealthy(dest, this.effectiveLevelOf(dest))
       } catch (err) {
         // NOT through the logger: at this point the destination that just failed is
         // part of the fan-out the logger writes to, so reporting the failure through
@@ -3402,6 +3409,27 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         this.reportShutdownFailure(dest, err)
       }
     }
+  }
+
+  /**
+   * Report one shutdown failure on stderr, with the destination passed WHOLE so its
+   * name is read under the guard rather than at the call site — which sits inside the
+   * catch that keeps one bad sink from stranding the teardown of those still queued.
+   */
+  private reportShutdownFailure(dest: ILogDestination, cause: unknown): void {
+    const name = safeDestinationName(dest)
+    // A stack keeps its newlines (`escapeControlCharacters`); a message or a non-Error
+    // is pinned to ONE line (`toSingleLineMessage`), so a value carrying a newline plus
+    // a fake JSON record cannot forge a second entry on stderr.
+    const detail = isErrorLike(cause)
+      ? escapeControlCharacters(cause.stack ?? toSingleLineMessage(cause.message))
+      : toSingleLineMessage(String(cause))
+    reportDestinationFailure(
+      RESERVED_LOG_KEYS.LOGGER_DESTINATION_SHUTDOWN_FAILED,
+      name,
+      detail,
+      `Log destination "${name}" failed to shut down cleanly`
+    )
   }
 
   /**
@@ -3501,7 +3529,10 @@ import pino from 'pino'
 import { destinationToStream } from './utils/destination-to-stream'
 import { safeMinLevel } from './utils/report-destination-failure.util'
 
-// inside buildPinoInstance:
+// inside buildPinoInstance(destinations, health, options) — `health` is the SAME
+// `DestinationHealth` instance the registry holds, injected there and passed through:
+// two instances would let the fan-out and the registry disagree about which sinks are
+// live, which is the disagreement a single shared instance exists to prevent.
 const streams = destinations.map((d) => ({
   // Guarded and pinned — see `safeMinLevel`: this runs at provider construction,
   // before any fail-soft path, and the registry must record the same answer.

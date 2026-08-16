@@ -935,6 +935,9 @@ export function destinationToStream(dest: ILogDestination, health: DestinationHe
  * `toJSON`) passes through untouched rather than throwing on the logging path, and
  * so does a serializer that legitimately returns `undefined`.
  */
+/** Characters of the original JSON kept in `_preview` when a value is truncated. */
+const PREVIEW_LENGTH = 200
+
 export function createSizeBoundedSerializer<T>(
   baseSerializer: (input: T) => unknown,
   maxBytes: number
@@ -1387,6 +1390,10 @@ import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common'
 
 import { DestinationHealth } from './destination-health.service'
 import { PinoLoggerService } from './pino-logger.service'
+import {
+  LOGGER_DESTINATIONS_TOKEN,
+  LOGGER_OPTIONS_TOKEN
+} from '../constants/injection-tokens.constants'
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
@@ -1445,8 +1452,13 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
     // from it: the adapter checks `isFailed` on every write. Being absent from
     // `active` has nothing to do with it — `active` drives shutdown. The destination
     // stays REGISTERED so the readiness hook still reaches it.
-    // `LOGGER_DESTINATION_INIT_FAILED` goes to stderr because Pino is not yet wired
-    // at this point. The lib NEVER throws to abort boot — degraded mode over crash.
+    // `LOGGER_DESTINATION_INIT_FAILED` goes to stderr even though Pino IS already
+    // wired here — the instance is built during provider construction, which is why
+    // this same method can emit `LOGGER_BOOTSTRAP_OK` through the logger a few lines
+    // later. The reason is the fan-out, not the lifecycle: the logger writes to the
+    // very set that contains the sink which just failed, so reporting through it can
+    // feed the failure back into itself. The lib NEVER throws to abort boot —
+    // degraded mode over crash.
     for (const dest of this.destinations) {
       try {
         await dest.onInit?.()

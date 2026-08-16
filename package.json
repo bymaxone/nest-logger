@@ -57,6 +57,7 @@
     "bench": "node --expose-gc --import tsx bench/throughput.bench.ts",
     "build": "pnpm clean && tsup",
     "check:exports": "attw --pack .",
+    "check:docs": "node scripts/check-doc-snippets.mjs",
     "check:mutants": "node scripts/check-mutation-directives.mjs",
     "check:published": "node scripts/check-published-surface.mjs",
     "clean": "rm -rf dist coverage",
