@@ -190,6 +190,69 @@ describe('DestinationHealth', () => {
   })
 
   it(/*
+   * REGRESSION — a write still IN FLIGHT is not proof either. A rejection is only
+   * recorded when the promise settles, and readiness can be computed before that,
+   * so "no failure recorded yet" would credit a sink that is about to reject.
+   * Uncertainty must read as unproven, because the destination acting on it
+   * decides whether to discard its only copies. Found by Copilot.
+   */
+  'does not credit delivery while a write is still pending', () => {
+    const health = new DestinationHealth()
+    const asker = makeDestination('asker')
+    const slow = makeDestination('slow')
+    health.markHealthy(slow, 'debug')
+
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(true)
+
+    health.markWritePending(slow)
+
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(false)
+
+    health.markWriteSettled(slow)
+
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(true)
+  })
+
+  it(/*
+   * A settle with no matching pending must not corrupt the count. It cannot
+   * happen through the fan-out, which pairs the two — but the fallback is what
+   * keeps the arithmetic defined: without it the value becomes `NaN`, and
+   * `NaN > 0` is false, so an unproven sink would silently read as proven. The
+   * defensive default is asserted rather than assumed for that reason.
+   */
+  'survives a settle that was never paired with a pending write', () => {
+    const health = new DestinationHealth()
+    const asker = makeDestination('asker')
+    const stray = makeDestination('stray')
+    health.markHealthy(stray, 'debug')
+
+    expect(() => health.markWriteSettled(stray)).not.toThrow()
+
+    // Still proven: an unpaired settle leaves nothing in flight.
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(true)
+  })
+
+  it(/*
+   * Overlapping writes: the counter returns to zero only when the LAST one
+   * settles. A flag would have been cleared by the first, re-opening the window
+   * the guard exists to close.
+   */
+  'stays unproven until every overlapping write settles', () => {
+    const health = new DestinationHealth()
+    const asker = makeDestination('asker')
+    const slow = makeDestination('slow')
+    health.markHealthy(slow, 'debug')
+    health.markWritePending(slow)
+    health.markWritePending(slow)
+
+    health.markWriteSettled(slow)
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(false)
+
+    health.markWriteSettled(slow)
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(true)
+  })
+
+  it(/*
    * REGRESSION — a sink that THREW on a write did not receive that entry, so it
    * cannot stand as proof of delivery. Init health says a destination is live;
    * it says nothing about whether its writes landed. Without this, a buffering

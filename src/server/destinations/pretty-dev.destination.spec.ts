@@ -388,11 +388,7 @@ describe('PrettyDevDestination', () => {
         await expect(dest.onInit()).rejects.toThrow(/pino-pretty is not installed/)
         expect(stdoutSpy).not.toHaveBeenCalled()
 
-        dest.onRegistryReady({
-          heldEntriesDeliveredElsewhere: false,
-          hasHealthySink: false,
-          isElectedRescuer: true
-        })
+        dest.onRegistryReady({ heldEntriesDeliveredElsewhere: false })
 
         expect(stdoutSpy).toHaveBeenCalledWith('boot-entry\n')
       })
@@ -416,24 +412,25 @@ describe('PrettyDevDestination', () => {
         dest.write('boot-entry\n')
 
         await expect(dest.onInit()).rejects.toThrow()
-        dest.onRegistryReady({
-          heldEntriesDeliveredElsewhere: false,
-          hasHealthySink: true,
-          isElectedRescuer: false
-        })
+        dest.onRegistryReady({ heldEntriesDeliveredElsewhere: false })
 
         expect(stdoutSpy).toHaveBeenCalledWith('boot-entry\n')
       })
     })
 
     it(/*
-     * REGRESSION — with nothing live, only the ELECTED destination drains. Two
-     * buffering destinations hold the same entries, so draining from both
-     * recreates the duplicate this hook exists to remove; `DestinationHealth`
-     * already elects exactly one for the per-write rescue. Also found by Copilot
-     * against the first version of the hook.
+     * POLICY — with nothing proven delivered, this drains, even though another
+     * failed destination may drain the same entries and duplicate them.
+     *
+     * An earlier version discarded here, on the reasoning that
+     * `DestinationHealth` elects exactly one rescuer and the others should stay
+     * quiet. That reasoning has a losing branch: the elected destination may not
+     * implement this hook at all, and then nobody drains and the boot entries are
+     * gone. Losing a log line is not an acceptable outcome for this library;
+     * duplicating one in an already-degraded boot is. So the only discard path
+     * left is proven delivery.
      */
-    'stays silent when nothing is live and another destination was elected', async () => {
+    'drains when delivery is not proven, accepting a possible duplicate', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
           throw new Error("Cannot find module 'pino-pretty'")
@@ -443,13 +440,9 @@ describe('PrettyDevDestination', () => {
         dest.write('boot-entry\n')
 
         await expect(dest.onInit()).rejects.toThrow()
-        dest.onRegistryReady({
-          heldEntriesDeliveredElsewhere: false,
-          hasHealthySink: false,
-          isElectedRescuer: false
-        })
+        dest.onRegistryReady({ heldEntriesDeliveredElsewhere: false })
 
-        expect(stdoutSpy).not.toHaveBeenCalled()
+        expect(stdoutSpy).toHaveBeenCalledWith('boot-entry\n')
       })
     })
 
@@ -471,11 +464,7 @@ describe('PrettyDevDestination', () => {
         dest.write('boot-entry\n')
 
         await expect(dest.onInit()).rejects.toThrow(/pino-pretty is not installed/)
-        dest.onRegistryReady({
-          heldEntriesDeliveredElsewhere: true,
-          hasHealthySink: true,
-          isElectedRescuer: false
-        })
+        dest.onRegistryReady({ heldEntriesDeliveredElsewhere: true })
 
         expect(stdoutSpy).not.toHaveBeenCalled()
 
@@ -626,11 +615,7 @@ describe('PrettyDevDestination', () => {
         dest.write('boot-entry\n')
 
         await expect(dest.onInit()).rejects.toThrow()
-        dest.onRegistryReady({
-          heldEntriesDeliveredElsewhere: false,
-          hasHealthySink: false,
-          isElectedRescuer: true
-        })
+        dest.onRegistryReady({ heldEntriesDeliveredElsewhere: false })
         expect(stdoutSpy).toHaveBeenCalledTimes(1)
 
         // Second drain path for the same destination.

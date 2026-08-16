@@ -392,37 +392,29 @@ export class PrettyDevDestination implements ILogDestination {
   /**
    * Resolve anything still held, now that the registry knows what became of it.
    *
-   * Three outcomes, and uncertainty always drains:
+   * **Discard only what is proven delivered; emit everything else.** Losing a boot
+   * entry is not an acceptable outcome, and every richer policy tried here had a
+   * losing branch: trusting "a sink survived" lost entries to a sink at a higher
+   * level, trusting a level lost them to a sink that was itself the asker, then to
+   * one whose writes were throwing, then to one whose write had not settled yet.
+   * Each of those is now folded into the single fact handed in — and where it is
+   * uncertain, it says `false` and this drains.
    *
-   *   - **delivered elsewhere** → DISCARD. A live sink accepted everything this
-   *     one accepted, so the held copies are second copies; printing them raw
-   *     duplicated each boot line, which is what the supported
-   *     `[DefaultStdoutDestination(), PrettyDevDestination()]` pair did while
-   *     this destination decided alone.
-   *   - **not delivered, but a sink IS live** → drain RAW. That live sink's level
-   *     sits above this one's, so it never saw these entries — `pino.multistream`
-   *     filters per stream. Discarding them because "something survived" is the
-   *     subtler half of the same mistake.
-   *   - **nothing live** → drain RAW only if elected. Two buffering destinations
-   *     hold the same entries, so draining from both would recreate the duplicate
-   *     from the other side; `DestinationHealth` already elects exactly one.
+   * The cost is stated rather than hidden: when nothing survived, every holding
+   * destination drains, so N of them produce N copies of the boot entries. A
+   * duplicated line in an already-degraded boot is a smaller harm than a lost one,
+   * and it is loud rather than silent.
    *
    * A no-op once {@link onInit} succeeded — the buffer was flushed through the
    * transform there and is already empty.
    *
-   * @param status.heldEntriesDeliveredElsewhere - A live sink accepted everything
-   *   this destination accepted.
-   * @param status.hasHealthySink - Any destination is live at all.
-   * @param status.isElectedRescuer - Nothing survived and this one speaks.
+   * @param status.heldEntriesDeliveredElsewhere - Another live sink provably took
+   *   everything this one took.
    */
-  onRegistryReady(status: {
-    readonly heldEntriesDeliveredElsewhere: boolean
-    readonly hasHealthySink: boolean
-    readonly isElectedRescuer: boolean
-  }): void {
-    const shouldEmit =
-      !status.heldEntriesDeliveredElsewhere && (status.hasHealthySink || status.isElectedRescuer)
-    this.flushBuffer(shouldEmit ? writeRawToStdout : (): void => undefined)
+  onRegistryReady(status: { readonly heldEntriesDeliveredElsewhere: boolean }): void {
+    this.flushBuffer(
+      status.heldEntriesDeliveredElsewhere ? (): void => undefined : writeRawToStdout
+    )
   }
 
   /**

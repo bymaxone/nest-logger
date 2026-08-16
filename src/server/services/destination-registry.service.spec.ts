@@ -448,24 +448,10 @@ describe('DestinationRegistry', () => {
       await new DestinationRegistry(withHook, logger, options, health).onModuleInit()
 
       expect(seen).toEqual([
-        {
-          // The healthy one is NOT its own "somewhere else": nothing but itself
-          // received what it received.
-          name: 'healthy',
-          status: {
-            heldEntriesDeliveredElsewhere: false,
-            hasHealthySink: true,
-            isElectedRescuer: false
-          }
-        },
-        {
-          name: 'failing',
-          status: {
-            heldEntriesDeliveredElsewhere: true,
-            hasHealthySink: true,
-            isElectedRescuer: false
-          }
-        }
+        // The healthy one is NOT its own "somewhere else": nothing but itself
+        // received what it received.
+        { name: 'healthy', status: { heldEntriesDeliveredElsewhere: false } },
+        { name: 'failing', status: { heldEntriesDeliveredElsewhere: true } }
       ])
       stderrSpy.mockRestore()
     })
@@ -475,7 +461,7 @@ describe('DestinationRegistry', () => {
      * destination its held entries exist nowhere else and must go out degraded
      * rather than be discarded.
      */
-    'reports no healthy sink when every destination failed', async () => {
+    'reports no proven delivery when every destination failed', async () => {
       const failing = {
         ...makeDestination('failing'),
         onInit: jest.fn().mockRejectedValue(new Error('nope')),
@@ -486,9 +472,7 @@ describe('DestinationRegistry', () => {
       await new DestinationRegistry([failing], logger, options, health).onModuleInit()
 
       expect(failing.onRegistryReady).toHaveBeenCalledWith({
-        heldEntriesDeliveredElsewhere: false,
-        hasHealthySink: false,
-        isElectedRescuer: true
+        heldEntriesDeliveredElsewhere: false
       })
       stderrSpy.mockRestore()
     })
@@ -630,9 +614,9 @@ describe('DestinationRegistry', () => {
       await new DestinationRegistry([errorSink, infoSink], logger, options, health).onModuleInit()
       stderrSpy.mockRestore()
 
-      expect(infoSink.onRegistryReady).toHaveBeenCalledWith(
-        expect.objectContaining({ heldEntriesDeliveredElsewhere: false, hasHealthySink: true })
-      )
+      expect(infoSink.onRegistryReady).toHaveBeenCalledWith({
+        heldEntriesDeliveredElsewhere: false
+      })
     })
   })
 })

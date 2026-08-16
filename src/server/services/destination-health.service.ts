@@ -66,6 +66,20 @@ export class DestinationHealth {
    */
   private readonly writeFailed = new Set<ILogDestination>()
 
+  /**
+   * In-flight asynchronous writes per destination.
+   *
+   * A rejected async write is only recorded when its promise settles, and the
+   * registry can compute readiness while one is still pending — so "no failure
+   * recorded" is not "every write landed". A destination with anything in flight
+   * is UNPROVEN rather than trusted: counting it as delivery would let a
+   * buffering sink discard its copy moments before the pending write rejects.
+   *
+   * A counter rather than a flag because writes overlap; it returns to zero only
+   * when the last one settles.
+   */
+  private readonly pendingWrites = new Map<ILogDestination, number>()
+
   /** The failed destination designated to rescue entries, if any. */
   private rescuer: ILogDestination | undefined
 
@@ -86,6 +100,28 @@ export class DestinationHealth {
    */
   markWriteFailed(destination: ILogDestination): void {
     this.writeFailed.add(destination)
+  }
+
+  /**
+   * Record that an asynchronous write to a destination has started.
+   *
+   * @param destination - The destination being written to.
+   */
+  markWritePending(destination: ILogDestination): void {
+    this.pendingWrites.set(destination, (this.pendingWrites.get(destination) ?? 0) + 1)
+  }
+
+  /**
+   * Record that an asynchronous write has settled, however it settled.
+   *
+   * Paired with {@link markWritePending} on both the fulfilled and rejected
+   * paths — a counter that only decremented on success would never return to
+   * zero for a failing sink, which is a different claim from the one this makes.
+   *
+   * @param destination - The destination whose write settled.
+   */
+  markWriteSettled(destination: ILogDestination): void {
+    this.pendingWrites.set(destination, (this.pendingWrites.get(destination) ?? 1) - 1)
   }
 
   /**
@@ -188,7 +224,9 @@ export class DestinationHealth {
   deliveredByHealthySink(asking: ILogDestination, effectiveLevel: LogLevel): boolean {
     const level = LOG_LEVEL_PRIORITY.indexOf(effectiveLevel)
     for (const [destination, healthyLevel] of this.healthy) {
-      if (destination !== asking && !this.writeFailed.has(destination) && healthyLevel <= level) {
+      const unproven =
+        this.writeFailed.has(destination) || (this.pendingWrites.get(destination) ?? 0) > 0
+      if (destination !== asking && !unproven && healthyLevel <= level) {
         return true
       }
     }

@@ -66,24 +66,22 @@ export interface ILogDestination {
    * Only useful to a destination that holds entries written before its own
    * `onInit` ran: until this point it cannot know what became of them. The
    * fan-out hands each entry to every registered destination whose level accepts
-   * it, so a held copy may be a SECOND copy — printing it anyway is what made a
-   * supported `[DefaultStdoutDestination(), PrettyDevDestination()]` pair emit
-   * every boot entry twice when the pretty sink failed to initialize.
+   * it, so a held copy may be a SECOND copy.
+   *
+   * **The policy is: never lose an entry.** Discard only what is PROVEN
+   * delivered; emit everything else, accepting that a duplicated boot line is the
+   * price of never dropping one. That is why a single fact is handed over rather
+   * than a set of hints — a hint invites a judgement call, and every judgement
+   * call here has a losing branch.
    *
    * Called on failed destinations too, which is the point: the one that could not
    * initialize is exactly the one still holding entries.
    *
-   * @param status.heldEntriesDeliveredElsewhere - Whether a LIVE sink accepted
-   *   everything this destination accepted, so anything held is already
-   *   delivered. `false` does not mean nothing survived — it also covers a live
-   *   sink whose level is HIGHER than yours, which never saw your lower-severity
-   *   entries.
-   * @param status.hasHealthySink - Whether any destination is live at all. Read
-   *   with the flag above: "someone is alive" and "someone got what I got" differ
-   *   exactly when a live sink's level sits above yours.
-   * @param status.isElectedRescuer - When nothing survived, whether YOU are the
-   *   single destination elected to speak. Two buffering destinations hold the
-   *   same entries, so draining from both would recreate the duplicate.
+   * @param status.heldEntriesDeliveredElsewhere - Whether ANOTHER live sink
+   *   provably accepted everything this destination accepted. It is `true` only
+   *   when that sink is not this one, initialized, sits at or below this level,
+   *   has had no write failure, and has no write still in flight — anything less
+   *   certain is reported as `false`, and you emit.
    * @returns Nothing, or a promise the library AWAITS. Returning one is
    *   supported deliberately: TypeScript accepts an `async` implementation where
    *   a void-returning member is declared, so a hook that was not awaited would
@@ -92,8 +90,6 @@ export interface ILogDestination {
    */
   onRegistryReady?(status: {
     readonly heldEntriesDeliveredElsewhere: boolean
-    readonly hasHealthySink: boolean
-    readonly isElectedRescuer: boolean
   }): void | Promise<void>
 
   /**

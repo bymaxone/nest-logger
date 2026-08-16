@@ -44,8 +44,22 @@ heading here.
     destinations hold the same entries, so draining from both would recreate the duplicate from the
     other side; `DestinationHealth` already elects exactly one for the per-write rescue.
 
-  Uncertainty drains: the only discard paths are "delivered elsewhere" and "nothing live and someone
-  else was elected". Nothing is lost on any branch, which is the property the buffer was added for.
+  **The policy is: never lose an entry; duplication is the accepted cost.** The hook carries ONE
+  fact — whether another live sink provably accepted everything this destination accepted — and the
+  destination discards only on that. `true` requires all of: another destination, initialized, at or
+  below this level, with no write failure and nothing still in flight. Anything less certain reads as
+  `false`, and the entries are emitted.
+
+  An earlier draft handed over three hints and let the destination judge. Every judgement had a
+  losing branch, and review found them one at a time: trusting "a sink survived" lost entries to a
+  sink at a higher level; trusting the level lost them to a sink that was itself the asker; then to
+  one whose writes were throwing; then to one whose write had not settled yet. Collapsing to a single
+  proven fact is what removed the class, rather than the four instances.
+
+  In the configuration that motivated this — pretty beside `DefaultStdoutDestination` — nothing
+  duplicates: the stdout sink is live at the same level, delivery is proven, and the held copies are
+  dropped. Duplication is left only where proof is unavailable, which is exactly where discarding
+  would risk silence.
 
   **One case is NOT deduplicated, and the first draft of this note claimed it was.** A shutdown that
   happens before the registry's `onModuleInit` ran — the application aborting mid-bootstrap — still

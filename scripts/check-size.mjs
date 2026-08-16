@@ -33,6 +33,18 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-08-16 — server: 24.19 KiB real -> 25.4 KiB budget (~5% headroom).
+//     RE-DERIVED again, per the rule the entry below set: when the artifact moves
+//     past the budget, recompute from the artifact rather than nudge the number.
+//     The growth is the readiness contract earning its correctness across four
+//     review rounds — level-aware delivery, identity so a destination is not its
+//     own witness, write-failure tracking, and an in-flight counter so a pending
+//     async write reads as unproven rather than as silent success. Each addition
+//     closed a path that could DISCARD a boot entry nobody else held.
+//     The policy those facts serve is the maintainer's, stated plainly: losing a
+//     log line is unacceptable, duplicating one is the accepted cost. So the hook
+//     discards only what is PROVEN delivered and emits everything else — which is
+//     why the correctness of that single fact is worth this much code.
 //   - 2026-08-15 — server: 22.80 KiB real -> 23.9 KiB budget (~4.8% headroom).
 //     RE-DERIVED from the artifact, not nudged past it, and that distinction is
 //     the entry. The two previous raises each moved the number just far enough to
@@ -139,7 +151,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 23.9 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 25.4 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 

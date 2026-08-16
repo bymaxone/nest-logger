@@ -135,9 +135,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
           heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
             destination,
             destination.minLevel ?? this.options.level
-          ),
-          hasHealthySink: this.health.hasHealthySink(),
-          isElectedRescuer: this.health.shouldRescue(destination)
+          )
         })
       } catch (cause) {
         this.reportHookFailure(destination, cause)
