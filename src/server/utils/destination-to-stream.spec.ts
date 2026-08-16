@@ -177,6 +177,40 @@ describe('destinationToStream', () => {
     expect(stderrSpy).toHaveBeenCalled()
   })
 
+  it(/*
+   * REGRESSION — the destination's own `name` is read inside the reporter, not at
+   * the call site. `readonly name: string` does not stop a consumer implementing
+   * it as a getter, and the call site here sits inside the catch and the rejection
+   * handler: a throw there skips `callback()`, so the contained failure becomes an
+   * unhandled rejection or a stream error — the very outcome this path prevents.
+   *
+   * Asserted on the callback completing AND on a report naming the sink as
+   * `unknown`, because "did not throw" alone would pass on a silent no-op.
+   */
+  'contains a write failure even when the destination name cannot be read', async () => {
+    const destination: ILogDestination = {
+      get name(): string {
+        throw new Error('name getter exploded')
+      },
+      write: jest.fn().mockRejectedValue(new Error('write-boom'))
+    }
+    const health = new DestinationHealth()
+    health.markHealthy(destination, 'info')
+    const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+    const stream = destinationToStream(destination, health)
+
+    await expect(writeOnce(stream, 'entry\n')).resolves.toBeUndefined()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    const report: unknown = JSON.parse(stderrSpy.mock.calls[0]?.[0] as string)
+    expect(report).toMatchObject({
+      logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+      destination: 'unknown',
+      err: { type: 'Error', message: 'write-boom' }
+    })
+    stderrSpy.mockRestore()
+  })
+
   describe('a write that returns a thenable rather than a Promise', () => {
     it(/*
      * REGRESSION — `instanceof Promise` is realm-local and answers `false` for a

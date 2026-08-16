@@ -411,6 +411,62 @@ describe('DestinationRegistry', () => {
     })
 
     it(/*
+     * REGRESSION — the SHUTDOWN report escapes control characters, and that is
+     * asserted rather than assumed. Every other shutdown test uses plain ASCII, so
+     * replacing `escapeControlCharacters` with an identity function would leave
+     * them all green while an attacker-supplied stack drove the operator's
+     * terminal. A stack is legitimately multi-line, so its newlines must SURVIVE
+     * while the escape sequence does not — both halves are checked.
+     */
+    'escapes control characters in the shutdown report but keeps stack newlines', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const hostile = new Error('boom')
+      hostile.stack = 'Error: boom\n    at \u001b[31mevil\u0085 (a.ts:1:1)'
+      const dest = makeDestination('ansi', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn().mockRejectedValue(hostile)
+      })
+      const registry = new DestinationRegistry([dest], logger, options, health)
+      await registry.onModuleInit()
+
+      await registry.onApplicationShutdown()
+
+      const line = stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('ansi'))
+      expect(line).toBeDefined()
+      expect(line).not.toContain('\u001b')
+      expect(line).not.toContain('\u0085')
+      expect(line).toContain('Error: boom\n    at ')
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * REGRESSION — a throwing `name` getter must not abort BOOTSTRAP either. The
+     * init reporter read the name at its call site, inside the catch that exists
+     * so a failing destination cannot stop the application from starting; the
+     * throw escaped `onModuleInit` and did exactly what that catch forbids.
+     */
+    'still boots when a failing destination cannot report its own name', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const healthy = makeDestination('healthy', { onInit: jest.fn() })
+      const poison = makeDestination('poison', {
+        onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
+      })
+      Object.defineProperty(poison, 'name', {
+        get() {
+          throw new Error('name getter exploded')
+        }
+      })
+      const registry = new DestinationRegistry([healthy, poison], logger, options, health)
+
+      await expect(registry.onModuleInit()).resolves.toBeUndefined()
+
+      expect(healthy.onInit).toHaveBeenCalled()
+      const line = stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('unknown'))
+      expect(line).toBeDefined()
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
      * REGRESSION — the destination's own `name` is read inside the guard too.
      * `readonly name: string` does not stop a consumer implementing it as a
      * getter, and reading it at the call site would put it back inside the

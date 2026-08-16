@@ -3152,7 +3152,10 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 > import { Writable } from 'node:stream'
 > import type { ILogDestination } from '../interfaces/log-destination.interface'
 > import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
-> import { reportDestinationFailure } from '../utils/report-destination-failure.util'
+> import {
+>   reportDestinationFailure,
+>   safeDestinationName
+> } from '../utils/report-destination-failure.util'
 >
 > export function destinationToStream(dest: ILogDestination): Writable {
 >   return new Writable({
@@ -3164,11 +3167,13 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 >         // `reportDestinationFailure`, not a formatted write: a guarded WRITER still
 >         // evaluates `String(err)` first, and a hostile coercion hook would throw
 >         // before `callback()` — an unhandled rejection from inside the containment.
+>         // The name is read under the same protection, for the same reason.
+>         const name = safeDestinationName(dest)
 >         reportDestinationFailure(
 >           RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
->           dest.name,
+>           name,
 >           err,
->           `Log destination "${dest.name}" failed to write; the entry was dropped`
+>           `Log destination "${name}" failed to write; the entry was dropped`
 >         )
 >         callback()
 >       }

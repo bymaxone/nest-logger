@@ -37,7 +37,10 @@ import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { escapeControlCharacters, toSingleLineMessage } from '../utils/escape-log-text.util'
 import { detectOtelTraceApi } from '../utils/otel-detector'
-import { reportDestinationFailure } from '../utils/report-destination-failure.util'
+import {
+  reportDestinationFailure,
+  safeDestinationName
+} from '../utils/report-destination-failure.util'
 import { writeStderrSafely } from '../utils/safe-stdio.util'
 import { isErrorLike } from '../utils/sanitize-error.util'
 
@@ -100,7 +103,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         this.health.markHealthy(destination, this.effectiveLevelOf(destination))
       } catch (cause) {
         this.health.markFailed(destination, this.effectiveLevelOf(destination))
-        this.reportInitFailure(destination.name, cause)
+        this.reportInitFailure(destination, cause)
       }
     }
     await this.notifyRegistryReady()
@@ -180,10 +183,13 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * than restating the shape, so an operator greps one `logKey` regardless of
    * which stage failed — and the two cannot drift apart.
    *
-   * @param name - The failing destination's name.
+   * @param destination - The failing destination. Passed whole, so its `name` is
+   *   read under `safeDestinationName` rather than at the call site — which sits
+   *   inside the catch, where a throwing getter would abort bootstrap.
    * @param cause - The thrown or rejected value.
    */
-  private reportInitFailure(name: string, cause: unknown): void {
+  private reportInitFailure(destination: ILogDestination, cause: unknown): void {
+    const name = safeDestinationName(destination)
     reportDestinationFailure(
       RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
       name,
@@ -209,11 +215,12 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    */
   private reportHookFailure(destination: ILogDestination, cause: unknown): void {
     const stillActive = !this.health.isFailed(destination)
+    const name = safeDestinationName(destination)
     reportDestinationFailure(
       RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-      destination.name,
+      name,
       cause,
-      `Log destination "${destination.name}" threw from onRegistryReady. ` +
+      `Log destination "${name}" threw from onRegistryReady. ` +
         (stillActive
           ? 'It initialized successfully and keeps receiving entries; only anything it was holding from before init may be affected.'
           : 'It had already failed to initialize and receives no entries; anything it was still holding is lost.')
@@ -332,12 +339,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * @param cause - The thrown value, of any shape.
    */
   private reportShutdownFailure(destination: ILogDestination, cause: unknown): void {
-    let name = 'unknown'
-    try {
-      name = toSingleLineMessage(String(destination.name))
-    } catch {
-      // Left as `unknown`: the failure is still worth reporting without a name.
-    }
+    const name = toSingleLineMessage(safeDestinationName(destination))
     let detail = 'UnknownError'
     try {
       detail = escapeControlCharacters(

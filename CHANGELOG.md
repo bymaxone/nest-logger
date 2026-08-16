@@ -88,10 +88,23 @@ heading here.
   asserts that the SECOND destination still shuts down, not merely that nothing threw: continuing the
   teardown is the property that matters. Reverting the guard makes it fail — verified, not assumed.
 
+  **The same gap existed at every other reporting call site, and the first fix only closed one of
+  them.** `reportWriteFailure(destination.name, …)` in the write adapter and `reportInitFailure`
+  in the registry both read the name at the call site — inside the catch — so a hostile getter turned
+  a contained write failure into an unhandled rejection, and a failed `onInit` into an aborted
+  bootstrap, contradicting the comment one line above it that the library never throws to abort boot.
+  A shared `safeDestinationName` now performs that read under a guard, and every reporter uses it.
+
   The destination's own `name` is read inside a guard as well, and a separate one:
   `readonly name: string` does not stop a consumer implementing it as a getter, and reading it at the
   call site would have left it inside the `catch` with the same cost. That second gap was found by
   reviewing the fix for the first — the correction had reproduced the defect one layer up.
+
+  The control-character escaping on this path is now asserted rather than assumed. Every shutdown
+  test used plain ASCII, so replacing the escaper with an identity function would have left them all
+  green — a 100% mutation score does not cover a transformation no test observes. The new case emits
+  a stack containing an ANSI escape and a C1 character, and asserts that those are neutralized while
+  the stack's own newlines survive.
 
   Found by a review comment on the DOCUMENTATION examples. The examples mirrored the implementation
   faithfully, which is exactly why the defect was worth chasing back into `src/`: a guarded writer
@@ -104,6 +117,11 @@ heading here.
   entirely — so the one document most consumers read described types incompatible with the interface
   and hid a hook from anyone who buffers. It ships inside the package, which makes it the copy that
   matters most.
+
+- **Overflow was only reported when a later flush failed.** A request that stalls long enough to
+  overflow the cap and then SUCCEEDS runs no catch at all, so the discarded entries were lost with
+  nothing said — the opposite of the policy stated one paragraph above. Both examples report the
+  dropped count on every settlement, not only from the failure path.
 
 - **A guarded WRITER does not guard the arguments handed to it.** The documented adapters called
   `writeStderrSafely` with an interpolated `${String(err)}`, and that coercion runs before the call:

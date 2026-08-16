@@ -23,7 +23,7 @@
  */
 import { Writable } from 'node:stream'
 
-import { reportDestinationFailure } from './report-destination-failure.util'
+import { reportDestinationFailure, safeDestinationName } from './report-destination-failure.util'
 import { writeStdoutSafely } from './safe-stdio.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
@@ -40,7 +40,12 @@ import type { DestinationHealth } from '../services/destination-health.service'
  * @param name - The failing destination's name.
  * @param cause - The thrown or rejected value.
  */
-function reportWriteFailure(name: string, cause: unknown): void {
+function reportWriteFailure(destination: ILogDestination, cause: unknown): void {
+  // The name is read HERE, under `safeDestinationName`, not at the call site: the
+  // call site is inside the catch and the rejection handler, where a throwing
+  // getter would skip `callback()` and become the very unhandled rejection this
+  // path contains.
+  const name = safeDestinationName(destination)
   reportDestinationFailure(
     RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
     name,
@@ -101,7 +106,7 @@ export function destinationToStream(
         // its held copies are safe elsewhere when the sink it is trusting has
         // been dropping them.
         health.markWriteFailed(destination)
-        reportWriteFailure(destination.name, cause)
+        reportWriteFailure(destination, cause)
         callback()
       }
       try {

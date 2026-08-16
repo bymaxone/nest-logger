@@ -881,6 +881,7 @@ export function destinationToStream(
               // still counts this sink as having taken the entry and another
               // destination may discard the copy it was holding.
               health.markWriteFailed(dest)
+              const name = safeDestinationName(dest)
               // Through `reportDestinationFailure`, not formatted inline: it does the
               // `String(cause)` and the `name`/`message` reads INSIDE its own guard,
               // so an Error with a throwing getter cannot make this handler throw
@@ -888,9 +889,9 @@ export function destinationToStream(
               // otherwise interpret from a remote-derived message.
               reportDestinationFailure(
                 RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
-                dest.name,
+                name,
                 err,
-                `Log destination "${dest.name}" failed to write; the entry was dropped`
+                `Log destination "${name}" failed to write; the entry was dropped`
               )
               cb()
             }
@@ -900,11 +901,12 @@ export function destinationToStream(
         cb()
       } catch (err) {
         health.markWriteFailed(dest)
+        const name = safeDestinationName(dest)
         reportDestinationFailure(
           RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
-          dest.name,
+          name,
           err,
-          `Log destination "${dest.name}" failed to write; the entry was dropped`
+          `Log destination "${name}" failed to write; the entry was dropped`
         )
         cb()
       }
@@ -1385,11 +1387,14 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
         this.health.markHealthy(dest, this.effectiveLevelOf(dest))
       } catch (err) {
         this.health.markFailed(dest, this.effectiveLevelOf(dest))
+        // Guarded: reading `name` at the call site would put the throw back inside
+        // this catch, which exists so a failing destination cannot abort boot.
+        const name = safeDestinationName(dest)
         reportDestinationFailure(
           RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-          dest.name,
+          name,
           err,
-          `Log destination "${dest.name}" failed to initialize and was skipped`
+          `Log destination "${name}" failed to initialize and was skipped`
         )
       }
     }
@@ -1412,11 +1417,12 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
       } catch (err) {
         // The same key the real registry reuses for a failing readiness hook;
         // there is no separate reserved key for it.
+        const name = safeDestinationName(dest)
         reportDestinationFailure(
           RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-          dest.name,
+          name,
           err,
-          `Log destination "${dest.name}" failed its readiness hook`
+          `Log destination "${name}" failed its readiness hook`
         )
       }
     }
@@ -1439,7 +1445,7 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
         // throwing `Symbol.toPrimitive`, throws from within this catch — and the
         // throw would propagate out of `onApplicationShutdown`, skipping the flush
         // of every destination still queued behind this one.
-        this.reportShutdownFailure(dest.name, err)
+        this.reportShutdownFailure(dest, err)
       }
     }
     return { signal, flushedDestinations: this.active.length }

@@ -92,7 +92,10 @@ import { Writable } from 'node:stream'
 
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { DestinationHealth } from '../services/destination-health.service'
-import { reportDestinationFailure } from '../utils/report-destination-failure.util'
+import {
+  reportDestinationFailure,
+  safeDestinationName
+} from '../utils/report-destination-failure.util'
 import { writeStdoutSafely } from '../utils/safe-stdio.util'
 
 export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
@@ -118,11 +121,16 @@ export function destinationToStream(dest: ILogDestination, health: DestinationHe
       // EPIPE-safe writer (see the note in §3).
       const report = (err: unknown): void => {
         health.markWriteFailed(dest)
+        // The name is read HERE, guarded. `readonly name: string` does not stop a
+        // consumer implementing it as a getter, and this runs inside the catch and
+        // the rejection handler — a throw would skip `callback()` and recreate the
+        // unhandled rejection this path contains.
+        const name = safeDestinationName(dest)
         reportDestinationFailure(
           RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
-          dest.name,
+          name,
           err,
-          `Log destination "${dest.name}" failed to write; the entry was dropped`
+          `Log destination "${name}" failed to write; the entry was dropped`
         )
         callback()
       }
@@ -331,18 +339,48 @@ export class LokiDestination implements ILogDestination {
       // where the requeued batch just went, so `batch.length` would overstate what
       // actually survived whenever the cap bit.
       const retained = batch.length - Math.min(overflow, batch.length)
+      // Coerced under a guard, like the cause anywhere else: a rejection value with
+      // a throwing `message` getter would otherwise replace this report with a
+      // different error and emit no diagnostic at all.
+      let error = 'UnknownError'
+      try {
+        error = err instanceof Error ? String(err.message) : String(err)
+      } catch {
+        // Reported as `UnknownError`; the destination and the counts still say what
+        // happened, and this path must never throw.
+      }
       reportToStderrSafely(
         JSON.stringify({
           level: 'error',
           logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
           destination: 'loki',
           retained,
-          droppedOldest: this.dropped,
-          error: err instanceof Error ? err.message : String(err)
+          error
         }) + '\n'
       )
       throw err
+    } finally {
+      // Overflow is reported HERE, on every settlement, not only from the catch.
+      // A request that stalls long enough to overflow and THEN succeeds runs no
+      // catch at all, so entries would have been discarded with nothing said —
+      // the opposite of the stated policy that the loss is observable.
+      this.reportDropped()
     }
+  }
+
+  /** Emit and reset the overflow counter, whatever the flush outcome was. */
+  private reportDropped(): void {
+    if (this.dropped === 0) return
+    reportToStderrSafely(
+      JSON.stringify({
+        level: 'error',
+        logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
+        destination: 'loki',
+        droppedOldest: this.dropped,
+        msg: 'buffer cap reached; oldest entries discarded'
+      }) + '\n'
+    )
+    this.dropped = 0
   }
 
   async onShutdown(): Promise<void> {
@@ -462,7 +500,7 @@ async onApplicationShutdown(): Promise<void> {
       // `Symbol.toPrimitive`, throws from within the catch that exists to keep one
       // bad sink from mattering — and the throw would abort the teardown of every
       // destination still queued. See `DestinationRegistry.reportShutdownFailure`.
-      reportShutdownFailure(dest.name, err)
+      reportShutdownFailure(dest, err)
       // Continue — one failure does not block the others
     }
   }
@@ -686,6 +724,16 @@ export class PrismaPostgresDestination implements ILogDestination {
       // where the requeued batch just went, so `batch.length` would overstate what
       // actually survived whenever the cap bit.
       const retained = batch.length - Math.min(overflow, batch.length)
+      // Coerced under a guard, like the cause anywhere else: a rejection value with
+      // a throwing `message` getter would otherwise replace this report with a
+      // different error and emit no diagnostic at all.
+      let error = 'UnknownError'
+      try {
+        error = err instanceof Error ? String(err.message) : String(err)
+      } catch {
+        // Reported as `UnknownError`; the destination and the counts still say what
+        // happened, and this path must never throw.
+      }
       // Guard this write yourself — see the EPIPE note in §3. `writeStderrSafely`
       // is internal to the library and not importable from outside it.
       reportToStderrSafely(
@@ -694,12 +742,32 @@ export class PrismaPostgresDestination implements ILogDestination {
           logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
           destination: 'postgres',
           retained,
-          droppedOldest: this.dropped,
-          error: err instanceof Error ? err.message : String(err)
+          error
         }) + '\n'
       )
       throw err
+    } finally {
+      // Overflow is reported HERE, on every settlement, not only from the catch.
+      // A request that stalls long enough to overflow and THEN succeeds runs no
+      // catch at all, so entries would have been discarded with nothing said —
+      // the opposite of the stated policy that the loss is observable.
+      this.reportDropped()
     }
+  }
+
+  /** Emit and reset the overflow counter, whatever the flush outcome was. */
+  private reportDropped(): void {
+    if (this.dropped === 0) return
+    reportToStderrSafely(
+      JSON.stringify({
+        level: 'error',
+        logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
+        destination: 'postgres',
+        droppedOldest: this.dropped,
+        msg: 'buffer cap reached; oldest entries discarded'
+      }) + '\n'
+    )
+    this.dropped = 0
   }
 
   async onShutdown(): Promise<void> {
