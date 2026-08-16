@@ -227,6 +227,10 @@ describe('destinationToStream', () => {
       const destination: ILogDestination = {
         name: 'thenable',
         write: (): Promise<void> =>
+          // Same cast, same reason as the case above: the declared contract is
+          // narrower than what runtime can hand over, and that gap IS the defect
+          // under test. It launders nothing — the type is not wrong, the world is
+          // wider than it.
           ({
             then: (resolve: () => void): void => {
               settle = resolve
