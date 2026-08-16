@@ -513,7 +513,11 @@ The lib calls `destination.onShutdown()` in **reverse registration order** — t
 ```typescript
 // In BymaxLoggerModule (internal)
 async onApplicationShutdown(): Promise<void> {
-  for (const dest of [...this.destinations].reverse()) {
+  // Over ACTIVE, not every registered destination, and in reverse registration
+  // order so the one registered first (e.g. stdout) closes last. A sink whose
+  // `onInit` failed may never have acquired the resources `onShutdown` would
+  // close, so calling it there is a teardown of something that was never set up.
+  for (const dest of [...this.active].reverse()) {
     try {
       await dest.onShutdown?.()
     } catch (err) {

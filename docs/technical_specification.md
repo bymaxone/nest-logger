@@ -1371,6 +1371,7 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
   // fails in the published package.
   constructor(
     @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly destinations: ILogDestination[],
+    @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
     @Inject(DestinationHealth) private readonly health: DestinationHealth,
     @Inject(LOGGER_OPTIONS_TOKEN) private readonly options: ResolvedBymaxLoggerModuleOptions
   ) {}
@@ -1446,7 +1447,24 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  async onApplicationShutdown(signal?: string) {
+  async onApplicationShutdown(): Promise<void> {
+    // Emitted BEFORE the sinks are torn down — an entry written after they closed
+    // would have nowhere to go. It is the bookend to `LOGGER_BOOTSTRAP_OK`: its
+    // absence tells an operator a graceful shutdown from a killed process.
+    this.logger.info(
+      RESERVED_LOG_KEYS.LOGGER_SHUTDOWN_OK,
+      'BymaxLoggerModule shutting down',
+      undefined,
+      { destinations: this.active.length }
+    )
+    // Yield the event loop once: `destinationToStream` leaves the Writable callback
+    // pending until an async `write()` settles, so without this barrier the loop
+    // below could close a sink whose shutdown entry is still in flight. A
+    // best-effort ordering nudge, not a delivery guarantee — the authoritative
+    // contract is `ILogDestination.onShutdown`, which MUST flush pending writes.
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve)
+    })
     // Reverse order — first registered closes last. Over ACTIVE, not registered:
     // a destination whose `onInit` failed may never have acquired the resources
     // `onShutdown` would close.
