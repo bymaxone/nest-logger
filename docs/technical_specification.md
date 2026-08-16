@@ -923,24 +923,42 @@ export function destinationToStream(dest: ILogDestination, health: DestinationHe
 }
 
 /**
- * If `payload` exceeds `maxBytes`, replace it with a synthetic safe envelope
- * (still valid JSON, includes a trailing newline) and emit the reserved key
- * `LOGGER_ENTRY_TRUNCATED`. Otherwise return the payload unchanged.
+ * Size bounding, as it is actually implemented: a Pino SERIALIZER wrapper, not a
+ * step inside the write adapter. It runs before the entry is serialized, so by the
+ * time a chunk reaches `destinationToStream` it is already within budget.
  *
- * Performance: only `Buffer.byteLength` is measured (O(1) per call — no JSON re-parse).
+ * The oversized value is replaced by a marker OBJECT rather than a whole synthetic
+ * NDJSON line, because at this point the entry is still being built — replacing the
+ * finished line would discard the surrounding fields with it.
+ *
+ * Fail-soft twice over: an un-measurable value (circular reference, hostile
+ * `toJSON`) passes through untouched rather than throwing on the logging path, and
+ * so does a serializer that legitimately returns `undefined`.
  */
-function truncateIfOversized(payload: string, maxBytes: number): string {
-  const originalBytes = Buffer.byteLength(payload, 'utf8')
-  if (originalBytes <= maxBytes) return payload
-  const envelope = {
-    level: 40,
-    logKey: 'LOGGER_ENTRY_TRUNCATED',
-    msg: 'LOG_ENTRY_TRUNCATED',
-    originalBytes,
-    max: maxBytes,
-    truncatedAt: new Date().toISOString()
+export function createSizeBoundedSerializer<T>(
+  baseSerializer: (input: T) => unknown,
+  maxBytes: number
+): (input: T) => unknown {
+  return (input: T): unknown => {
+    const serialized = baseSerializer(input)
+    let json: string | undefined
+    try {
+      json = JSON.stringify(serialized)
+    } catch {
+      return serialized
+    }
+    if (json === undefined) return serialized
+    const byteSize = Buffer.byteLength(json, 'utf-8')
+    if (byteSize > maxBytes) {
+      return {
+        _truncated: true,
+        _logKey: RESERVED_LOG_KEYS.LOGGER_ENTRY_TRUNCATED,
+        _originalSize: byteSize,
+        _preview: json.slice(0, PREVIEW_LENGTH)
+      }
+    }
+    return serialized
   }
-  return JSON.stringify(envelope) + '\n'
 }
 ```
 
@@ -2575,7 +2593,7 @@ If a consumer still prefers `pino-http` (`pinoHttp({ ... })`), they install it i
 
 ### 17.7 Aggressive truncation of large entries
 
-`maxEntrySizeBytes: 64KB` by default. Entries with huge payloads (e.g., full Stripe webhook bodies) are replaced by a synthetic safe envelope `{"level":"warn","logKey":"LOGGER_ENTRY_TRUNCATED","msg":"LOG_ENTRY_TRUNCATED","originalBytes":<n>,"max":<n>,"truncatedAt":"<ISO>"}` (still valid JSON). See §5.2 for the implementation. The reserved key `LOGGER_ENTRY_TRUNCATED` is part of `RESERVED_LOG_KEYS` (§12.3). For legitimate cases with large payloads, raise the limit explicitly.
+`maxEntrySizeBytes: 64KB` by default. An oversized VALUE is replaced by the marker object `{"_truncated":true,"_logKey":"LOGGER_ENTRY_TRUNCATED","_originalSize":<n>,"_preview":"<first chars>"}`. The replacement happens in a serializer, while the entry is still being built — so the surrounding fields survive, which replacing the finished line would not allow. See §5.2 for the implementation. The reserved key `LOGGER_ENTRY_TRUNCATED` is part of `RESERVED_LOG_KEYS` (§12.3). For legitimate cases with large payloads, raise the limit explicitly.
 
 ---
 
