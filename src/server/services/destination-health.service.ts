@@ -39,15 +39,46 @@ export class DestinationHealth {
   private readonly failed = new Set<ILogDestination>()
 
   /**
-   * Whether ANY destination initialized successfully.
+   * Destinations that initialized, each with its effective level as an index into
+   * {@link LOG_LEVEL_PRIORITY}.
    *
-   * A boolean rather than a count, deliberately: the only question ever asked of
-   * it is "is there somewhere to write?". Mutation testing made the point — a
-   * counter incremented with `+=` survived being flipped to `-=`, because
-   * `count === 0` means the same thing either way. A value whose arithmetic
-   * cannot be observed was not a counter, it was a flag wearing a number.
+   * Keyed by identity rather than reduced to a flag or a minimum, because the
+   * question a buffering destination asks is "did SOMEONE ELSE receive what I
+   * received?" — and a minimum cannot exclude the asker. A destination that is
+   * itself the only healthy sink would otherwise be told its held entries were
+   * delivered elsewhere, and discard its only copies.
+   *
+   * The level matters for the same reason it does everywhere here: `pino.multistream`
+   * filters per stream, so "alive" and "received what I received" are different
+   * facts.
    */
-  private hasHealthy = false
+  private readonly healthy = new Map<ILogDestination, number>()
+
+  /**
+   * Destinations whose `write()` threw or rejected at least once.
+   *
+   * Init health says a sink is LIVE; it does not say the sink accepted anything.
+   * A destination that throws on write is reported and skipped per entry, so
+   * inferring delivery from level alone would credit it with entries it dropped.
+   * Uncertainty drains, so any write failure disqualifies it as proof of delivery
+   * for the whole window — coarser than per-entry tracking, and wrong only in the
+   * direction that duplicates rather than loses.
+   */
+  private readonly writeFailed = new Set<ILogDestination>()
+
+  /**
+   * In-flight asynchronous writes per destination.
+   *
+   * A rejected async write is only recorded when its promise settles, and the
+   * registry can compute readiness while one is still pending — so "no failure
+   * recorded" is not "every write landed". A destination with anything in flight
+   * is UNPROVEN rather than trusted: counting it as delivery would let a
+   * buffering sink discard its copy moments before the pending write rejects.
+   *
+   * A counter rather than a flag because writes overlap; it returns to zero only
+   * when the last one settles.
+   */
+  private readonly pendingWrites = new Map<ILogDestination, number>()
 
   /** The failed destination designated to rescue entries, if any. */
   private rescuer: ILogDestination | undefined
@@ -58,9 +89,50 @@ export class DestinationHealth {
    */
   private rescuerLevel = Number.POSITIVE_INFINITY
 
-  /** Record that a destination initialized successfully. */
-  markHealthy(): void {
-    this.hasHealthy = true
+  /**
+   * Record that a destination's `write()` threw or rejected.
+   *
+   * Called from the fan-out's failure path, which already reports the entry as
+   * dropped. This is what stops {@link deliveredByHealthySink} from crediting a
+   * throwing sink with entries it never accepted.
+   *
+   * @param destination - The destination whose write failed.
+   */
+  markWriteFailed(destination: ILogDestination): void {
+    this.writeFailed.add(destination)
+  }
+
+  /**
+   * Record that an asynchronous write to a destination has started.
+   *
+   * @param destination - The destination being written to.
+   */
+  markWritePending(destination: ILogDestination): void {
+    this.pendingWrites.set(destination, (this.pendingWrites.get(destination) ?? 0) + 1)
+  }
+
+  /**
+   * Record that an asynchronous write has settled, however it settled.
+   *
+   * Paired with {@link markWritePending} on both the fulfilled and rejected
+   * paths — a counter that only decremented on success would never return to
+   * zero for a failing sink, which is a different claim from the one this makes.
+   *
+   * @param destination - The destination whose write settled.
+   */
+  markWriteSettled(destination: ILogDestination): void {
+    this.pendingWrites.set(destination, (this.pendingWrites.get(destination) ?? 1) - 1)
+  }
+
+  /**
+   * Record that a destination initialized successfully.
+   *
+   * @param destination - The destination that initialized.
+   * @param effectiveLevel - Its multistream level: `minLevel` when set, otherwise
+   *   the module-wide `level`.
+   */
+  markHealthy(destination: ILogDestination, effectiveLevel: LogLevel): void {
+    this.healthy.set(destination, LOG_LEVEL_PRIORITY.indexOf(effectiveLevel))
   }
 
   /**
@@ -119,6 +191,32 @@ export class DestinationHealth {
    *   rescuer.
    */
   shouldRescue(destination: ILogDestination): boolean {
-    return !this.hasHealthy && this.rescuer === destination
+    return this.healthy.size === 0 && this.rescuer === destination
+  }
+
+  /**
+   * Whether a LIVE sink received everything a destination at `effectiveLevel`
+   * received — the question a destination holding pre-init entries actually has
+   * before discarding them.
+   *
+   * Not "did any sink survive": `pino.multistream` filters per stream, so a
+   * healthy `error` sink never saw the `info` entries a pretty sink at `info`
+   * buffered. Discarding those because something else was alive would lose them,
+   * which is the failure the buffer exists to prevent. A healthy sink whose level
+   * is at or below this one accepted a superset, so those entries are delivered.
+   *
+   * @param effectiveLevel - The asking destination's multistream level.
+   * @returns `true` when a live sink accepted everything this destination did.
+   */
+  deliveredByHealthySink(asking: ILogDestination, effectiveLevel: LogLevel): boolean {
+    const level = LOG_LEVEL_PRIORITY.indexOf(effectiveLevel)
+    for (const [destination, healthyLevel] of this.healthy) {
+      const unproven =
+        this.writeFailed.has(destination) || (this.pendingWrites.get(destination) ?? 0) > 0
+      if (destination !== asking && !unproven && healthyLevel <= level) {
+        return true
+      }
+    }
+    return false
   }
 }

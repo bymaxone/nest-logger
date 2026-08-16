@@ -95,6 +95,12 @@ export function destinationToStream(
       // host. Report to stderr (one line per failure), then signal success so the
       // fan-out continues.
       const onFailure = (cause: unknown): void => {
+        // Recorded, not only reported. A destination that threw on a write did
+        // NOT receive that entry, and the readiness hook would otherwise infer
+        // delivery from init health and level alone — telling a buffering sink
+        // its held copies are safe elsewhere when the sink it is trusting has
+        // been dropping them.
+        health.markWriteFailed(destination)
         reportWriteFailure(destination.name, cause)
         callback()
       }
@@ -113,7 +119,21 @@ export function destinationToStream(
         }
         const result = destination.write(payload)
         if (result instanceof Promise) {
-          result.then(() => callback(), onFailure)
+          // Counted while in flight. A rejection is only recorded when the promise
+          // settles, and readiness can be computed before that — so a pending
+          // write has to read as UNPROVEN rather than as silent success, or a
+          // buffering sink discards its copy moments before this one rejects.
+          health.markWritePending(destination)
+          result.then(
+            () => {
+              health.markWriteSettled(destination)
+              callback()
+            },
+            (cause: unknown) => {
+              health.markWriteSettled(destination)
+              onFailure(cause)
+            }
+          )
         } else {
           callback()
         }

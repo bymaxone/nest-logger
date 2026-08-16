@@ -11,6 +11,141 @@ heading here.
 
 ## [Unreleased]
 
+## [1.2.8] - 2026-08-15
+
+### Fixed
+
+- **A pretty destination registered alongside another sink no longer prints every boot entry twice.**
+  The fan-out hands each entry to every registered destination, so entries buffered before
+  `PrettyDevDestination.onInit` had ALSO been delivered to the co-destination. When the pretty sink
+  then failed to initialize, it drained its buffer raw to stdout, producing a second copy of every
+  boot line. Measured on the supported
+  `[DefaultStdoutDestination(), PrettyDevDestination()]` pair: two occurrences of one entry.
+
+  **You were affected only if you registered pretty ALONGSIDE another destination** — the shape a
+  derived backend reaches by adding an HTTP or file sink beside pretty for local development. A
+  one-element `destinations` list is structurally immune, because the option REPLACES the default
+  sink rather than adding to it, so pretty-alone and stdout-alone can never produce the pair.
+  Worth stating explicitly: "duplicated boot lines" is not a symptom from which a reader would guess
+  the triggering configuration.
+
+  The destination could not decide this alone: at `onInit` failure it has no way to know what became
+  of the entries. The decision moves to a new optional `ILogDestination.onRegistryReady`, which the
+  registry calls once every `onInit` has settled.
+
+  **The policy is: never lose an entry; duplication is the accepted cost.** The hook carries ONE
+  fact — whether another live sink provably accepted everything this destination accepted — and the
+  destination discards only on that. `true` requires all of: another destination, initialized, at or
+  below this level, with no write failure and nothing still in flight. Anything less certain reads as
+  `false`, and the entries are emitted.
+
+  An earlier draft handed over three hints and let the destination judge. Every judgement had a
+  losing branch, and review found them one at a time: trusting "a sink survived" lost entries to a
+  sink at a higher level; trusting the level lost them to a sink that was itself the asker; then to
+  one whose writes were throwing; then to one whose write had not settled yet. Collapsing to a single
+  proven fact is what removed the class, rather than the four instances.
+
+  In the configuration that motivated this — pretty beside `DefaultStdoutDestination` — nothing
+  duplicates: the stdout sink is live at the same level, delivery is proven, and the held copies are
+  dropped. Duplication is left only where proof is unavailable, which is exactly where discarding
+  would risk silence.
+
+  **One narrow gap is known and left open rather than papered over.** Proof covers writes this
+  library has SEEN — resolved, rejected, or in flight. A write still queued inside the `Writable`
+  adapter, behind a slow async destination that has not been called yet, is invisible to it: delivery
+  can read as proven while that entry has not reached the sink. It will normally arrive (it is
+  queued, not lost); the residual risk is a queued write that later fails, and the entry existed only
+  in a buffer that was discarded on the strength of a different sink's record. Closing it means
+  readiness waiting for every pre-ready stream to drain, which is a larger change than the boot-time
+  cosmetic defect this whole path exists to fix. Stated here so a consumer can weigh it, rather than
+  implied by a guarantee that does not quite hold.
+
+  **One case is NOT deduplicated, and the first draft of this note claimed it was.** A shutdown that
+  happens before the registry's `onModuleInit` ran — the application aborting mid-bootstrap — still
+  drains the buffer raw. The multistream is wired by a provider factory while NestJS assembles the
+  graph, so entries can already have reached a co-destination by then, but the readiness hook has not
+  run and the destination has no way to learn that. It drains, because between a duplicated boot line
+  and a lost one this library picks the duplicate. Narrowing the claim rather than widening the fix:
+  making that path registry-aware would require the registry, which by definition has not run.
+
+  Reported by Copilot on the `1.2.6` pull request, in a review body rather than as an inline
+  comment — see the note below.
+
+### Security
+
+- **`messageFormat` interpolates every placeholder except `{msg}` raw, and that reopens terminal
+  log forging.** This library normalizes line separators and control characters in `msg` and in the
+  stack, never in metadata — escaping data would mean rewriting what a consumer asked to be logged.
+  `pino-pretty` substitutes whatever the field holds, so a newline in an interpolated field splits
+  one entry into two, and the second reads like a genuine record. Measured with a newline in
+  `context`:
+
+  ```
+  lines produced by ONE entry: 2
+    1: "[10:35:14.484] INFO: [Auth"
+    2: "[10:00:00.000] INFO: FORGED admin promoted] real entry …"
+  ```
+
+  The option stays — rejecting non-`msg` placeholders would remove the feature, and the interpolation
+  happens inside `pino-pretty` where this library cannot escape it. What changes is that the JSDoc
+  now says so, and the README no longer recommends the pattern without the warning: interpolate only
+  fields your own code sets, never one carrying user input.
+
+### Documentation
+
+- **`hideObject` is scoped to the pretty destination, not to the entry.** The doc said a field hidden
+  there "is not visible anywhere", which holds only when pretty is the sole destination. Registered
+  alongside another sink, that sink still receives the complete entry.
+
+- **The `safe-stdio` specs no longer leave `'error'` listeners on the shared process streams.** They
+  did so deliberately, with a rationale that the same pull request had already made stale: cleanup
+  had once broken the guarantee under test because the module remembered which streams it guarded,
+  and `ensureGuarded` was then changed to inspect the actual listener list. Every
+  `isolateModulesAsync` load installs a distinct handler, so the file accumulated one per case on a
+  stream that outlives the suite — where a later spec asserting an unhandled stream error propagates
+  would be silently satisfied. Each block now restores its exact baseline, and asserts that it did.
+
+- **A process note, recorded because it cost two releases.** Copilot reports some findings inside a
+  `Suppressed comments` block in the review BODY, where they never become review threads. Checking
+  `reviewThreads` for `isResolved == false` — the documented way to avoid trusting the page — reports
+  zero open and is telling the truth about threads while missing these entirely. Ten such findings
+  sat unread on the `1.2.6` pull request, including the two fixed above. Reviews are now read
+  alongside threads.
+
+- **A hand-built `PinoLoggerService` is not this library's behaviour, and the constructor doc used to
+  invite one without saying so.** `new PinoLoggerService(pino({...}, sink))` does not throw — the
+  parameter default exists for exactly that — but the Pino instance you built has none of the wiring
+  `buildPinoInstance` installs, and the omissions are silent. No `err` serializer, so the `cause`
+  chain **disappears entirely**: no marker, no warning, and a shape that reads as "the field was
+  never set". Also no name-based redaction, no trace-context mixin, no size bound.
+
+  Found the honest way: a consumer hand-built one to check whether a `cause` carried its `code`,
+  measured absence, and went to read the built `dist` before reporting it — where they found their
+  harness was the cause. The doc now names what such an instance lacks and points at booting the
+  module for a faithful one.
+
+- **What redaction covers, stated as a boundary rather than left to be inferred.** It matches field
+  NAMES, not values: a secret under a covered name is censored at any depth, and the same secret
+  embedded **inside a string** under an uncovered name travels intact. Scanning values for
+  secret-shaped text would mean rewriting what a consumer asked to be logged, wrong in both
+  directions and silently — so the boundary is real and belongs in the open. It matters more since
+  `1.2.7`: preserving an error's own fields at every depth makes whatever a `cause` carries more
+  visible, including what should not be there.
+
+  The README also now says which redactor governs what — `redactStrategy` covers the consumer's
+  payload, their child bindings and any serializer they supply; the built-in `err` serializer is the
+  library's own output and is always name-walked, because `fast-redact`'s four-wildcard ceiling
+  cannot reach a serialized `cause` chain.
+
+- **The `1.2.7` notes used `a catch in main.ts` as the example, and it is the wrong one.** Not false
+  as a general statement — a handler that wraps and logs does exist — but it became the canonical
+  example of the motivating case, and for the consumer who reported that case it describes a path
+  that does not exist: their config validation rejects inside `NestFactory.create`, before the
+  logger is attached, and reports through `console.error` on stderr without touching the serializer.
+  A reader anchors on the example. Now "any handler that wraps what it caught before logging it".
+  Corrected in the README and in the `1.2.7` entry; the `v1.2.7` tag annotation is left as published,
+  since rewriting a published tag is worse than the imprecision it would fix.
+
 ## [1.2.7] - 2026-08-15
 
 ### Security
@@ -79,7 +214,8 @@ heading here.
 - **An error's own properties now survive at every depth of the `cause` chain, not just at the top.**
   `code`, `statusCode` and any domain field an application attaches were copied onto the error handed
   to the log call and **dropped the moment that same error was wrapped as someone else's `cause`** —
-  which is what a `catch` in `main.ts` does routinely. Measured on the published `1.2.6`:
+  which is what any handler that wraps what it caught does before logging it. Measured on the
+  published `1.2.6`:
 
   ```json
   {
@@ -1231,7 +1367,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.8...HEAD
+[1.2.8]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.8
 [1.2.7]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...v1.2.7
 [1.2.6]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/bymaxone/nest-logger/compare/v1.2.4...v1.2.5

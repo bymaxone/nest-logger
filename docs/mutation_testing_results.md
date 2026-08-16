@@ -11,14 +11,14 @@
 | **Global mutation score**                              | **100.00 %**                |
 | Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅ |
 | Aspirational target (`thresholds.high`)                | 99 % → **reached**          |
-| Killed                                                 | 794                         |
+| Killed                                                 | 830                         |
 | Survived                                               | **0**                       |
 | Timeout (counts as detected)                           | 11                          |
-| Ignored — documented `// Stryker disable`              | 15                          |
+| Ignored — documented `// Stryker disable`              | 17                          |
 | Ignored — static mutants (`ignoreStatic: true`)        | 128                         |
-| Compile/runtime errors (type-system-guarded, excluded) | 503                         |
+| Compile/runtime errors (type-system-guarded, excluded) | 515                         |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `805 / 805 = 100.00 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `841 / 841 = 100.00 %`.
 
 ### 2026-08-15 — the descriptor flags nobody could kill, deleted rather than excused
 
@@ -38,6 +38,51 @@ So it was verified rather than assumed, on the built artifact and not only in th
 writes to the node. The descriptor is now `{ value, enumerable: true }`, back to 100.00 % with 0
 survivors, and the comment states the invariant so a future change that needs an in-place write knows
 it has to add `writable` back.
+
+---
+
+### 2026-08-16 — the fourth time the question came up, deleting was the wrong answer
+
+Three times this week "is this mutant equivalent?" was better answered by "why does this code need
+this branch?", and the branch went away. The fourth time it did not, and the difference is worth
+recording so the pattern is not applied as a reflex.
+
+`effectiveLevelOf` picks the stricter of the module level and a destination's `minLevel`, and
+`>` → `>=` survived: the two differ only when the indices are EQUAL, and then both branches return
+the same level string. Genuinely equivalent.
+
+The delete-the-branch move was tried first, as the three entries below did. Every formulation trades
+this mutant for a worse artefact: `LOG_LEVEL_PRIORITY[Math.max(a, b)]` is `LogLevel | undefined`
+under `noUncheckedIndexedAccess`, so it needs a fallback that nothing can reach — an unreachable
+branch instead of an equivalent mutant — and it is the value-keyed index the object-injection rule
+flags, which the codebase already avoids elsewhere for that reason.
+
+So this one is suppressed, with the whole comparison in the reason. **The rule is not "always delete
+the branch" — it is "ask whether the branch is load-bearing before writing the suppression".** Here
+it is: the comparison is what makes the function correct for every non-tied input.
+
+---
+
+### 2026-08-15 — the third branch deleted rather than suppressed, in the same week
+
+The readiness-hook work dropped the cold run to **99.64 %** with three survivors, and two of them
+were one compare-and-assign branch:
+
+```
+destination-health.service.ts:83  [ConditionalExpression]  if (level < lowest) → true/false
+destination-health.service.ts:83  [EqualityOperator]       `<` → `<=`
+```
+
+`<` → `<=` reassigns the identical value, so no test can distinguish it. The branch existed only to
+keep the smallest level, and `Math.min` says that directly — the branch stops existing, and both
+mutants with it. **Third time this week the answer to "is this mutant equivalent?" was "why does
+this code need this branch?"**, and the third time deleting beat documenting.
+
+The third survivor was different and worth separating: a `StringLiteral` in the hook-failure message.
+Not equivalent at all — the assertions simply covered the FIRST half of a concatenation and left the
+second, the half carrying the operator-facing consequence, unasserted. A survivor on a string literal
+is almost always a missing assertion rather than an equivalent mutant, and treating the two the same
+way is how a suppression gets written for a real gap.
 
 ---
 

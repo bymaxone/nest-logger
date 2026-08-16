@@ -556,7 +556,8 @@ error, `statusCode` from an HTTP layer, whatever domain fields you attached — 
 
 This matters because `code` is usually the field you alert on. Until 1.2.7 those properties survived
 only on the error handed to the log call and were dropped the moment the same error was wrapped as
-someone else's `cause` — which is what a `catch` in `main.ts` does routinely. They never shadow a
+someone else's `cause` — which is what any handler that wraps what it caught does before
+logging it. They never shadow a
 field the serializer derives, and they pass through the same name-based redaction and size bound as
 any other serializer output.
 
@@ -790,6 +791,7 @@ new PrettyDevDestination({
 })
 
 // Message only, with the context pulled back into the line.
+// See the messageFormat warning below before interpolating any other field.
 new PrettyDevDestination({
   view: { hideObject: true, messageFormat: '[{context}] {msg}' }
 })
@@ -804,7 +806,7 @@ new PrettyDevDestination({
 | `translateTime` | `'SYS:HH:MM:ss.l'`       | Or `false` for the raw timestamp                                             |
 | `colorize`      | `true`                   | ANSI colour                                                                  |
 
-> **`hideObject` hides it everywhere.** In pretty mode there is no JSON copy behind the rendering, because `destinations` **replaces** stdout — so a field hidden here, `logKey` included, is not visible anywhere. That is what the option is for; `messageFormat` is how you pull a specific field back.
+> **`hideObject` hides it from THIS destination.** Any other destination you registered still receives the complete entry — the option is display-only and scoped to the pretty renderer. When pretty is your **only** destination that scope becomes total: `destinations` **replaces** stdout, so there is no JSON copy behind the rendering and a hidden field, `logKey` included, is not visible anywhere. That is what the option is for; `messageFormat` is how you pull a specific field back.
 
 > **A dot in `ignore` means "nested path", so a field name that CONTAINS a dot must escape it.** This library emits `event.name` as a literal top-level key, so the obvious spelling hides nothing at all — `pino-pretty` looks for an `event` object with a `name` inside, finds neither, and says nothing. Measured on one entry with only the option changing:
 >
@@ -816,6 +818,16 @@ new PrettyDevDestination({
 > In a TypeScript string literal that is `'event\\.name'` — one real backslash reaching `pino-pretty`. `service` and `deployment` need no escape; they really are nested objects. Reported by a consumer who copied the example above when it still had the unescaped form.
 
 The shape is exported as `PrettyViewOptions` when you want to build the view separately — it is this library's own interface, not a re-export of `pino-pretty`'s `PrettyOptions`, so type-checking without the optional peer installed still resolves.
+
+> **`messageFormat` interpolates every placeholder except `{msg}` raw — that can forge a terminal entry.** This library normalizes line separators and control characters in `msg` and in the stack, never in metadata, because escaping data would mean rewriting what you asked to be logged. `pino-pretty` substitutes whatever the field holds, so a newline in an interpolated field splits one entry into two and the second reads like a genuine record. Measured, with a newline in `context`:
+>
+> ```
+> lines produced by ONE entry: 2
+>   1: "[10:35:14.484] INFO: [Auth"
+>   2: "[10:00:00.000] INFO: FORGED admin promoted] real entry …"
+> ```
+>
+> Interpolate only fields your own code sets. Never one carrying user input — `{tenantId}`, `{userId}`, a header, a query value. If you need one of those visible, leave it in the record instead. That closes **this** path and no more: a metadata value is not safe terminal text either, since `JSON.stringify` escapes only C0 and emits DEL, the C1 range (U+0085 NEL included), U+2028 and U+2029 verbatim — see _One entry, one line_ below, where the same boundary is stated. Only `msg` and the stack carry that guarantee.
 
 > **`destination` is not exposed, by design.** The library owns where entries go — a redirected stream would route around the fan-out and the last-resort rescue above. It is absent from the type and applied after your options are merged, so it cannot be overridden from untyped JavaScript either.
 
@@ -1042,6 +1054,21 @@ Trace context is never copied verbatim into a log entry. The OTel mixin reads th
 ### Destination failures are contained
 
 Every `write()` runs inside a try/catch. A destination that throws or rejects produces a `LOGGER_DESTINATION_WRITE_FAILED` line on `stderr` — never back through the logger, which would turn a broken sink into a write → log → write feedback loop — and the entry is dropped for that sink only. A destination whose `onInit()` rejects is reported as `LOGGER_DESTINATION_INIT_FAILED` and excluded from the shutdown sequence without blocking boot; it stays in the write fan-out, where the same fail-soft wrapper contains it. A logging backend going down degrades logging — it never takes the application with it.
+
+### What redaction covers, and what it cannot
+
+Redaction here matches **field names**, not values. Under the default `redactStrategy: 'names'` a secret stored under a covered name is censored at any depth — under the legacy `'paths'` strategy the four-level `fast-redact` ceiling applies instead, and a deeper field is not covered. Either way, the same secret **embedded inside a string** under an uncovered name travels intact. Measured:
+
+```json
+{
+  "password": "[REDACTED]",
+  "renderedBody": "Hi Ana, your reset code is 481920. Expires in 10 minutes."
+}
+```
+
+There is no name rule that reaches the second one, and scanning inside values for secret-shaped text would mean rewriting what you asked to be logged — wrong in both directions, silently. **The boundary is yours to hold:** do not put rendered bodies, raw provider responses or whole request payloads into a field, and be aware that attaching an upstream error as `cause` carries whatever that error carries. Since 1.2.7 preserves an error's own fields at every depth of the chain, a cause that quotes something it should not quote is now more visible, not less.
+
+`redactStrategy` governs **your** payload — the record you log, your child bindings, and the output of any serializer you supply. The built-in `err` serializer is the library's own output and is always name-walked, including under `'paths'`, because `fast-redact`'s four-wildcard ceiling cannot reach the depth a `cause` chain serializes to.
 
 ### A closed pipe does not kill the process
 

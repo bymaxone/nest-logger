@@ -189,10 +189,30 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   private context?: string
 
   /**
+   * **A hand-built instance is NOT this library's behaviour.** Constructing
+   * `new PinoLoggerService(pino({...}, sink))` directly works in the sense of not
+   * throwing, and the parameter default below exists for exactly that — but the
+   * Pino instance you built has none of the wiring `buildPinoInstance` installs,
+   * and the omissions are silent:
+   *
+   *   - **no `err` serializer**, so an `Error` is serialized by Pino's default.
+   *     The `cause` chain disappears ENTIRELY — no marker, no warning, and a
+   *     `cause` that reads as "the field was never set";
+   *   - **no name-based redaction** of serializer output or child bindings;
+   *   - **no trace-context mixin**, so `requestId` / `tenantId` / OTel ids are
+   *     absent;
+   *   - **no size bound**, so nothing is truncated.
+   *
+   * That matters most for tests, which is the use this doc used to invite without
+   * qualification: a consumer wrote one to check whether a `cause` carried its
+   * `code`, measured absence, and nearly filed it against this library. The
+   * absence was their harness. For a faithful harness, boot the module (or use
+   * `BymaxLoggerModule.forRoot` in a testing module) rather than hand-building.
+   *
    * @param pino - The wrapped Pino instance.
    * @param redact - The DEFAULT-coverage redactor, applied to `child()` bindings.
-   *   Defaults to the identity so a hand-built instance (benchmarks, unit tests)
-   *   still works; the module always injects the configured one.
+   *   Defaults to the identity so a hand-built instance still works; the module
+   *   always injects the configured one.
    */
   constructor(
     @Inject(LOGGER_PINO_INSTANCE_TOKEN) private readonly pino: PinoLogger,

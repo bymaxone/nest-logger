@@ -27,10 +27,12 @@ import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common'
 import { DestinationHealth } from './destination-health.service'
 import { PinoLoggerService } from './pino-logger.service'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+import type { LogLevel } from '../../shared/types/log-level.type'
 import {
   LOGGER_DESTINATIONS_TOKEN,
   LOGGER_OPTIONS_TOKEN
 } from '../constants/injection-tokens.constants'
+import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { detectOtelTraceApi } from '../utils/otel-detector'
@@ -93,13 +95,75 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       try {
         await destination.onInit?.()
         this.active.push(destination)
-        this.health.markHealthy()
+        this.health.markHealthy(destination, this.effectiveLevelOf(destination))
       } catch (cause) {
-        this.health.markFailed(destination, destination.minLevel ?? this.options.level)
+        this.health.markFailed(destination, this.effectiveLevelOf(destination))
         this.reportInitFailure(destination.name, cause)
       }
     }
+    await this.notifyRegistryReady()
     this.announceBootstrap()
+  }
+
+  /**
+   * Tell every REGISTERED destination — live or failed — what happened to the
+   * entries it may be holding, before the first post-init entry is emitted.
+   *
+   * The fact it carries is one the destination cannot compute: whether ANOTHER
+   * live sink provably accepted everything this one accepted. `pino.multistream`
+   * filters per stream, a destination is not its own witness, a sink whose write
+   * threw did not receive that entry, and one whose write has not settled has not
+   * proven anything yet — all of which live in `deliveredByHealthySink`.
+   *
+   * Each notification is isolated: a destination that throws here is reported and
+   * skipped rather than aborting the remaining ones or the bootstrap entry.
+   * Failing at this hook cannot be allowed to cost more than the hook was worth.
+   */
+  private async notifyRegistryReady(): Promise<void> {
+    for (const destination of this.registered) {
+      try {
+        // AWAITED. The hook is declared `void | Promise<void>` because TypeScript
+        // accepts an `async` implementation where a void-returning member is
+        // declared: not awaiting one would let its rejection escape as an
+        // unhandled promise, and let the bootstrap entry be emitted before the
+        // buffer it is resolving had been drained.
+        await destination.onRegistryReady?.({
+          heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
+            destination,
+            this.effectiveLevelOf(destination)
+          )
+        })
+      } catch (cause) {
+        this.reportHookFailure(destination, cause)
+      }
+    }
+  }
+
+  /**
+   * The severity a destination actually receives: the STRICTER of the module
+   * level and its own `minLevel`.
+   *
+   * Pino filters at the instance level BEFORE `pino.multistream` sees an entry,
+   * so a `minLevel` below the global one cannot widen what a destination gets —
+   * the factory's own docs say so. Recording the raw `minLevel` therefore
+   * understated delivery: with a global `error` and a healthy sink at `info`,
+   * both sinks in fact receive the same `error` entries, but a pretty sink
+   * declared at `trace` compared as `trace`, delivery read as unproven, and the
+   * buffer drained raw — a duplicate produced by arithmetic rather than by any
+   * real gap.
+   *
+   * @param destination - The destination whose threshold is being computed.
+   * @returns The level entries must clear to reach it.
+   */
+  private effectiveLevelOf(destination: ILogDestination): LogLevel {
+    const configured = destination.minLevel
+    if (configured === undefined) {
+      return this.options.level
+    }
+    // Stryker disable next-line EqualityOperator: equivalent — `>` and `>=` differ only when the two indices are EQUAL, and then both branches return the same LEVEL: `configured` and `options.level` are the same string at that point, so the function's result is identical for every input. Expressing it without a comparison was tried and trades this for an unreachable branch of its own — `LOG_LEVEL_PRIORITY[Math.max(a, b)]` is `LogLevel | undefined` under noUncheckedIndexedAccess and needs a fallback nothing can reach, besides being the value-keyed index the object-injection rule flags.
+    return LOG_LEVEL_PRIORITY.indexOf(configured) > LOG_LEVEL_PRIORITY.indexOf(this.options.level)
+      ? configured
+      : this.options.level
   }
 
   /**
@@ -120,6 +184,33 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       cause,
       `Log destination "${name}" failed to initialize and will receive no entries. ` +
         'If no destination initializes, entries fall back to raw NDJSON on stdout.'
+    )
+  }
+
+  /**
+   * Report a failure from the readiness hook, with wording that matches the
+   * destination's actual state.
+   *
+   * The loop calls every registered destination, healthy and failed alike, so one
+   * message cannot be true for both. A healthy one keeps receiving entries and was
+   * never an init failure; a failed one was already dropped from the fan-out and
+   * saying it "remains active" would contradict the report it just got. The key
+   * stays `LOGGER_DESTINATION_INIT_FAILED` either way so an operator greps one
+   * thing across every destination-lifecycle problem.
+   *
+   * @param destination - The destination whose hook threw.
+   * @param cause - The thrown value.
+   */
+  private reportHookFailure(destination: ILogDestination, cause: unknown): void {
+    const stillActive = !this.health.isFailed(destination)
+    reportDestinationFailure(
+      RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+      destination.name,
+      cause,
+      `Log destination "${destination.name}" threw from onRegistryReady. ` +
+        (stillActive
+          ? 'It initialized successfully and keeps receiving entries; only anything it was holding from before init may be affected.'
+          : 'It had already failed to initialize and receives no entries; anything it was still holding is lost.')
     )
   }
 
