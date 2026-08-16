@@ -39,15 +39,20 @@ export class DestinationHealth {
   private readonly failed = new Set<ILogDestination>()
 
   /**
-   * Whether ANY destination initialized successfully.
+   * Destinations that initialized, each with its effective level as an index into
+   * {@link LOG_LEVEL_PRIORITY}.
    *
-   * A boolean rather than a count, deliberately: the only question ever asked of
-   * it is "is there somewhere to write?". Mutation testing made the point — a
-   * counter incremented with `+=` survived being flipped to `-=`, because
-   * `count === 0` means the same thing either way. A value whose arithmetic
-   * cannot be observed was not a counter, it was a flag wearing a number.
+   * Keyed by identity rather than reduced to a flag or a minimum, because the
+   * question a buffering destination asks is "did SOMEONE ELSE receive what I
+   * received?" — and a minimum cannot exclude the asker. A destination that is
+   * itself the only healthy sink would otherwise be told its held entries were
+   * delivered elsewhere, and discard its only copies.
+   *
+   * The level matters for the same reason it does everywhere here: `pino.multistream`
+   * filters per stream, so "alive" and "received what I received" are different
+   * facts.
    */
-  private hasHealthy = false
+  private readonly healthy = new Map<ILogDestination, number>()
 
   /** The failed destination designated to rescue entries, if any. */
   private rescuer: ILogDestination | undefined
@@ -59,35 +64,13 @@ export class DestinationHealth {
   private rescuerLevel = Number.POSITIVE_INFINITY
 
   /**
-   * The LOWEST effective level among destinations that initialized, as an index
-   * into {@link LOG_LEVEL_PRIORITY}. Starts above every real level so the first
-   * `markHealthy` always wins.
-   *
-   * A level rather than a boolean because `pino.multistream` filters PER stream:
-   * an entry reaches a destination only when its severity clears that
-   * destination's own level. So "a sink survived" does not mean "your entry went
-   * somewhere" — a healthy `error` sink never saw the `info` boot entries a
-   * pretty sink at `info` was holding.
-   */
-  private lowestHealthyLevel = Number.POSITIVE_INFINITY
-
-  /**
    * Record that a destination initialized successfully.
    *
    * @param effectiveLevel - Its multistream level: `minLevel` when set, otherwise
    *   the module-wide `level`.
    */
-  markHealthy(effectiveLevel: LogLevel): void {
-    this.hasHealthy = true
-    // `Math.min` rather than a compare-and-assign branch. The branch left two
-    // mutants alive that no test could kill: `<` → `<=` reassigns the identical
-    // value, and the guard exists only to keep the smallest. Expressing "keep the
-    // smallest" directly removes the branch instead of documenting why nothing
-    // can observe it.
-    this.lowestHealthyLevel = Math.min(
-      this.lowestHealthyLevel,
-      LOG_LEVEL_PRIORITY.indexOf(effectiveLevel)
-    )
+  markHealthy(destination: ILogDestination, effectiveLevel: LogLevel): void {
+    this.healthy.set(destination, LOG_LEVEL_PRIORITY.indexOf(effectiveLevel))
   }
 
   /**
@@ -146,7 +129,7 @@ export class DestinationHealth {
    *   rescuer.
    */
   shouldRescue(destination: ILogDestination): boolean {
-    return !this.hasHealthy && this.rescuer === destination
+    return this.healthy.size === 0 && this.rescuer === destination
   }
 
   /**
@@ -159,7 +142,7 @@ export class DestinationHealth {
    * @returns `true` when at least one destination is live.
    */
   hasHealthySink(): boolean {
-    return this.hasHealthy
+    return this.healthy.size > 0
   }
 
   /**
@@ -176,7 +159,13 @@ export class DestinationHealth {
    * @param effectiveLevel - The asking destination's multistream level.
    * @returns `true` when a live sink accepted everything this destination did.
    */
-  deliveredByHealthySink(effectiveLevel: LogLevel): boolean {
-    return this.hasHealthy && this.lowestHealthyLevel <= LOG_LEVEL_PRIORITY.indexOf(effectiveLevel)
+  deliveredByHealthySink(asking: ILogDestination, effectiveLevel: LogLevel): boolean {
+    const level = LOG_LEVEL_PRIORITY.indexOf(effectiveLevel)
+    for (const [destination, healthyLevel] of this.healthy) {
+      if (destination !== asking && healthyLevel <= level) {
+        return true
+      }
+    }
+    return false
   }
 }

@@ -34,7 +34,7 @@ describe('DestinationHealth', () => {
   'keys failures by identity rather than by name', () => {
     const failed = makeDestination('same-name')
     const healthy = makeDestination('same-name')
-    health.markHealthy('info')
+    health.markHealthy(makeDestination('healthy-info'), 'info')
     health.markFailed(failed, 'info')
 
     expect(health.isFailed(failed)).toBe(true)
@@ -49,7 +49,7 @@ describe('DestinationHealth', () => {
   'never rescues while any destination is healthy', () => {
     const failed = makeDestination('failed')
     health.markFailed(failed, 'info')
-    health.markHealthy('info')
+    health.markHealthy(makeDestination('healthy-info'), 'info')
 
     expect(health.shouldRescue(failed)).toBe(false)
   })
@@ -120,7 +120,7 @@ describe('DestinationHealth', () => {
     const health = new DestinationHealth()
     expect(health.hasHealthySink()).toBe(false)
 
-    health.markHealthy('info')
+    health.markHealthy(makeDestination('healthy-info'), 'info')
 
     expect(health.hasHealthySink()).toBe(true)
   })
@@ -135,14 +135,15 @@ describe('DestinationHealth', () => {
    */
   'reports delivery by LEVEL, not merely by a sink being alive', () => {
     const health = new DestinationHealth()
-    health.markHealthy('error')
+    const asker = makeDestination('asker')
+    health.markHealthy(makeDestination('healthy-error'), 'error')
 
     // An `info` destination accepted entries the `error` sink never received.
-    expect(health.deliveredByHealthySink('info')).toBe(false)
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(false)
     // A `fatal` one accepted a subset of what the `error` sink took.
-    expect(health.deliveredByHealthySink('fatal')).toBe(true)
+    expect(health.deliveredByHealthySink(asker, 'fatal')).toBe(true)
     // Same level: a superset by definition.
-    expect(health.deliveredByHealthySink('error')).toBe(true)
+    expect(health.deliveredByHealthySink(asker, 'error')).toBe(true)
   })
 
   it(/*
@@ -151,8 +152,9 @@ describe('DestinationHealth', () => {
    */
   'reports no delivery when nothing initialized', () => {
     const health = new DestinationHealth()
+    const asker = makeDestination('asker')
 
-    expect(health.deliveredByHealthySink('fatal')).toBe(false)
+    expect(health.deliveredByHealthySink(asker, 'fatal')).toBe(false)
     expect(health.hasHealthySink()).toBe(false)
   })
 
@@ -162,10 +164,29 @@ describe('DestinationHealth', () => {
    */
   'keeps the lowest level among several healthy sinks', () => {
     const health = new DestinationHealth()
-    health.markHealthy('error')
-    health.markHealthy('debug')
+    const asker = makeDestination('asker')
+    health.markHealthy(makeDestination('healthy-error'), 'error')
+    health.markHealthy(makeDestination('healthy-debug'), 'debug')
 
-    expect(health.deliveredByHealthySink('info')).toBe(true)
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(true)
+  })
+
+  it(/*
+   * REGRESSION — the ASKING destination does not count as "somewhere else".
+   * When it is the only one that initialized, nothing delivered its held entries
+   * anywhere; telling it otherwise makes a custom buffering destination discard
+   * its only copies. Found by Copilot against the first version of this check,
+   * which reduced healthy sinks to a minimum level and so could not exclude the
+   * asker.
+   */
+  'never counts the asking destination as delivery elsewhere', () => {
+    const health = new DestinationHealth()
+    const asker = makeDestination('asker')
+    health.markHealthy(asker, 'info')
+
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(false)
+    // It IS alive, though — the two facts are different.
+    expect(health.hasHealthySink()).toBe(true)
   })
 
   it(/*
@@ -176,9 +197,10 @@ describe('DestinationHealth', () => {
    */
   'does not let a later higher-level sink raise the floor', () => {
     const health = new DestinationHealth()
-    health.markHealthy('debug')
-    health.markHealthy('error')
+    const asker = makeDestination('asker')
+    health.markHealthy(makeDestination('healthy-debug'), 'debug')
+    health.markHealthy(makeDestination('healthy-error'), 'error')
 
-    expect(health.deliveredByHealthySink('info')).toBe(true)
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(true)
   })
 })

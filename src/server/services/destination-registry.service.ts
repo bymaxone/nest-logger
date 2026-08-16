@@ -93,7 +93,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       try {
         await destination.onInit?.()
         this.active.push(destination)
-        this.health.markHealthy(destination.minLevel ?? this.options.level)
+        this.health.markHealthy(destination, destination.minLevel ?? this.options.level)
       } catch (cause) {
         this.health.markFailed(destination, destination.minLevel ?? this.options.level)
         this.reportInitFailure(destination.name, cause)
@@ -128,37 +128,16 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       try {
         destination.onRegistryReady?.({
           heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
+            destination,
             destination.minLevel ?? this.options.level
           ),
           hasHealthySink: this.health.hasHealthySink(),
           isElectedRescuer: this.health.shouldRescue(destination)
         })
       } catch (cause) {
-        this.reportHookFailure(destination.name, cause)
+        this.reportHookFailure(destination, cause)
       }
     }
-  }
-
-  /**
-   * Report a failure from the readiness hook — a DIFFERENT diagnostic from the
-   * init one, because the situation is different and the wrong message misleads.
-   *
-   * By this point `onInit` has already succeeded and the destination is in the
-   * active set: it keeps receiving entries. Reusing the init message would tell
-   * an operator it "will receive no entries", sending them to look for silence
-   * that is not there.
-   *
-   * @param name - The destination whose hook threw.
-   * @param cause - The thrown value.
-   */
-  private reportHookFailure(name: string, cause: unknown): void {
-    reportDestinationFailure(
-      RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-      name,
-      cause,
-      `Log destination "${name}" threw from onRegistryReady. It remains active and ` +
-        'keeps receiving entries; only anything it was holding from before init may be affected.'
-    )
   }
 
   /**
@@ -179,6 +158,33 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       cause,
       `Log destination "${name}" failed to initialize and will receive no entries. ` +
         'If no destination initializes, entries fall back to raw NDJSON on stdout.'
+    )
+  }
+
+  /**
+   * Report a failure from the readiness hook, with wording that matches the
+   * destination's actual state.
+   *
+   * The loop calls every registered destination, healthy and failed alike, so one
+   * message cannot be true for both. A healthy one keeps receiving entries and was
+   * never an init failure; a failed one was already dropped from the fan-out and
+   * saying it "remains active" would contradict the report it just got. The key
+   * stays `LOGGER_DESTINATION_INIT_FAILED` either way so an operator greps one
+   * thing across every destination-lifecycle problem.
+   *
+   * @param destination - The destination whose hook threw.
+   * @param cause - The thrown value.
+   */
+  private reportHookFailure(destination: ILogDestination, cause: unknown): void {
+    const stillActive = !this.health.isFailed(destination)
+    reportDestinationFailure(
+      RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+      destination.name,
+      cause,
+      `Log destination "${destination.name}" threw from onRegistryReady. ` +
+        (stillActive
+          ? 'It initialized successfully and keeps receiving entries; only anything it was holding from before init may be affected.'
+          : 'It had already failed to initialize and receives no entries; anything it was still holding is lost.')
     )
   }
 

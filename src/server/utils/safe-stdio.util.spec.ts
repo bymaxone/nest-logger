@@ -33,6 +33,11 @@ describe('safe stdio', () => {
           stream.removeListener('error', listener as (...args: unknown[]) => void)
         }
       }
+      // Asserted, not assumed. Without this the removal could be deleted or stop
+      // matching the installed handler and every case would still pass: the next
+      // `beforeEach` absorbs the leak into its own baseline, so the leak is never
+      // observed by anything. Same shape the pretty-destination suite uses.
+      expect(stream.listeners('error')).toEqual(baseline)
     }
   })
 

@@ -449,9 +449,11 @@ describe('DestinationRegistry', () => {
 
       expect(seen).toEqual([
         {
+          // The healthy one is NOT its own "somewhere else": nothing but itself
+          // received what it received.
           name: 'healthy',
           status: {
-            heldEntriesDeliveredElsewhere: true,
+            heldEntriesDeliveredElsewhere: false,
             hasHealthySink: true,
             isElectedRescuer: false
           }
@@ -535,12 +537,37 @@ describe('DestinationRegistry', () => {
 
       const line = stderrSpy.mock.calls.map(([l]) => String(l)).join('')
       expect(line).toContain('threw from onRegistryReady')
-      expect(line).toContain('remains active')
-      // BOTH halves of the concatenated message: the second one carries the
+      // BOTH halves of the concatenated message: the second carries the
       // operator-facing consequence, and emptying it left a mutant alive.
-      expect(line).toContain('keeps receiving entries')
+      expect(line).toContain('initialized successfully and keeps receiving entries')
       expect(line).toContain('holding from before init')
       expect(line).not.toContain('will receive no entries')
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * REGRESSION — the SAME reporter is reached for a destination that already
+     * failed to initialize, and the healthy wording would contradict the report
+     * it just received. The loop notifies every registered destination by design,
+     * so one message cannot be true for both states. Found by Copilot in a review
+     * body rather than an inline thread.
+     */
+    'words a hook failure differently for an already-failed destination', async () => {
+      const failed = {
+        ...makeDestination('failed'),
+        onInit: jest.fn().mockRejectedValue(new Error('init died')),
+        onRegistryReady: jest.fn(() => {
+          throw new Error('hook exploded')
+        })
+      }
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+      await new DestinationRegistry([failed], logger, options, health).onModuleInit()
+
+      const line = stderrSpy.mock.calls.map(([l]) => String(l)).join('')
+      expect(line).toContain('had already failed to initialize and receives no entries')
+      expect(line).toContain('still holding is lost')
+      expect(line).not.toContain('keeps receiving entries')
       stderrSpy.mockRestore()
     })
 
