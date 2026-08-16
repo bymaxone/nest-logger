@@ -57,12 +57,17 @@ heading here.
   Widening what an implementation may return necessarily narrows what a caller receives: `PromiseLike`
   exposes only `then`, so code that called `.catch()` or `.finally()` on the result no longer type-checks.
 
-  ```ts
-  // before
-  destination.write(payload).catch(handle)
+  The call has to be narrowed first, in both versions: `write` has always been able to return
+  `void`, so `.catch()` was never available on the bare call.
 
-  // after — assimilate at the call site
-  Promise.resolve(destination.write(payload)).catch(handle)
+  ```ts
+  const result = destination.write(payload)
+
+  // before — `result` narrowed to `Promise<void>`, so `.catch` was there
+  if (result !== undefined) result.catch(handle)
+
+  // after — it narrows to `PromiseLike<void>`; assimilate to get `.catch` back
+  if (result !== undefined) Promise.resolve(result).catch(handle)
   ```
 
   There is no type that gives implementations the freedom and callers a full `Promise`; this release
@@ -76,6 +81,14 @@ heading here.
   entirely — so the one document most consumers read described types incompatible with the interface
   and hid a hook from anyone who buffers. It ships inside the package, which makes it the copy that
   matters most.
+
+- **The documented adapter examples contradicted the fail-soft contract they were illustrating.**
+  They routed a failed write into `callback(err)`, and the guide listed that as an advantage — "errors
+  are propagated as a callback err (not as an exception that crashes the app)". A `Writable` given an
+  error in its callback emits `'error'`, which with no listener terminates the host. The production
+  adapter has always done the opposite, and says so in a comment one line above the code: contain the
+  failure, report it on stderr, complete the write as successful. Every example, and the two prose
+  lines that recommended the pattern, now match it.
 
 - **Every documented `destinationToStream` example branched on `result instanceof Promise`** — the
   exact defect fixed above, in the snippets that teach people how to write a destination. A reader

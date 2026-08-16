@@ -794,7 +794,7 @@ pnpm test:cov -- --testPathPattern=src/shared
 
 > Create in `src/server/interfaces/`:
 >
-> 1. `log-destination.interface.ts` — `ILogDestination` with `readonly name`, `readonly minLevel?: LogLevel`, `write(payload: string): void | Promise<void>`, `onInit?()`, `onShutdown?()`. Full JSDoc with `@example` for a simple FileDestination.
+> 1. `log-destination.interface.ts` — `ILogDestination` with `readonly name`, `readonly minLevel?: LogLevel`, `write(payload: string): void | PromiseLike<void>`, `onInit?()`, `onRegistryReady?(status)`, `onShutdown?()` — every hook `void | PromiseLike<void>`. Full JSDoc with `@example` for a simple FileDestination.
 > 2. `log-context.interface.ts` — `LogContext` interface with `requestId?: string`, `tenantId?: string`, `userId?: string`, `traceId?: string`, `spanId?: string`, `[key: string]: unknown` for extension.
 > 3. `logger-module-options.interface.ts` — `BymaxLoggerModuleOptions` with EVERY field from spec §4.1: `service: ServiceMetadata`, `level?`, `isGlobal?` (canonical name — **not** `global`), `shouldUseAsNestLogger?`, `redactPaths?: readonly string[]`, `redactCensor?`, `shouldDisableDefaultRedact?`, `destinations?: readonly ILogDestination[]`, `isPretty?`, `http?: HttpOptions`, `otel?: OtelOptions`, `maxEntrySizeBytes?`, `serializers?`, `timestamp?`. Separate `HttpOptions` and `OtelOptions` sub-interfaces. `BymaxLoggerModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'>` sub-interface with `useFactory`, `inject`, `useExisting`, `useClass`. `BymaxLoggerModuleOptionsFactory` sub-interface with `createLoggerOptions()`.
 >
@@ -3158,9 +3158,11 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 >       try {
 >         const r = dest.write(typeof chunk === 'string' ? chunk : chunk.toString('utf-8'))
 >         // Branch on `undefined`: `instanceof Promise` is realm-local and misses a
->         // cross-realm promise or a plain thenable, losing the entry. See CHANGELOG 1.2.9.
+>         // cross-realm promise or a plain thenable, losing the entry. A rejection is
+>         // reported and then completed WITHOUT an error — `callback(err)` makes the
+>         // stream emit 'error' and takes the host down. See CHANGELOG 1.2.9.
 >         if (r === undefined) callback()
->         else Promise.resolve(r).then(() => callback(), callback)
+>         else Promise.resolve(r).then(() => callback(), reportAndContinue)
 >       } catch (err) {
 >         callback(err as Error)
 >       }

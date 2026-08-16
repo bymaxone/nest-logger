@@ -93,6 +93,16 @@ import { Writable } from 'node:stream'
 export function destinationToStream(dest: ILogDestination): Writable {
   return new Writable({
     write(chunk: Buffer, _encoding, callback) {
+      // A failure is CONTAINED, never propagated. `callback(err)` makes the
+      // `Writable` emit `'error'`, which with no listener terminates the host —
+      // the opposite of the fail-soft contract in §3. Report the failure on
+      // stderr, then signal success so the fan-out reaches the other sinks.
+      const report = (err: unknown): void => {
+        process.stderr.write(
+          `${JSON.stringify({ level: 'error', logKey: 'LOGGER_DESTINATION_WRITE_FAILED', destination: dest.name, err: String(err) })}\n`
+        )
+        callback()
+      }
       try {
         const result = dest.write(chunk.toString('utf8'))
         // Branch on `undefined`, NOT on `result instanceof Promise`. `instanceof` is
@@ -103,13 +113,10 @@ export function destinationToStream(dest: ILogDestination): Writable {
         if (result === undefined) {
           callback()
         } else {
-          Promise.resolve(result).then(
-            () => callback(),
-            (err) => callback(err as Error)
-          )
+          Promise.resolve(result).then(() => callback(), report)
         }
       } catch (err) {
-        callback(err as Error)
+        report(err)
       }
     }
   })
@@ -119,7 +126,7 @@ export function destinationToStream(dest: ILogDestination): Writable {
 Advantages:
 
 - Destinations do not need to extend `Writable` manually
-- Errors are propagated as a callback err (not as an exception that crashes the app)
+- A failing destination is contained: reported on stderr, never surfaced as a stream error
 - Async `write` is supported transparently
 
 ---
@@ -134,11 +141,13 @@ Advantages:
 
 ```typescript
 // Inside destinationToStream — an awaitable write defers callback,
-// which signals backpressure upstream until it settles.
+// which signals backpressure upstream until it settles. A rejection is
+// reported and then completed WITHOUT an error: `callback(err)` would make
+// the stream emit `'error'` and take the host down with it.
 write(chunk, _enc, callback) {
   const result = dest.write(chunk.toString('utf8'))
   if (result === undefined) callback()
-  else Promise.resolve(result).then(() => callback(), (err) => callback(err))
+  else Promise.resolve(result).then(() => callback(), report)
 }
 ```
 
@@ -480,7 +489,7 @@ export class PrismaPostgresDestination implements ILogDestination {
 ## 6. Anti-patterns
 
 ❌ **Synchronous `write()` that performs blocking I/O** (e.g., `fs.writeFileSync`)
-❌ **`write()` that throws an exception** — stops Pino multi-stream (use a callback err instead)
+❌ **`write()` that throws an exception** — the adapter contains it, but the entry is lost; catch and report on stderr instead
 ❌ **Logging via the logger itself inside `write`** — infinite loop
 ❌ **Mutating the `payload`** — other destinations receive the same string
 ❌ **Expecting `write` to accept a rejected Promise as an error** — catch and log via stderr

@@ -682,13 +682,13 @@ export interface ILogDestination {
    * Errors thrown here are caught by the library; the destination may be
    * temporarily skipped if it consistently fails.
    */
-  write(payload: string): void | Promise<void>
+  write(payload: string): void | PromiseLike<void>
 
   /**
    * Optional lifecycle hook — called once during NestJS module init.
    * Use for opening connections, allocating buffers, scheduling flushers.
    */
-  onInit?(): void | Promise<void>
+  onInit?(): void | PromiseLike<void>
 
   /**
    * Optional lifecycle hook — called during NestJS `onApplicationShutdown`.
@@ -697,7 +697,15 @@ export interface ILogDestination {
    * The library awaits this — graceful shutdown blocks until all destinations
    * return.
    */
-  onShutdown?(): void | Promise<void>
+  onShutdown?(): void | PromiseLike<void>
+
+  /**
+   * Optional lifecycle hook — called once after EVERY destination's `onInit`
+   * settled, and awaited. Only useful to a destination that buffers.
+   */
+  onRegistryReady?(status: {
+    readonly heldEntriesDeliveredElsewhere: boolean
+  }): void | PromiseLike<void>
 }
 ```
 
@@ -3382,9 +3390,11 @@ export function destinationToStream(dest: ILogDestination): Writable {
       try {
         const r = dest.write(typeof chunk === 'string' ? chunk : chunk.toString('utf-8'))
         // Branch on `undefined`: `instanceof Promise` is realm-local and misses a
-        // cross-realm promise or a plain thenable, losing the entry. See CHANGELOG 1.2.9.
+        // cross-realm promise or a plain thenable, losing the entry. A rejection is
+        // reported and then completed WITHOUT an error — `callback(err)` makes the
+        // stream emit 'error' and takes the host down. See CHANGELOG 1.2.9.
         if (r === undefined) callback()
-        else Promise.resolve(r).then(() => callback(), callback)
+        else Promise.resolve(r).then(() => callback(), reportAndContinue)
       } catch (err) {
         callback(err as Error)
       }
