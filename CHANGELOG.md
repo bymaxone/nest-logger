@@ -71,6 +71,30 @@ heading here.
 
 ### Documentation
 
+- **The shipped `README.md` no longer teaches the old contract.** Its `ILogDestination` reference
+  still declared `Promise<void>` on `write`, `onInit` and `onShutdown`, and omitted `onRegistryReady`
+  entirely — so the one document most consumers read described types incompatible with the interface
+  and hid a hook from anyone who buffers. It ships inside the package, which makes it the copy that
+  matters most.
+
+- **Every documented `destinationToStream` example branched on `result instanceof Promise`** — the
+  exact defect fixed above, in the snippets that teach people how to write a destination. A reader
+  implementing against the guide, the specification or the plan documents would have reproduced the
+  escaped rejection and the lost entry. All of them now branch on `undefined` and assimilate with
+  `Promise.resolve`.
+
+  These two were found only because a review kept pulling the same thread. Correcting the interface
+  and the four excerpts that restate it still left the README and every worked example behind: a
+  contract lives in more places than the ones that quote its signature.
+
+  So the rule is now a gate rather than a habit. `check:published` compiled only README blocks that
+  **import** the package, on the reasoning that naming the API is not a claim about it — which left a
+  block that _re-declares_ an exported type unchecked, and that is exactly where the README drifted.
+  It now compiles those too, asserting mutual assignability against the shipped type plus key parity,
+  the second because a missing optional member is assignable in both directions and would otherwise
+  pass. Reverting the README to its previous text makes the gate fail and name both halves of the
+  defect, which is how it was verified rather than assumed.
+
 - **`heldEntriesDeliveredElsewhere` is documented as best-effort rather than as proof.** The JSDoc
   said `true` requires no write still in flight, which reads as complete accounting — while the
   `1.2.8` note already admitted that writes queued inside the `Writable` adapter are invisible until

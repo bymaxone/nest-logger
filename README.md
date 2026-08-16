@@ -1324,9 +1324,13 @@ interface ILogDestination {
   readonly name: string
   readonly minLevel?: LogLevel
   /** `payload` is a newline-terminated JSON entry, UTF-8 encoded — not an object. */
-  write(payload: string): void | Promise<void>
-  onInit?(): Promise<void>
-  onShutdown?(): Promise<void>
+  write(payload: string): void | PromiseLike<void>
+  onInit?(): void | PromiseLike<void>
+  /** Called once after EVERY destination's `onInit` settled. Only useful if you buffer. */
+  onRegistryReady?(status: {
+    readonly heldEntriesDeliveredElsewhere: boolean
+  }): void | PromiseLike<void>
+  onShutdown?(): void | PromiseLike<void>
 }
 ```
 

@@ -846,8 +846,11 @@ export function destinationToStream(
       try {
         const payload = truncateIfOversized(chunk.toString('utf8'), maxEntrySizeBytes)
         const result = dest.write(payload)
-        if (result instanceof Promise) {
-          result.then(
+        // Branch on `undefined`, NOT on `result instanceof Promise`: `instanceof` is
+        // realm-local and answers `false` for a cross-realm promise or a plain
+        // thenable, which would then take the synchronous path and lose the entry.
+        if (result !== undefined) {
+          Promise.resolve(result).then(
             () => cb(),
             (err: unknown) => {
               process.stderr.write(

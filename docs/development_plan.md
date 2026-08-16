@@ -3381,8 +3381,10 @@ export function destinationToStream(dest: ILogDestination): Writable {
     write(chunk, _enc, callback) {
       try {
         const r = dest.write(typeof chunk === 'string' ? chunk : chunk.toString('utf-8'))
-        if (r instanceof Promise) r.then(() => callback(), callback)
-        else callback()
+        // Branch on `undefined`: `instanceof Promise` is realm-local and misses a
+        // cross-realm promise or a plain thenable, losing the entry. See CHANGELOG 1.2.9.
+        if (r === undefined) callback()
+        else Promise.resolve(r).then(() => callback(), callback)
       } catch (err) {
         callback(err as Error)
       }

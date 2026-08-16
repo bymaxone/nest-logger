@@ -589,11 +589,121 @@ function checkSnippets() {
 }
 
 // ---------------------------------------------------------------------------
+// 4. README blocks that RE-DECLARE an exported type match the shipped one.
+// ---------------------------------------------------------------------------
+
+/** Names the package exports, read from the single `export { … }` clause tsup
+ * emits at the end of each subpath's `.d.ts`. */
+function exportedNames() {
+  const names = new Set()
+  for (const sub of ['server', 'shared']) {
+    const dts = join(ROOT, 'dist', sub, 'index.d.ts')
+    if (!existsSync(dts)) continue
+    for (const clause of readFileSync(dts, 'utf8').matchAll(/^export \{([^}]*)\};/gm)) {
+      for (const raw of clause[1].split(',')) {
+        const m = /(?:type\s+)?(\w+)(?:\s+as\s+(\w+))?\s*$/.exec(raw.trim())
+        if (m) names.add(m[2] ?? m[1])
+      }
+    }
+  }
+  return names
+}
+
+/**
+ * Build the probe for one re-declared type: the README's own declaration, renamed
+ * so it can sit beside the shipped one, and the two assertions that compare them.
+ *
+ * Mutual assignability catches a changed signature. Key parity catches an omitted
+ * member, which assignability cannot: an optional property missing from one side
+ * is assignable in both directions.
+ *
+ * @param code - The README block, verbatim.
+ * @param name - The exported type it re-declares.
+ * @param exported - Every name the package exports, so the ones this block
+ *   references are imported rather than failing to resolve.
+ * @returns The TypeScript source of the probe.
+ */
+function declarationProbe(code, name, exported) {
+  const alias = `Doc_${name}`
+  const referenced = [...exported].filter((n) => n !== name && new RegExp(`\\b${n}\\b`).test(code))
+  return (
+    `import type { ${[name, ...referenced].join(', ')} } from '${PKG.name}'\n` +
+    `${code.replace(/^(?:export )?interface \w+\s*\{/m, `interface ${alias} {`)}\n` +
+    `declare const shipped: ${name}\n` +
+    `declare const documented: ${alias}\n` +
+    `export const _readmeAcceptsShipped: ${alias} = shipped\n` +
+    `export const _shippedAcceptsReadme: ${name} = documented\n` +
+    `type Missing = Exclude<keyof ${name}, keyof ${alias}>\n` +
+    `type Extra = Exclude<keyof ${alias}, keyof ${name}>\n` +
+    `declare const keys: [Missing, Extra]\n` +
+    `export const _keyParity: [never, never] = keys\n`
+  )
+}
+
+/**
+ * `checkSnippets` only compiles blocks that IMPORT the package, because merely
+ * naming the API is not a claim about it. A block that RE-DECLARES an exported
+ * interface is a claim, and it was invisible to that rule: the README's
+ * `ILogDestination` reference sat on `Promise<void>` across several releases,
+ * omitted `onRegistryReady` entirely, and every gate passed. It ships inside the
+ * package, so it is the copy consumers actually read.
+ */
+function checkDeclaredTypes() {
+  const exported = exportedNames()
+  // A gate that finds nothing to check must say so rather than pass. The export
+  // list is read by matching the `export { … };` clause tsup emits; if a future
+  // build emits another shape, every subject below is filtered out and the check
+  // would report success while verifying nothing.
+  if (exported.size === 0) {
+    fail(
+      'declared types',
+      'no exported names parsed from dist/**/index.d.ts — the check is vacuous'
+    )
+    return
+  }
+  const subjects = [...README.matchAll(/^```(?:ts|typescript)\n([\s\S]*?)^```$/gm)]
+    .map((m) => ({ code: m[1], name: /^(?:export )?interface (\w+)\s*\{/m.exec(m[1])?.[1] }))
+    .filter((b) => b.name !== undefined && exported.has(b.name))
+  if (subjects.length === 0) {
+    console.log('  declared types: none re-declared in the README')
+    return
+  }
+
+  scaffoldConsumer()
+  try {
+    subjects.forEach(({ code, name }, i) => {
+      writeFileSync(
+        join(GATE_DIR, `declared-${String(i + 1).padStart(2, '0')}.ts`),
+        declarationProbe(code, name, exported)
+      )
+    })
+    execFileSync(process.execPath, [TSC, '-p', GATE_DIR], { cwd: ROOT, stdio: 'pipe' })
+    console.log(
+      `  declared types: ${subjects.map((s) => s.name).join(', ')} match the shipped type`
+    )
+  } catch (err) {
+    const lines = `${err.stdout ?? ''}${err.stderr ?? ''}`
+      .trim()
+      .split('\n')
+      .filter((l) => /error TS\d+/.test(l))
+    fail(
+      'declared types',
+      `a README type declaration disagrees with the shipped one:\n${lines
+        .map((l) => `      ${l}`)
+        .join('\n')}`
+    )
+  } finally {
+    rmSync(GATE_DIR, { recursive: true, force: true })
+  }
+}
+
+// ---------------------------------------------------------------------------
 
 console.log(`Published-surface gate — ${PKG.name}@${PKG.version}`)
 await checkLinks()
 checkChangelog()
 checkSnippets()
+checkDeclaredTypes()
 
 if (failures.length > 0) {
   console.error(`\n✖ ${failures.length} problem(s):\n`)

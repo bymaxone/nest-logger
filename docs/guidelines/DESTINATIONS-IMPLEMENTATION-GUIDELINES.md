@@ -95,13 +95,18 @@ export function destinationToStream(dest: ILogDestination): Writable {
     write(chunk: Buffer, _encoding, callback) {
       try {
         const result = dest.write(chunk.toString('utf8'))
-        if (result instanceof Promise) {
-          result.then(
+        // Branch on `undefined`, NOT on `result instanceof Promise`. `instanceof` is
+        // realm-local: it answers `false` for a promise built in a worker or a `vm`
+        // context, and for any structurally valid thenable. Either would take the
+        // synchronous path, where a later rejection escapes unreported and the entry
+        // is lost. `Promise.resolve` assimilates both shapes.
+        if (result === undefined) {
+          callback()
+        } else {
+          Promise.resolve(result).then(
             () => callback(),
             (err) => callback(err as Error)
           )
-        } else {
-          callback()
         }
       } catch (err) {
         callback(err as Error)
@@ -125,15 +130,15 @@ Advantages:
 
 `sonic-boom` (Pino's stream engine) emits `'drain'` events when its internal buffer fills up. Destinations that send to the network (Loki, Datadog) MUST buffer internally and flush in batches.
 
-**Drain contract for our adapter:** when `Writable._write` returns `false`, Pino's multistream pauses; on `'drain'`, it resumes. Our `destinationToStream()` adapter's `_write` only returns `false` (implicitly, by deferring `callback`) if `dest.write()` returns a `Promise` that is not yet resolved — sync destinations (stdout, file) never trigger backpressure on the Pino side. This is an intentional contract: synchronous destinations are expected to never block; async destinations opt into backpressure via Promise resolution.
+**Drain contract for our adapter:** when `Writable._write` returns `false`, Pino's multistream pauses; on `'drain'`, it resumes. Our `destinationToStream()` adapter's `_write` only returns `false` (implicitly, by deferring `callback`) if `dest.write()` returns anything other than `undefined` and it has not settled — sync destinations (stdout, file) never trigger backpressure on the Pino side. This is an intentional contract: synchronous destinations are expected to never block; async destinations opt into backpressure by returning something awaitable.
 
 ```typescript
-// Inside destinationToStream — Promise-returning write defers callback,
-// which signals backpressure upstream until the Promise resolves.
+// Inside destinationToStream — an awaitable write defers callback,
+// which signals backpressure upstream until it settles.
 write(chunk, _enc, callback) {
   const result = dest.write(chunk.toString('utf8'))
-  if (result instanceof Promise) result.then(() => callback(), (err) => callback(err))
-  else callback()
+  if (result === undefined) callback()
+  else Promise.resolve(result).then(() => callback(), (err) => callback(err))
 }
 ```
 
