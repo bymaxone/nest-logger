@@ -168,7 +168,7 @@ check:docs` parses every TypeScript block — both `ts` and `typescript` fences 
   have. It reads the syntax tree rather than the text, so a name in a comment is a mention and not
   a use. It runs in CI and in `prepublishOnly`, because a gate nothing executes is not a gate.
 
-  The 40 pre-existing cases in the planning documents sit in a baseline that shrinks and does not
+  The 43 pre-existing cases in the planning documents sit in a baseline that shrinks and does not
   grow: regenerating writes the intersection with what still reproduces, so a defect introduced in
   the same edit is never adopted, and an entry that stops reproducing fails too rather than
   lingering. Widening what the check looks at is the one case where the list legitimately grows,

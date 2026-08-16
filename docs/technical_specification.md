@@ -1507,6 +1507,14 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
         )
       }
     }
+
+    // LAST, and the ordering is load-bearing rather than incidental. Every health
+    // record is written by now, so a last-resort sink can carry these entries when
+    // every destination failed. Announcing first would emit them into a fan-out that
+    // has not yet been told anything is wrong, and `LOGGER_BOOTSTRAP_WARNING` — the
+    // signal that exists so a security review can see redaction was disabled — would
+    // be lost exactly when the configuration is already known to be broken.
+    this.logger.info(RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK, 'BymaxLoggerModule initialized')
   }
 
   async onApplicationShutdown(): Promise<void> {
