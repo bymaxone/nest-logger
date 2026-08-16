@@ -461,8 +461,18 @@ describe('DestinationRegistry', () => {
       await expect(registry.onModuleInit()).resolves.toBeUndefined()
 
       expect(healthy.onInit).toHaveBeenCalled()
-      const line = stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('unknown'))
-      expect(line).toBeDefined()
+      // The emitted record is PARSED and its fields asserted, not probed for
+      // existence: `toBeDefined()` would pass on any line that happened to contain
+      // the word, including one emitted under the wrong key or without the
+      // fallback name ever being serialized.
+      const report: unknown = JSON.parse(
+        stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('unknown')) ?? '{}'
+      )
+      expect(report).toMatchObject({
+        logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+        destination: 'unknown',
+        err: { type: 'Error', message: 'init-fail' }
+      })
       stderrSpy.mockRestore()
     })
 

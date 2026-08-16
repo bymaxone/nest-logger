@@ -830,27 +830,33 @@ interface MultistreamEntry {
 /**
  * Internal helper: wrap an ILogDestination in a Writable suitable for pino.multistream.
  *
- * - `_write(chunk, _enc, cb)` calls `dest.write(chunk.toString('utf8'))` and invokes `cb()`
- *   synchronously on success.
- * - If `Buffer.byteLength(payload, 'utf8') > maxEntrySizeBytes`, the payload is replaced
- *   by a synthetic safe envelope (still valid JSON) and the reserved key
- *   `LOGGER_ENTRY_TRUNCATED` is emitted to the same destination. See `truncateIfOversized()` below.
- * - On async destination errors, the wrapper logs `LOGGER_DESTINATION_WRITE_FAILED` to stderr
- *   and calls `cb()` (never throws — avoids `unhandledRejection` that would crash the process).
+ * - `_write(chunk, _enc, cb)` hands the payload to `dest.write()` and invokes `cb()`
+ *   synchronously when the destination returns `undefined`.
+ * - Size bounding is NOT done here. `createSizeBoundedSerializer` is a Pino serializer and
+ *   runs before the entry is serialized, replacing an oversized payload with a synthetic
+ *   envelope carrying `LOGGER_ENTRY_TRUNCATED`; by the time a chunk reaches this adapter it
+ *   is already within the budget.
+ * - On destination errors — thrown or rejected — the wrapper records the failure in
+ *   `DestinationHealth`, reports `LOGGER_DESTINATION_WRITE_FAILED` to stderr and calls `cb()`
+ *   without an error (never throws — `cb(err)` would surface as a stream `'error'` and take
+ *   the host down, and an unreported rejection would crash the process).
  * - Per-destination level filtering happens at the multistream entry level (`{ stream, level }`),
- *   not inside `_write`.
- * - Backpressure: when `_write` returns `false`, Pino respects it via `sonic-boom` / `thread-stream`.
+ *   which the FACTORY builds; the adapter returns the `Writable` only.
+ * - Backpressure: the adapter never returns a value from `_write` — deferring `cb` is the whole
+ *   mechanism, and the buffer it grows is what makes the public `write()` return `false`.
  */
-export function destinationToStream(
-  dest: ILogDestination,
-  health: DestinationHealth,
-  defaultLevel: LogLevel,
-  maxEntrySizeBytes: number
-): MultistreamEntry {
-  const stream = new Writable({
-    write(chunk: Buffer, _enc, cb) {
+export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
+  return new Writable({
+    // String chunks stay strings: Pino writes UTF-8 NDJSON, so this skips a
+    // string→Buffer→string round-trip on the hot path.
+    decodeStrings: false,
+    write(chunk: string | Buffer, _enc, cb) {
       try {
-        const payload = truncateIfOversized(chunk.toString('utf8'), maxEntrySizeBytes)
+        // NOT truncated here. Size bounding is a Pino SERIALIZER
+        // (`createSizeBoundedSerializer`), applied before the entry is
+        // serialized — by the time a chunk reaches this adapter it is already
+        // within the budget.
+        const payload = typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
         // A sink that failed `onInit` never became live, so it is SKIPPED rather
         // than written to — its `write()` may assume resources it never acquired.
         // The fan-out has a stream for every REGISTERED destination, so this branch
@@ -912,7 +918,6 @@ export function destinationToStream(
       }
     }
   })
-  return { stream, level: dest.minLevel ?? defaultLevel }
 }
 
 /**
@@ -942,10 +947,12 @@ function truncateIfOversized(payload: string, maxBytes: number): string {
 ```typescript
 import pino from 'pino'
 
-const maxEntrySizeBytes = options.maxEntrySizeBytes ?? 65536
-const entries = destinations.map((d) =>
-  destinationToStream(d, health, options.level ?? 'info', maxEntrySizeBytes)
-)
+// The LEVEL is attached here, not returned by the adapter: `pino.multistream`
+// filters per entry, and the adapter's only job is the write fan-out.
+const entries = destinations.map((d) => ({
+  level: d.minLevel ?? options.level,
+  stream: destinationToStream(d, health)
+}))
 const multistream = pino.multistream(entries, { dedupe: false })
 const logger = pino(pinoOptions, multistream)
 ```
@@ -1449,6 +1456,28 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
       }
     }
     return { signal, flushedDestinations: this.active.length }
+  }
+
+  /**
+   * Report a failing `onShutdown` without letting the report abort the teardown
+   * of the destinations still queued behind it.
+   *
+   * The DESTINATION is passed, not its name: `readonly name: string` does not stop
+   * a consumer implementing it as a getter, and reading it at the call site would
+   * put the throw back inside the catch. Name and detail are guarded separately,
+   * so one unreadable value does not cost the other.
+   */
+  private reportShutdownFailure(dest: ILogDestination, cause: unknown): void {
+    const name = toSingleLineMessage(safeDestinationName(dest))
+    let detail = 'UnknownError'
+    try {
+      detail = escapeControlCharacters(
+        isErrorLike(cause) ? String(cause.stack ?? cause.message) : String(cause)
+      )
+    } catch {
+      // A value that cannot be read is still worth a line naming the destination.
+    }
+    writeStderrSafely(`[DestinationRegistry] Shutdown failed for "${name}": ${detail}\n`)
   }
 }
 ```
