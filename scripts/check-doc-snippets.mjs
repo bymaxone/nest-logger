@@ -295,7 +295,13 @@ function usedIn(source) {
         (ts.isPropertySignature(parent) && parent.name === node) ||
         (ts.isPropertyDeclaration(parent) && parent.name === node) ||
         (ts.isMethodDeclaration(parent) && parent.name === node) ||
-        (ts.isQualifiedName(parent) && parent.right === node)
+        (ts.isQualifiedName(parent) && parent.right === node) ||
+        // The left half of `{ RESERVED_LOG_KEYS as KEYS }` names what is being
+        // imported, it does not read it — the binding this snippet gets is `KEYS`.
+        // Counting it as a use made the alias case report the ORIGINAL name as
+        // unimported, and the run failed before the alias-aware key check could run.
+        ((ts.isImportSpecifier(parent) || ts.isBindingElement(parent)) &&
+          parent.propertyName === node)
       // A shorthand `{ safeMinLevel }` names the property AND reads the variable, so
       // it is a use — treating it as a declaration name would hide exactly the kind of
       // reference this script exists to find.
