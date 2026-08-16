@@ -187,13 +187,22 @@ and not importable from a consumer package, so a destination that needs to repor
 something writes its own — once, not per call site.
 
 ```typescript
-let stderrGuarded = false
+// One shared reference, so the check below can ask whether OUR listener is still
+// attached. A `let guarded = true` flag would go stale the moment anything else
+// removed it — a test doing listener cleanup is enough — and every later EPIPE
+// would be uncaught again. This is the shape the library's own helper arrived at
+// after exactly that defect.
+const swallowStderrError = (): void => undefined
+
 export function reportToStderrSafely(line: string): void {
   // The listener covers the ASYNCHRONOUS half (EPIPE, see the note above), the
   // try/catch the synchronous one. Either alone still leaves a way to die.
-  if (!stderrGuarded && !process.stderr.listenerCount('error')) {
-    process.stderr.on('error', () => undefined)
-    stderrGuarded = true
+  //
+  // Checked against the actual listener list, and it only ever ADDS: a consumer's
+  // own `'error'` handler is left alone, and its presence is not taken as proof
+  // that the stream is guarded, because their handler may well rethrow.
+  if (!process.stderr.listeners('error').includes(swallowStderrError)) {
+    process.stderr.on('error', swallowStderrError)
   }
   try {
     process.stderr.write(line)
@@ -215,8 +224,11 @@ export class LokiDestination implements ILogDestination {
     private readonly opts: { url: string; batchSize?: number; flushIntervalMs?: number }
   ) {}
 
+  /** The background flush currently running, so shutdown can wait for it. */
+  private inFlight: Promise<void> = Promise.resolve()
+
   onInit(): void {
-    this.flushTimer = setInterval(() => void this.flush(), this.opts.flushIntervalMs ?? 5000)
+    this.flushTimer = setInterval(() => this.flushInBackground(), this.opts.flushIntervalMs ?? 5000)
   }
 
   write(payload: string): void {
@@ -227,15 +239,27 @@ export class LokiDestination implements ILogDestination {
   }
 
   // Detached, so it must not reject: an unhandled rejection terminates the host.
+  // Chained rather than fired in parallel, and RETAINED in `inFlight`, so
+  // `onShutdown` can await a flush that is already running — otherwise a batch it
+  // requeues on failure is stranded after the process has stopped draining.
   private flushInBackground(): void {
-    void this.flush().catch(() => undefined)
+    this.inFlight = this.inFlight.then(() => this.flush()).catch(() => undefined)
   }
 
   private async flush(): Promise<void> {
     if (this.buffer.length === 0) return
     const batch = this.buffer.splice(0, this.buffer.length)
     try {
-      await fetch(this.opts.url, { method: 'POST', body: this.formatLokiPush(batch) })
+      const response = await fetch(this.opts.url, {
+        method: 'POST',
+        body: this.formatLokiPush(batch)
+      })
+      // `fetch` REJECTS only on a network-level failure. A 401, 429 or 500 resolves
+      // normally, so without this check the batch is spliced out and dropped on
+      // exactly the failures a log sink sees most.
+      if (!response.ok) {
+        throw new Error(`Loki responded ${response.status} ${response.statusText}`)
+      }
     } catch (err) {
       // Fail soft is NOT the same as discarding the batch. Put it back so the next
       // flush retries it, and report — an empty catch here loses every entry in it
@@ -256,6 +280,12 @@ export class LokiDestination implements ILogDestination {
 
   async onShutdown(): Promise<void> {
     if (this.flushTimer) clearInterval(this.flushTimer)
+    // Wait for a background flush already running before draining what is left:
+    // it may requeue its batch on failure, and those entries would otherwise be
+    // stranded in a buffer nobody drains again.
+    await this.inFlight
+    // NOT swallowed here: the registry catches, reports and isolates a failing
+    // `onShutdown`, and a batch lost at shutdown is one nobody else is holding.
     await this.flush()
   }
 
@@ -506,6 +536,9 @@ export class PrismaPostgresDestination implements ILogDestination {
     private readonly opts: { batchSize?: number; flushIntervalMs?: number } = {}
   ) {}
 
+  /** The background flush currently running, so shutdown can wait for it. */
+  private inFlight: Promise<void> = Promise.resolve()
+
   onInit(): void {
     this.flushTimer = setInterval(() => this.flushInBackground(), this.opts.flushIntervalMs ?? 2000)
   }
@@ -522,10 +555,11 @@ export class PrismaPostgresDestination implements ILogDestination {
 
   // A DETACHED promise that rejects is an unhandled rejection, which terminates
   // the process on Node 24 — so the background path swallows what `flush` already
-  // retained and reported. `onShutdown` awaits `flush` directly instead, where the
-  // rejection has somewhere to go: the registry isolates and reports it.
+  // retained and reported. Chained rather than parallel, and retained in
+  // `inFlight` so shutdown can await it. `onShutdown` awaits `flush` directly
+  // afterwards, where a rejection has somewhere to go: the registry isolates it.
   private flushInBackground(): void {
-    void this.flush().catch(() => undefined)
+    this.inFlight = this.inFlight.then(() => this.flush()).catch(() => undefined)
   }
 
   // A batch flush runs AFTER the `write` that triggered it has returned, so its
@@ -566,6 +600,10 @@ export class PrismaPostgresDestination implements ILogDestination {
 
   async onShutdown(): Promise<void> {
     if (this.flushTimer) clearInterval(this.flushTimer)
+    // Wait for a background flush already running before draining what is left:
+    // it may requeue its batch on failure, and those entries would otherwise be
+    // stranded in a buffer nobody drains again.
+    await this.inFlight
     // NOT swallowed: the registry catches, reports and isolates a failing
     // `onShutdown`, and a batch lost at shutdown is one nobody else is holding.
     await this.flush()

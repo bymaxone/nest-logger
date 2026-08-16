@@ -870,14 +870,16 @@ export function destinationToStream(
               // still counts this sink as having taken the entry and another
               // destination may discard the copy it was holding.
               health.markWriteFailed(dest)
-              writeStderrSafely(
-                JSON.stringify({
-                  level: 40,
-                  logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
-                  destination: dest.name,
-                  error: err instanceof Error ? err.message : String(err),
-                  time: new Date().toISOString()
-                }) + '\n'
+              // Through `reportDestinationFailure`, not formatted inline: it does the
+              // `String(cause)` and the `name`/`message` reads INSIDE its own guard,
+              // so an Error with a throwing getter cannot make this handler throw
+              // before `cb()`, and it escapes the control characters a terminal would
+              // otherwise interpret from a remote-derived message.
+              reportDestinationFailure(
+                RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+                dest.name,
+                err,
+                `Log destination "${dest.name}" failed to write; the entry was dropped`
               )
               cb()
             }
@@ -887,14 +889,11 @@ export function destinationToStream(
         cb()
       } catch (err) {
         health.markWriteFailed(dest)
-        writeStderrSafely(
-          JSON.stringify({
-            level: 40,
-            logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
-            destination: dest.name,
-            error: err instanceof Error ? err.message : String(err),
-            time: new Date().toISOString()
-          }) + '\n'
+        reportDestinationFailure(
+          RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+          dest.name,
+          err,
+          `Log destination "${dest.name}" failed to write; the entry was dropped`
         )
         cb()
       }
@@ -1372,14 +1371,11 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
         this.health.markHealthy(dest, this.effectiveLevelOf(dest))
       } catch (err) {
         this.health.markFailed(dest, this.effectiveLevelOf(dest))
-        writeStderrSafely(
-          JSON.stringify({
-            level: 50,
-            logKey: 'LOGGER_DESTINATION_INIT_FAILED',
-            destination: dest.name,
-            error: err instanceof Error ? err.message : String(err),
-            time: new Date().toISOString()
-          }) + '\n'
+        reportDestinationFailure(
+          RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+          dest.name,
+          err,
+          `Log destination "${dest.name}" failed to initialize and was skipped`
         )
       }
     }
@@ -1400,16 +1396,13 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
           )
         })
       } catch (err) {
-        writeStderrSafely(
-          JSON.stringify({
-            level: 40,
-            // The same key the real registry reuses for a failing readiness hook;
-            // there is no separate reserved key for it.
-            logKey: 'LOGGER_DESTINATION_INIT_FAILED',
-            destination: dest.name,
-            error: err instanceof Error ? err.message : String(err),
-            time: new Date().toISOString()
-          }) + '\n'
+        // The same key the real registry reuses for a failing readiness hook;
+        // there is no separate reserved key for it.
+        reportDestinationFailure(
+          RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+          dest.name,
+          err,
+          `Log destination "${dest.name}" failed its readiness hook`
         )
       }
     }

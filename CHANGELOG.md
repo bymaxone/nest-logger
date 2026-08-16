@@ -82,6 +82,31 @@ heading here.
   and hid a hook from anyone who buffers. It ships inside the package, which makes it the copy that
   matters most.
 
+- **The consumer-facing stderr guard reintroduced a defect the library had already fixed.** It
+  remembered `guarded = true` in a boolean, which goes stale the moment anything else removes the
+  listener — a test doing cleanup is enough — and every later EPIPE is uncaught again. It also
+  treated ANY existing `'error'` listener as proof the stream was safe, though a consumer's handler
+  may rethrow. `safe-stdio.util.ts` arrived at the right shape after exactly this: check whether OUR
+  listener is in `stream.listeners('error')`, and only ever add. The documented helper now does the
+  same.
+
+- **The Loki example discarded its batch on every HTTP error.** `fetch` rejects only on a
+  network-level failure; 401, 429 and 500 resolve normally, so the retention path added for it never
+  ran on the failures a log sink actually sees. It checks `response.ok` and throws now. Its timer
+  also still detached the flush directly, which the same commit had fixed only in the Postgres
+  example.
+
+- **A background flush was invisible to shutdown.** Both examples now chain background flushes into
+  one tracked promise and `onShutdown` awaits it before the final drain: a flush that fails requeues
+  its batch, and without the await those entries sit in a buffer nobody drains again.
+
+- **The specification formatted failure reports inline instead of using `reportDestinationFailure`.**
+  An `Error` with a throwing `message` getter — or a non-Error with a throwing coercion hook — makes
+  an inline `String(cause)` throw from inside the very handler that exists to contain failures, and
+  the inline form also skips the control-character escaping applied to remote-derived text. All four
+  reporting sites in the document now go through the helper that does the coercion inside its own
+  guard.
+
 - **The batch-retention fix introduced a crash path of its own.** Making `flush()` rethrow is right
   for the shutdown caller, which awaits it — and wrong for the two background callers, which detach
   the promise. A detached rejection is an unhandled rejection, which terminates the process on
