@@ -1,6 +1,6 @@
 # Mutation Testing Results
 
-> **Last run:** 2026-08-15 (`pnpm mutation:full` — cold, baseline deleted)
+> **Last run:** 2026-08-16 (`pnpm mutation:full` — cold, baseline deleted)
 > **Command:** Stryker 9, jest runner, `coverageAnalysis: perTest`, `ignoreStatic: true`
 > **Report:** [`reports/mutation/mutation.html`](../reports/mutation/mutation.html)
 
@@ -11,14 +11,14 @@
 | **Global mutation score**                              | **100.00 %**                |
 | Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅ |
 | Aspirational target (`thresholds.high`)                | 99 % → **reached**          |
-| Killed                                                 | 830                         |
+| Killed                                                 | 834                         |
 | Survived                                               | **0**                       |
 | Timeout (counts as detected)                           | 11                          |
 | Ignored — documented `// Stryker disable`              | 17                          |
 | Ignored — static mutants (`ignoreStatic: true`)        | 128                         |
-| Compile/runtime errors (type-system-guarded, excluded) | 515                         |
+| Compile/runtime errors (type-system-guarded, excluded) | 512                         |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `841 / 841 = 100.00 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `845 / 845 = 100.00 %`.
 
 ### 2026-08-15 — the descriptor flags nobody could kill, deleted rather than excused
 
