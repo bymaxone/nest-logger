@@ -432,7 +432,11 @@ describe('DestinationRegistry', () => {
       await registry.onApplicationShutdown()
 
       const line = stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('ansi'))
-      expect(line).toBeDefined()
+      // Asserted POSITIVELY on the escaped form, not only on the absence of the raw
+      // one: `not.toContain` alone is satisfied by an empty line, so it cannot tell
+      // "escaped correctly" from "nothing was emitted".
+      expect(line).toContain('\\u001b')
+      expect(line).toContain('\\u0085')
       expect(line).not.toContain('\u001b')
       expect(line).not.toContain('\u0085')
       expect(line).toContain('Error: boom\n    at ')
