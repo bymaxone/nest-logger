@@ -843,6 +843,7 @@ interface MultistreamEntry {
  */
 export function destinationToStream(
   dest: ILogDestination,
+  health: DestinationHealth,
   defaultLevel: LogLevel,
   maxEntrySizeBytes: number
 ): MultistreamEntry {
@@ -858,6 +859,10 @@ export function destinationToStream(
           Promise.resolve(result).then(
             () => cb(),
             (err: unknown) => {
+              // RECORDED before it is reported: without `markWriteFailed`, readiness
+              // still counts this sink as having taken the entry and another
+              // destination may discard the copy it was holding.
+              health.markWriteFailed(dest)
               writeStderrSafely(
                 JSON.stringify({
                   level: 40,
@@ -874,6 +879,7 @@ export function destinationToStream(
         }
         cb()
       } catch (err) {
+        health.markWriteFailed(dest)
         writeStderrSafely(
           JSON.stringify({
             level: 40,
@@ -1330,16 +1336,18 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
   ) {}
 
   async onModuleInit() {
-    // Each onInit() is wrapped in try/catch. On failure, the destination is dropped
-    // from the active list and LOGGER_DESTINATION_INIT_FAILED is logged via stderr
-    // (Pino is not yet wired at this point). The lib NEVER throws to abort boot —
-    // degraded mode is preferred over crash.
-    const survivors: ILogDestination[] = []
+    // Each onInit() is wrapped in try/catch. On failure the destination is never
+    // added to the ACTIVE list — so no entry is written to it — and it is recorded
+    // as failed, with LOGGER_DESTINATION_INIT_FAILED reported via stderr (Pino is
+    // not yet wired at this point). It stays REGISTERED. The lib NEVER throws to
+    // abort boot — degraded mode is preferred over crash.
     for (const dest of this.destinations) {
       try {
         await dest.onInit?.()
-        survivors.push(dest)
+        this.active.push(dest)
+        this.health.markHealthy(dest, this.effectiveLevelOf(dest))
       } catch (err) {
+        this.health.markFailed(dest, this.effectiveLevelOf(dest))
         writeStderrSafely(
           JSON.stringify({
             level: 50,
@@ -1351,10 +1359,36 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
         )
       }
     }
-    // Mutate the registry to the surviving subset — subsequent writes only target
-    // destinations that successfully initialized.
-    ;(this.destinations as ILogDestination[]).length = 0
-    ;(this.destinations as ILogDestination[]).push(...survivors)
+    // The registered set is NOT truncated to the survivors. Writes target `active`;
+    // a destination that failed `onInit` stays registered because it is the sink
+    // most likely to be holding entries it now has to resolve, and dropping it here
+    // would strand them and silently break the guarantee below.
+
+    // Called for EVERY registered destination, healthy and failed alike, once all
+    // `onInit` calls have settled, and awaited. Isolated per destination: a hook
+    // that throws is reported and skipped rather than aborting the rest.
+    for (const dest of this.destinations) {
+      try {
+        await dest.onRegistryReady?.({
+          heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
+            dest,
+            this.effectiveLevelOf(dest)
+          )
+        })
+      } catch (err) {
+        writeStderrSafely(
+          JSON.stringify({
+            level: 40,
+            // The same key the real registry reuses for a failing readiness hook;
+            // there is no separate reserved key for it.
+            logKey: 'LOGGER_DESTINATION_INIT_FAILED',
+            destination: dest.name,
+            error: err instanceof Error ? err.message : String(err),
+            time: new Date().toISOString()
+          }) + '\n'
+        )
+      }
+    }
   }
 
   async onApplicationShutdown(signal?: string) {

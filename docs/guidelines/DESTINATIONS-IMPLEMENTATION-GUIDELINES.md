@@ -90,20 +90,27 @@ The lib exposes internally:
 ```typescript
 import { Writable } from 'node:stream'
 
+import type { DestinationHealth } from '../services/destination-health.service'
 import { writeStderrSafely } from '../utils/safe-stdio.util'
 
-export function destinationToStream(dest: ILogDestination): Writable {
+export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
   return new Writable({
     write(chunk: Buffer, _encoding, callback) {
       // A failure is CONTAINED, never propagated. `callback(err)` makes the
       // `Writable` emit `'error'`, which with no listener terminates the host —
-      // the opposite of the fail-soft contract in §3. Report the failure, then
-      // signal success so the fan-out reaches the other sinks.
+      // the opposite of the fail-soft contract in §3. RECORD the failure, report
+      // it, then signal success so the fan-out reaches the other sinks.
+      //
+      // `markWriteFailed` is the half that keeps this from becoming a loss path:
+      // without it readiness would still count this sink as having taken the
+      // entry, and another destination could discard the copy it was holding.
+      // Reporting alone is not containment.
       //
       // Through `writeStderrSafely`, NOT `process.stderr.write`: a closed pipe
       // reports EPIPE asynchronously, so a raw write here would trade a contained
       // destination failure for an uncaught exception. See the EPIPE note in §3.
       const report = (err: unknown): void => {
+        health.markWriteFailed(dest)
         writeStderrSafely(
           `${JSON.stringify({ level: 'error', logKey: 'LOGGER_DESTINATION_WRITE_FAILED', destination: dest.name, err: String(err) })}\n`
         )
@@ -435,6 +442,23 @@ See §3 — pattern with buffer + flush timer + batch.
 ```typescript
 import type { PrismaClient } from '@prisma/client'
 
+// The EPIPE guard from §3, written out because the library's own helper is
+// internal and not importable from a consumer package. The listener covers the
+// asynchronous half, the try/catch the synchronous one; either alone can still
+// take the process down.
+let stderrGuarded = false
+function reportToStderrSafely(line: string): void {
+  if (!stderrGuarded && !process.stderr.listenerCount('error')) {
+    process.stderr.on('error', () => undefined)
+    stderrGuarded = true
+  }
+  try {
+    process.stderr.write(line)
+  } catch {
+    // A destroyed stream throws synchronously; a report is never worth a crash.
+  }
+}
+
 export class PrismaPostgresDestination implements ILogDestination {
   readonly name = 'postgres'
   private buffer: Record<string, unknown>[] = []
@@ -459,6 +483,11 @@ export class PrismaPostgresDestination implements ILogDestination {
     if (this.buffer.length >= (this.opts.batchSize ?? 50)) void this.flush()
   }
 
+  // A batch flush runs AFTER the `write` that triggered it has returned, so its
+  // failure cannot reach the adapter — this is the one place a destination has to
+  // handle its own. It still must not discard the batch: an empty `catch` here
+  // loses every entry in it while the adapter has already recorded them as taken.
+  // Put the batch back and report; the next flush retries it.
   private async flush(): Promise<void> {
     if (this.buffer.length === 0) return
     const batch = this.buffer.splice(0, this.buffer.length)
@@ -473,13 +502,27 @@ export class PrismaPostgresDestination implements ILogDestination {
         })),
         skipDuplicates: true
       })
-    } catch {
-      /* fail-soft */
+    } catch (err) {
+      this.buffer.unshift(...batch)
+      // Guard this write yourself — see the EPIPE note in §3. `writeStderrSafely`
+      // is internal to the library and not importable from outside it.
+      reportToStderrSafely(
+        JSON.stringify({
+          level: 'error',
+          logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
+          destination: 'postgres',
+          retained: batch.length,
+          error: err instanceof Error ? err.message : String(err)
+        }) + '\n'
+      )
+      throw err
     }
   }
 
   async onShutdown(): Promise<void> {
     if (this.flushTimer) clearInterval(this.flushTimer)
+    // NOT swallowed: the registry catches, reports and isolates a failing
+    // `onShutdown`, and a batch lost at shutdown is one nobody else is holding.
     await this.flush()
   }
 }

@@ -82,6 +82,26 @@ heading here.
   and hid a hook from anyone who buffers. It ships inside the package, which makes it the copy that
   matters most.
 
+- **The documented adapters reported a failed write but never RECORDED it.** The prose added with
+  them says the adapter "contains it, records it and reports it"; the examples did the first and the
+  third. Recording is the half that prevents the loss: without `markWriteFailed`, readiness still
+  counts the sink as having taken the entry and another destination may discard the copy it was
+  holding. The examples now take the health tracker and mark the sink before reporting.
+
+- **The worked Postgres destination still lost a batch, in the example that demonstrates not losing
+  one.** Removing the `try/catch` from its `write` was not enough: the flush it triggers runs after
+  that `write` returned, and `flush()` ended in `catch { /* fail-soft */ }`, discarding every entry
+  in the batch while the adapter had already recorded them as taken. A background flush is the one
+  failure a destination must handle itself — so it now returns the batch to the buffer, reports it,
+  and rethrows so the caller sees it. The stderr helper it uses is written out in full, because the
+  library's guarded one is internal and a consumer cannot import it.
+
+- **The specification contained two incompatible lifecycle contracts.** The `onRegistryReady`
+  guarantee added above says the hook runs for every registered destination; the `DestinationRegistry`
+  example further down truncated the registered list to the survivors of `onInit` and never called
+  the hook at all. The example now keeps the registered set, writes only to the active subset, and
+  awaits the hook for every destination with per-destination isolation.
+
 - **The guide told destinations to swallow their own write failures — a loss path, in the document
   that defines the fail-soft contract.** "Catch every error in `write` and log it via
   `process.stderr.write`" reads as prudence and is the opposite: a swallowed failure looks like a
