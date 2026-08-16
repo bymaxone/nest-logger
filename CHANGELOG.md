@@ -76,6 +76,14 @@ heading here.
 
 ### Fixed
 
+- **A throwing `minLevel` getter could abort application bootstrap.** `effectiveLevelOf` reads the
+  consumer-defined `minLevel`, and `readonly minLevel?: LogLevel` does not stop it being a getter.
+  It is read on BOTH branches of the init loop — including inside the catch that exists so a failing
+  destination cannot stop the application from starting — so a throw there took the app down at
+  start-up and stranded every destination after it. The read is guarded inside `effectiveLevelOf`,
+  which covers every call site at once, and falls back to the module level: what a destination
+  without a `minLevel` gets anyway. Same defect class as the `name` getter, in the sibling property.
+
 - **The shutdown reporter could be made to forge a second stderr record.** Its guard used
   `escapeControlCharacters`, which preserves newlines ON PURPOSE because a stack trace is
   legitimately multi-line — but it was applied to `cause.message` when no stack existed, and to any
@@ -139,6 +147,14 @@ heading here.
   containment. The previous release note credited the safe writer with a protection it never had.
   Every documented adapter now uses `reportDestinationFailure`, which does the coercion inside its own
   guard and escapes control characters.
+
+- **A raced timeout is not a timeout.** The database example briefly carried a `Promise.race`
+  deadline, which settles the AWAIT without cancelling the query: the batch would be requeued while
+  the original `createMany` was still running, the next flush would start a second one, and a slow
+  database would accumulate concurrent inserts of the same batch — duplicates, not just delay. The
+  bound belongs at the driver, where it aborts the statement server-side (`statement_timeout` on the
+  connection string), and the example says so instead of demonstrating a race. The HTTP example keeps
+  `AbortSignal.timeout`, which does cancel.
 
 - **Retaining a failed batch forever is a memory leak.** Requeueing on failure while `write` keeps
   appending is an unbounded queue: a sustained outage ends in an OOM, which loses every held entry

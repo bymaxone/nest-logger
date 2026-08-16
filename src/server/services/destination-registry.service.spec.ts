@@ -444,6 +444,34 @@ describe('DestinationRegistry', () => {
     })
 
     it(/*
+     * REGRESSION — a throwing `minLevel` getter must not abort bootstrap either.
+     * `effectiveLevelOf` reads it on BOTH branches of the init loop, including
+     * inside the catch that exists so a failing destination cannot stop the
+     * application from starting: an escape there took the app down at start-up and
+     * stranded every destination after it. `readonly minLevel?: LogLevel` does not
+     * stop a consumer implementing it as a getter.
+     *
+     * Asserted on the LATER destination initializing, not merely on the absence of
+     * a throw — continuing the loop is the property that matters.
+     */
+    'still boots when a destination cannot report its own minLevel', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const poison = makeDestination('poison', { onInit: jest.fn() })
+      Object.defineProperty(poison, 'minLevel', {
+        get() {
+          throw new Error('minLevel getter exploded')
+        }
+      })
+      const later = makeDestination('later', { onInit: jest.fn() })
+      const registry = new DestinationRegistry([poison, later], logger, options, health)
+
+      await expect(registry.onModuleInit()).resolves.toBeUndefined()
+
+      expect(later.onInit).toHaveBeenCalled()
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
      * REGRESSION — a throwing `name` getter must not abort BOOTSTRAP either. The
      * init reporter read the name at its call site, inside the catch that exists
      * so a failing destination cannot stop the application from starting; the

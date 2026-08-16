@@ -667,16 +667,6 @@ See §3 — pattern with buffer + flush timer + batch.
 ```typescript
 import type { PrismaClient } from '@prisma/client'
 
-/** Reject once `ms` elapses, so a query with no cancellation cannot stall forever. */
-function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    work,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`query exceeded ${ms}ms`)), ms).unref()
-    )
-  ])
-}
-
 /** Cap on entries held while the database is unreachable — see the note in `flush`. */
 const POSTGRES_MAX_BUFFERED = 10_000
 
@@ -687,11 +677,7 @@ export class PrismaPostgresDestination implements ILogDestination {
 
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly opts: {
-      batchSize?: number
-      flushIntervalMs?: number
-      queryTimeoutMs?: number
-    } = {}
+    private readonly opts: { batchSize?: number; flushIntervalMs?: number } = {}
   ) {}
 
   /** The background flush currently running, so shutdown can wait for it. */
@@ -746,23 +732,28 @@ export class PrismaPostgresDestination implements ILogDestination {
     if (this.buffer.length === 0) return
     const batch = this.buffer.splice(0, this.buffer.length)
     try {
-      // A DEADLINE, like the HTTP example. Without one a stalled query never
-      // settles: `flushPending` never clears, `write` keeps discarding at the cap
-      // with nothing ever reported, and `onShutdown` hangs awaiting `inFlight`.
-      // Prisma takes no AbortSignal here, so the deadline is raced explicitly.
-      await withDeadline(
-        this.prisma.log.createMany({
-          data: batch.map((entry) => ({
-            level: String(entry.level ?? 'info'),
-            message: String(entry.msg ?? ''),
-            logKey: String(entry.logKey ?? 'unknown'),
-            metadata: entry,
-            timestamp: new Date(Number(entry.time))
-          })),
-          skipDuplicates: true
-        }),
-        this.opts.queryTimeoutMs ?? 10_000
-      )
+      // NO `Promise.race` deadline here, and that is deliberate. Racing a timeout
+      // would settle the AWAIT without cancelling the query: the batch would be
+      // requeued while the original `createMany` is still running, the next flush
+      // would start a second one, and a slow database would accumulate concurrent
+      // inserts of the same batch — duplicates, not just delay. A timeout must
+      // CANCEL to be a timeout.
+      //
+      // The bound belongs at the driver instead, where it aborts the statement
+      // server-side: `postgresql://…?statement_timeout=10000` on the Prisma
+      // connection string (or `SET LOCAL statement_timeout` inside a transaction).
+      // Then this promise really does settle, `flushPending` clears, and the retry
+      // is a retry rather than a duplicate.
+      await this.prisma.log.createMany({
+        data: batch.map((entry) => ({
+          level: String(entry.level ?? 'info'),
+          message: String(entry.msg ?? ''),
+          logKey: String(entry.logKey ?? 'unknown'),
+          metadata: entry,
+          timestamp: new Date(Number(entry.time))
+        })),
+        skipDuplicates: true
+      })
     } catch (err) {
       // Retained, but BOUNDED. Requeueing every failed batch while `write` keeps
       // appending is an unbounded queue: a sustained outage then ends in an OOM,

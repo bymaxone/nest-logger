@@ -165,7 +165,19 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * @returns The level entries must clear to reach it.
    */
   private effectiveLevelOf(destination: ILogDestination): LogLevel {
-    const configured = destination.minLevel
+    // The READ is guarded, not just the use. `minLevel` is consumer-defined and
+    // `readonly minLevel?: LogLevel` does not stop it being a getter that throws.
+    // This runs on both branches of the init loop — including inside the catch that
+    // exists so a failing destination cannot abort bootstrap — so an escape here
+    // would take the application down at start-up and strand every destination
+    // after this one. Falling back to the module level is the safe answer: it is
+    // what a destination without a `minLevel` gets anyway.
+    let configured: LogLevel | undefined
+    try {
+      configured = destination.minLevel
+    } catch {
+      return this.options.level
+    }
     if (configured === undefined) {
       return this.options.level
     }
