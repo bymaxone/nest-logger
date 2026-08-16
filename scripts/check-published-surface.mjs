@@ -613,9 +613,20 @@ function exportedNames() {
  * Build the probe for one re-declared type: the README's own declaration, renamed
  * so it can sit beside the shipped one, and the two assertions that compare them.
  *
- * Mutual assignability catches a changed signature. Key parity catches an omitted
- * member, which assignability cannot: an optional property missing from one side
- * is assignable in both directions.
+ * Three assertions, because each covers what the previous one cannot:
+ *
+ * 1. **Mutual assignability** — a changed return type. `Promise<void>` flows into
+ *    `PromiseLike<void>` but not back, so a drifted return breaks one direction.
+ * 2. **Key parity** — an omitted member. An optional property missing from one
+ *    side is assignable in BOTH directions, so assignability never sees it; this
+ *    is how the README's absent `onRegistryReady` survived every earlier gate.
+ * 3. **Per-member identity** — a changed PARAMETER. Method parameters stay
+ *    bivariant even under `strictFunctionTypes`, so a README declaring
+ *    `write(payload: unknown)` satisfies both assignments and key parity.
+ *    Measured, not assumed: the first version of this gate passed that exact
+ *    edit. `Identical` is the standard conditional-type trick for type equality
+ *    — two deferred conditionals are only mutually assignable when their check
+ *    types are the same type, which is invariance rather than assignability.
  *
  * @param code - The README block, verbatim.
  * @param name - The exported type it re-declares.
@@ -636,7 +647,12 @@ function declarationProbe(code, name, exported) {
     `type Missing = Exclude<keyof ${name}, keyof ${alias}>\n` +
     `type Extra = Exclude<keyof ${alias}, keyof ${name}>\n` +
     `declare const keys: [Missing, Extra]\n` +
-    `export const _keyParity: [never, never] = keys\n`
+    `export const _keyParity: [never, never] = keys\n` +
+    `type Identical<A, B> =\n` +
+    `  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false\n` +
+    `type Shared = keyof ${name} & keyof ${alias}\n` +
+    `declare const members: { [K in Shared]: Identical<${name}[K], ${alias}[K]> }\n` +
+    `export const _memberParity: { [K in Shared]: true } = members\n`
   )
 }
 

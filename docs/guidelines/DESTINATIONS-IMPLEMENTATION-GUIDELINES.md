@@ -137,7 +137,9 @@ Advantages:
 
 `sonic-boom` (Pino's stream engine) emits `'drain'` events when its internal buffer fills up. Destinations that send to the network (Loki, Datadog) MUST buffer internally and flush in batches.
 
-**Drain contract for our adapter:** when `Writable._write` returns `false`, Pino's multistream pauses; on `'drain'`, it resumes. Our `destinationToStream()` adapter's `_write` only returns `false` (implicitly, by deferring `callback`) if `dest.write()` returns anything other than `undefined` and it has not settled — sync destinations (stdout, file) never trigger backpressure on the Pino side. This is an intentional contract: synchronous destinations are expected to never block; async destinations opt into backpressure by returning something awaitable.
+**Drain contract for our adapter:** `_write` returns `void` — it never signals backpressure by its return value. What it controls is **when** it calls `callback`, and that is the whole mechanism: a chunk stays in flight until the callback fires, so further entries accumulate in the stream's internal buffer. Once that buffer reaches `highWaterMark`, the PUBLIC `writable.write()` returns `false` and the writer pauses; `'drain'` is emitted after the queue clears.
+
+Our `destinationToStream()` adapter defers `callback` only when `dest.write()` returns something other than `undefined` and it has not settled — so sync destinations (stdout, file) never let the buffer grow and never trigger backpressure on the Pino side. This is an intentional contract: synchronous destinations are expected to never block; async destinations opt into backpressure by returning something awaitable.
 
 ```typescript
 // Inside destinationToStream — an awaitable write defers callback,

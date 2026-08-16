@@ -82,6 +82,12 @@ heading here.
   and hid a hook from anyone who buffers. It ships inside the package, which makes it the copy that
   matters most.
 
+- **The drain contract described a return value `_write` does not have.** It said the adapter signals
+  backpressure by `_write` returning `false`; `_write` returns `void`. Deferring its callback is the
+  actual mechanism — the chunk stays in flight, the internal buffer grows, and it is the PUBLIC
+  `writable.write()` that returns `false` at `highWaterMark`. The conclusion the section drew was
+  right and the model under it was not, which is the kind of text a destination author reasons from.
+
 - **The documented adapter examples contradicted the fail-soft contract they were illustrating.**
   They routed a failed write into `callback(err)`, and the guide listed that as an advantage — "errors
   are propagated as a callback err (not as an exception that crashes the app)". A `Writable` given an
@@ -103,10 +109,14 @@ heading here.
   So the rule is now a gate rather than a habit. `check:published` compiled only README blocks that
   **import** the package, on the reasoning that naming the API is not a claim about it — which left a
   block that _re-declares_ an exported type unchecked, and that is exactly where the README drifted.
-  It now compiles those too, asserting mutual assignability against the shipped type plus key parity,
-  the second because a missing optional member is assignable in both directions and would otherwise
-  pass. Reverting the README to its previous text makes the gate fail and name both halves of the
-  defect, which is how it was verified rather than assumed.
+  It now compiles those too, with three assertions because each covers what the previous one cannot:
+  mutual assignability catches a changed return type; key parity catches an omitted member, which is
+  assignable in both directions and is how the absent `onRegistryReady` survived; per-member type
+  identity catches a changed PARAMETER, which stays bivariant even under `strictFunctionTypes`.
+
+  The third was added because the first version of the gate did not have it and **passed** a README
+  declaring `write(payload: unknown)` — measured by making that edit, not reasoned about. Each
+  assertion was verified the same way: introduce the drift, watch the gate name it, restore.
 
 - **`heldEntriesDeliveredElsewhere` is documented as best-effort rather than as proof.** The JSDoc
   said `true` requires no write still in flight, which reads as complete accounting — while the
