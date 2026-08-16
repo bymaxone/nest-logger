@@ -82,6 +82,30 @@ heading here.
   and hid a hook from anyone who buffers. It ships inside the package, which makes it the copy that
   matters most.
 
+- **The batch-retention fix introduced a crash path of its own.** Making `flush()` rethrow is right
+  for the shutdown caller, which awaits it — and wrong for the two background callers, which detach
+  the promise. A detached rejection is an unhandled rejection, which terminates the process on
+  Node 24: a loss path traded for a crash path, in the same commit that closed the loss. The two
+  detached call sites now go through a `flushInBackground()` that swallows what `flush` already
+  retained and reported, while `onShutdown` still awaits `flush` directly, where the rejection has
+  somewhere to go.
+
+- **The Loki example was still discarding its batch** — the same defect as the Postgres one, one
+  section earlier, with `// Fail soft` written over it. Fail-soft means not crashing the host; it
+  never meant dropping the entries. It retains and reports now, and the guarded stderr helper both
+  examples use is defined once, ahead of its first use, instead of being named and left undefined.
+
+- **The documented adapters recorded a failure only after the promise rejected**, leaving the
+  in-flight window the implementation closes with `markWritePending`/`markWriteSettled`. Readiness
+  can be computed while a write is still pending; without the pending count it reads as silent
+  success, and a buffering sink discards its copy moments before that write rejects.
+
+- **The specification's registry example referenced members it did not declare** — `this.active`,
+  `this.health`, `this.effectiveLevelOf` — so the authoritative document showed an implementation
+  that would not compile. It now declares them, and its shutdown loop iterates the ACTIVE subset
+  rather than every registered destination, matching the implementation: a sink whose `onInit`
+  failed may never have acquired what `onShutdown` would close.
+
 - **The documented adapters reported a failed write but never RECORDED it.** The prose added with
   them says the adapter "contains it, records it and reports it"; the examples did the first and the
   third. Recording is the half that prevents the loss: without `markWriteFailed`, readiness still

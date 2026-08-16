@@ -126,7 +126,21 @@ export function destinationToStream(dest: ILogDestination, health: DestinationHe
         if (result === undefined) {
           callback()
         } else {
-          Promise.resolve(result).then(() => callback(), report)
+          // Counted while IN FLIGHT. Readiness can be computed before this promise
+          // settles, and a pending write must read as unproven rather than as
+          // silent success — otherwise a buffering sink discards its copy moments
+          // before this one rejects.
+          health.markWritePending(dest)
+          Promise.resolve(result).then(
+            () => {
+              health.markWriteSettled(dest)
+              callback()
+            },
+            (err) => {
+              health.markWriteSettled(dest)
+              report(err)
+            }
+          )
         }
       } catch (err) {
         report(err)
@@ -166,6 +180,29 @@ write(chunk, _enc, callback) {
 }
 ```
 
+### Reporting from your own destination — `reportToStderrSafely`
+
+The examples below share this helper. The library's own guarded writer is internal
+and not importable from a consumer package, so a destination that needs to report
+something writes its own — once, not per call site.
+
+```typescript
+let stderrGuarded = false
+export function reportToStderrSafely(line: string): void {
+  // The listener covers the ASYNCHRONOUS half (EPIPE, see the note above), the
+  // try/catch the synchronous one. Either alone still leaves a way to die.
+  if (!stderrGuarded && !process.stderr.listenerCount('error')) {
+    process.stderr.on('error', () => undefined)
+    stderrGuarded = true
+  }
+  try {
+    process.stderr.write(line)
+  } catch {
+    // A destroyed stream throws synchronously; a report is never worth a crash.
+  }
+}
+```
+
 Destinations that send to the network (Loki, Datadog) MUST buffer internally and flush in batches:
 
 ```typescript
@@ -185,8 +222,13 @@ export class LokiDestination implements ILogDestination {
   write(payload: string): void {
     this.buffer.push(payload)
     if (this.buffer.length >= (this.opts.batchSize ?? 100)) {
-      void this.flush()
+      this.flushInBackground()
     }
+  }
+
+  // Detached, so it must not reject: an unhandled rejection terminates the host.
+  private flushInBackground(): void {
+    void this.flush().catch(() => undefined)
   }
 
   private async flush(): Promise<void> {
@@ -194,9 +236,21 @@ export class LokiDestination implements ILogDestination {
     const batch = this.buffer.splice(0, this.buffer.length)
     try {
       await fetch(this.opts.url, { method: 'POST', body: this.formatLokiPush(batch) })
-    } catch {
-      // Fail soft — log delivery failure MUST NOT crash the app
-      // In critical production: pair with a dead-letter queue or alert
+    } catch (err) {
+      // Fail soft is NOT the same as discarding the batch. Put it back so the next
+      // flush retries it, and report — an empty catch here loses every entry in it
+      // while the adapter has already recorded them as taken.
+      this.buffer.unshift(...batch)
+      reportToStderrSafely(
+        JSON.stringify({
+          level: 'error',
+          logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
+          destination: 'loki',
+          retained: batch.length,
+          error: err instanceof Error ? err.message : String(err)
+        }) + '\n'
+      )
+      throw err
     }
   }
 
@@ -442,23 +496,6 @@ See §3 — pattern with buffer + flush timer + batch.
 ```typescript
 import type { PrismaClient } from '@prisma/client'
 
-// The EPIPE guard from §3, written out because the library's own helper is
-// internal and not importable from a consumer package. The listener covers the
-// asynchronous half, the try/catch the synchronous one; either alone can still
-// take the process down.
-let stderrGuarded = false
-function reportToStderrSafely(line: string): void {
-  if (!stderrGuarded && !process.stderr.listenerCount('error')) {
-    process.stderr.on('error', () => undefined)
-    stderrGuarded = true
-  }
-  try {
-    process.stderr.write(line)
-  } catch {
-    // A destroyed stream throws synchronously; a report is never worth a crash.
-  }
-}
-
 export class PrismaPostgresDestination implements ILogDestination {
   readonly name = 'postgres'
   private buffer: Record<string, unknown>[] = []
@@ -470,7 +507,7 @@ export class PrismaPostgresDestination implements ILogDestination {
   ) {}
 
   onInit(): void {
-    this.flushTimer = setInterval(() => void this.flush(), this.opts.flushIntervalMs ?? 2000)
+    this.flushTimer = setInterval(() => this.flushInBackground(), this.opts.flushIntervalMs ?? 2000)
   }
 
   write(payload: string): void {
@@ -480,7 +517,15 @@ export class PrismaPostgresDestination implements ILogDestination {
     // this sink with an entry it never buffered. Swallowing your own failure is
     // the one thing a destination must not do (§3).
     this.buffer.push(JSON.parse(payload) as Record<string, unknown>)
-    if (this.buffer.length >= (this.opts.batchSize ?? 50)) void this.flush()
+    if (this.buffer.length >= (this.opts.batchSize ?? 50)) this.flushInBackground()
+  }
+
+  // A DETACHED promise that rejects is an unhandled rejection, which terminates
+  // the process on Node 24 — so the background path swallows what `flush` already
+  // retained and reported. `onShutdown` awaits `flush` directly instead, where the
+  // rejection has somewhere to go: the registry isolates and reports it.
+  private flushInBackground(): void {
+    void this.flush().catch(() => undefined)
   }
 
   // A batch flush runs AFTER the `write` that triggered it has returned, so its

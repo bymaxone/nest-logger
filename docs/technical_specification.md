@@ -856,9 +856,16 @@ export function destinationToStream(
         // realm-local and answers `false` for a cross-realm promise or a plain
         // thenable, which would then take the synchronous path and lose the entry.
         if (result !== undefined) {
+          // Counted while IN FLIGHT: readiness can run before this settles, and a
+          // pending write must read as unproven rather than as silent success.
+          health.markWritePending(dest)
           Promise.resolve(result).then(
-            () => cb(),
+            () => {
+              health.markWriteSettled(dest)
+              cb()
+            },
             (err: unknown) => {
+              health.markWriteSettled(dest)
               // RECORDED before it is reported: without `markWriteFailed`, readiness
               // still counts this sink as having taken the entry and another
               // destination may discard the copy it was holding.
@@ -1331,9 +1338,26 @@ Manages the lifecycle of registered destinations:
 ```typescript
 @Injectable()
 class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
+  /** The subset that initialized successfully. Writes and shutdown target this;
+   *  `destinations` stays the full REGISTERED set, which is what the readiness
+   *  hook iterates. */
+  private readonly active: ILogDestination[] = []
+
   constructor(
-    @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly destinations: ILogDestination[]
+    @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly destinations: ILogDestination[],
+    private readonly health: DestinationHealth,
+    @Inject(LOGGER_OPTIONS_TOKEN) private readonly options: ResolvedBymaxLoggerModuleOptions
   ) {}
+
+  /** The severity a destination actually receives: the STRICTER of the module
+   *  level and the destination's own `minLevel`. */
+  private effectiveLevelOf(dest: ILogDestination): LogLevel {
+    const moduleLevel = this.options.level
+    if (dest.minLevel === undefined) return moduleLevel
+    return PINO_LEVEL_NUMBERS[dest.minLevel] > PINO_LEVEL_NUMBERS[moduleLevel]
+      ? dest.minLevel
+      : moduleLevel
+  }
 
   async onModuleInit() {
     // Each onInit() is wrapped in try/catch. On failure the destination is never
@@ -1392,9 +1416,11 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
   }
 
   async onApplicationShutdown(signal?: string) {
-    // Reverse order — first registered closes last
+    // Reverse order — first registered closes last. Over ACTIVE, not registered:
+    // a destination whose `onInit` failed may never have acquired the resources
+    // `onShutdown` would close.
     const flushResults = await Promise.allSettled(
-      [...this.destinations].reverse().map((d) => d.onShutdown?.())
+      [...this.active].reverse().map((d) => d.onShutdown?.())
     )
     return { signal, flushedDestinations: flushResults.length }
   }

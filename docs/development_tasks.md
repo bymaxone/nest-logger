@@ -3151,6 +3151,7 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 > ```typescript
 > import { Writable } from 'node:stream'
 > import type { ILogDestination } from '../interfaces/log-destination.interface'
+> import { writeStderrSafely } from '../utils/safe-stdio.util'
 >
 > export function destinationToStream(dest: ILogDestination): Writable {
 >   return new Writable({
