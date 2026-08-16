@@ -827,7 +827,7 @@ The shape is exported as `PrettyViewOptions` when you want to build the view sep
 >   2: "[10:00:00.000] INFO: FORGED admin promoted] real entry …"
 > ```
 >
-> Interpolate only fields your own code sets. Never one carrying user input — `{tenantId}`, `{userId}`, a header, a query value. If you need one of those visible, leave it in the record, where it is rendered as JSON and cannot forge a line.
+> Interpolate only fields your own code sets. Never one carrying user input — `{tenantId}`, `{userId}`, a header, a query value. If you need one of those visible, leave it in the record instead. That closes **this** path and no more: a metadata value is not safe terminal text either, since `JSON.stringify` escapes only C0 and emits DEL, the C1 range (U+0085 NEL included), U+2028 and U+2029 verbatim — see _One entry, one line_ below, where the same boundary is stated. Only `msg` and the stack carry that guarantee.
 
 > **`destination` is not exposed, by design.** The library owns where entries go — a redirected stream would route around the fan-out and the last-resort rescue above. It is absent from the type and applied after your options are merged, so it cannot be overridden from untyped JavaScript either.
 
@@ -1057,7 +1057,7 @@ Every `write()` runs inside a try/catch. A destination that throws or rejects pr
 
 ### What redaction covers, and what it cannot
 
-Redaction here matches **field names**, not values. A secret stored under a covered name is censored at any depth; the same secret **embedded inside a string** under an uncovered name travels intact. Measured:
+Redaction here matches **field names**, not values. Under the default `redactStrategy: 'names'` a secret stored under a covered name is censored at any depth — under the legacy `'paths'` strategy the four-level `fast-redact` ceiling applies instead, and a deeper field is not covered. Either way, the same secret **embedded inside a string** under an uncovered name travels intact. Measured:
 
 ```json
 {

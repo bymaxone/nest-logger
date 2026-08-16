@@ -76,12 +76,6 @@ export class DestinationHealth {
   private rescuerLevel = Number.POSITIVE_INFINITY
 
   /**
-   * Record that a destination initialized successfully.
-   *
-   * @param effectiveLevel - Its multistream level: `minLevel` when set, otherwise
-   *   the module-wide `level`.
-   */
-  /**
    * Record that a destination's `write()` threw or rejected.
    *
    * Called from the fan-out's failure path, which already reports the entry as
@@ -94,6 +88,13 @@ export class DestinationHealth {
     this.writeFailed.add(destination)
   }
 
+  /**
+   * Record that a destination initialized successfully.
+   *
+   * @param destination - The destination that initialized.
+   * @param effectiveLevel - Its multistream level: `minLevel` when set, otherwise
+   *   the module-wide `level`.
+   */
   markHealthy(destination: ILogDestination, effectiveLevel: LogLevel): void {
     this.healthy.set(destination, LOG_LEVEL_PRIORITY.indexOf(effectiveLevel))
   }

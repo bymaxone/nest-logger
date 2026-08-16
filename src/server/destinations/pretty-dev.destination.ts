@@ -106,7 +106,10 @@ export interface PrettyViewOptions {
    * So: interpolate only fields whose values your own code sets. Never a field
    * carrying user input — `{tenantId}`, `{userId}`, a header, a query value. If
    * you need one of those visible, leave it in the record instead of the format
-   * string, where it is rendered as JSON and cannot forge a line.
+   * string. That closes THIS path — the raw placeholder — and no more: a metadata
+   * value is not safe terminal text either, because `JSON.stringify` escapes only
+   * C0 and emits DEL, the C1 range (U+0085 NEL included), U+2028 and U+2029
+   * verbatim. Only `msg` and the stack carry the one-entry-one-line guarantee.
    */
   messageFormat?: string
   /** Timestamp format, or `false` to leave it raw. Default: `'SYS:HH:MM:ss.l'`. */
