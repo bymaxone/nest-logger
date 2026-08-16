@@ -51,13 +51,13 @@ export interface ILogDestination {
    *
    * @param payload — Newline-terminated JSON entry, UTF-8 encoded.
    */
-  write(payload: string): void | Promise<void>
+  write(payload: string): void | PromiseLike<void>
 
   /**
    * Optional lifecycle hook — called once during NestJS module init.
    * Use for opening connections, allocating buffers, scheduling flushers.
    */
-  onInit?(): void | Promise<void>
+  onInit?(): void | PromiseLike<void>
 
   /**
    * Optional lifecycle hook — called once after EVERY destination's `onInit`
@@ -68,20 +68,31 @@ export interface ILogDestination {
    * fan-out hands each entry to every registered destination whose level accepts
    * it, so a held copy may be a SECOND copy.
    *
-   * **The policy is: never lose an entry.** Discard only what is PROVEN
-   * delivered; emit everything else, accepting that a duplicated boot line is the
-   * price of never dropping one. That is why a single fact is handed over rather
-   * than a set of hints — a hint invites a judgement call, and every judgement
-   * call here has a losing branch.
+   * **This is a deduplication signal, not a proof — and the difference is the
+   * whole contract.** A held copy may be a second copy, so emitting it duplicates
+   * a line and dropping it may lose one. The flag says which risk is smaller, as
+   * far as this library can see; it does not say the entry is safe.
+   *
+   * The library's own destinations act on it by discarding when it is `true` and
+   * emitting otherwise, because a duplicated boot line is a smaller harm than a
+   * lost one. **A destination that cannot tolerate ANY loss should emit
+   * regardless** — see the accounting limits on the flag below.
    *
    * Called on failed destinations too, which is the point: the one that could not
    * initialize is exactly the one still holding entries.
    *
-   * @param status.heldEntriesDeliveredElsewhere - Whether ANOTHER live sink
-   *   provably accepted everything this destination accepted. It is `true` only
-   *   when that sink is not this one, initialized, sits at or below this level,
-   *   has had no write failure, and has no write still in flight — anything less
-   *   certain is reported as `false`, and you emit.
+   * @param status.heldEntriesDeliveredElsewhere - Whether another live sink
+   *   accepted everything this destination accepted, as far as this library can
+   *   see. `true` requires that sink to be not this one, initialized, at or below
+   *   this level, with no write failure and no write still in flight; anything
+   *   less certain is `false`.
+   *
+   *   **What it cannot see:** a write still QUEUED inside the `Writable` adapter,
+   *   behind a slow async sink that has not been called yet. So `true` can precede
+   *   a queued write that later fails, and there is no flag that distinguishes
+   *   that case — which is exactly why this is a tradeoff rather than a
+   *   guarantee. It normally arrives, being queued rather than lost.
+   *
    * @returns Nothing, or a promise the library AWAITS. Returning one is
    *   supported deliberately: TypeScript accepts an `async` implementation where
    *   a void-returning member is declared, so a hook that was not awaited would
@@ -90,7 +101,7 @@ export interface ILogDestination {
    */
   onRegistryReady?(status: {
     readonly heldEntriesDeliveredElsewhere: boolean
-  }): void | Promise<void>
+  }): void | PromiseLike<void>
 
   /**
    * Optional lifecycle hook — called during NestJS `onApplicationShutdown`.
@@ -99,5 +110,5 @@ export interface ILogDestination {
    * The library awaits this — graceful shutdown blocks until all destinations
    * return.
    */
-  onShutdown?(): void | Promise<void>
+  onShutdown?(): void | PromiseLike<void>
 }

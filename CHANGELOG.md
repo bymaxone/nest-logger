@@ -11,7 +11,135 @@ heading here.
 
 ## [Unreleased]
 
-## [1.2.8] - 2026-08-15
+## [1.2.9] - 2026-08-16
+
+> **`1.2.8` was merged but never published.** The defect below was found in it after the merge and
+> before any tag existed, so the version was left untagged rather than released and superseded. npm
+> therefore goes `1.2.7` → `1.2.9`; the `1.2.8` section stays as the record of what landed, because
+> it is what `main` contains.
+
+### Fixed
+
+- **A write returning a thenable that is not `instanceof Promise` no longer takes the synchronous
+  path, where its rejection escaped and its entry could be discarded.** `instanceof` is realm-local:
+  it answers `false` for a promise built in another realm — a worker, a `vm` context — and for any
+  structurally valid thenable. Measured, both:
+
+  ```
+  thenable instanceof Promise?                    false
+  promise from another realm instanceof Promise?  false
+  Promise.resolve() assimilates both?             true
+  ```
+
+  Such a write took the branch meant for synchronous sinks: the stream callback fired immediately, a
+  later rejection surfaced as an **unhandled rejection** instead of a reported
+  `LOGGER_DESTINATION_WRITE_FAILED`, and the write was never counted as in flight — so `1.2.8`'s
+  readiness check could tell a buffering destination that delivery was proven and let it discard its
+  only copy of an entry that was about to fail. Losing an entry is the one outcome this path does not
+  accept.
+
+  The branch is now on `undefined`, which is what the declared `void | PromiseLike<void>` actually
+  distinguishes, and the result goes through `Promise.resolve` — which assimilates both shapes.
+  Synchronous writes keep the synchronous path, so back-pressure is unchanged.
+
+  This library learned the realm-local lesson once already, from `instanceof Error`, which is why
+  `isErrorLike` exists. The same mistake sat one file away.
+
+### Breaking
+
+- **`ILogDestination` declares `void | PromiseLike<void>` instead of `void | Promise<void>`,** on
+  `write`, `onInit`, `onRegistryReady` and `onShutdown`. The fix above handles a thenable at runtime;
+  the public type still forbade one, so a TypeScript consumer could not return the very shape the
+  release claims to support — the tests needed casts precisely because of that gap, and the casts are
+  gone.
+
+  **This is source-breaking for CALLERS, and an earlier draft of this note wrongly said it was not.**
+  Widening what an implementation may return necessarily narrows what a caller receives: `PromiseLike`
+  exposes only `then`, so code that called `.catch()` or `.finally()` on the result no longer type-checks.
+
+  The call has to be narrowed first, in both versions: `write` has always been able to return
+  `void`, so `.catch()` was never available on the bare call.
+
+  ```ts
+  const result = destination.write(payload)
+
+  // before — `result` narrowed to `Promise<void>`, so `.catch` was there
+  if (result !== undefined) result.catch(handle)
+
+  // after — it narrows to `PromiseLike<void>`; assimilate to get `.catch` back
+  if (result !== undefined) Promise.resolve(result).catch(handle)
+  ```
+
+  There is no type that gives implementations the freedom and callers a full `Promise`; this release
+  chooses the implementations, because a destination that cannot be written in the first place is the
+  worse failure.
+
+### Documentation
+
+- **The shipped `README.md` no longer teaches the old contract.** Its `ILogDestination` reference
+  still declared `Promise<void>` on `write`, `onInit` and `onShutdown`, and omitted `onRegistryReady`
+  entirely — so the one document most consumers read described types incompatible with the interface
+  and hid a hook from anyone who buffers. It ships inside the package, which makes it the copy that
+  matters most.
+
+- **The drain contract described a return value `_write` does not have.** It said the adapter signals
+  backpressure by `_write` returning `false`; `_write` returns `void`. Deferring its callback is the
+  actual mechanism — the chunk stays in flight, the internal buffer grows, and it is the PUBLIC
+  `writable.write()` that returns `false` at `highWaterMark`. The conclusion the section drew was
+  right and the model under it was not, which is the kind of text a destination author reasons from.
+
+- **The documented adapter examples contradicted the fail-soft contract they were illustrating.**
+  They routed a failed write into `callback(err)`, and the guide listed that as an advantage — "errors
+  are propagated as a callback err (not as an exception that crashes the app)". A `Writable` given an
+  error in its callback emits `'error'`, which with no listener terminates the host. The production
+  adapter has always done the opposite, and says so in a comment one line above the code: contain the
+  failure, report it on stderr, complete the write as successful. Every example, and the two prose
+  lines that recommended the pattern, now match it.
+
+- **Every documented `destinationToStream` example branched on `result instanceof Promise`** — the
+  exact defect fixed above, in the snippets that teach people how to write a destination. A reader
+  implementing against the guide, the specification or the plan documents would have reproduced the
+  escaped rejection and the lost entry. All of them now branch on `undefined` and assimilate with
+  `Promise.resolve`.
+
+  These two were found only because a review kept pulling the same thread. Correcting the interface
+  and the four excerpts that restate it still left the README and every worked example behind: a
+  contract lives in more places than the ones that quote its signature.
+
+  So the rule is now a gate rather than a habit. `check:published` compiled only README blocks that
+  **import** the package, on the reasoning that naming the API is not a claim about it — which left a
+  block that _re-declares_ an exported type unchecked, and that is exactly where the README drifted.
+  It now compiles those too, with three assertions because each covers what the previous one cannot:
+  mutual assignability catches a changed return type; key parity catches an omitted member, which is
+  assignable in both directions and is how the absent `onRegistryReady` survived; per-member type
+  identity catches a changed PARAMETER, which stays bivariant even under `strictFunctionTypes`.
+
+  The third was added because the first version of the gate did not have it and **passed** a README
+  declaring `write(payload: unknown)` — measured by making that edit, not reasoned about. Each
+  assertion was verified the same way: introduce the drift, watch the gate name it, restore.
+
+- **`heldEntriesDeliveredElsewhere` is documented as best-effort rather than as proof.** The JSDoc
+  said `true` requires no write still in flight, which reads as complete accounting — while the
+  `1.2.8` note already admitted that writes queued inside the `Writable` adapter are invisible until
+  `destination.write()` is called. Both statements shipped in the same release, and they contradict
+  each other.
+
+  Calling it best-effort was not enough on its own: the surrounding prose still framed the decision
+  as "discard only on proof", which is the same contradiction one paragraph up. The contract is now
+  stated as what it is — a **deduplication signal**, where `true` means the smaller risk is dropping
+  the held copy, not that the entry is safe. The library's own destinations dedupe on it because a
+  duplicated boot line is a smaller harm than a lost one; a destination that cannot tolerate any loss
+  is told to ignore the flag and always emit. The guide, the specification and the JSDoc now say the
+  same thing, so a reader meets one story instead of three.
+
+  Reframing the parameter was still not the end of it: `PrettyDevDestination` went on calling the
+  same value "a proven fact" in one comment and instructing the hook to "discard only what is proven
+  delivered" in another, and this changelog kept the word too. One class saying both things is worse
+  than either alone — "proven" invites a destination author to discard with full confidence, which is
+  precisely the loss this release refuses. The vocabulary is now one word everywhere: a signal, with
+  the queued-write blind spot named where the decision is taken.
+
+## 1.2.8 - 2026-08-15 (merged, never published)
 
 ### Fixed
 
@@ -33,9 +161,9 @@ heading here.
   of the entries. The decision moves to a new optional `ILogDestination.onRegistryReady`, which the
   registry calls once every `onInit` has settled.
 
-  **The policy is: never lose an entry; duplication is the accepted cost.** The hook carries ONE
-  fact — whether another live sink provably accepted everything this destination accepted — and the
-  destination discards only on that. `true` requires all of: another destination, initialized, at or
+  **The policy is: prefer a duplicated line over a lost one.** The hook carries ONE signal — whether
+  another live sink appears to have accepted everything this destination accepted — and the
+  destination dedupes only on that. `true` requires all of: another destination, initialized, at or
   below this level, with no write failure and nothing still in flight. Anything less certain reads as
   `false`, and the entries are emitted.
 
@@ -43,17 +171,18 @@ heading here.
   losing branch, and review found them one at a time: trusting "a sink survived" lost entries to a
   sink at a higher level; trusting the level lost them to a sink that was itself the asker; then to
   one whose writes were throwing; then to one whose write had not settled yet. Collapsing to a single
-  proven fact is what removed the class, rather than the four instances.
+  signal is what removed the class, rather than the four instances.
 
   In the configuration that motivated this — pretty beside `DefaultStdoutDestination` — nothing
-  duplicates: the stdout sink is live at the same level, delivery is proven, and the held copies are
-  dropped. Duplication is left only where proof is unavailable, which is exactly where discarding
-  would risk silence.
+  duplicates: the stdout sink is live at the same level, the signal reads `true`, and the held copies
+  are dropped. Duplication is left wherever the signal cannot be given, which is exactly where
+  discarding would risk silence.
 
-  **One narrow gap is known and left open rather than papered over.** Proof covers writes this
-  library has SEEN — resolved, rejected, or in flight. A write still queued inside the `Writable`
-  adapter, behind a slow async destination that has not been called yet, is invisible to it: delivery
-  can read as proven while that entry has not reached the sink. It will normally arrive (it is
+  **One narrow gap is known and left open rather than papered over, and it is the reason the value is
+  a signal and not a proof.** The accounting covers writes this library has SEEN — resolved, rejected,
+  or in flight. A write still queued inside the `Writable` adapter, behind a slow async destination
+  that has not been called yet, is invisible to it: the signal can read `true` while that entry has
+  not reached the sink. It will normally arrive (it is
   queued, not lost); the residual risk is a queued write that later fails, and the entry existed only
   in a buffer that was discarded on the strength of a different sink's record. Closing it means
   readiness waiting for every pre-ready stream to drain, which is a larger change than the boot-time
@@ -1367,8 +1496,11 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.8...HEAD
-[1.2.8]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.8
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.9...HEAD
+[1.2.9]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.9
+
+<!-- 1.2.8 has no link: it was merged but never tagged, so there is no v1.2.8 to compare against. See its section above. -->
+
 [1.2.7]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...v1.2.7
 [1.2.6]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/bymaxone/nest-logger/compare/v1.2.4...v1.2.5

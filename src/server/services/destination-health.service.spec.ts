@@ -113,7 +113,7 @@ describe('DestinationHealth', () => {
   it(/*
    * `deliveredByHealthySink` is the fact the registry reads once, after every
    * onInit settled, to tell a destination holding pre-init entries whether anyone
-   * else provably took them. `shouldRescue` answers a narrower per-write question,
+   * else appears to have taken them. `shouldRescue` answers a narrower per-write question,
    * so one cannot stand in for the other.
    */
   'reports whether any destination initialized', () => {

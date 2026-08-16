@@ -780,17 +780,32 @@ export interface ILogDestination {
    *
    * @param payload - Final JSON string (UTF-8) representing one log entry, including trailing newline.
    */
-  write(payload: string): void | Promise<void>
+  write(payload: string): void | PromiseLike<void>
 
   /**
    * Called once during NestJS bootstrap. Use for opening connections, buffers, etc.
    */
-  onInit?(): void | Promise<void>
+  onInit?(): void | PromiseLike<void>
+
+  /**
+   * Called once after EVERY destination's `onInit` has settled, and awaited. Only
+   * useful to a destination holding entries written before its own `onInit` ran:
+   * `heldEntriesDeliveredElsewhere` says whether another live sink appears to have
+   * taken them, so a held copy can be dropped instead of duplicating a line. It is
+   * a DEDUPLICATION SIGNAL, not a proof — writes still queued inside the Writable
+   * adapter are not represented in it, so `true` can precede a queued write that
+   * later fails. The library's destinations dedupe on it because a duplicated line
+   * beats a lost one; a destination that cannot tolerate any loss should always
+   * emit.
+   */
+  onRegistryReady?(status: {
+    readonly heldEntriesDeliveredElsewhere: boolean
+  }): void | PromiseLike<void>
 
   /**
    * Called during NestJS `onApplicationShutdown`. MUST flush pending writes and close resources.
    */
-  onShutdown?(): void | Promise<void>
+  onShutdown?(): void | PromiseLike<void>
 }
 ```
 
@@ -831,8 +846,11 @@ export function destinationToStream(
       try {
         const payload = truncateIfOversized(chunk.toString('utf8'), maxEntrySizeBytes)
         const result = dest.write(payload)
-        if (result instanceof Promise) {
-          result.then(
+        // Branch on `undefined`, NOT on `result instanceof Promise`: `instanceof` is
+        // realm-local and answers `false` for a cross-realm promise or a plain
+        // thenable, which would then take the synchronous path and lose the entry.
+        if (result !== undefined) {
+          Promise.resolve(result).then(
             () => cb(),
             (err: unknown) => {
               process.stderr.write(

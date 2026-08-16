@@ -177,6 +177,98 @@ describe('destinationToStream', () => {
     expect(stderrSpy).toHaveBeenCalled()
   })
 
+  describe('a write that returns a thenable rather than a Promise', () => {
+    it(/*
+     * REGRESSION — `instanceof Promise` is realm-local and answers `false` for a
+     * promise built in another realm (worker, vm context) and for any
+     * structurally valid thenable. Both were measured. Such a write took the
+     * SYNCHRONOUS path: the callback fired immediately, a later rejection escaped
+     * as an unhandled rejection instead of being reported, and the write was
+     * never counted as pending — so readiness could tell a buffering sink to
+     * discard its only copy of an entry that was about to fail. Losing an entry
+     * is the one outcome this library does not accept.
+     *
+     * This repo already learned the realm-local lesson from `instanceof Error`,
+     * which is why `isErrorLike` exists; the same mistake sat one file away.
+     */
+    'contains a rejection from a non-Promise thenable', async () => {
+      const destination: ILogDestination = {
+        name: 'thenable',
+        // A valid thenable that is NOT `instanceof Promise` — what a worker
+        // boundary or a hand-rolled deferred returns. No cast: the contract is
+        // `void | PromiseLike<void>`, so this is exactly what it permits.
+        write: (): PromiseLike<void> => ({
+          // `then` is typed the way `PromiseLike` declares it, so no cast is
+          // needed anywhere: the contract is `void | PromiseLike<void>`, and this
+          // is precisely what that permits. The returned promise never settles —
+          // `Promise.resolve` ignores it, and nothing here awaits it.
+          then: <TResult1 = void, TResult2 = never>(
+            _onfulfilled?: ((value: void) => TResult1 | PromiseLike<TResult1>) | null,
+            onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
+          ): PromiseLike<TResult1 | TResult2> => {
+            setTimeout(() => onrejected?.(new Error('async write failed')), 1)
+            return new Promise<TResult1 | TResult2>(() => undefined)
+          }
+        })
+      }
+      const health = new DestinationHealth()
+      health.markHealthy(destination, 'info')
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+      const stream = destinationToStream(destination, health)
+
+      await expect(writeOnce(stream, 'entry\n')).resolves.toBeUndefined()
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      // Reported rather than escaping as an unhandled rejection — asserted by
+      // PARSING the emitted NDJSON, not by matching a substring of it. A substring
+      // check passes on any line that happens to quote the cause, including one
+      // emitted under the wrong key or at the wrong level; the report is a contract
+      // and the whole record is what consumers parse.
+      const report: unknown = JSON.parse(stderrSpy.mock.calls[0]?.[0] as string)
+      expect(report).toMatchObject({
+        level: 'error',
+        logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+        destination: 'thenable',
+        err: { type: 'Error', message: 'async write failed' }
+      })
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * And it must be counted as in flight while it is, so readiness cannot claim
+     * delivery from a sink whose write has not settled — the reason the pending
+     * counter exists at all.
+     */
+    'counts a thenable write as pending until it settles', async () => {
+      let settle: (() => void) | undefined
+      const destination: ILogDestination = {
+        name: 'thenable',
+        write: (): PromiseLike<void> => ({
+          then: <TResult1 = void, TResult2 = never>(
+            onfulfilled?: ((value: void) => TResult1 | PromiseLike<TResult1>) | null
+          ): PromiseLike<TResult1 | TResult2> => {
+            settle = (): void => void onfulfilled?.()
+            return new Promise<TResult1 | TResult2>(() => undefined)
+          }
+        })
+      }
+      const asker: ILogDestination = { name: 'asker', write: jest.fn() }
+      const health = new DestinationHealth()
+      health.markHealthy(destination, 'info')
+      const stream = destinationToStream(destination, health)
+
+      stream.write('entry\n')
+      await new Promise((resolve) => setImmediate(resolve))
+
+      expect(health.deliveredByHealthySink(asker, 'info')).toBe(false)
+
+      settle?.()
+      await new Promise((resolve) => setImmediate(resolve))
+
+      expect(health.deliveredByHealthySink(asker, 'info')).toBe(true)
+    })
+  })
+
   describe('init health', () => {
     let stdoutSpy: jest.SpyInstance
 

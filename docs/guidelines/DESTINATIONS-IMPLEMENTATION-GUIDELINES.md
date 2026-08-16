@@ -36,13 +36,18 @@ export interface ILogDestination {
    * Called for every log entry. Receives the JSON-stringified payload
    * with trailing newline. MUST be non-blocking.
    */
-  write(payload: string): void | Promise<void>
+  write(payload: string): void | PromiseLike<void>
 
   /** Called once at NestJS bootstrap. */
-  onInit?(): void | Promise<void>
+  onInit?(): void | PromiseLike<void>
+
+  /** Called after EVERY destination's `onInit` settled. Only useful if you buffer. */
+  onRegistryReady?(status: {
+    readonly heldEntriesDeliveredElsewhere: boolean
+  }): void | PromiseLike<void>
 
   /** Called at NestJS shutdown. MUST flush + close resources. */
-  onShutdown?(): void | Promise<void>
+  onShutdown?(): void | PromiseLike<void>
 }
 ```
 
@@ -51,6 +56,8 @@ export interface ILogDestination {
 - `write` receives a **serialized JSON string** — the destination does not need to parse it (but may).
 - `write` is the **hot path** — any extra allocation impacts throughput.
 - `onInit` / `onShutdown` are optional; the presence of both ensures proper lifecycle.
+- `onRegistryReady` is optional and only matters if you hold entries written **before** your own
+  `onInit` ran — see §4.1.
 
 ---
 
@@ -86,18 +93,30 @@ import { Writable } from 'node:stream'
 export function destinationToStream(dest: ILogDestination): Writable {
   return new Writable({
     write(chunk: Buffer, _encoding, callback) {
+      // A failure is CONTAINED, never propagated. `callback(err)` makes the
+      // `Writable` emit `'error'`, which with no listener terminates the host —
+      // the opposite of the fail-soft contract in §3. Report the failure on
+      // stderr, then signal success so the fan-out reaches the other sinks.
+      const report = (err: unknown): void => {
+        process.stderr.write(
+          `${JSON.stringify({ level: 'error', logKey: 'LOGGER_DESTINATION_WRITE_FAILED', destination: dest.name, err: String(err) })}\n`
+        )
+        callback()
+      }
       try {
         const result = dest.write(chunk.toString('utf8'))
-        if (result instanceof Promise) {
-          result.then(
-            () => callback(),
-            (err) => callback(err as Error)
-          )
-        } else {
+        // Branch on `undefined`, NOT on `result instanceof Promise`. `instanceof` is
+        // realm-local: it answers `false` for a promise built in a worker or a `vm`
+        // context, and for any structurally valid thenable. Either would take the
+        // synchronous path, where a later rejection escapes unreported and the entry
+        // is lost. `Promise.resolve` assimilates both shapes.
+        if (result === undefined) {
           callback()
+        } else {
+          Promise.resolve(result).then(() => callback(), report)
         }
       } catch (err) {
-        callback(err as Error)
+        report(err)
       }
     }
   })
@@ -107,7 +126,7 @@ export function destinationToStream(dest: ILogDestination): Writable {
 Advantages:
 
 - Destinations do not need to extend `Writable` manually
-- Errors are propagated as a callback err (not as an exception that crashes the app)
+- A failing destination is contained: reported on stderr, never surfaced as a stream error
 - Async `write` is supported transparently
 
 ---
@@ -118,15 +137,19 @@ Advantages:
 
 `sonic-boom` (Pino's stream engine) emits `'drain'` events when its internal buffer fills up. Destinations that send to the network (Loki, Datadog) MUST buffer internally and flush in batches.
 
-**Drain contract for our adapter:** when `Writable._write` returns `false`, Pino's multistream pauses; on `'drain'`, it resumes. Our `destinationToStream()` adapter's `_write` only returns `false` (implicitly, by deferring `callback`) if `dest.write()` returns a `Promise` that is not yet resolved — sync destinations (stdout, file) never trigger backpressure on the Pino side. This is an intentional contract: synchronous destinations are expected to never block; async destinations opt into backpressure via Promise resolution.
+**Drain contract for our adapter:** `_write` returns `void` — it never signals backpressure by its return value. What it controls is **when** it calls `callback`, and that is the whole mechanism: a chunk stays in flight until the callback fires, so further entries accumulate in the stream's internal buffer. Once that buffer reaches `highWaterMark`, the PUBLIC `writable.write()` returns `false` and the writer pauses; `'drain'` is emitted after the queue clears.
+
+Our `destinationToStream()` adapter defers `callback` only when `dest.write()` returns something other than `undefined` and it has not settled — so sync destinations (stdout, file) never let the buffer grow and never trigger backpressure on the Pino side. This is an intentional contract: synchronous destinations are expected to never block; async destinations opt into backpressure by returning something awaitable.
 
 ```typescript
-// Inside destinationToStream — Promise-returning write defers callback,
-// which signals backpressure upstream until the Promise resolves.
+// Inside destinationToStream — an awaitable write defers callback,
+// which signals backpressure upstream until it settles. A rejection is
+// reported and then completed WITHOUT an error: `callback(err)` would make
+// the stream emit `'error'` and take the host down with it.
 write(chunk, _enc, callback) {
   const result = dest.write(chunk.toString('utf8'))
-  if (result instanceof Promise) result.then(() => callback(), (err) => callback(err))
-  else callback()
+  if (result === undefined) callback()
+  else Promise.resolve(result).then(() => callback(), report)
 }
 ```
 
@@ -189,11 +212,59 @@ A destination that **throws** in `write()` breaks Pino multi-stream — a failur
 
 ## 4. Lifecycle
 
-| Hook         | When                                   | What to do                                             |
-| ------------ | -------------------------------------- | ------------------------------------------------------ |
-| `onInit`     | NestJS bootstrap, before the first log | Open connections, start flush timer, validate config   |
-| `write`      | Every log                              | Push to internal buffer; flush in batch if ≥ batchSize |
-| `onShutdown` | NestJS `SIGTERM` / `app.close()`       | Stop timers, flush remaining buffer, close connections |
+| Hook              | When                                       | What to do                                             |
+| ----------------- | ------------------------------------------ | ------------------------------------------------------ |
+| `onInit`          | NestJS bootstrap, before the first log     | Open connections, start flush timer, validate config   |
+| `write`           | Every log                                  | Push to internal buffer; flush in batch if ≥ batchSize |
+| `onRegistryReady` | After every destination's `onInit` settled | Resolve anything you buffered before your own init     |
+| `onShutdown`      | NestJS `SIGTERM` / `app.close()`           | Stop timers, flush remaining buffer, close connections |
+
+### 4.1 `onRegistryReady` — only if you buffer before init
+
+Skip this hook unless your destination holds entries written before its own `onInit` ran. If you do
+hold them, you face a question you cannot answer alone: **were those entries also delivered by
+someone else?** The fan-out hands each entry to every registered destination whose level accepts it,
+so a held copy may be a second copy — emitting it duplicates a line, and dropping it may lose one.
+
+The library answers it for you, once, after every `onInit` has settled:
+
+This example takes the library's own trade — **dedupe when the signal says another sink took the
+entries, emit otherwise** — and it is a trade, not a proof. Read the limits below before copying it
+into a destination that cannot tolerate any loss.
+
+```ts
+onRegistryReady(status: { readonly heldEntriesDeliveredElsewhere: boolean }): void {
+  // Best-effort deduplication: drop the held copies when another sink appears to
+  // have taken them, emit otherwise. See the residual risk below.
+  if (status.heldEntriesDeliveredElsewhere) {
+    this.buffer.length = 0
+    return
+  }
+  for (const payload of this.buffer.splice(0)) writeRawSomewhere(payload)
+}
+```
+
+`heldEntriesDeliveredElsewhere` is `true` only when another sink is not you, initialized, sits at or
+below your effective level, has had no write failure, and has no write still in flight. Anything less
+certain is reported as `false`.
+
+**It is a deduplication signal, not a proof, and the difference matters because you may be dropping
+your only copy.** The accounting covers writes the library has handed to a destination; one still
+queued inside the `Writable` adapter, behind a slow async sink not yet called, is invisible — so
+`true` can precede a queued write that later fails, and nothing distinguishes that case for you. It
+normally arrives, being queued rather than lost.
+
+So pick deliberately: the library's own destinations dedupe on `true` because a duplicated boot line
+is a smaller harm than a lost one. **If your destination cannot tolerate ANY loss, ignore the flag
+and always emit** — you will duplicate lines in the common configuration, and you will never drop
+one.
+
+Two more things this hook guarantees, because they were each a defect first:
+
+- **It is called on FAILED destinations too** — the one that could not initialize is exactly the one
+  still holding entries.
+- **It is awaited.** Return a promise if you need to; a rejection is reported and contained, and the
+  bootstrap entry is not emitted until every hook has settled.
 
 ### What happens when `onInit` fails
 
@@ -420,7 +491,7 @@ export class PrismaPostgresDestination implements ILogDestination {
 ## 6. Anti-patterns
 
 ❌ **Synchronous `write()` that performs blocking I/O** (e.g., `fs.writeFileSync`)
-❌ **`write()` that throws an exception** — stops Pino multi-stream (use a callback err instead)
+❌ **`write()` that throws an exception** — the adapter contains it, but the entry is lost; catch and report on stderr instead
 ❌ **Logging via the logger itself inside `write`** — infinite loop
 ❌ **Mutating the `payload`** — other destinations receive the same string
 ❌ **Expecting `write` to accept a rejected Promise as an error** — catch and log via stderr

@@ -682,13 +682,13 @@ export interface ILogDestination {
    * Errors thrown here are caught by the library; the destination may be
    * temporarily skipped if it consistently fails.
    */
-  write(payload: string): void | Promise<void>
+  write(payload: string): void | PromiseLike<void>
 
   /**
    * Optional lifecycle hook — called once during NestJS module init.
    * Use for opening connections, allocating buffers, scheduling flushers.
    */
-  onInit?(): void | Promise<void>
+  onInit?(): void | PromiseLike<void>
 
   /**
    * Optional lifecycle hook — called during NestJS `onApplicationShutdown`.
@@ -697,7 +697,15 @@ export interface ILogDestination {
    * The library awaits this — graceful shutdown blocks until all destinations
    * return.
    */
-  onShutdown?(): void | Promise<void>
+  onShutdown?(): void | PromiseLike<void>
+
+  /**
+   * Optional lifecycle hook — called once after EVERY destination's `onInit`
+   * settled, and awaited. Only useful to a destination that buffers.
+   */
+  onRegistryReady?(status: {
+    readonly heldEntriesDeliveredElsewhere: boolean
+  }): void | PromiseLike<void>
 }
 ```
 
@@ -3379,12 +3387,23 @@ import type { ILogDestination } from '../interfaces/log-destination.interface'
 export function destinationToStream(dest: ILogDestination): Writable {
   return new Writable({
     write(chunk, _enc, callback) {
+      // A failure is CONTAINED: report it and complete the write as successful.
+      // `callback(err)` makes the Writable emit 'error', which with no listener
+      // terminates the host — the opposite of the fail-soft contract.
+      const reportAndContinue = (err: unknown): void => {
+        process.stderr.write(`LOGGER_DESTINATION_WRITE_FAILED ${dest.name}: ${String(err)}\n`)
+        callback()
+      }
       try {
         const r = dest.write(typeof chunk === 'string' ? chunk : chunk.toString('utf-8'))
-        if (r instanceof Promise) r.then(() => callback(), callback)
-        else callback()
+        // Branch on `undefined`: `instanceof Promise` is realm-local and misses a
+        // cross-realm promise or a plain thenable, losing the entry. A rejection is
+        // reported and then completed WITHOUT an error — `callback(err)` makes the
+        // stream emit 'error' and takes the host down. See CHANGELOG 1.2.9.
+        if (r === undefined) callback()
+        else Promise.resolve(r).then(() => callback(), reportAndContinue)
       } catch (err) {
-        callback(err as Error)
+        reportAndContinue(err)
       }
     }
   })
