@@ -1434,8 +1434,12 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
       try {
         await dest.onShutdown?.()
       } catch (err) {
-        const detail = err instanceof Error ? (err.stack ?? err.message) : String(err)
-        writeStderrSafely(`[DestinationRegistry] Shutdown failed for "${dest.name}": ${detail}\n`)
+        // Coercion INSIDE the guard, and the text escaped. Reading `stack`/`message`
+        // on an Error with hostile getters, or `String(err)` on a value with a
+        // throwing `Symbol.toPrimitive`, throws from within this catch — and the
+        // throw would propagate out of `onApplicationShutdown`, skipping the flush
+        // of every destination still queued behind this one.
+        this.reportShutdownFailure(dest.name, err)
       }
     }
     return { signal, flushedDestinations: this.active.length }

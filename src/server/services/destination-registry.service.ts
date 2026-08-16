@@ -35,9 +35,11 @@ import {
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
+import { escapeControlCharacters, toSingleLineMessage } from '../utils/escape-log-text.util'
 import { detectOtelTraceApi } from '../utils/otel-detector'
 import { reportDestinationFailure } from '../utils/report-destination-failure.util'
 import { writeStderrSafely } from '../utils/safe-stdio.util'
+import { isErrorLike } from '../utils/sanitize-error.util'
 
 /**
  * Coordinates destination initialization and graceful shutdown.
@@ -295,12 +297,57 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       try {
         await destination.onShutdown?.()
       } catch (cause) {
-        const detail = cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)
-        writeStderrSafely(
-          `[DestinationRegistry] Shutdown failed for "${destination.name}": ${detail}\n`
-        )
+        this.reportShutdownFailure(destination, cause)
       }
     }
+  }
+
+  /**
+   * Report a failing `onShutdown` on stderr without letting the report itself
+   * abort the teardown of the destinations still queued behind it.
+   *
+   * The coercion is INSIDE the guard, not above it. Reading `stack`/`message` on
+   * an `Error` with hostile getters, and `String(cause)` on a value with a
+   * throwing `toString`/`Symbol.toPrimitive`, both throw — and this runs inside
+   * the `catch` that exists to keep one bad sink from mattering, so an escape
+   * here would propagate out of `onApplicationShutdown` and skip every remaining
+   * destination's flush. The never-throw contract has to cover READING the value,
+   * not just writing it, which is the same correction `reportDestinationFailure`
+   * already carries.
+   *
+   * The text is escaped for the same reason every other terminal-bound path is:
+   * a stack is legitimately multi-line, so `escapeControlCharacters` keeps its
+   * newlines and neutralizes everything else that can drive a terminal.
+   *
+   * The DESTINATION is passed rather than its name, so that read happens in here
+   * too. `name` is declared `readonly name: string` but nothing stops a consumer
+   * implementing it as a getter, and reading it at the call site would put it back
+   * outside the guard — inside the `catch`, where a throw has the same cost.
+   *
+   * Two separate guards, not one: a name that cannot be read must not also cost
+   * the failure detail, and a detail that cannot be read must not cost the name.
+   * Either alone still identifies which sink failed.
+   *
+   * @param destination - The destination whose `onShutdown` threw.
+   * @param cause - The thrown value, of any shape.
+   */
+  private reportShutdownFailure(destination: ILogDestination, cause: unknown): void {
+    let name = 'unknown'
+    try {
+      name = toSingleLineMessage(String(destination.name))
+    } catch {
+      // Left as `unknown`: the failure is still worth reporting without a name.
+    }
+    let detail = 'UnknownError'
+    try {
+      detail = escapeControlCharacters(
+        isErrorLike(cause) ? String(cause.stack ?? cause.message) : String(cause)
+      )
+    } catch {
+      // Left as `UnknownError`: a value that cannot be read is still worth a line
+      // naming the destination, and this path must never throw.
+    }
+    writeStderrSafely(`[DestinationRegistry] Shutdown failed for "${name}": ${detail}\n`)
   }
 
   /**

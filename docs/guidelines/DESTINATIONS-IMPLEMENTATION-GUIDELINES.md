@@ -93,6 +93,7 @@ import { Writable } from 'node:stream'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { DestinationHealth } from '../services/destination-health.service'
 import { reportDestinationFailure } from '../utils/report-destination-failure.util'
+import { writeStdoutSafely } from '../utils/safe-stdio.util'
 
 export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
   return new Writable({
@@ -126,7 +127,19 @@ export function destinationToStream(dest: ILogDestination, health: DestinationHe
         callback()
       }
       try {
-        const result = dest.write(chunk.toString('utf8'))
+        const payload = chunk.toString('utf8')
+        // A sink that failed `onInit` never became live, so it is SKIPPED rather
+        // than written to — its `write()` may assume resources it never acquired.
+        // The fan-out holds a stream for every REGISTERED destination, so this
+        // branch is what keeps a failed one out of it; when NOTHING initialized,
+        // the elected rescuer emits the raw entry to stdout so one bad
+        // destination cannot silence the whole application.
+        if (health.isFailed(dest)) {
+          if (health.shouldRescue(dest)) writeStdoutSafely(payload)
+          callback()
+          return
+        }
+        const result = dest.write(payload)
         // Branch on `undefined`, NOT on `result instanceof Promise`. `instanceof` is
         // realm-local: it answers `false` for a promise built in a worker or a `vm`
         // context, and for any structurally valid thenable. Either would take the
@@ -233,11 +246,20 @@ export class LokiDestination implements ILogDestination {
   private flushTimer?: NodeJS.Timeout
 
   constructor(
-    private readonly opts: { url: string; batchSize?: number; flushIntervalMs?: number }
+    private readonly opts: {
+      url: string
+      batchSize?: number
+      flushIntervalMs?: number
+      requestTimeoutMs?: number
+    }
   ) {}
 
   /** The background flush currently running, so shutdown can wait for it. */
   private inFlight: Promise<void> = Promise.resolve()
+  /** Guards against queueing a second flush behind one that has not settled. */
+  private flushPending = false
+  /** Entries discarded at the cap, reported with the next failure. */
+  private dropped = 0
 
   onInit(): void {
     this.flushTimer = setInterval(() => this.flushInBackground(), this.opts.flushIntervalMs ?? 5000)
@@ -245,17 +267,33 @@ export class LokiDestination implements ILogDestination {
 
   write(payload: string): void {
     this.buffer.push(payload)
+    // Bounded HERE, on enqueue — not only after a failed flush. A stalled request
+    // never rejects, so a cap applied in the failure path alone bounds nothing:
+    // `write` keeps appending for as long as the sink hangs. The oldest go first;
+    // the newest describe the incident.
+    if (this.buffer.length > LOKI_MAX_BUFFERED) {
+      this.dropped += this.buffer.length - LOKI_MAX_BUFFERED
+      this.buffer.splice(0, this.buffer.length - LOKI_MAX_BUFFERED)
+    }
     if (this.buffer.length >= (this.opts.batchSize ?? 100)) {
       this.flushInBackground()
     }
   }
 
   // Detached, so it must not reject: an unhandled rejection terminates the host.
-  // Chained rather than fired in parallel, and RETAINED in `inFlight`, so
-  // `onShutdown` can await a flush that is already running — otherwise a batch it
-  // requeues on failure is stranded after the process has stopped draining.
+  // COALESCED rather than chained per call — chaining appends a link for every
+  // write that crosses the threshold, so a stalled sink grows the promise chain as
+  // fast as the buffer. At most one flush is pending; the rest are no-ops, and the
+  // entries they would have sent are already in the buffer for the next one.
+  // Retained in `inFlight` so `onShutdown` can await a flush already running.
   private flushInBackground(): void {
-    this.inFlight = this.inFlight.then(() => this.flush()).catch(() => undefined)
+    if (this.flushPending) return
+    this.flushPending = true
+    this.inFlight = this.flush()
+      .catch(() => undefined)
+      .finally(() => {
+        this.flushPending = false
+      })
   }
 
   private async flush(): Promise<void> {
@@ -264,7 +302,10 @@ export class LokiDestination implements ILogDestination {
     try {
       const response = await fetch(this.opts.url, {
         method: 'POST',
-        body: this.formatLokiPush(batch)
+        body: this.formatLokiPush(batch),
+        // Without a deadline a stalled request never settles, `flushPending` never
+        // clears, and the buffer only ever grows to the cap and then discards.
+        signal: AbortSignal.timeout(this.opts.requestTimeoutMs ?? 10_000)
       })
       // `fetch` REJECTS only on a network-level failure. A 401, 429 or 500 resolves
       // normally, so without this check the batch is spliced out and dropped on
@@ -283,15 +324,20 @@ export class LokiDestination implements ILogDestination {
       // describing the incident — and the count is reported rather than silent. A
       // destination that cannot drop anything needs a durable spool, not a buffer.
       this.buffer.unshift(...batch)
-      const dropped = Math.max(0, this.buffer.length - LOKI_MAX_BUFFERED)
-      if (dropped > 0) this.buffer.splice(0, dropped)
+      const overflow = Math.max(0, this.buffer.length - LOKI_MAX_BUFFERED)
+      if (overflow > 0) this.buffer.splice(0, overflow)
+      this.dropped += overflow
+      // Counted AFTER the drop. The overflow is spliced off the front, which is
+      // where the requeued batch just went, so `batch.length` would overstate what
+      // actually survived whenever the cap bit.
+      const retained = batch.length - Math.min(overflow, batch.length)
       reportToStderrSafely(
         JSON.stringify({
           level: 'error',
           logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
           destination: 'loki',
-          retained: batch.length,
-          droppedOldest: dropped,
+          retained,
+          droppedOldest: this.dropped,
           error: err instanceof Error ? err.message : String(err)
         }) + '\n'
       )
@@ -411,7 +457,12 @@ async onApplicationShutdown(): Promise<void> {
     try {
       await dest.onShutdown?.()
     } catch (err) {
-      writeStderrSafely(`Destination "${dest.name}" shutdown failed: ${err}\n`)
+      // Coercion INSIDE the guard: reading `stack`/`message` on an Error with
+      // hostile getters, or `String(err)` on a value with a throwing
+      // `Symbol.toPrimitive`, throws from within the catch that exists to keep one
+      // bad sink from mattering — and the throw would abort the teardown of every
+      // destination still queued. See `DestinationRegistry.reportShutdownFailure`.
+      reportShutdownFailure(dest.name, err)
       // Continue — one failure does not block the others
     }
   }
@@ -562,6 +613,10 @@ export class PrismaPostgresDestination implements ILogDestination {
 
   /** The background flush currently running, so shutdown can wait for it. */
   private inFlight: Promise<void> = Promise.resolve()
+  /** Guards against queueing a second flush behind one that has not settled. */
+  private flushPending = false
+  /** Entries discarded at the cap, reported with the next failure. */
+  private dropped = 0
 
   onInit(): void {
     this.flushTimer = setInterval(() => this.flushInBackground(), this.opts.flushIntervalMs ?? 2000)
@@ -574,16 +629,27 @@ export class PrismaPostgresDestination implements ILogDestination {
     // this sink with an entry it never buffered. Swallowing your own failure is
     // the one thing a destination must not do (§3).
     this.buffer.push(JSON.parse(payload) as Record<string, unknown>)
+    // Bounded on ENQUEUE — see the Loki example: a cap applied only after a failed
+    // flush bounds nothing while the sink is merely stalled.
+    if (this.buffer.length > POSTGRES_MAX_BUFFERED) {
+      this.dropped += this.buffer.length - POSTGRES_MAX_BUFFERED
+      this.buffer.splice(0, this.buffer.length - POSTGRES_MAX_BUFFERED)
+    }
     if (this.buffer.length >= (this.opts.batchSize ?? 50)) this.flushInBackground()
   }
 
-  // A DETACHED promise that rejects is an unhandled rejection, which terminates
-  // the process on Node 24 — so the background path swallows what `flush` already
-  // retained and reported. Chained rather than parallel, and retained in
-  // `inFlight` so shutdown can await it. `onShutdown` awaits `flush` directly
-  // afterwards, where a rejection has somewhere to go: the registry isolates it.
+  // Detached, so it must not reject. COALESCED, not chained per call: chaining
+  // appends a link for every write that crosses the threshold, so a stalled sink
+  // grows the promise chain as fast as the buffer. Retained in `inFlight` so
+  // shutdown can await a flush already running.
   private flushInBackground(): void {
-    this.inFlight = this.inFlight.then(() => this.flush()).catch(() => undefined)
+    if (this.flushPending) return
+    this.flushPending = true
+    this.inFlight = this.flush()
+      .catch(() => undefined)
+      .finally(() => {
+        this.flushPending = false
+      })
   }
 
   // A batch flush runs AFTER the `write` that triggered it has returned, so its
@@ -613,8 +679,13 @@ export class PrismaPostgresDestination implements ILogDestination {
       // describing the incident — and the count is reported rather than silent. A
       // destination that cannot drop anything needs a durable spool, not a buffer.
       this.buffer.unshift(...batch)
-      const dropped = Math.max(0, this.buffer.length - POSTGRES_MAX_BUFFERED)
-      if (dropped > 0) this.buffer.splice(0, dropped)
+      const overflow = Math.max(0, this.buffer.length - POSTGRES_MAX_BUFFERED)
+      if (overflow > 0) this.buffer.splice(0, overflow)
+      this.dropped += overflow
+      // Counted AFTER the drop. The overflow is spliced off the front, which is
+      // where the requeued batch just went, so `batch.length` would overstate what
+      // actually survived whenever the cap bit.
+      const retained = batch.length - Math.min(overflow, batch.length)
       // Guard this write yourself — see the EPIPE note in §3. `writeStderrSafely`
       // is internal to the library and not importable from outside it.
       reportToStderrSafely(
@@ -622,8 +693,8 @@ export class PrismaPostgresDestination implements ILogDestination {
           level: 'error',
           logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
           destination: 'postgres',
-          retained: batch.length,
-          droppedOldest: dropped,
+          retained,
+          droppedOldest: this.dropped,
           error: err instanceof Error ? err.message : String(err)
         }) + '\n'
       )

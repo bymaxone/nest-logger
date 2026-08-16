@@ -74,6 +74,29 @@ heading here.
   chooses the implementations, because a destination that cannot be written in the first place is the
   worse failure.
 
+### Fixed
+
+- **A failing `onShutdown` could abort the teardown of every destination behind it.** The registry
+  built its stderr report by coercing the thrown value ABOVE the guard: reading `stack`/`message` on
+  an `Error` with hostile getters, or `String(cause)` on a value with a throwing `Symbol.toPrimitive`,
+  throws from inside the very `catch` that exists to keep one bad sink from mattering. The throw then
+  propagated out of `onApplicationShutdown`, and every destination still queued lost its flush —
+  turning one destination's bad error object into lost entries everywhere.
+
+  The coercion is now inside its own guard, falls back to `UnknownError` when the value cannot be
+  read at all, and the text is escaped like every other terminal-bound path. The regression test
+  asserts that the SECOND destination still shuts down, not merely that nothing threw: continuing the
+  teardown is the property that matters. Reverting the guard makes it fail — verified, not assumed.
+
+  The destination's own `name` is read inside a guard as well, and a separate one:
+  `readonly name: string` does not stop a consumer implementing it as a getter, and reading it at the
+  call site would have left it inside the `catch` with the same cost. That second gap was found by
+  reviewing the fix for the first — the correction had reproduced the defect one layer up.
+
+  Found by a review comment on the DOCUMENTATION examples. The examples mirrored the implementation
+  faithfully, which is exactly why the defect was worth chasing back into `src/`: a guarded writer
+  never guarded the arguments handed to it, and that had been true in three places.
+
 ### Documentation
 
 - **The shipped `README.md` no longer teaches the old contract.** Its `ILogDestination` reference

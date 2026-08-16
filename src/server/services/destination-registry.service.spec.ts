@@ -368,6 +368,83 @@ describe('DestinationRegistry', () => {
     })
 
     it(/*
+     * REGRESSION — a cause whose own READ throws must not abort the teardown of
+     * the destinations still queued behind it. The report used to coerce above
+     * its guard: `String(cause)` on a value with a throwing `Symbol.toPrimitive`,
+     * and the `stack`/`message` reads on an Error with hostile getters, both throw
+     * from inside the `catch` that exists to keep one bad sink from mattering — so
+     * the throw escaped `onApplicationShutdown` and every remaining destination
+     * lost its flush.
+     *
+     * Asserted on the SECOND destination actually shutting down, not merely on the
+     * absence of a throw: the point of the guard is that teardown continues.
+     */
+    'keeps tearing down when the thrown cause cannot even be read', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const hostile = {
+        get stack(): string {
+          throw new Error('stack getter exploded')
+        },
+        get message(): string {
+          throw new Error('message getter exploded')
+        },
+        name: 'Error'
+      }
+      Object.setPrototypeOf(hostile, Error.prototype)
+      // Registered first, so it shuts down LAST in reverse order — the failure
+      // therefore happens while `survivor` still has to be closed.
+      const survivor = makeDestination('survivor', { onInit: jest.fn(), onShutdown: jest.fn() })
+      const poison = makeDestination('poison', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn().mockRejectedValue(hostile)
+      })
+      const registry = new DestinationRegistry([survivor, poison], logger, options, health)
+      await registry.onModuleInit()
+
+      await expect(registry.onApplicationShutdown()).resolves.toBeUndefined()
+
+      expect(survivor.onShutdown).toHaveBeenCalled()
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Shutdown failed for "poison": UnknownError')
+      )
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * REGRESSION — the destination's own `name` is read inside the guard too.
+     * `readonly name: string` does not stop a consumer implementing it as a
+     * getter, and reading it at the call site would put it back inside the
+     * `catch`, where a throw aborts the remaining teardown exactly as a hostile
+     * cause would. Guarded separately from the detail, so one unreadable value
+     * does not cost the other.
+     */
+    'keeps tearing down when the destination name itself cannot be read', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const survivor = makeDestination('survivor', { onInit: jest.fn(), onShutdown: jest.fn() })
+      const poison = makeDestination('named', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn().mockRejectedValue(new Error('shutdown-fail'))
+      })
+      Object.defineProperty(poison, 'name', {
+        get() {
+          throw new Error('name getter exploded')
+        }
+      })
+      const registry = new DestinationRegistry([survivor, poison], logger, options, health)
+      await registry.onModuleInit()
+
+      await expect(registry.onApplicationShutdown()).resolves.toBeUndefined()
+
+      expect(survivor.onShutdown).toHaveBeenCalled()
+      // The name is lost, the detail is not — that is the point of guarding them
+      // separately rather than together.
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Shutdown failed for "unknown": Error: shutdown-fail')
+      )
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
      * When the thrown cause is a non-Error value (e.g. a string), String(cause)
      * must be used as the detail — covers the instanceof-false branch.
      */
