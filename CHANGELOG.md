@@ -90,7 +90,15 @@ heading here.
   fail-soft path could contain it. Found by sweeping every consumer-defined property read in
   `src/server` rather than by fixing the site that was reported: eight of the nine were already
   inside a `try`, and that ninth one made the registry fix unreachable in practice. Both sites share
-  one `safeMinLevel` now.
+  one `safeMinLevel` now, and it PINS the first answer per destination.
+
+  Guarding the read stops the throw but not the DISAGREEMENT. Nothing makes the getter pure, and two
+  independent consumers read it: the factory, which fixes the multistream entry's level, and the
+  registry, which records the same destination's health level. A stateful getter answering `info` to
+  one and `error` to the other would let an `error` sink be credited with covering held `info`
+  entries, and a buffering destination would discard its only copy of them — a loss path, not an
+  inconsistency. Pinning makes the two agree by construction; `readonly minLevel?: LogLevel` says it
+  should not change anyway.
 
 - **The shutdown reporter could be made to forge a second stderr record.** Its guard used
   `escapeControlCharacters`, which preserves newlines ON PURPOSE because a stack trace is
