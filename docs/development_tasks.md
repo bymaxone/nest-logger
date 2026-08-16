@@ -3155,6 +3155,13 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 > export function destinationToStream(dest: ILogDestination): Writable {
 >   return new Writable({
 >     write(chunk, _enc, callback) {
+>       // A failure is CONTAINED: report it and complete the write as successful.
+>       // `callback(err)` makes the Writable emit 'error', which with no listener
+>       // terminates the host — the opposite of the fail-soft contract.
+>       const reportAndContinue = (err: unknown): void => {
+>         process.stderr.write(`LOGGER_DESTINATION_WRITE_FAILED ${dest.name}: ${String(err)}\n`)
+>         callback()
+>       }
 >       try {
 >         const r = dest.write(typeof chunk === 'string' ? chunk : chunk.toString('utf-8'))
 >         // Branch on `undefined`: `instanceof Promise` is realm-local and misses a
@@ -3164,7 +3171,7 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 >         if (r === undefined) callback()
 >         else Promise.resolve(r).then(() => callback(), reportAndContinue)
 >       } catch (err) {
->         callback(err as Error)
+>         reportAndContinue(err)
 >       }
 >     }
 >   })

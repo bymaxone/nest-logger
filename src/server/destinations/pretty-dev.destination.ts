@@ -314,9 +314,11 @@ export class PrettyDevDestination implements ILogDestination {
       // every boot entry printed twice.
       //
       // The decision moves to {@link onRegistryReady}, which the registry calls
-      // once every `onInit` has settled and delivery is a proven fact. Nothing
-      // is lost by waiting: `onShutdown` still drains raw for a destination that
-      // was never registered, so the hook never running is also covered.
+      // once every `onInit` has settled and it can say whether another live sink
+      // took the same entries — a signal, not a proof; see that hook for what it
+      // cannot see. Nothing is lost by waiting: `onShutdown` still drains raw for
+      // a destination that was never registered, so the hook never running is
+      // also covered.
       throw new Error(
         '[PrettyDevDestination] pino-pretty is not installed. Install it as a peer ' +
           'dependency (`pnpm add -D pino-pretty`) or remove PrettyDevDestination from `destinations`.'
@@ -392,13 +394,20 @@ export class PrettyDevDestination implements ILogDestination {
   /**
    * Resolve anything still held, now that the registry knows what became of it.
    *
-   * **Discard only what is proven delivered; emit everything else.** Losing a boot
-   * entry is not an acceptable outcome, and every richer policy tried here had a
-   * losing branch: trusting "a sink survived" lost entries to a sink at a higher
-   * level, trusting a level lost them to a sink that was itself the asker, then to
-   * one whose writes were throwing, then to one whose write had not settled yet.
-   * Each of those is now folded into the single fact handed in — and where it is
-   * uncertain, it says `false` and this drains.
+   * **Discard only where another sink is believed to have taken the same entries;
+   * emit everything else.** Losing a boot entry is not an acceptable outcome, and
+   * every richer policy tried here had a losing branch: trusting "a sink survived"
+   * lost entries to a sink at a higher level, trusting a level lost them to a sink
+   * that was itself the asker, then to one whose writes were throwing, then to one
+   * whose write had not settled yet. Each of those is now folded into the single
+   * signal handed in — and where it is uncertain, it says `false` and this drains.
+   *
+   * That signal is not a proof, and this hook does not treat it as one. It cannot
+   * see an entry still queued inside the `Writable` adapter, because the adapter
+   * has not called `destination.write()` for it yet. Discarding on it is a bet
+   * that a duplicated boot line costs less than a lost one — which is the trade
+   * this destination accepts, and which a destination that cannot lose anything
+   * should decline by ignoring the flag and always emitting.
    *
    * The cost is stated rather than hidden: when nothing survived, every holding
    * destination drains, so N of them produce N copies of the boot entries. A

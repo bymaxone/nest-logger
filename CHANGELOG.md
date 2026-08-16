@@ -122,6 +122,13 @@ heading here.
   is told to ignore the flag and always emit. The guide, the specification and the JSDoc now say the
   same thing, so a reader meets one story instead of three.
 
+  Reframing the parameter was still not the end of it: `PrettyDevDestination` went on calling the
+  same value "a proven fact" in one comment and instructing the hook to "discard only what is proven
+  delivered" in another, and this changelog kept the word too. One class saying both things is worse
+  than either alone — "proven" invites a destination author to discard with full confidence, which is
+  precisely the loss this release refuses. The vocabulary is now one word everywhere: a signal, with
+  the queued-write blind spot named where the decision is taken.
+
 ## 1.2.8 - 2026-08-15 (merged, never published)
 
 ### Fixed
@@ -154,17 +161,18 @@ heading here.
   losing branch, and review found them one at a time: trusting "a sink survived" lost entries to a
   sink at a higher level; trusting the level lost them to a sink that was itself the asker; then to
   one whose writes were throwing; then to one whose write had not settled yet. Collapsing to a single
-  proven fact is what removed the class, rather than the four instances.
+  signal is what removed the class, rather than the four instances.
 
   In the configuration that motivated this — pretty beside `DefaultStdoutDestination` — nothing
-  duplicates: the stdout sink is live at the same level, delivery is proven, and the held copies are
-  dropped. Duplication is left only where proof is unavailable, which is exactly where discarding
-  would risk silence.
+  duplicates: the stdout sink is live at the same level, the signal reads `true`, and the held copies
+  are dropped. Duplication is left wherever the signal cannot be given, which is exactly where
+  discarding would risk silence.
 
-  **One narrow gap is known and left open rather than papered over.** Proof covers writes this
-  library has SEEN — resolved, rejected, or in flight. A write still queued inside the `Writable`
-  adapter, behind a slow async destination that has not been called yet, is invisible to it: delivery
-  can read as proven while that entry has not reached the sink. It will normally arrive (it is
+  **One narrow gap is known and left open rather than papered over, and it is the reason the value is
+  a signal and not a proof.** The accounting covers writes this library has SEEN — resolved, rejected,
+  or in flight. A write still queued inside the `Writable` adapter, behind a slow async destination
+  that has not been called yet, is invisible to it: the signal can read `true` while that entry has
+  not reached the sink. It will normally arrive (it is
   queued, not lost); the residual risk is a queued write that later fails, and the entry existed only
   in a buffer that was discarded on the strength of a different sink's record. Closing it means
   readiness waiting for every pre-ready stream to drain, which is a larger change than the boot-time
