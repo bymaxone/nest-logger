@@ -162,6 +162,13 @@ check:docs` parses every TypeScript block — both `ts` and `typescript` fences 
   and it takes a separate `--adopt-new` flag so that decision is stated rather than taken
   silently.
 
+- **The destinations guide credited the wrong component with building the fan-out.** It said
+  `DestinationRegistry` wraps each destination into the `pino.multistream` array; that happens in
+  `buildPinoInstance` (`src/server/pino-factory.ts:574`), and the registry owns the lifecycle hooks
+  and the health record instead. The mistake was not only prose — the snippet's relative imports
+  were written as `../utils/...`, which resolve only from `services/`, so following the guide gave
+  paths that do not exist from where the code actually lives.
+
 - **The specification gave the wrong reason for reporting init failures on stderr.** It said Pino
   was not yet wired at that point. It is — the instance is built during provider construction,
   which is why the same method emits `LOGGER_BOOTSTRAP_OK` through the logger a few lines later.

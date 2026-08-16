@@ -200,22 +200,34 @@ function snippetsOf(markdown) {
   const blocks = []
   const lines = markdown.split('\n')
   let start = -1
+  let fence = 3
   let buffer = []
   for (const [index, line] of lines.entries()) {
     // Blockquoted snippets (`> ```typescript`) are code too — the task documents
     // quote most of theirs, and skipping them hid three of the reported defects.
     const bare = line.replace(/^>\s?/, '')
     if (start === -1) {
-      if (/^```(?:ts|typescript)\s*$/.test(bare)) {
+      // The fence can be LONGER than three backticks — a snippet that itself shows a
+      // fenced example has to be wrapped in more of them, and `development_plan.md`
+      // does exactly that. Matching exactly three skipped that whole block.
+      const opening = /^(`{3,})(?:ts|typescript)\s*$/.exec(bare)
+      if (opening) {
+        fence = opening[1].length
         start = index + 1
         buffer = []
       }
-    } else if (/^```\s*$/.test(bare)) {
+    } else if (new RegExp(`^\`{${fence},}\\s*$`).test(bare)) {
       blocks.push({ line: start, code: buffer.join('\n') })
       start = -1
     } else {
       buffer.push(bare)
     }
+  }
+  if (start !== -1) {
+    // Loudly, rather than dropping the block: an unclosed fence renders wrong AND
+    // takes its snippet out of every check here, which is the silent no-op this
+    // script exists to prevent. Guessing where it ends would be worse.
+    throw new Error(`Unclosed TypeScript fence opened at line ${start}`)
   }
   return blocks
 }
@@ -275,6 +287,28 @@ function usedIn(source) {
 }
 
 /**
+ * The ORIGINAL name behind each imported binding, by local name.
+ *
+ * `import { RESERVED_LOG_KEYS as KEYS }` binds `KEYS` locally, so looking the constant
+ * up by the local name finds nothing and `KEYS.INVENTED` sails through. The map keeps
+ * both ends so the alias resolves back to what the package actually exports.
+ *
+ * @param source - The parsed snippet.
+ * @returns Local binding name to the exported name it stands for.
+ */
+function importedAliases(source) {
+  const aliases = new Map()
+  const visit = (node) => {
+    if (ts.isImportSpecifier(node) && ts.isIdentifier(node.name)) {
+      aliases.set(node.name.text, node.propertyName?.text ?? node.name.text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return aliases
+}
+
+/**
  * The names a snippet IMPORTS, as opposed to the ones it declares itself.
  *
  * The distinction decides whether `RESERVED_LOG_KEYS.SOMETHING` is checked against the
@@ -313,37 +347,70 @@ function constantReads(source) {
   return reads
 }
 
-/** `this.x` reads, paired with the members every class in the snippet declares. */
-function thisUsage(source) {
-  const used = new Set()
-  const declared = new Set()
-  let sawClass = false
-  const visit = (node) => {
-    if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) {
-      sawClass = true
-      for (const member of node.members) {
-        if (member.name && ts.isIdentifier(member.name)) declared.add(member.name.text)
-        // Parameter properties: `constructor(private readonly logger: X)`.
-        if (ts.isConstructorDeclaration(member)) {
-          for (const parameter of member.parameters) {
-            if (parameter.modifiers?.length && ts.isIdentifier(parameter.name)) {
-              declared.add(parameter.name.text)
-            }
-          }
+/** The member and parameter-property names one class declares. */
+function membersOf(node) {
+  const names = new Set()
+  for (const member of node.members) {
+    if (member.name && ts.isIdentifier(member.name)) names.add(member.name.text)
+    // Parameter properties: `constructor(private readonly logger: X)`.
+    if (ts.isConstructorDeclaration(member)) {
+      for (const parameter of member.parameters) {
+        if (parameter.modifiers?.length && ts.isIdentifier(parameter.name)) {
+          names.add(parameter.name.text)
         }
       }
     }
-    if (
-      ts.isPropertyAccessExpression(node) &&
-      node.expression.kind === ts.SyntaxKind.ThisKeyword &&
-      ts.isIdentifier(node.name)
-    ) {
-      used.add(node.name.text)
+  }
+  return names
+}
+
+/**
+ * The `this.x` reads that no class in the snippet declares, checked ONE CLASS AT A
+ * TIME.
+ *
+ * Merging every class into a single set was the earlier shape, and it let a second
+ * class cover for the first: `class A { f() { this.missing() } } class B { missing() {} }`
+ * passed because `B` contributed the name. `this` inside `A` cannot reach `B`.
+ *
+ * A nested class is walked as its own scope and does not lend its members to the
+ * class enclosing it, for the same reason.
+ *
+ * @param source - The parsed snippet.
+ * @returns The undefined member names, and whether any class was seen at all.
+ */
+function undefinedThisMembers(source) {
+  const missing = new Set()
+  let sawClass = false
+
+  /** Collect `this.x` reads in this class, skipping any nested class's own scope. */
+  const readsIn = (node, into) => {
+    ts.forEachChild(node, (child) => {
+      if (ts.isClassDeclaration(child) || ts.isClassExpression(child)) return
+      if (
+        ts.isPropertyAccessExpression(child) &&
+        child.expression.kind === ts.SyntaxKind.ThisKeyword &&
+        ts.isIdentifier(child.name)
+      ) {
+        into.add(child.name.text)
+      }
+      readsIn(child, into)
+    })
+  }
+
+  const visit = (node) => {
+    if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) {
+      sawClass = true
+      const declared = membersOf(node)
+      const used = new Set()
+      readsIn(node, used)
+      for (const name of used) {
+        if (!declared.has(name)) missing.add(name)
+      }
     }
     ts.forEachChild(node, visit)
   }
   visit(source)
-  return { used, declared, sawClass }
+  return { missing, sawClass }
 }
 
 const symbols = internalSymbols()
@@ -354,12 +421,21 @@ const keys = new Set()
 
 for (const file of walk(DOCS, (f) => extname(f) === '.md')) {
   const markdown = readFileSync(file, 'utf8')
-  for (const { line, code } of snippetsOf(markdown)) {
+  let blocks
+  try {
+    blocks = snippetsOf(markdown)
+  } catch (error) {
+    // Name the file: the extractor knows the line, not which document it came from.
+    console.error(`${file.slice(ROOT.length)}: ${error.message}`)
+    process.exit(1)
+  }
+  for (const { line, code } of blocks) {
     // The name is a LABEL, not a path — `createSourceFile` parses the string it is
     // given and never touches the filesystem, so no snippet is written to disk.
     const source = ts.createSourceFile(`${file}:${line}.ts`, code, ts.ScriptTarget.Latest, true)
     const declared = declaredIn(source)
     const imported = importedIn(source)
+    const aliases = importedAliases(source)
     const relative = file.slice(ROOT.length)
 
     for (const name of usedIn(source)) {
@@ -378,7 +454,8 @@ for (const file of walk(DOCS, (f) => extname(f) === '.md')) {
       // IMPORT is the opposite case: it says this IS the package's constant, which is
       // precisely when the key must be checked.
       if (declared.has(object) && !imported.has(object)) continue
-      const known = constants.get(object)
+      // Resolve through the alias: the constant is keyed by its EXPORTED name.
+      const known = constants.get(aliases.get(object) ?? object)
       if (known && !known.has(key)) {
         findings.push({
           key: `${relative}::${object}.${key}`,
@@ -387,15 +464,13 @@ for (const file of walk(DOCS, (f) => extname(f) === '.md')) {
       }
     }
 
-    const { used, declared: members, sawClass } = thisUsage(source)
+    const { missing, sawClass } = undefinedThisMembers(source)
     if (sawClass) {
-      for (const member of used) {
-        if (!members.has(member)) {
-          findings.push({
-            key: `${relative}::this.${member}`,
-            text: `${relative}:${line} — calls \`this.${member}\`, which the class shown does not declare`
-          })
-        }
+      for (const member of missing) {
+        findings.push({
+          key: `${relative}::this.${member}`,
+          text: `${relative}:${line} — calls \`this.${member}\`, which its own class does not declare`
+        })
       }
     }
   }

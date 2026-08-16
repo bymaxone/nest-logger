@@ -63,17 +63,19 @@ export interface ILogDestination {
 
 ## 2. Pino multi-stream
 
-**INTERNAL WIRING (lib-side, consumer never writes this) — `DestinationRegistry` reads `LOGGER_DESTINATIONS_TOKEN` providers and wraps each via the internal `destinationToStream()` helper into a `pino.multistream` array. Consumers only ever supply `ILogDestination` instances via `BymaxLoggerModuleOptions.destinations`.**
+**INTERNAL WIRING (lib-side, consumer never writes this) — `buildPinoInstance` reads the `LOGGER_DESTINATIONS_TOKEN` providers and wraps each via the internal `destinationToStream()` helper into a `pino.multistream` array. This happens at provider construction, which is why the level guard matters there; `DestinationRegistry` owns the lifecycle hooks and the health record, not the fan-out. Consumers only ever supply `ILogDestination` instances via `BymaxLoggerModuleOptions.destinations`.**
 
 The lib registers all destinations via `pino.multistream` internally:
 
 ```typescript
 import pino from 'pino'
 
-import { destinationToStream } from '../utils/destination-to-stream'
-import { safeMinLevel } from '../utils/report-destination-failure.util'
+import { destinationToStream } from './utils/destination-to-stream'
+import { safeMinLevel } from './utils/report-destination-failure.util'
 
-// Inside DestinationRegistry — reads providers bound to LOGGER_DESTINATIONS_TOKEN
+// Inside `buildPinoInstance` (pino-factory) — the fan-out is assembled HERE, from the
+// providers bound to LOGGER_DESTINATIONS_TOKEN. `DestinationRegistry` owns lifecycle
+// and health, not stream construction; the relative paths below are the factory's.
 const streams = destinations.map((dest) => ({
   // `safeMinLevel`, not a direct read: `minLevel` is consumer-defined and this runs
   // at provider construction, before any fail-soft path exists. The guard also pins
