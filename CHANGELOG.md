@@ -50,6 +50,16 @@ heading here.
   dropped. Duplication is left only where proof is unavailable, which is exactly where discarding
   would risk silence.
 
+  **One narrow gap is known and left open rather than papered over.** Proof covers writes this
+  library has SEEN — resolved, rejected, or in flight. A write still queued inside the `Writable`
+  adapter, behind a slow async destination that has not been called yet, is invisible to it: delivery
+  can read as proven while that entry has not reached the sink. It will normally arrive (it is
+  queued, not lost); the residual risk is a queued write that later fails, and the entry existed only
+  in a buffer that was discarded on the strength of a different sink's record. Closing it means
+  readiness waiting for every pre-ready stream to drain, which is a larger change than the boot-time
+  cosmetic defect this whole path exists to fix. Stated here so a consumer can weigh it, rather than
+  implied by a guarantee that does not quite hold.
+
   **One case is NOT deduplicated, and the first draft of this note claimed it was.** A shutdown that
   happens before the registry's `onModuleInit` ran — the application aborting mid-bootstrap — still
   drains the buffer raw. The multistream is wired by a provider factory while NestJS assembles the
