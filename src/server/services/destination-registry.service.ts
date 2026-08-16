@@ -35,9 +35,15 @@ import {
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
+import { escapeControlCharacters, toSingleLineMessage } from '../utils/escape-log-text.util'
 import { detectOtelTraceApi } from '../utils/otel-detector'
-import { reportDestinationFailure } from '../utils/report-destination-failure.util'
+import {
+  reportDestinationFailure,
+  safeDestinationName,
+  safeMinLevel
+} from '../utils/report-destination-failure.util'
 import { writeStderrSafely } from '../utils/safe-stdio.util'
+import { isErrorLike } from '../utils/sanitize-error.util'
 
 /**
  * Coordinates destination initialization and graceful shutdown.
@@ -98,7 +104,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         this.health.markHealthy(destination, this.effectiveLevelOf(destination))
       } catch (cause) {
         this.health.markFailed(destination, this.effectiveLevelOf(destination))
-        this.reportInitFailure(destination.name, cause)
+        this.reportInitFailure(destination, cause)
       }
     }
     await this.notifyRegistryReady()
@@ -160,7 +166,14 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * @returns The level entries must clear to reach it.
    */
   private effectiveLevelOf(destination: ILogDestination): LogLevel {
-    const configured = destination.minLevel
+    // The READ is guarded, not just the use. `minLevel` is consumer-defined and
+    // `readonly minLevel?: LogLevel` does not stop it being a getter that throws.
+    // This runs on both branches of the init loop — including inside the catch that
+    // exists so a failing destination cannot abort bootstrap — so an escape here
+    // would take the application down at start-up and strand every destination
+    // after this one. Falling back to the module level is the safe answer: it is
+    // what a destination without a `minLevel` gets anyway.
+    const configured = safeMinLevel(destination)
     if (configured === undefined) {
       return this.options.level
     }
@@ -178,10 +191,13 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * than restating the shape, so an operator greps one `logKey` regardless of
    * which stage failed — and the two cannot drift apart.
    *
-   * @param name - The failing destination's name.
+   * @param destination - The failing destination. Passed whole, so its `name` is
+   *   read under `safeDestinationName` rather than at the call site — which sits
+   *   inside the catch, where a throwing getter would abort bootstrap.
    * @param cause - The thrown or rejected value.
    */
-  private reportInitFailure(name: string, cause: unknown): void {
+  private reportInitFailure(destination: ILogDestination, cause: unknown): void {
+    const name = safeDestinationName(destination)
     reportDestinationFailure(
       RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
       name,
@@ -207,11 +223,12 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    */
   private reportHookFailure(destination: ILogDestination, cause: unknown): void {
     const stillActive = !this.health.isFailed(destination)
+    const name = safeDestinationName(destination)
     reportDestinationFailure(
       RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-      destination.name,
+      name,
       cause,
-      `Log destination "${destination.name}" threw from onRegistryReady. ` +
+      `Log destination "${name}" threw from onRegistryReady. ` +
         (stillActive
           ? 'It initialized successfully and keeps receiving entries; only anything it was holding from before init may be affected.'
           : 'It had already failed to initialize and receives no entries; anything it was still holding is lost.')
@@ -295,12 +312,60 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       try {
         await destination.onShutdown?.()
       } catch (cause) {
-        const detail = cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)
-        writeStderrSafely(
-          `[DestinationRegistry] Shutdown failed for "${destination.name}": ${detail}\n`
-        )
+        this.reportShutdownFailure(destination, cause)
       }
     }
+  }
+
+  /**
+   * Report a failing `onShutdown` on stderr without letting the report itself
+   * abort the teardown of the destinations still queued behind it.
+   *
+   * The coercion is INSIDE the guard, not above it. Reading `stack`/`message` on
+   * an `Error` with hostile getters, and `String(cause)` on a value with a
+   * throwing `toString`/`Symbol.toPrimitive`, both throw — and this runs inside
+   * the `catch` that exists to keep one bad sink from mattering, so an escape
+   * here would propagate out of `onApplicationShutdown` and skip every remaining
+   * destination's flush. The never-throw contract has to cover READING the value,
+   * not just writing it, which is the same correction `reportDestinationFailure`
+   * already carries.
+   *
+   * The text is escaped for the same reason every other terminal-bound path is:
+   * a stack is legitimately multi-line, so `escapeControlCharacters` keeps its
+   * newlines and neutralizes everything else that can drive a terminal.
+   *
+   * The DESTINATION is passed rather than its name, so that read happens in here
+   * too. `name` is declared `readonly name: string` but nothing stops a consumer
+   * implementing it as a getter, and reading it at the call site would put it back
+   * outside the guard — inside the `catch`, where a throw has the same cost.
+   *
+   * Two separate guards, not one: a name that cannot be read must not also cost
+   * the failure detail, and a detail that cannot be read must not cost the name.
+   * Either alone still identifies which sink failed.
+   *
+   * @param destination - The destination whose `onShutdown` threw.
+   * @param cause - The thrown value, of any shape.
+   */
+  private reportShutdownFailure(destination: ILogDestination, cause: unknown): void {
+    const name = toSingleLineMessage(safeDestinationName(destination))
+    let detail = 'UnknownError'
+    try {
+      // The two escapers are NOT interchangeable. `escapeControlCharacters` keeps
+      // newlines because a stack is legitimately multi-line — so it may only be
+      // used ON a stack. A `message`, or an arbitrary non-Error value, is a
+      // single-line field: passing it through the multi-line escaper lets
+      // `'failed\n[forged entry]'` write a second raw line that an operator reads
+      // as a genuine record.
+      const stack = isErrorLike(cause) ? cause.stack : undefined
+      detail =
+        stack === undefined
+          ? toSingleLineMessage(isErrorLike(cause) ? String(cause.message) : String(cause))
+          : escapeControlCharacters(String(stack))
+    } catch {
+      // Left as `UnknownError`: a value that cannot be read is still worth a line
+      // naming the destination, and this path must never throw.
+    }
+    writeStderrSafely(`[DestinationRegistry] Shutdown failed for "${name}": ${detail}\n`)
   }
 
   /**

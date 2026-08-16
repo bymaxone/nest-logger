@@ -27,6 +27,7 @@ import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { destinationToStream } from './utils/destination-to-stream'
 import { createNameRedactor } from './utils/redact-by-name.util'
 import type { Redactor } from './utils/redact-by-name.util'
+import { safeMinLevel } from './utils/report-destination-failure.util'
 import {
   buildResourceBindings,
   extraServiceFields,
@@ -571,7 +572,11 @@ export function buildPinoInstance(
   }
 
   const streams = destinations.map((destination) => ({
-    level: destination.minLevel ?? options.level,
+    // Guarded: this runs at provider construction, BEFORE any lifecycle hook, so a
+    // consumer implementing `minLevel` as a throwing getter would fail the factory
+    // and the application would never start — earlier than any fail-soft path can
+    // contain. Unreadable and absent give the same answer: the module level.
+    level: safeMinLevel(destination) ?? options.level,
     stream: destinationToStream(destination, health)
   }))
 

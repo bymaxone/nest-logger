@@ -20,6 +20,19 @@ heading here.
 
 ### Fixed
 
+- **A destination whose `minLevel` was not one of the six levels received NOTHING, silently.**
+  `readonly minLevel?: LogLevel` is a compile-time claim, and a JavaScript consumer — or a
+  miscast one — can return any string; `'verbose'` is a real NestJS level name and a natural
+  thing to write. `pino.multistream` does not reject an unrecognised level: it builds without
+  complaint and the entry then matches nothing. Measured on a sink configured that way: **0 of 3
+  emitted entries delivered**, while the registry recorded it as covering the module level,
+  because `LOG_LEVEL_PRIORITY.indexOf` returned `-1` and lost the comparison. A destination
+  believed healthy and receiving, receiving nothing, is the worst failure this library has.
+  `safeMinLevel` now validates the value against the canonical list and treats an unrecognised
+  one as absent, so the destination falls back to the module level and keeps receiving.
+  `validateOptions` already held `options.level` to that same list; this is the check reaching
+  the one place it had not.
+
 - **A write returning a thenable that is not `instanceof Promise` no longer takes the synchronous
   path, where its rejection escaped and its entry could be discarded.** `instanceof` is realm-local:
   it answers `false` for a promise built in another realm — a worker, a `vm` context — and for any
@@ -74,13 +87,241 @@ heading here.
   chooses the implementations, because a destination that cannot be written in the first place is the
   worse failure.
 
+### Fixed
+
+- **A throwing `minLevel` getter could abort application bootstrap.** `effectiveLevelOf` reads the
+  consumer-defined `minLevel`, and `readonly minLevel?: LogLevel` does not stop it being a getter.
+  It is read on BOTH branches of the init loop — including inside the catch that exists so a failing
+  destination cannot stop the application from starting — so a throw there took the app down at
+  start-up and stranded every destination after it. The read is guarded inside `effectiveLevelOf`,
+  which covers every call site at once, and falls back to the module level: what a destination
+  without a `minLevel` gets anyway. Same defect class as the `name` getter, in the sibling property.
+
+  The registry was not even the FIRST reader. `pino-factory` builds the multistream entry from
+  `destination.minLevel` at provider-construction time, outside any guard and before any lifecycle
+  hook — so a hostile getter failed the factory and the application never started, earlier than any
+  fail-soft path could contain it. Found by sweeping every consumer-defined property read in
+  `src/server` rather than by fixing the site that was reported: eight of the nine were already
+  inside a `try`, and that ninth one made the registry fix unreachable in practice. Both sites share
+  one `safeMinLevel` now, and it PINS the first answer per destination.
+
+  Guarding the read stops the throw but not the DISAGREEMENT. Nothing makes the getter pure, and two
+  independent consumers read it: the factory, which fixes the multistream entry's level, and the
+  registry, which records the same destination's health level. A stateful getter answering `info` to
+  one and `error` to the other would let an `error` sink be credited with covering held `info`
+  entries, and a buffering destination would discard its only copy of them — a loss path, not an
+  inconsistency. Pinning makes the two agree by construction; `readonly minLevel?: LogLevel` says it
+  should not change anyway.
+
+- **The shutdown reporter could be made to forge a second stderr record.** Its guard used
+  `escapeControlCharacters`, which preserves newlines ON PURPOSE because a stack trace is
+  legitimately multi-line — but it was applied to `cause.message` when no stack existed, and to any
+  non-Error thrown value. A destination rejecting with `'failed\n[forged entry]'` therefore wrote a
+  second raw line that an operator reads as a genuine record. The two escapers are not
+  interchangeable: a stack goes through `escapeControlCharacters`, a message or a non-Error value
+  through `toSingleLineMessage`. The regression asserts the emitted text is ONE line, not merely that
+  an escape appears in it.
+
+- **A failing `onShutdown` could abort the teardown of every destination behind it.** The registry
+  built its stderr report by coercing the thrown value ABOVE the guard: reading `stack`/`message` on
+  an `Error` with hostile getters, or `String(cause)` on a value with a throwing `Symbol.toPrimitive`,
+  throws from inside the very `catch` that exists to keep one bad sink from mattering. The throw then
+  propagated out of `onApplicationShutdown`, and every destination still queued lost its flush —
+  turning one destination's bad error object into lost entries everywhere.
+
+  The coercion is now inside its own guard, falls back to `UnknownError` when the value cannot be
+  read at all, and the text is escaped like every other terminal-bound path. The regression test
+  asserts that the SECOND destination still shuts down, not merely that nothing threw: continuing the
+  teardown is the property that matters. Reverting the guard makes it fail — verified, not assumed.
+
+  **The same gap existed at every other reporting call site, and the first fix only closed one of
+  them.** `reportWriteFailure(destination.name, …)` in the write adapter and `reportInitFailure`
+  in the registry both read the name at the call site — inside the catch — so a hostile getter turned
+  a contained write failure into an unhandled rejection, and a failed `onInit` into an aborted
+  bootstrap, contradicting the comment one line above it that the library never throws to abort boot.
+  A shared `safeDestinationName` now performs that read under a guard, and every reporter uses it.
+
+  The destination's own `name` is read inside a guard as well, and a separate one:
+  `readonly name: string` does not stop a consumer implementing it as a getter, and reading it at the
+  call site would have left it inside the `catch` with the same cost. That second gap was found by
+  reviewing the fix for the first — the correction had reproduced the defect one layer up.
+
+  The control-character escaping on this path is now asserted rather than assumed. Every shutdown
+  test used plain ASCII, so replacing the escaper with an identity function would have left them all
+  green — a 100% mutation score does not cover a transformation no test observes. The new case emits
+  a stack containing an ANSI escape and a C1 character, and asserts that those are neutralized while
+  the stack's own newlines survive.
+
+  Found by a review comment on the DOCUMENTATION examples. The examples mirrored the implementation
+  faithfully, which is exactly why the defect was worth chasing back into `src/`: a guarded writer
+  never guarded the arguments handed to it, and that had been true in three places.
+
 ### Documentation
+
+- **Snippets that referenced symbols which were not there are now caught by a parser, not by
+  eye.** Five review rounds each found another documented example using `safeMinLevel`,
+  `LOGGER_OPTIONS_TOKEN`, `PREVIEW_LENGTH`, `this.reportShutdownFailure` or an outright invented
+  `RESERVED_LOG_KEYS.LOGGER_DESTINATION_SHUTDOWN_FAILED` with nothing to resolve them. `pnpm
+check:docs` parses every TypeScript block — both `ts` and `typescript` fences — and fails on
+  three things: a symbol this package declares in `src/` used without being imported or declared,
+  a `this.member` the class shown does not define, and a `CONSTANT.KEY` the real constant does not
+  have. It reads the syntax tree rather than the text, so a name in a comment is a mention and not
+  a use. It runs in CI and in `prepublishOnly`, because a gate nothing executes is not a gate.
+
+  The 43 pre-existing cases in the planning documents sit in a baseline that shrinks and does not
+  grow: regenerating writes the intersection with what still reproduces, so a defect introduced in
+  the same edit is never adopted, and an entry that stops reproducing fails too rather than
+  lingering. Widening what the check looks at is the one case where the list legitimately grows,
+  and it takes a separate `--adopt-new` flag so that decision is stated rather than taken
+  silently.
+
+- **The destinations guide credited the wrong component with building the fan-out.** It said
+  `DestinationRegistry` wraps each destination into the `pino.multistream` array; that happens in
+  `buildPinoInstance` (`src/server/pino-factory.ts:574`), and the registry owns the lifecycle hooks
+  and the health record instead. The mistake was not only prose — the snippet's relative imports
+  were written as `../utils/...`, which resolve only from `services/`, so following the guide gave
+  paths that do not exist from where the code actually lives.
+
+- **The specification gave the wrong reason for reporting init failures on stderr.** It said Pino
+  was not yet wired at that point. It is — the instance is built during provider construction,
+  which is why the same method emits `LOGGER_BOOTSTRAP_OK` through the logger a few lines later.
+  The actual reason is the fan-out: the logger writes to the very set containing the sink that
+  just failed. An implementer reading the old text would have inferred the wrong lifecycle order.
 
 - **The shipped `README.md` no longer teaches the old contract.** Its `ILogDestination` reference
   still declared `Promise<void>` on `write`, `onInit` and `onShutdown`, and omitted `onRegistryReady`
   entirely — so the one document most consumers read described types incompatible with the interface
   and hid a hook from anyone who buffers. It ships inside the package, which makes it the copy that
   matters most.
+
+- **Overflow was only reported when a later flush failed.** A request that stalls long enough to
+  overflow the cap and then SUCCEEDS runs no catch at all, so the discarded entries were lost with
+  nothing said — the opposite of the policy stated one paragraph above. Both examples report the
+  dropped count on every settlement, not only from the failure path.
+
+- **A guarded WRITER does not guard the arguments handed to it.** The documented adapters called
+  `writeStderrSafely` with an interpolated `${String(err)}`, and that coercion runs before the call:
+  an unknown rejection value with a hostile `Symbol.toPrimitive`, or an `Error` whose `message` getter
+  throws, takes the handler down before `callback()` — an unhandled rejection produced from inside the
+  containment. The previous release note credited the safe writer with a protection it never had.
+  Every documented adapter now uses `reportDestinationFailure`, which does the coercion inside its own
+  guard and escapes control characters.
+
+- **A raced timeout is not a timeout.** The database example briefly carried a `Promise.race`
+  deadline, which settles the AWAIT without cancelling the query: the batch would be requeued while
+  the original `createMany` was still running, the next flush would start a second one, and a slow
+  database would accumulate concurrent inserts of the same batch — duplicates, not just delay. The
+  bound belongs at the driver, where it aborts the statement server-side (`statement_timeout` on the
+  connection string), and the example says so instead of demonstrating a race. The HTTP example keeps
+  `AbortSignal.timeout`, which does cancel.
+
+- **Retaining a failed batch forever is a memory leak.** Requeueing on failure while `write` keeps
+  appending is an unbounded queue: a sustained outage ends in an OOM, which loses every held entry
+  AND the application. Both worked examples now cap the buffer and drop the OLDEST beyond it — the
+  newest entries describe the incident — and report the dropped count rather than discarding
+  silently. A destination that cannot lose anything is told to use a durable spool, not a buffer.
+
+- **Four defects in the specification's own examples**, all from wiring `DestinationHealth` through
+  them: the factory call site still passed the old three arguments, so a `LogLevel` landed where the
+  health tracker was expected; the adapter never checked `isFailed`/`shouldRescue`, though the
+  fan-out builds a stream for every registered destination and that branch is what keeps a
+  failed-init sink out of it; the new provider dependency omitted the explicit `@Inject` this
+  repository requires because tsup strips decorator metadata; and the shutdown loop contained
+  failures with `Promise.allSettled` while reporting none of them, contradicting the guarantee the
+  destination examples state.
+
+- **The consumer-facing stderr guard reintroduced a defect the library had already fixed.** It
+  remembered `guarded = true` in a boolean, which goes stale the moment anything else removes the
+  listener — a test doing cleanup is enough — and every later EPIPE is uncaught again. It also
+  treated ANY existing `'error'` listener as proof the stream was safe, though a consumer's handler
+  may rethrow. `safe-stdio.util.ts` arrived at the right shape after exactly this: check whether OUR
+  listener is in `stream.listeners('error')`, and only ever add. The documented helper now does the
+  same.
+
+- **The Loki example discarded its batch on every HTTP error.** `fetch` rejects only on a
+  network-level failure; 401, 429 and 500 resolve normally, so the retention path added for it never
+  ran on the failures a log sink actually sees. It checks `response.ok` and throws now. Its timer
+  also still detached the flush directly, which the same commit had fixed only in the Postgres
+  example.
+
+- **A background flush was invisible to shutdown.** Both examples now chain background flushes into
+  one tracked promise and `onShutdown` awaits it before the final drain: a flush that fails requeues
+  its batch, and without the await those entries sit in a buffer nobody drains again.
+
+- **The specification formatted failure reports inline instead of using `reportDestinationFailure`.**
+  An `Error` with a throwing `message` getter — or a non-Error with a throwing coercion hook — makes
+  an inline `String(cause)` throw from inside the very handler that exists to contain failures, and
+  the inline form also skips the control-character escaping applied to remote-derived text. All four
+  reporting sites in the document now go through the helper that does the coercion inside its own
+  guard.
+
+- **The batch-retention fix introduced a crash path of its own.** Making `flush()` rethrow is right
+  for the shutdown caller, which awaits it — and wrong for the two background callers, which detach
+  the promise. A detached rejection is an unhandled rejection, which terminates the process on
+  Node 24: a loss path traded for a crash path, in the same commit that closed the loss. The two
+  detached call sites now go through a `flushInBackground()` that swallows what `flush` already
+  retained and reported, while `onShutdown` still awaits `flush` directly, where the rejection has
+  somewhere to go.
+
+- **The Loki example was still discarding its batch** — the same defect as the Postgres one, one
+  section earlier, with `// Fail soft` written over it. Fail-soft means not crashing the host; it
+  never meant dropping the entries. It retains and reports now, and the guarded stderr helper both
+  examples use is defined once, ahead of its first use, instead of being named and left undefined.
+
+- **The documented adapters recorded a failure only after the promise rejected**, leaving the
+  in-flight window the implementation closes with `markWritePending`/`markWriteSettled`. Readiness
+  can be computed while a write is still pending; without the pending count it reads as silent
+  success, and a buffering sink discards its copy moments before that write rejects.
+
+- **The specification's registry example referenced members it did not declare** — `this.active`,
+  `this.health`, `this.effectiveLevelOf` — so the authoritative document showed an implementation
+  that would not compile. It now declares them, and its shutdown loop iterates the ACTIVE subset
+  rather than every registered destination, matching the implementation: a sink whose `onInit`
+  failed may never have acquired what `onShutdown` would close.
+
+- **The documented adapters reported a failed write but never RECORDED it.** The prose added with
+  them says the adapter "contains it, records it and reports it"; the examples did the first and the
+  third. Recording is the half that prevents the loss: without `markWriteFailed`, readiness still
+  counts the sink as having taken the entry and another destination may discard the copy it was
+  holding. The examples now take the health tracker and mark the sink before reporting.
+
+- **The worked Postgres destination still lost a batch, in the example that demonstrates not losing
+  one.** Removing the `try/catch` from its `write` was not enough: the flush it triggers runs after
+  that `write` returned, and `flush()` ended in `catch { /* fail-soft */ }`, discarding every entry
+  in the batch while the adapter had already recorded them as taken. A background flush is the one
+  failure a destination must handle itself — so it now returns the batch to the buffer, reports it,
+  and rethrows so the caller sees it. The stderr helper it uses is written out in full, because the
+  library's guarded one is internal and a consumer cannot import it.
+
+- **The specification contained two incompatible lifecycle contracts.** The `onRegistryReady`
+  guarantee added above says the hook runs for every registered destination; the `DestinationRegistry`
+  example further down truncated the registered list to the survivors of `onInit` and never called
+  the hook at all. The example now keeps the registered set, writes only to the active subset, and
+  awaits the hook for every destination with per-destination isolation.
+
+- **The guide told destinations to swallow their own write failures — a loss path, in the document
+  that defines the fail-soft contract.** "Catch every error in `write` and log it via
+  `process.stderr.write`" reads as prudence and is the opposite: a swallowed failure looks like a
+  successful write from outside, so `markWriteFailed` never runs for that sink, readiness can then
+  credit it with entries it dropped, and ANOTHER destination discards the held copies it was keeping.
+  The entry stops existing anywhere — exactly the outcome this release exists to prevent. The advice
+  is now to let the failure reach the adapter, which contains it, RECORDS it and reports it. Two
+  anti-pattern entries carried the same instruction, and the worked Postgres destination practised
+  it; all three are corrected.
+
+- **Every reporter in the documented examples wrote to `process.stderr` directly.** The guide
+  explains, three sections earlier, that a closed pipe reports EPIPE asynchronously and kills the
+  process — which is why `safe-stdio.util.ts` exists. The containment helpers added one commit ago
+  ignored that and would have traded a contained destination failure for an uncaught exception. The
+  library's own paths now route through `writeStderrSafely` in every example. The consumer-facing
+  examples do not, because that helper is internal and unexported; they point at the EPIPE note
+  instead, which is the honest instruction for code outside this package.
+
+- **The technical specification did not state that `onRegistryReady` runs for a destination whose own
+  `onInit` rejected.** It runs for every registered destination, verified against
+  `notifyRegistryReady`, and a sink that failed to initialize is exactly the one most likely to be
+  holding entries it now has to resolve. Left unstated, an implementer would reasonably assume the
+  opposite and strand them.
 
 - **The drain contract described a return value `_write` does not have.** It said the adapter signals
   backpressure by `_write` returning `false`; `_write` returns `void`. Deferring its callback is the
@@ -114,9 +355,11 @@ heading here.
   assignable in both directions and is how the absent `onRegistryReady` survived; per-member type
   identity catches a changed PARAMETER, which stays bivariant even under `strictFunctionTypes`.
 
-  The third was added because the first version of the gate did not have it and **passed** a README
-  declaring `write(payload: unknown)` — measured by making that edit, not reasoned about. Each
-  assertion was verified the same way: introduce the drift, watch the gate name it, restore.
+  Both of the later assertions were added because a measured version of the gate let a real drift
+  through: the first passed a README declaring `write(payload: unknown)`, and the second — comparing
+  members as `T[K]` — passed one that dropped `readonly`, because indexed access discards property
+  modifiers. Each hole was reproduced against the version that had it before being closed, and each
+  assertion is verified the same way: introduce the drift, watch the gate name it, restore.
 
 - **`heldEntriesDeliveredElsewhere` is documented as best-effort rather than as proof.** The JSDoc
   said `true` requires no write still in flight, which reads as complete accounting — while the

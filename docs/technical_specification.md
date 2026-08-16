@@ -279,9 +279,11 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
 8. LogContextService initializes AsyncLocalStorage<LogContext> →
 9. If http.isEnabled, HttpLoggingInterceptor + HttpExceptionFilter are registered as global →
 10. The lib emits its initial log: { logKey: 'LOGGER_BOOTSTRAP_OK', level, destinations: [...] } →
-11. On onApplicationShutdown(signal): the lib flushes all destinations
-    (`await Promise.allSettled(destinations.map(d => d.onShutdown?.()))`)
-    and emits LOGGER_SHUTDOWN_OK with { signal, flushedDestinations } before resolving.
+11. On onApplicationShutdown(): the lib emits LOGGER_SHUTDOWN_OK with { destinations }
+    FIRST — an entry written after the sinks closed would have nowhere to go — then
+    flushes the ACTIVE destinations in reverse registration order, sequentially, each
+    `onShutdown` wrapped in its own try/catch so one failure cannot cost the others.
+    It takes no signal argument and resolves `void`.
 ```
 
 ### 2.3 Log flow
@@ -788,8 +790,13 @@ export interface ILogDestination {
   onInit?(): void | PromiseLike<void>
 
   /**
-   * Called once after EVERY destination's `onInit` has settled, and awaited. Only
-   * useful to a destination holding entries written before its own `onInit` ran:
+   * Called once after EVERY destination's `onInit` has settled, and awaited.
+   *
+   * It runs for EVERY registered destination, including one whose own `onInit`
+   * rejected — a sink that failed to initialize is exactly the one most likely to
+   * be holding entries it now has to resolve, so skipping it would strand them.
+   *
+   * Only useful to a destination holding entries written before its own `onInit` ran:
    * `heldEntriesDeliveredElsewhere` says whether another live sink appears to have
    * taken them, so a held copy can be dropped instead of duplicating a line. It is
    * a DEDUPLICATION SIGNAL, not a proof — writes still queued inside the Writable
@@ -815,52 +822,84 @@ export interface ILogDestination {
 
 ```typescript
 import { Writable } from 'node:stream'
-import type { ILogDestination, LogLevel } from '../interfaces/log-destination.interface'
 
-interface MultistreamEntry {
-  stream: Writable
-  level: LogLevel
-}
+import { reportDestinationFailure, safeDestinationName } from './report-destination-failure.util'
+import { writeStdoutSafely } from './safe-stdio.util'
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+import type { ILogDestination } from '../interfaces/log-destination.interface'
+import type { DestinationHealth } from '../services/destination-health.service'
 
 /**
  * Internal helper: wrap an ILogDestination in a Writable suitable for pino.multistream.
  *
- * - `_write(chunk, _enc, cb)` calls `dest.write(chunk.toString('utf8'))` and invokes `cb()`
- *   synchronously on success.
- * - If `Buffer.byteLength(payload, 'utf8') > maxEntrySizeBytes`, the payload is replaced
- *   by a synthetic safe envelope (still valid JSON) and the reserved key
- *   `LOGGER_ENTRY_TRUNCATED` is emitted to the same destination. See `truncateIfOversized()` below.
- * - On async destination errors, the wrapper logs `LOGGER_DESTINATION_WRITE_FAILED` to stderr
- *   and calls `cb()` (never throws — avoids `unhandledRejection` that would crash the process).
+ * - `_write(chunk, _enc, cb)` hands the payload to `dest.write()` and invokes `cb()`
+ *   synchronously when the destination returns `undefined`.
+ * - Size bounding is NOT done here. `createSizeBoundedSerializer` is a Pino serializer and
+ *   runs before the entry is serialized, replacing an oversized payload with a synthetic
+ *   envelope carrying `LOGGER_ENTRY_TRUNCATED`; by the time a chunk reaches this adapter it
+ *   is already within the budget.
+ * - On destination errors — thrown or rejected — the wrapper records the failure in
+ *   `DestinationHealth`, reports `LOGGER_DESTINATION_WRITE_FAILED` to stderr and calls `cb()`
+ *   without an error (never throws — `cb(err)` would surface as a stream `'error'` and take
+ *   the host down, and an unreported rejection would crash the process).
  * - Per-destination level filtering happens at the multistream entry level (`{ stream, level }`),
- *   not inside `_write`.
- * - Backpressure: when `_write` returns `false`, Pino respects it via `sonic-boom` / `thread-stream`.
+ *   which the FACTORY builds; the adapter returns the `Writable` only.
+ * - Backpressure: the adapter never returns a value from `_write` — deferring `cb` is the whole
+ *   mechanism, and the buffer it grows is what makes the public `write()` return `false`.
  */
-export function destinationToStream(
-  dest: ILogDestination,
-  defaultLevel: LogLevel,
-  maxEntrySizeBytes: number
-): MultistreamEntry {
-  const stream = new Writable({
-    write(chunk: Buffer, _enc, cb) {
+export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
+  return new Writable({
+    // String chunks stay strings: Pino writes UTF-8 NDJSON, so this skips a
+    // string→Buffer→string round-trip on the hot path.
+    decodeStrings: false,
+    write(chunk: string | Buffer, _enc, cb) {
       try {
-        const payload = truncateIfOversized(chunk.toString('utf8'), maxEntrySizeBytes)
+        // NOT truncated here. Size bounding is a Pino SERIALIZER
+        // (`createSizeBoundedSerializer`), applied before the entry is
+        // serialized — by the time a chunk reaches this adapter it is already
+        // within the budget.
+        const payload = typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
+        // A sink that failed `onInit` never became live, so it is SKIPPED rather
+        // than written to — its `write()` may assume resources it never acquired.
+        // The fan-out has a stream for every REGISTERED destination, so this branch
+        // is what keeps a failed one out of it. When nothing initialized at all, the
+        // elected rescuer emits the raw entry to stdout: without it, one bad
+        // destination silences the whole application.
+        if (health.isFailed(dest)) {
+          if (health.shouldRescue(dest)) writeStdoutSafely(payload)
+          cb()
+          return
+        }
         const result = dest.write(payload)
         // Branch on `undefined`, NOT on `result instanceof Promise`: `instanceof` is
         // realm-local and answers `false` for a cross-realm promise or a plain
         // thenable, which would then take the synchronous path and lose the entry.
         if (result !== undefined) {
+          // Counted while IN FLIGHT: readiness can run before this settles, and a
+          // pending write must read as unproven rather than as silent success.
+          health.markWritePending(dest)
           Promise.resolve(result).then(
-            () => cb(),
+            () => {
+              health.markWriteSettled(dest)
+              cb()
+            },
             (err: unknown) => {
-              process.stderr.write(
-                JSON.stringify({
-                  level: 40,
-                  logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
-                  destination: dest.name,
-                  error: err instanceof Error ? err.message : String(err),
-                  time: new Date().toISOString()
-                }) + '\n'
+              health.markWriteSettled(dest)
+              // RECORDED before it is reported: without `markWriteFailed`, readiness
+              // still counts this sink as having taken the entry and another
+              // destination may discard the copy it was holding.
+              health.markWriteFailed(dest)
+              const name = safeDestinationName(dest)
+              // Through `reportDestinationFailure`, not formatted inline: it does the
+              // `String(cause)` and the `name`/`message` reads INSIDE its own guard,
+              // so an Error with a throwing getter cannot make this handler throw
+              // before `cb()`, and it escapes the control characters a terminal would
+              // otherwise interpret from a remote-derived message.
+              reportDestinationFailure(
+                RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+                name,
+                err,
+                `Log destination "${name}" failed to write; the entry was dropped`
               )
               cb()
             }
@@ -869,41 +908,60 @@ export function destinationToStream(
         }
         cb()
       } catch (err) {
-        process.stderr.write(
-          JSON.stringify({
-            level: 40,
-            logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
-            destination: dest.name,
-            error: err instanceof Error ? err.message : String(err),
-            time: new Date().toISOString()
-          }) + '\n'
+        health.markWriteFailed(dest)
+        const name = safeDestinationName(dest)
+        reportDestinationFailure(
+          RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+          name,
+          err,
+          `Log destination "${name}" failed to write; the entry was dropped`
         )
         cb()
       }
     }
   })
-  return { stream, level: dest.minLevel ?? defaultLevel }
 }
 
 /**
- * If `payload` exceeds `maxBytes`, replace it with a synthetic safe envelope
- * (still valid JSON, includes a trailing newline) and emit the reserved key
- * `LOGGER_ENTRY_TRUNCATED`. Otherwise return the payload unchanged.
+ * Size bounding, as it is actually implemented: a Pino SERIALIZER wrapper, not a
+ * step inside the write adapter. It runs before the entry is serialized, so by the
+ * time a chunk reaches `destinationToStream` it is already within budget.
  *
- * Performance: only `Buffer.byteLength` is measured (O(1) per call — no JSON re-parse).
+ * The oversized value is replaced by a marker OBJECT rather than a whole synthetic
+ * NDJSON line, because at this point the entry is still being built — replacing the
+ * finished line would discard the surrounding fields with it.
+ *
+ * Fail-soft twice over: an un-measurable value (circular reference, hostile
+ * `toJSON`) passes through untouched rather than throwing on the logging path, and
+ * so does a serializer that legitimately returns `undefined`.
  */
-function truncateIfOversized(payload: string, maxBytes: number): string {
-  const originalBytes = Buffer.byteLength(payload, 'utf8')
-  if (originalBytes <= maxBytes) return payload
-  const envelope = {
-    level: 40,
-    logKey: 'LOGGER_ENTRY_TRUNCATED',
-    msg: 'LOG_ENTRY_TRUNCATED',
-    originalBytes,
-    max: maxBytes,
-    truncatedAt: new Date().toISOString()
+/** Characters of the original JSON kept in `_preview` when a value is truncated. */
+const PREVIEW_LENGTH = 200
+
+export function createSizeBoundedSerializer<T>(
+  baseSerializer: (input: T) => unknown,
+  maxBytes: number
+): (input: T) => unknown {
+  return (input: T): unknown => {
+    const serialized = baseSerializer(input)
+    let json: string | undefined
+    try {
+      json = JSON.stringify(serialized)
+    } catch {
+      return serialized
+    }
+    if (json === undefined) return serialized
+    const byteSize = Buffer.byteLength(json, 'utf-8')
+    if (byteSize > maxBytes) {
+      return {
+        _truncated: true,
+        _logKey: RESERVED_LOG_KEYS.LOGGER_ENTRY_TRUNCATED,
+        _originalSize: byteSize,
+        _preview: json.slice(0, PREVIEW_LENGTH)
+      }
+    }
+    return serialized
   }
-  return JSON.stringify(envelope) + '\n'
 }
 ```
 
@@ -912,10 +970,19 @@ function truncateIfOversized(payload: string, maxBytes: number): string {
 ```typescript
 import pino from 'pino'
 
-const maxEntrySizeBytes = options.maxEntrySizeBytes ?? 65536
-const entries = destinations.map((d) =>
-  destinationToStream(d, options.level ?? 'info', maxEntrySizeBytes)
-)
+import { destinationToStream } from './utils/destination-to-stream'
+import { safeMinLevel } from './utils/report-destination-failure.util'
+
+// The LEVEL is attached here, not returned by the adapter: `pino.multistream`
+// filters per entry, and the adapter's only job is the write fan-out.
+const entries = destinations.map((d) => ({
+  // Guarded: this runs at provider construction, before any lifecycle hook, so a
+  // throwing `minLevel` getter would fail the factory and the application would
+  // never start. The guard also pins the answer, so this level and the one the
+  // registry records for the same destination cannot diverge.
+  level: safeMinLevel(d) ?? options.level,
+  stream: destinationToStream(d, health)
+}))
 const multistream = pino.multistream(entries, { dedupe: false })
 const logger = pino(pinoOptions, multistream)
 ```
@@ -1318,46 +1385,204 @@ export class LogContextService {
 Manages the lifecycle of registered destinations:
 
 ```typescript
+import { Inject, Injectable } from '@nestjs/common'
+import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common'
+
+import { DestinationHealth } from './destination-health.service'
+import { PinoLoggerService } from './pino-logger.service'
+import {
+  LOGGER_DESTINATIONS_TOKEN,
+  LOGGER_OPTIONS_TOKEN
+} from '../constants/injection-tokens.constants'
+import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
+import type { ILogDestination } from '../interfaces/log-destination.interface'
+import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
+import { escapeControlCharacters, toSingleLineMessage } from '../utils/escape-log-text.util'
+import {
+  reportDestinationFailure,
+  safeDestinationName,
+  safeMinLevel
+} from '../utils/report-destination-failure.util'
+import { writeStderrSafely } from '../utils/safe-stdio.util'
+import { isErrorLike } from '../utils/sanitize-error.util'
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+import type { LogLevel } from '../../shared/types/log-level.type'
+
 @Injectable()
 class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
+  /** The subset that initialized successfully — used for SHUTDOWN, not for writes.
+   *  The fan-out is built from the full registered set and gates each write on
+   *  `DestinationHealth.isFailed`, so a failed sink is skipped per write rather
+   *  than removed from the streams. `onShutdown` runs over this subset because a
+   *  destination that never initialized may have no resources to close. */
+  private readonly active: ILogDestination[] = []
+
+  // Every provider carries an explicit `@Inject`, including the class-typed one:
+  // tsup strips decorator metadata, so implicit DI resolves in development and
+  // fails in the published package.
   constructor(
-    @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly destinations: ILogDestination[]
+    @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly destinations: ILogDestination[],
+    @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
+    @Inject(DestinationHealth) private readonly health: DestinationHealth,
+    @Inject(LOGGER_OPTIONS_TOKEN) private readonly options: ResolvedBymaxLoggerModuleOptions
   ) {}
 
+  /** The severity a destination actually receives: the STRICTER of the module
+   *  level and the destination's own `minLevel`. */
+  private effectiveLevelOf(dest: ILogDestination): LogLevel {
+    const moduleLevel = this.options.level
+    // Read ONCE, through the guard: `minLevel` is consumer-defined and may be a
+    // getter that throws — this runs on both branches of the init loop, including
+    // the catch that keeps a failing destination from aborting bootstrap — and it
+    // may be stateful, which is why the guard pins the first answer so the factory
+    // and this recording cannot disagree about the same destination's level.
+    const configured = safeMinLevel(dest)
+    if (configured === undefined) return moduleLevel
+    // `LOG_LEVEL_PRIORITY.indexOf`, mirroring the implementation. `PINO_LEVEL_NUMBERS`
+    // would order identically — both run trace→fatal — but the specification exists to
+    // describe the shipped code, not an equivalent way of writing it.
+    return LOG_LEVEL_PRIORITY.indexOf(configured) > LOG_LEVEL_PRIORITY.indexOf(moduleLevel)
+      ? configured
+      : moduleLevel
+  }
+
   async onModuleInit() {
-    // Each onInit() is wrapped in try/catch. On failure, the destination is dropped
-    // from the active list and LOGGER_DESTINATION_INIT_FAILED is logged via stderr
-    // (Pino is not yet wired at this point). The lib NEVER throws to abort boot —
-    // degraded mode is preferred over crash.
-    const survivors: ILogDestination[] = []
+    // Each onInit() is wrapped in try/catch. On failure the destination is recorded
+    // as FAILED in `DestinationHealth`, and that recording is what keeps entries away
+    // from it: the adapter checks `isFailed` on every write. Being absent from
+    // `active` has nothing to do with it — `active` drives shutdown. The destination
+    // stays REGISTERED so the readiness hook still reaches it.
+    // `LOGGER_DESTINATION_INIT_FAILED` goes to stderr even though Pino IS already
+    // wired here — the instance is built during provider construction, which is why
+    // this same method can emit `LOGGER_BOOTSTRAP_OK` through the logger a few lines
+    // later. The reason is the fan-out, not the lifecycle: the logger writes to the
+    // very set that contains the sink which just failed, so reporting through it can
+    // feed the failure back into itself. The lib NEVER throws to abort boot —
+    // degraded mode over crash.
     for (const dest of this.destinations) {
       try {
         await dest.onInit?.()
-        survivors.push(dest)
+        this.active.push(dest)
+        this.health.markHealthy(dest, this.effectiveLevelOf(dest))
       } catch (err) {
-        process.stderr.write(
-          JSON.stringify({
-            level: 50,
-            logKey: 'LOGGER_DESTINATION_INIT_FAILED',
-            destination: dest.name,
-            error: err instanceof Error ? err.message : String(err),
-            time: new Date().toISOString()
-          }) + '\n'
+        this.health.markFailed(dest, this.effectiveLevelOf(dest))
+        // Guarded: reading `name` at the call site would put the throw back inside
+        // this catch, which exists so a failing destination cannot abort boot.
+        const name = safeDestinationName(dest)
+        reportDestinationFailure(
+          RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+          name,
+          err,
+          `Log destination "${name}" failed to initialize and was skipped`
         )
       }
     }
-    // Mutate the registry to the surviving subset — subsequent writes only target
-    // destinations that successfully initialized.
-    ;(this.destinations as ILogDestination[]).length = 0
-    ;(this.destinations as ILogDestination[]).push(...survivors)
+    // The registered set is NOT truncated to the survivors, and nothing else needs
+    // it to be: the fan-out covers every registered destination and `destinationToStream`
+    // skips a failed one per write via `health.isFailed` (see the adapter above).
+    // Keeping it registered matters because a sink that failed `onInit` is the one
+    // most likely to be holding entries it now has to resolve — dropping it here
+    // would strand them and silently break the guarantee below.
+
+    // Called for EVERY registered destination, healthy and failed alike, once all
+    // `onInit` calls have settled, and awaited. Isolated per destination: a hook
+    // that throws is reported and skipped rather than aborting the rest.
+    for (const dest of this.destinations) {
+      try {
+        await dest.onRegistryReady?.({
+          heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
+            dest,
+            this.effectiveLevelOf(dest)
+          )
+        })
+      } catch (err) {
+        // The same key the real registry reuses for a failing readiness hook;
+        // there is no separate reserved key for it.
+        const name = safeDestinationName(dest)
+        reportDestinationFailure(
+          RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+          name,
+          err,
+          `Log destination "${name}" failed its readiness hook`
+        )
+      }
+    }
+
+    // LAST, and the ordering is load-bearing rather than incidental. Every health
+    // record is written by now, so a last-resort sink can carry these entries when
+    // every destination failed. Announcing first would emit them into a fan-out that
+    // has not yet been told anything is wrong, and `LOGGER_BOOTSTRAP_WARNING` — the
+    // signal that exists so a security review can see redaction was disabled — would
+    // be lost exactly when the configuration is already known to be broken.
+    this.logger.info(RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK, 'BymaxLoggerModule initialized')
   }
 
-  async onApplicationShutdown(signal?: string) {
-    // Reverse order — first registered closes last
-    const flushResults = await Promise.allSettled(
-      [...this.destinations].reverse().map((d) => d.onShutdown?.())
+  async onApplicationShutdown(): Promise<void> {
+    // Emitted BEFORE the sinks are torn down — an entry written after they closed
+    // would have nowhere to go. It is the bookend to `LOGGER_BOOTSTRAP_OK`: its
+    // absence tells an operator a graceful shutdown from a killed process.
+    this.logger.info(
+      RESERVED_LOG_KEYS.LOGGER_SHUTDOWN_OK,
+      'BymaxLoggerModule shutting down',
+      undefined,
+      { destinations: this.active.length }
     )
-    return { signal, flushedDestinations: flushResults.length }
+    // Yield the event loop once: `destinationToStream` leaves the Writable callback
+    // pending until an async `write()` settles, so without this barrier the loop
+    // below could close a sink whose shutdown entry is still in flight. A
+    // best-effort ordering nudge, not a delivery guarantee — the authoritative
+    // contract is `ILogDestination.onShutdown`, which MUST flush pending writes.
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve)
+    })
+    // Reverse order — first registered closes last. Over ACTIVE, not registered:
+    // a destination whose `onInit` failed may never have acquired the resources
+    // `onShutdown` would close.
+    //
+    // Sequential and per-destination guarded, NOT `Promise.allSettled`: settling
+    // every promise contains the failures but reports none of them, so a final
+    // flush that lost its batch would leave no trace anywhere.
+    for (const dest of [...this.active].reverse()) {
+      try {
+        await dest.onShutdown?.()
+      } catch (err) {
+        // Coercion INSIDE the guard, and the text escaped. Reading `stack`/`message`
+        // on an Error with hostile getters, or `String(err)` on a value with a
+        // throwing `Symbol.toPrimitive`, throws from within this catch — and the
+        // throw would propagate out of `onApplicationShutdown`, skipping the flush
+        // of every destination still queued behind this one.
+        this.reportShutdownFailure(dest, err)
+      }
+    }
+  }
+
+  /**
+   * Report a failing `onShutdown` without letting the report abort the teardown
+   * of the destinations still queued behind it.
+   *
+   * The DESTINATION is passed, not its name: `readonly name: string` does not stop
+   * a consumer implementing it as a getter, and reading it at the call site would
+   * put the throw back inside the catch. Name and detail are guarded separately,
+   * so one unreadable value does not cost the other.
+   */
+  private reportShutdownFailure(dest: ILogDestination, cause: unknown): void {
+    const name = toSingleLineMessage(safeDestinationName(dest))
+    let detail = 'UnknownError'
+    try {
+      // The two escapers are NOT interchangeable: `escapeControlCharacters` keeps
+      // newlines because a stack is legitimately multi-line, so it may only be used
+      // ON a stack. A message, or a non-Error value, is a single-line field —
+      // routing it through the multi-line escaper lets `failed\n[forged entry]`
+      // write a second raw line an operator reads as genuine.
+      const stack = isErrorLike(cause) ? cause.stack : undefined
+      detail =
+        stack === undefined
+          ? toSingleLineMessage(isErrorLike(cause) ? String(cause.message) : String(cause))
+          : escapeControlCharacters(String(stack))
+    } catch {
+      // A value that cannot be read is still worth a line naming the destination.
+    }
+    writeStderrSafely(`[DestinationRegistry] Shutdown failed for "${name}": ${detail}\n`)
   }
 }
 ```
@@ -2410,7 +2635,7 @@ If a consumer still prefers `pino-http` (`pinoHttp({ ... })`), they install it i
 
 ### 17.7 Aggressive truncation of large entries
 
-`maxEntrySizeBytes: 64KB` by default. Entries with huge payloads (e.g., full Stripe webhook bodies) are replaced by a synthetic safe envelope `{"level":"warn","logKey":"LOGGER_ENTRY_TRUNCATED","msg":"LOG_ENTRY_TRUNCATED","originalBytes":<n>,"max":<n>,"truncatedAt":"<ISO>"}` (still valid JSON). See §5.2 for the implementation. The reserved key `LOGGER_ENTRY_TRUNCATED` is part of `RESERVED_LOG_KEYS` (§12.3). For legitimate cases with large payloads, raise the limit explicitly.
+`maxEntrySizeBytes: 64KB` by default. An oversized VALUE is replaced by the marker object `{"_truncated":true,"_logKey":"LOGGER_ENTRY_TRUNCATED","_originalSize":<n>,"_preview":"<first chars>"}`. The replacement happens in a serializer, while the entry is still being built — so the surrounding fields survive, which replacing the finished line would not allow. See §5.2 for the implementation. The reserved key `LOGGER_ENTRY_TRUNCATED` is part of `RESERVED_LOG_KEYS` (§12.3). For legitimate cases with large payloads, raise the limit explicitly.
 
 ---
 

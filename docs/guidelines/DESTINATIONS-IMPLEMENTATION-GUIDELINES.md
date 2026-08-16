@@ -63,17 +63,26 @@ export interface ILogDestination {
 
 ## 2. Pino multi-stream
 
-**INTERNAL WIRING (lib-side, consumer never writes this) — `DestinationRegistry` reads `LOGGER_DESTINATIONS_TOKEN` providers and wraps each via the internal `destinationToStream()` helper into a `pino.multistream` array. Consumers only ever supply `ILogDestination` instances via `BymaxLoggerModuleOptions.destinations`.**
+**INTERNAL WIRING (lib-side, consumer never writes this) — `buildPinoInstance` reads the `LOGGER_DESTINATIONS_TOKEN` providers and wraps each via the internal `destinationToStream()` helper into a `pino.multistream` array. This happens at provider construction, which is why the level guard matters there; `DestinationRegistry` owns the lifecycle hooks and the health record, not the fan-out. Consumers only ever supply `ILogDestination` instances via `BymaxLoggerModuleOptions.destinations`.**
 
 The lib registers all destinations via `pino.multistream` internally:
 
 ```typescript
 import pino from 'pino'
 
-// Inside DestinationRegistry — reads providers bound to LOGGER_DESTINATIONS_TOKEN
+import { destinationToStream } from './utils/destination-to-stream'
+import { safeMinLevel } from './utils/report-destination-failure.util'
+
+// Inside `buildPinoInstance` (pino-factory) — the fan-out is assembled HERE, from the
+// providers bound to LOGGER_DESTINATIONS_TOKEN. `DestinationRegistry` owns lifecycle
+// and health, not stream construction; the relative paths below are the factory's.
 const streams = destinations.map((dest) => ({
-  level: dest.minLevel ?? 'trace',
-  stream: destinationToStream(dest) // internal helper — adapts ILogDestination → Writable stream
+  // `safeMinLevel`, not a direct read: `minLevel` is consumer-defined and this runs
+  // at provider construction, before any fail-soft path exists. The guard also pins
+  // the answer so this level and the one the registry records cannot diverge.
+  level: safeMinLevel(dest) ?? 'trace',
+  // The adapter takes the shared health tracker — it gates every write on it.
+  stream: destinationToStream(dest, health)
 }))
 
 const logger = pino({ level: 'trace' }, pino.multistream(streams))
@@ -90,21 +99,64 @@ The lib exposes internally:
 ```typescript
 import { Writable } from 'node:stream'
 
-export function destinationToStream(dest: ILogDestination): Writable {
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+import type { DestinationHealth } from '../services/destination-health.service'
+import {
+  reportDestinationFailure,
+  safeDestinationName
+} from '../utils/report-destination-failure.util'
+import { writeStdoutSafely } from '../utils/safe-stdio.util'
+
+export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
   return new Writable({
     write(chunk: Buffer, _encoding, callback) {
       // A failure is CONTAINED, never propagated. `callback(err)` makes the
       // `Writable` emit `'error'`, which with no listener terminates the host —
-      // the opposite of the fail-soft contract in §3. Report the failure on
-      // stderr, then signal success so the fan-out reaches the other sinks.
+      // the opposite of the fail-soft contract in §3. RECORD the failure, report
+      // it, then signal success so the fan-out reaches the other sinks.
+      //
+      // `markWriteFailed` is the half that keeps this from becoming a loss path:
+      // without it readiness would still count this sink as having taken the
+      // entry, and another destination could discard the copy it was holding.
+      // Reporting alone is not containment.
+      //
+      // Through `reportDestinationFailure`, not a raw write and not a formatted
+      // one. A guarded WRITER is not enough: `String(err)` is evaluated before the
+      // call, so a hostile `toString`/`Symbol.toPrimitive` — or an Error with a
+      // throwing `message` getter — throws here and `callback()` never runs, which
+      // in the async branch becomes the unhandled rejection this whole path exists
+      // to prevent. That helper does the coercion INSIDE its own guard, escapes the
+      // control characters a terminal would interpret, and routes through the
+      // EPIPE-safe writer (see the note in §3).
       const report = (err: unknown): void => {
-        process.stderr.write(
-          `${JSON.stringify({ level: 'error', logKey: 'LOGGER_DESTINATION_WRITE_FAILED', destination: dest.name, err: String(err) })}\n`
+        health.markWriteFailed(dest)
+        // The name is read HERE, guarded. `readonly name: string` does not stop a
+        // consumer implementing it as a getter, and this runs inside the catch and
+        // the rejection handler — a throw would skip `callback()` and recreate the
+        // unhandled rejection this path contains.
+        const name = safeDestinationName(dest)
+        reportDestinationFailure(
+          RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+          name,
+          err,
+          `Log destination "${name}" failed to write; the entry was dropped`
         )
         callback()
       }
       try {
-        const result = dest.write(chunk.toString('utf8'))
+        const payload = chunk.toString('utf8')
+        // A sink that failed `onInit` never became live, so it is SKIPPED rather
+        // than written to — its `write()` may assume resources it never acquired.
+        // The fan-out holds a stream for every REGISTERED destination, so this
+        // branch is what keeps a failed one out of it; when NOTHING initialized,
+        // the elected rescuer emits the raw entry to stdout so one bad
+        // destination cannot silence the whole application.
+        if (health.isFailed(dest)) {
+          if (health.shouldRescue(dest)) writeStdoutSafely(payload)
+          callback()
+          return
+        }
+        const result = dest.write(payload)
         // Branch on `undefined`, NOT on `result instanceof Promise`. `instanceof` is
         // realm-local: it answers `false` for a promise built in a worker or a `vm`
         // context, and for any structurally valid thenable. Either would take the
@@ -113,7 +165,21 @@ export function destinationToStream(dest: ILogDestination): Writable {
         if (result === undefined) {
           callback()
         } else {
-          Promise.resolve(result).then(() => callback(), report)
+          // Counted while IN FLIGHT. Readiness can be computed before this promise
+          // settles, and a pending write must read as unproven rather than as
+          // silent success — otherwise a buffering sink discards its copy moments
+          // before this one rejects.
+          health.markWritePending(dest)
+          Promise.resolve(result).then(
+            () => {
+              health.markWriteSettled(dest)
+              callback()
+            },
+            (err) => {
+              health.markWriteSettled(dest)
+              report(err)
+            }
+          )
         }
       } catch (err) {
         report(err)
@@ -153,42 +219,216 @@ write(chunk, _enc, callback) {
 }
 ```
 
+### Reporting from your own destination — `reportToStderrSafely`
+
+The examples below share this helper. The library's own guarded writer is internal
+and not importable from a consumer package, so a destination that needs to report
+something writes its own — once, not per call site.
+
+```typescript
+// One shared reference, so the check below can ask whether OUR listener is still
+// attached. A `let guarded = true` flag would go stale the moment anything else
+// removed it — a test doing listener cleanup is enough — and every later EPIPE
+// would be uncaught again. This is the shape the library's own helper arrived at
+// after exactly that defect.
+const swallowStderrError = (): void => undefined
+
+export function reportToStderrSafely(record: string): void {
+  // The listener covers the ASYNCHRONOUS half (EPIPE, see the note above), the
+  // try/catch the synchronous one. Either alone still leaves a way to die.
+  //
+  // Checked against the actual listener list, and it only ever ADDS: a consumer's
+  // own `'error'` handler is left alone.
+  //
+  // What this DOES cover: the no-listener case, where Node turns the emit into an
+  // uncaught exception. What it does NOT: a consumer handler that rethrows.
+  // `EventEmitter` invokes every listener, so their throw still escapes — measured,
+  // not assumed. Adding ours cannot neutralize theirs, and claiming otherwise would
+  // be the kind of overstated guarantee this guide exists to avoid.
+  if (!process.stderr.listeners('error').includes(swallowStderrError)) {
+    process.stderr.on('error', swallowStderrError)
+  }
+  try {
+    // ESCAPED at the sink, and the terminating newline added HERE rather than by
+    // the caller. `JSON.stringify` escapes C0 and nothing else, so DEL, the C1
+    // range (U+0085 NEL included), U+2028 and U+2029 survive verbatim into a line
+    // an operator reads in a terminal — enough to drive it, or to forge a rendered
+    // entry. The failure text is remote-derived, so this is the last point that can
+    // neutralize it.
+    //
+    // Every control character goes, INCLUDING line feeds: leaving them would let a
+    // multi-line payload split itself into a second record that an operator reads
+    // as genuine. Owning the trailing newline is what makes that safe to do.
+    process.stderr.write(`${escapeTerminalControls(record)}\n`)
+  } catch {
+    // A destroyed stream throws synchronously; a report is never worth a crash.
+  }
+}
+
+/** Everything a terminal can act on, line feeds included — see above. */
+const TERMINAL_CONTROLS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
+
+function escapeTerminalControls(text: string): string {
+  return text.replace(
+    TERMINAL_CONTROLS,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
+  )
+}
+```
+
 Destinations that send to the network (Loki, Datadog) MUST buffer internally and flush in batches:
 
 ```typescript
+/** Cap on entries held while Loki is unreachable — see the overflow note in `flush`. */
+const LOKI_MAX_BUFFERED = 10_000
+
+// `reportToStderrSafely` is the guarded helper defined in §3 — it lives in the
+// consumer's own module, not in this package, so there is nothing to import.
 export class LokiDestination implements ILogDestination {
   readonly name = 'loki'
   private buffer: string[] = []
   private flushTimer?: NodeJS.Timeout
 
   constructor(
-    private readonly opts: { url: string; batchSize?: number; flushIntervalMs?: number }
+    private readonly opts: {
+      url: string
+      batchSize?: number
+      flushIntervalMs?: number
+      requestTimeoutMs?: number
+    }
   ) {}
 
+  /** The background flush currently running, so shutdown can wait for it. */
+  private inFlight: Promise<void> = Promise.resolve()
+  /** Guards against queueing a second flush behind one that has not settled. */
+  private flushPending = false
+  /** Entries discarded at the cap. Emitted by `reportDropped` from `flush`'s
+   *  `finally`, so a successful flush reports them too — a stalled request that
+   *  overflowed and then succeeded would otherwise lose them silently. */
+  private dropped = 0
+
   onInit(): void {
-    this.flushTimer = setInterval(() => void this.flush(), this.opts.flushIntervalMs ?? 5000)
+    this.flushTimer = setInterval(() => this.flushInBackground(), this.opts.flushIntervalMs ?? 5000)
   }
 
   write(payload: string): void {
     this.buffer.push(payload)
-    if (this.buffer.length >= (this.opts.batchSize ?? 100)) {
-      void this.flush()
+    // Bounded HERE, on enqueue — not only after a failed flush. A stalled request
+    // never rejects, so a cap applied in the failure path alone bounds nothing:
+    // `write` keeps appending for as long as the sink hangs. The oldest go first;
+    // the newest describe the incident.
+    if (this.buffer.length > LOKI_MAX_BUFFERED) {
+      this.dropped += this.buffer.length - LOKI_MAX_BUFFERED
+      this.buffer.splice(0, this.buffer.length - LOKI_MAX_BUFFERED)
     }
+    if (this.buffer.length >= (this.opts.batchSize ?? 100)) {
+      this.flushInBackground()
+    }
+  }
+
+  // Detached, so it must not reject: an unhandled rejection terminates the host.
+  // COALESCED rather than chained per call — chaining appends a link for every
+  // write that crosses the threshold, so a stalled sink grows the promise chain as
+  // fast as the buffer. At most one flush is pending; the rest are no-ops, and the
+  // entries they would have sent are already in the buffer for the next one.
+  // Retained in `inFlight` so `onShutdown` can await a flush already running.
+  private flushInBackground(): void {
+    if (this.flushPending) return
+    this.flushPending = true
+    this.inFlight = this.flush()
+      .catch(() => undefined)
+      .finally(() => {
+        this.flushPending = false
+      })
   }
 
   private async flush(): Promise<void> {
     if (this.buffer.length === 0) return
     const batch = this.buffer.splice(0, this.buffer.length)
     try {
-      await fetch(this.opts.url, { method: 'POST', body: this.formatLokiPush(batch) })
-    } catch {
-      // Fail soft — log delivery failure MUST NOT crash the app
-      // In critical production: pair with a dead-letter queue or alert
+      const response = await fetch(this.opts.url, {
+        method: 'POST',
+        body: this.formatLokiPush(batch),
+        // Without a deadline a stalled request never settles, `flushPending` never
+        // clears, and the buffer only ever grows to the cap and then discards.
+        signal: AbortSignal.timeout(this.opts.requestTimeoutMs ?? 10_000)
+      })
+      // `fetch` REJECTS only on a network-level failure. A 401, 429 or 500 resolves
+      // normally, so without this check the batch is spliced out and dropped on
+      // exactly the failures a log sink sees most.
+      if (!response.ok) {
+        throw new Error(`Loki responded ${response.status} ${response.statusText}`)
+      }
+    } catch (err) {
+      // Fail soft is NOT the same as discarding the batch. Put it back so the next
+      // flush retries it, and report — an empty catch here loses every entry in it
+      // while the adapter has already recorded them as taken.
+      // Retained, but BOUNDED. Requeueing every failed batch while `write` keeps
+      // appending is an unbounded queue: a sustained outage then ends in an OOM,
+      // which loses every entry AND the application with it. The cap is the explicit
+      // trade — drop the OLDEST beyond it, because the newest entries are the ones
+      // describing the incident — and the count is reported rather than silent. A
+      // destination that cannot drop anything needs a durable spool, not a buffer.
+      this.buffer.unshift(...batch)
+      const overflow = Math.max(0, this.buffer.length - LOKI_MAX_BUFFERED)
+      if (overflow > 0) this.buffer.splice(0, overflow)
+      this.dropped += overflow
+      // Counted AFTER the drop. The overflow is spliced off the front, which is
+      // where the requeued batch just went, so `batch.length` would overstate what
+      // actually survived whenever the cap bit.
+      const retained = batch.length - Math.min(overflow, batch.length)
+      // Coerced under a guard, like the cause anywhere else: a rejection value with
+      // a throwing `message` getter would otherwise replace this report with a
+      // different error and emit no diagnostic at all.
+      let error = 'UnknownError'
+      try {
+        error = err instanceof Error ? String(err.message) : String(err)
+      } catch {
+        // Reported as `UnknownError`; the destination and the counts still say what
+        // happened, and this path must never throw.
+      }
+      reportToStderrSafely(
+        JSON.stringify({
+          level: 'error',
+          logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
+          destination: 'loki',
+          retained,
+          error
+        })
+      )
+      throw err
+    } finally {
+      // Overflow is reported HERE, on every settlement, not only from the catch.
+      // A request that stalls long enough to overflow and THEN succeeds runs no
+      // catch at all, so entries would have been discarded with nothing said —
+      // the opposite of the stated policy that the loss is observable.
+      this.reportDropped()
     }
+  }
+
+  /** Emit and reset the overflow counter, whatever the flush outcome was. */
+  private reportDropped(): void {
+    if (this.dropped === 0) return
+    reportToStderrSafely(
+      JSON.stringify({
+        level: 'error',
+        logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
+        destination: 'loki',
+        droppedOldest: this.dropped,
+        msg: 'buffer cap reached; oldest entries discarded'
+      })
+    )
+    this.dropped = 0
   }
 
   async onShutdown(): Promise<void> {
     if (this.flushTimer) clearInterval(this.flushTimer)
+    // Wait for a background flush already running before draining what is left:
+    // it may requeue its batch on failure, and those entries would otherwise be
+    // stranded in a buffer nobody drains again.
+    await this.inFlight
+    // NOT swallowed here: the registry catches, reports and isolates a failing
+    // `onShutdown`, and a batch lost at shutdown is one nobody else is holding.
     await this.flush()
   }
 
@@ -204,7 +444,9 @@ export class LokiDestination implements ILogDestination {
 
 ### Fail-soft is REQUIRED
 
-A destination that **throws** in `write()` breaks Pino multi-stream — a failure in one destination MUST NOT affect the others. **Principle**: catch every error in `write` (try/catch) and log it via `process.stderr.write` only. Never via the logger itself (infinite loop).
+A failure in one destination MUST NOT affect the others — and the adapter, not your destination, is what guarantees that. **Principle: let the failure reach the adapter.** Throw, or return a rejecting promise; `destinationToStream` catches both, reports the failure on stderr and completes the write without an error.
+
+**Do not catch and swallow.** A swallowed failure looks like a successful write from the outside, so `DestinationHealth.markWriteFailed` never runs for your sink — and readiness may then credit it with having taken entries it actually dropped, letting ANOTHER destination discard the held copies it was keeping. Hiding your own failure is how an entry stops existing anywhere. If you must log something yourself, never do it via the logger (infinite loop), and see the EPIPE note below before writing to `process.stderr` directly.
 
 > **A `try/catch` around `process.stderr.write` is not EPIPE protection**, and this was measured rather than assumed. When the reader closes the pipe (`node app | head`), the stream reports `EPIPE` **asynchronously** through its `'error'` event, after `write()` has already returned — so the `catch` sees nothing, and because Node attaches no default handler to these streams the emit becomes an uncaught exception that kills the process (measured: 0 listeners, no synchronous throw, exit code 42). If your destination writes to `process.stdout`/`process.stderr` directly, attach a swallowing `'error'` listener to the stream once, in addition to the `try/catch` — the catch covers the synchronous half (a destroyed stream can still throw from `write()`), the listener covers the asynchronous one, and either alone leaves a way to die. The library's own fallback paths route every raw write through one internal helper that does exactly this.
 
@@ -285,13 +527,26 @@ The fallback inherits your destination's effective level (`minLevel`, else the m
 The lib calls `destination.onShutdown()` in **reverse registration order** — the last registered closes first. This ensures downstream destinations (e.g., Loki) process the final batch before upstream (stdout) is closed.
 
 ```typescript
-// In BymaxLoggerModule (internal)
+// Inside DestinationRegistry (internal) — `this.active` and
+// `this.reportShutdownFailure` are members of that class.
 async onApplicationShutdown(): Promise<void> {
-  for (const dest of [...this.destinations].reverse()) {
+  // Over ACTIVE, not every registered destination, and in reverse registration
+  // order so the one registered first (e.g. stdout) closes last. A sink whose
+  // `onInit` failed may never have acquired the resources `onShutdown` would
+  // close, so calling it there is a teardown of something that was never set up.
+  for (const dest of [...this.active].reverse()) {
     try {
       await dest.onShutdown?.()
     } catch (err) {
-      process.stderr.write(`Destination "${dest.name}" shutdown failed: ${err}\n`)
+      // Coercion INSIDE the guard: reading `stack`/`message` on an Error with
+      // hostile getters, or `String(err)` on a value with a throwing
+      // `Symbol.toPrimitive`, throws from within the catch that exists to keep one
+      // bad sink from mattering — and the throw would abort the teardown of every
+      // destination still queued. See `DestinationRegistry.reportShutdownFailure`.
+      // An INSTANCE method on `DestinationRegistry`, not a free function: it reads
+      // the destination's name under the same guard, so a throwing `name` getter
+      // cannot abort the teardown of the destinations still queued.
+      this.reportShutdownFailure(dest, err)
       // Continue — one failure does not block the others
     }
   }
@@ -427,6 +682,11 @@ See §3 — pattern with buffer + flush timer + batch.
 ```typescript
 import type { PrismaClient } from '@prisma/client'
 
+/** Cap on entries held while the database is unreachable — see the note in `flush`. */
+const POSTGRES_MAX_BUFFERED = 10_000
+
+// `reportToStderrSafely` is the guarded helper defined in §3 — it lives in the
+// consumer's own module, not in this package, so there is nothing to import.
 export class PrismaPostgresDestination implements ILogDestination {
   readonly name = 'postgres'
   private buffer: Record<string, unknown>[] = []
@@ -437,31 +697,70 @@ export class PrismaPostgresDestination implements ILogDestination {
     private readonly opts: { batchSize?: number; flushIntervalMs?: number } = {}
   ) {}
 
+  /** The background flush currently running, so shutdown can wait for it. */
+  private inFlight: Promise<void> = Promise.resolve()
+  /** Guards against queueing a second flush behind one that has not settled. */
+  private flushPending = false
+  /** Entries discarded at the cap. Emitted by `reportDropped` from `flush`'s
+   *  `finally`, so a successful flush reports them too — a stalled request that
+   *  overflowed and then succeeded would otherwise lose them silently. */
+  private dropped = 0
+
   onInit(): void {
-    this.flushTimer = setInterval(() => void this.flush(), this.opts.flushIntervalMs ?? 2000)
+    this.flushTimer = setInterval(() => this.flushInBackground(), this.opts.flushIntervalMs ?? 2000)
   }
 
   write(payload: string): void {
-    try {
-      this.buffer.push(JSON.parse(payload) as Record<string, unknown>)
-      if (this.buffer.length >= (this.opts.batchSize ?? 50)) void this.flush()
-    } catch (e) {
-      // Emit reserved key so the failure is searchable in dashboards
-      process.stderr.write(
-        JSON.stringify({
-          level: 'error',
-          logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
-          destination: 'postgres',
-          error: (e as Error).message
-        }) + '\n'
-      )
+    // No try/catch. A malformed payload throws, the adapter catches it, records
+    // the sink as write-failed and reports it under LOGGER_DESTINATION_WRITE_FAILED
+    // — all of which a `catch` here would suppress, leaving readiness to credit
+    // this sink with an entry it never buffered. Swallowing your own failure is
+    // the one thing a destination must not do (§3).
+    this.buffer.push(JSON.parse(payload) as Record<string, unknown>)
+    // Bounded on ENQUEUE — see the Loki example: a cap applied only after a failed
+    // flush bounds nothing while the sink is merely stalled.
+    if (this.buffer.length > POSTGRES_MAX_BUFFERED) {
+      this.dropped += this.buffer.length - POSTGRES_MAX_BUFFERED
+      this.buffer.splice(0, this.buffer.length - POSTGRES_MAX_BUFFERED)
     }
+    if (this.buffer.length >= (this.opts.batchSize ?? 50)) this.flushInBackground()
   }
 
+  // Detached, so it must not reject. COALESCED, not chained per call: chaining
+  // appends a link for every write that crosses the threshold, so a stalled sink
+  // grows the promise chain as fast as the buffer. Retained in `inFlight` so
+  // shutdown can await a flush already running.
+  private flushInBackground(): void {
+    if (this.flushPending) return
+    this.flushPending = true
+    this.inFlight = this.flush()
+      .catch(() => undefined)
+      .finally(() => {
+        this.flushPending = false
+      })
+  }
+
+  // A batch flush runs AFTER the `write` that triggered it has returned, so its
+  // failure cannot reach the adapter — this is the one place a destination has to
+  // handle its own. It still must not discard the batch: an empty `catch` here
+  // loses every entry in it while the adapter has already recorded them as taken.
+  // Put the batch back and report; the next flush retries it.
   private async flush(): Promise<void> {
     if (this.buffer.length === 0) return
     const batch = this.buffer.splice(0, this.buffer.length)
     try {
+      // NO `Promise.race` deadline here, and that is deliberate. Racing a timeout
+      // would settle the AWAIT without cancelling the query: the batch would be
+      // requeued while the original `createMany` is still running, the next flush
+      // would start a second one, and a slow database would accumulate concurrent
+      // inserts of the same batch — duplicates, not just delay. A timeout must
+      // CANCEL to be a timeout.
+      //
+      // The bound belongs at the driver instead, where it aborts the statement
+      // server-side: `postgresql://…?statement_timeout=10000` on the Prisma
+      // connection string (or `SET LOCAL statement_timeout` inside a transaction).
+      // Then this promise really does settle, `flushPending` clears, and the retry
+      // is a retry rather than a duplicate.
       await this.prisma.log.createMany({
         data: batch.map((entry) => ({
           level: String(entry.level ?? 'info'),
@@ -472,13 +771,75 @@ export class PrismaPostgresDestination implements ILogDestination {
         })),
         skipDuplicates: true
       })
-    } catch {
-      /* fail-soft */
+    } catch (err) {
+      // Retained, but BOUNDED. Requeueing every failed batch while `write` keeps
+      // appending is an unbounded queue: a sustained outage then ends in an OOM,
+      // which loses every entry AND the application with it. The cap is the explicit
+      // trade — drop the OLDEST beyond it, because the newest entries are the ones
+      // describing the incident — and the count is reported rather than silent. A
+      // destination that cannot drop anything needs a durable spool, not a buffer.
+      this.buffer.unshift(...batch)
+      const overflow = Math.max(0, this.buffer.length - POSTGRES_MAX_BUFFERED)
+      if (overflow > 0) this.buffer.splice(0, overflow)
+      this.dropped += overflow
+      // Counted AFTER the drop. The overflow is spliced off the front, which is
+      // where the requeued batch just went, so `batch.length` would overstate what
+      // actually survived whenever the cap bit.
+      const retained = batch.length - Math.min(overflow, batch.length)
+      // Coerced under a guard, like the cause anywhere else: a rejection value with
+      // a throwing `message` getter would otherwise replace this report with a
+      // different error and emit no diagnostic at all.
+      let error = 'UnknownError'
+      try {
+        error = err instanceof Error ? String(err.message) : String(err)
+      } catch {
+        // Reported as `UnknownError`; the destination and the counts still say what
+        // happened, and this path must never throw.
+      }
+      // Guard this write yourself — see the EPIPE note in §3. `writeStderrSafely`
+      // is internal to the library and not importable from outside it.
+      reportToStderrSafely(
+        JSON.stringify({
+          level: 'error',
+          logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
+          destination: 'postgres',
+          retained,
+          error
+        })
+      )
+      throw err
+    } finally {
+      // Overflow is reported HERE, on every settlement, not only from the catch.
+      // A request that stalls long enough to overflow and THEN succeeds runs no
+      // catch at all, so entries would have been discarded with nothing said —
+      // the opposite of the stated policy that the loss is observable.
+      this.reportDropped()
     }
+  }
+
+  /** Emit and reset the overflow counter, whatever the flush outcome was. */
+  private reportDropped(): void {
+    if (this.dropped === 0) return
+    reportToStderrSafely(
+      JSON.stringify({
+        level: 'error',
+        logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
+        destination: 'postgres',
+        droppedOldest: this.dropped,
+        msg: 'buffer cap reached; oldest entries discarded'
+      })
+    )
+    this.dropped = 0
   }
 
   async onShutdown(): Promise<void> {
     if (this.flushTimer) clearInterval(this.flushTimer)
+    // Wait for a background flush already running before draining what is left:
+    // it may requeue its batch on failure, and those entries would otherwise be
+    // stranded in a buffer nobody drains again.
+    await this.inFlight
+    // NOT swallowed: the registry catches, reports and isolates a failing
+    // `onShutdown`, and a batch lost at shutdown is one nobody else is holding.
     await this.flush()
   }
 }
@@ -491,10 +852,10 @@ export class PrismaPostgresDestination implements ILogDestination {
 ## 6. Anti-patterns
 
 ❌ **Synchronous `write()` that performs blocking I/O** (e.g., `fs.writeFileSync`)
-❌ **`write()` that throws an exception** — the adapter contains it, but the entry is lost; catch and report on stderr instead
+❌ **Catching and swallowing your own failure** — the adapter can only contain and RECORD what reaches it; a hidden failure lets readiness credit a sink that dropped the entry
 ❌ **Logging via the logger itself inside `write`** — infinite loop
 ❌ **Mutating the `payload`** — other destinations receive the same string
-❌ **Expecting `write` to accept a rejected Promise as an error** — catch and log via stderr
+❌ **Assuming a rejected promise is ignored** — it is not: the adapter awaits it, records the failure and reports it, which is why it must not be swallowed first
 ❌ **Forgetting `onShutdown`** — loses the final batch on deploy
 ❌ **Sharing a buffer across multiple destinations** — race conditions
 

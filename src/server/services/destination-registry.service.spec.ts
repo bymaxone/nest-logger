@@ -368,6 +368,214 @@ describe('DestinationRegistry', () => {
     })
 
     it(/*
+     * REGRESSION — a cause whose own READ throws must not abort the teardown of
+     * the destinations still queued behind it. The report used to coerce above
+     * its guard: `String(cause)` on a value with a throwing `Symbol.toPrimitive`,
+     * and the `stack`/`message` reads on an Error with hostile getters, both throw
+     * from inside the `catch` that exists to keep one bad sink from mattering — so
+     * the throw escaped `onApplicationShutdown` and every remaining destination
+     * lost its flush.
+     *
+     * Asserted on the SECOND destination actually shutting down, not merely on the
+     * absence of a throw: the point of the guard is that teardown continues.
+     */
+    'keeps tearing down when the thrown cause cannot even be read', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const hostile = {
+        get stack(): string {
+          throw new Error('stack getter exploded')
+        },
+        get message(): string {
+          throw new Error('message getter exploded')
+        },
+        name: 'Error'
+      }
+      Object.setPrototypeOf(hostile, Error.prototype)
+      // Registered first, so it shuts down LAST in reverse order — the failure
+      // therefore happens while `survivor` still has to be closed.
+      const survivor = makeDestination('survivor', { onInit: jest.fn(), onShutdown: jest.fn() })
+      const poison = makeDestination('poison', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn().mockRejectedValue(hostile)
+      })
+      const registry = new DestinationRegistry([survivor, poison], logger, options, health)
+      await registry.onModuleInit()
+
+      await expect(registry.onApplicationShutdown()).resolves.toBeUndefined()
+
+      expect(survivor.onShutdown).toHaveBeenCalled()
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Shutdown failed for "poison": UnknownError')
+      )
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * REGRESSION — the SHUTDOWN report escapes control characters, and that is
+     * asserted rather than assumed. Every other shutdown test uses plain ASCII, so
+     * replacing `escapeControlCharacters` with an identity function would leave
+     * them all green while an attacker-supplied stack drove the operator's
+     * terminal. A stack is legitimately multi-line, so its newlines must SURVIVE
+     * while the escape sequence does not — both halves are checked.
+     */
+    'escapes control characters in the shutdown report but keeps stack newlines', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const hostile = new Error('boom')
+      hostile.stack = 'Error: boom\n    at \u001b[31mevil\u0085 (a.ts:1:1)'
+      const dest = makeDestination('ansi', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn().mockRejectedValue(hostile)
+      })
+      const registry = new DestinationRegistry([dest], logger, options, health)
+      await registry.onModuleInit()
+
+      await registry.onApplicationShutdown()
+
+      const line = stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('ansi'))
+      // Asserted POSITIVELY on the escaped form, not only on the absence of the raw
+      // one: `not.toContain` alone is satisfied by an empty line, so it cannot tell
+      // "escaped correctly" from "nothing was emitted".
+      expect(line).toContain('\\u001b')
+      expect(line).toContain('\\u0085')
+      expect(line).not.toContain('\u001b')
+      expect(line).not.toContain('\u0085')
+      expect(line).toContain('Error: boom\n    at ')
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * REGRESSION — a throwing `minLevel` getter must not abort bootstrap either.
+     * `effectiveLevelOf` reads it on BOTH branches of the init loop, including
+     * inside the catch that exists so a failing destination cannot stop the
+     * application from starting: an escape there took the app down at start-up and
+     * stranded every destination after it. `readonly minLevel?: LogLevel` does not
+     * stop a consumer implementing it as a getter.
+     *
+     * Asserted on the LATER destination initializing, not merely on the absence of
+     * a throw — continuing the loop is the property that matters.
+     */
+    'still boots when a destination cannot report its own minLevel', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const poison = makeDestination('poison', { onInit: jest.fn() })
+      Object.defineProperty(poison, 'minLevel', {
+        get() {
+          throw new Error('minLevel getter exploded')
+        }
+      })
+      const later = makeDestination('later', { onInit: jest.fn() })
+      const registry = new DestinationRegistry([poison, later], logger, options, health)
+
+      await expect(registry.onModuleInit()).resolves.toBeUndefined()
+
+      expect(later.onInit).toHaveBeenCalled()
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * REGRESSION — a throwing `name` getter must not abort BOOTSTRAP either. The
+     * init reporter read the name at its call site, inside the catch that exists
+     * so a failing destination cannot stop the application from starting; the
+     * throw escaped `onModuleInit` and did exactly what that catch forbids.
+     */
+    'still boots when a failing destination cannot report its own name', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const healthy = makeDestination('healthy', { onInit: jest.fn() })
+      const poison = makeDestination('poison', {
+        onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
+      })
+      Object.defineProperty(poison, 'name', {
+        get() {
+          throw new Error('name getter exploded')
+        }
+      })
+      const registry = new DestinationRegistry([healthy, poison], logger, options, health)
+
+      await expect(registry.onModuleInit()).resolves.toBeUndefined()
+
+      expect(healthy.onInit).toHaveBeenCalled()
+      // The emitted record is PARSED and its fields asserted, not probed for
+      // existence: `toBeDefined()` would pass on any line that happened to contain
+      // the word, including one emitted under the wrong key or without the
+      // fallback name ever being serialized.
+      const report: unknown = JSON.parse(
+        stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('unknown')) ?? '{}'
+      )
+      expect(report).toMatchObject({
+        logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+        destination: 'unknown',
+        err: { type: 'Error', message: 'init-fail' }
+      })
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * REGRESSION — a newline-bearing cause WITHOUT a stack must not forge a second
+     * stderr record. `escapeControlCharacters` preserves newlines on purpose, since
+     * a stack is legitimately multi-line; routing a `message` or a non-Error value
+     * through it let `failed\n[forged entry]` become a line an operator reads as a
+     * genuine one. Single-line fields go through `toSingleLineMessage` instead.
+     *
+     * Asserted on the emitted text being ONE line, not merely on the escape being
+     * present.
+     */
+    'never lets a newline in a stackless cause open a second stderr line', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const stackless = new Error('failed\n[forged entry]')
+      delete stackless.stack
+      const dest = makeDestination('forge', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn().mockRejectedValue(stackless)
+      })
+      const registry = new DestinationRegistry([dest], logger, options, health)
+      await registry.onModuleInit()
+
+      await registry.onApplicationShutdown()
+
+      const line = stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('forge'))
+      // `toSingleLineMessage` renders a line terminator as the two-character escape
+      // `\n`, not as `\u000a` — checked against the util rather than assumed.
+      expect(line).toContain('failed\\n[forged entry]')
+      // Exactly one terminating newline, and none inside: the record cannot be split.
+      expect(line?.endsWith('\n')).toBe(true)
+      expect(line?.slice(0, -1)).not.toContain('\n')
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * REGRESSION — the destination's own `name` is read inside the guard too.
+     * `readonly name: string` does not stop a consumer implementing it as a
+     * getter, and reading it at the call site would put it back inside the
+     * `catch`, where a throw aborts the remaining teardown exactly as a hostile
+     * cause would. Guarded separately from the detail, so one unreadable value
+     * does not cost the other.
+     */
+    'keeps tearing down when the destination name itself cannot be read', async () => {
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const survivor = makeDestination('survivor', { onInit: jest.fn(), onShutdown: jest.fn() })
+      const poison = makeDestination('named', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn().mockRejectedValue(new Error('shutdown-fail'))
+      })
+      Object.defineProperty(poison, 'name', {
+        get() {
+          throw new Error('name getter exploded')
+        }
+      })
+      const registry = new DestinationRegistry([survivor, poison], logger, options, health)
+      await registry.onModuleInit()
+
+      await expect(registry.onApplicationShutdown()).resolves.toBeUndefined()
+
+      expect(survivor.onShutdown).toHaveBeenCalled()
+      // The name is lost, the detail is not — that is the point of guarding them
+      // separately rather than together.
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Shutdown failed for "unknown": Error: shutdown-fail')
+      )
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
      * When the thrown cause is a non-Error value (e.g. a string), String(cause)
      * must be used as the detail — covers the instanceof-false branch.
      */
@@ -498,6 +706,49 @@ describe('DestinationRegistry', () => {
 
       expect(later.onRegistryReady).toHaveBeenCalled()
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('hook exploded'))
+      stderrSpy.mockRestore()
+    })
+
+    it(/*
+     * REGRESSION — the readiness reporter reads the destination's `name` under a
+     * guard, like the init, write and shutdown reporters do. This was the one
+     * changed call site without such a test: every other hook case uses a plain
+     * name, so replacing `safeDestinationName(destination)` with
+     * `destination.name` would have passed them all while a throwing getter
+     * escaped this catch and cost the REMAINING destinations their notification
+     * and the bootstrap entry.
+     *
+     * Asserted on the later destination still being notified, not merely on the
+     * absence of a throw.
+     */
+    'still notifies the rest when a failing hook destination cannot report its name', async () => {
+      const hostile = {
+        ...makeDestination('hostile'),
+        onRegistryReady: jest.fn(() => {
+          throw new Error('hook exploded')
+        })
+      }
+      Object.defineProperty(hostile, 'name', {
+        get() {
+          throw new Error('name getter exploded')
+        }
+      })
+      const later = { ...makeDestination('later'), onRegistryReady: jest.fn() }
+      const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+      await expect(
+        new DestinationRegistry([hostile, later], logger, options, health).onModuleInit()
+      ).resolves.toBeUndefined()
+
+      expect(later.onRegistryReady).toHaveBeenCalled()
+      const report: unknown = JSON.parse(
+        stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('unknown')) ?? '{}'
+      )
+      expect(report).toMatchObject({
+        logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
+        destination: 'unknown',
+        err: { type: 'Error', message: 'hook exploded' }
+      })
       stderrSpy.mockRestore()
     })
 

@@ -3325,30 +3325,74 @@ src/server/services/destination-registry.service.ts
 ```typescript
 import { Inject, Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
-import { LOGGER_DESTINATIONS_TOKEN } from '../constants/injection-tokens.constants'
+import {
+  LOGGER_DESTINATIONS_TOKEN,
+  LOGGER_OPTIONS_TOKEN
+} from '../constants/injection-tokens.constants'
 import { PinoLoggerService } from './pino-logger.service'
+import { DestinationHealth } from './destination-health.service'
+import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
+import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
+import type { LogLevel } from '../../shared/types/log-level.type'
+import {
+  reportDestinationFailure,
+  safeDestinationName,
+  safeMinLevel
+} from '../utils/report-destination-failure.util'
+import { escapeControlCharacters, toSingleLineMessage } from '../utils/escape-log-text.util'
+import { writeStderrSafely } from '../utils/safe-stdio.util'
+import { isErrorLike } from '../utils/sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 @Injectable()
 export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
-  private active: ILogDestination[] = []
+  /** Initialized successfully — drives shutdown; writes are gated per entry by health. */
+  private readonly active: ILogDestination[] = []
 
+  // Every provider carries an explicit `@Inject`, class-typed ones included: tsup
+  // strips decorator metadata, so implicit DI resolves in dev and fails when published.
   constructor(
     @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly registered: readonly ILogDestination[],
-    private readonly logger: PinoLoggerService
+    @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
+    @Inject(DestinationHealth) private readonly health: DestinationHealth,
+    @Inject(LOGGER_OPTIONS_TOKEN) private readonly options: ResolvedBymaxLoggerModuleOptions
   ) {}
+
+  /** The STRICTER of the module level and the destination's own, read through the
+   *  guard so a throwing or stateful `minLevel` getter cannot abort boot or make
+   *  this recording disagree with the factory. */
+  private effectiveLevelOf(dest: ILogDestination): LogLevel {
+    const configured = safeMinLevel(dest)
+    if (configured === undefined) return this.options.level
+    return LOG_LEVEL_PRIORITY.indexOf(configured) > LOG_LEVEL_PRIORITY.indexOf(this.options.level)
+      ? configured
+      : this.options.level
+  }
 
   async onModuleInit(): Promise<void> {
     for (const dest of this.registered) {
       try {
         await dest.onInit?.()
         this.active.push(dest)
+        // Recorded on SUCCESS too, not only on failure: `DestinationHealth` answers
+        // "did any healthy sink take this entry?", and a registry that only ever
+        // marks failures leaves `healthy` empty — so the last-resort stdout rescue
+        // fires even though a live sink was available, and readiness cannot credit it.
+        this.health.markHealthy(dest, this.effectiveLevelOf(dest))
       } catch (err) {
-        this.logger.errorStructured(
+        // NOT through the logger: at this point the destination that just failed is
+        // part of the fan-out the logger writes to, so reporting the failure through
+        // it can feed the failure back into itself. Straight to stderr, with the
+        // name read under a guard because `readonly name: string` does not stop a
+        // consumer implementing it as a throwing getter — and this runs inside the
+        // catch that exists so a bad sink cannot abort bootstrap.
+        this.health.markFailed(dest, this.effectiveLevelOf(dest))
+        const name = safeDestinationName(dest)
+        reportDestinationFailure(
           RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-          err instanceof Error ? err : new Error(String(err)),
-          undefined,
-          { destination: dest.name }
+          name,
+          err,
+          `Log destination "${name}" failed to initialize and was skipped`
         )
       }
     }
@@ -3360,10 +3404,44 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       try {
         await dest.onShutdown?.()
       } catch (err) {
-        // Best-effort during shutdown; log via console fallback
-        console.error(`[DestinationRegistry] Shutdown failure for ${dest.name}:`, err)
+        // NOT `console.*` — this repository forbids it, and it is unguarded besides:
+        // `${dest.name}` is read before the call, so a throwing getter would abort
+        // the teardown of every destination still queued behind this one.
+        this.reportShutdownFailure(dest, err)
       }
     }
+  }
+
+  /**
+   * Report one shutdown failure on stderr, with the destination passed WHOLE so its
+   * name is read under the guard rather than at the call site — which sits inside the
+   * catch that keeps one bad sink from stranding the teardown of those still queued.
+   */
+  private reportShutdownFailure(dest: ILogDestination, cause: unknown): void {
+    const name = toSingleLineMessage(safeDestinationName(dest))
+    // The COERCION is inside the try, not just the read: `String(cause)` runs a
+    // consumer's `toString`/`Symbol.toPrimitive`, which can throw from within the
+    // catch that exists to keep one bad sink from stranding the teardown of the
+    // destinations still queued behind it. A value that cannot be read is still
+    // worth a line naming the destination, so the detail degrades instead.
+    let detail = 'UnknownError'
+    try {
+      // The two escapers are NOT interchangeable. `escapeControlCharacters` keeps
+      // newlines because a stack is legitimately multi-line, so it may only be used
+      // ON a stack. A message, or any non-Error value, is a single-line field:
+      // passing it through the multi-line escaper lets `'failed\n[forged entry]'`
+      // write a second raw line an operator reads as a genuine record.
+      const stack = isErrorLike(cause) ? cause.stack : undefined
+      detail =
+        stack === undefined
+          ? toSingleLineMessage(isErrorLike(cause) ? String(cause.message) : String(cause))
+          : escapeControlCharacters(String(stack))
+    } catch {
+      // Deliberately empty — this path must never throw.
+    }
+    // Straight to stderr rather than through `reportDestinationFailure`: shutdown has
+    // no reserved log key, and inventing one would name a constant that does not exist.
+    writeStderrSafely(`[DestinationRegistry] Shutdown failed for "${name}": ${detail}\n`)
   }
 
   /**
@@ -3383,25 +3461,71 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
 // src/server/utils/destination-to-stream.ts
 import { Writable } from 'node:stream'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
+import type { DestinationHealth } from '../services/destination-health.service'
+import { writeStdoutSafely } from '../utils/safe-stdio.util'
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+import {
+  reportDestinationFailure,
+  safeDestinationName
+} from '../utils/report-destination-failure.util'
 
-export function destinationToStream(dest: ILogDestination): Writable {
+export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
   return new Writable({
     write(chunk, _enc, callback) {
       // A failure is CONTAINED: report it and complete the write as successful.
       // `callback(err)` makes the Writable emit 'error', which with no listener
       // terminates the host — the opposite of the fail-soft contract.
       const reportAndContinue = (err: unknown): void => {
-        process.stderr.write(`LOGGER_DESTINATION_WRITE_FAILED ${dest.name}: ${String(err)}\n`)
+        // RECORDED, not only reported. Without `markWriteFailed` the readiness
+        // accounting still counts this sink as having taken the entry, and another
+        // destination may discard the only copy it was holding.
+        health.markWriteFailed(dest)
+        // `reportDestinationFailure`, not a formatted write: a guarded WRITER still
+        // evaluates `String(err)` first, and a hostile coercion hook would throw
+        // before `callback()` — an unhandled rejection from inside the containment.
+        // The name is read under the same protection, for the same reason.
+        const name = safeDestinationName(dest)
+        reportDestinationFailure(
+          RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+          name,
+          err,
+          `Log destination "${name}" failed to write; the entry was dropped`
+        )
         callback()
       }
       try {
-        const r = dest.write(typeof chunk === 'string' ? chunk : chunk.toString('utf-8'))
+        const payload = typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
+        // A sink that failed `onInit` never became live, so it is SKIPPED rather than
+        // written to — its `write()` may assume resources it never acquired. The
+        // fan-out holds a stream for every REGISTERED destination, so this branch is
+        // what keeps a failed one out of it. When NOTHING initialized, the elected
+        // rescuer emits the raw entry to stdout so one bad sink cannot silence the app.
+        if (health.isFailed(dest)) {
+          if (health.shouldRescue(dest)) writeStdoutSafely(payload)
+          callback()
+          return
+        }
+        const r = dest.write(payload)
         // Branch on `undefined`: `instanceof Promise` is realm-local and misses a
         // cross-realm promise or a plain thenable, losing the entry. A rejection is
         // reported and then completed WITHOUT an error — `callback(err)` makes the
         // stream emit 'error' and takes the host down. See CHANGELOG 1.2.9.
         if (r === undefined) callback()
-        else Promise.resolve(r).then(() => callback(), reportAndContinue)
+        else {
+          // Counted while IN FLIGHT: readiness can run before this settles, and a
+          // pending write must read as unproven rather than as silent success.
+          health.markWritePending(dest)
+          Promise.resolve(r).then(
+            () => {
+              health.markWriteSettled(dest)
+              callback()
+            },
+            (err) => {
+              health.markWriteSettled(dest)
+              reportAndContinue(err)
+            }
+          )
+        }
       } catch (err) {
         reportAndContinue(err)
       }
@@ -3415,11 +3539,17 @@ And `pino-factory` switches to using `pino.multistream`:
 ```typescript
 import pino from 'pino'
 import { destinationToStream } from './utils/destination-to-stream'
+import { safeMinLevel } from './utils/report-destination-failure.util'
 
-// inside buildPinoInstance:
+// inside buildPinoInstance(destinations, health, options) — `health` is the SAME
+// `DestinationHealth` instance the registry holds, injected there and passed through:
+// two instances would let the fan-out and the registry disagree about which sinks are
+// live, which is the disagreement a single shared instance exists to prevent.
 const streams = destinations.map((d) => ({
-  level: d.minLevel ?? options.level,
-  stream: destinationToStream(d)
+  // Guarded and pinned — see `safeMinLevel`: this runs at provider construction,
+  // before any fail-soft path, and the registry must record the same answer.
+  level: safeMinLevel(d) ?? options.level,
+  stream: destinationToStream(d, health)
 }))
 const pinoInstance = pino(pinoOpts, pino.multistream(streams))
 ```

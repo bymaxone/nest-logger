@@ -620,13 +620,19 @@ function exportedNames() {
  * 2. **Key parity** — an omitted member. An optional property missing from one
  *    side is assignable in BOTH directions, so assignability never sees it; this
  *    is how the README's absent `onRegistryReady` survived every earlier gate.
- * 3. **Per-member identity** — a changed PARAMETER. Method parameters stay
- *    bivariant even under `strictFunctionTypes`, so a README declaring
- *    `write(payload: unknown)` satisfies both assignments and key parity.
- *    Measured, not assumed: the first version of this gate passed that exact
- *    edit. `Identical` is the standard conditional-type trick for type equality
- *    — two deferred conditionals are only mutually assignable when their check
- *    types are the same type, which is invariance rather than assignability.
+ * 3. **Per-member identity** — a changed PARAMETER, and a dropped `readonly` or
+ *    `?`. Method parameters stay bivariant even under `strictFunctionTypes`, so a
+ *    README declaring `write(payload: unknown)` satisfies both assignments and key
+ *    parity. Measured, not assumed: the first version of this gate passed that
+ *    exact edit. `Identical` is the standard conditional-type trick for type
+ *    equality — two deferred conditionals are only mutually assignable when their
+ *    check types are the same type, which is invariance rather than assignability.
+ *
+ *    Compared as `Pick<T, K>` rather than `T[K]`, because indexed access DROPS the
+ *    property modifiers: `readonly name: string` and `name: string` both reduce to
+ *    `string`, and the second version of this gate passed a README that dropped the
+ *    `readonly`. `Pick` carries the modifier and the optionality into the
+ *    comparison.
  *
  * @param code - The README block, verbatim.
  * @param name - The exported type it re-declares.
@@ -651,7 +657,9 @@ function declarationProbe(code, name, exported) {
     `type Identical<A, B> =\n` +
     `  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false\n` +
     `type Shared = keyof ${name} & keyof ${alias}\n` +
-    `declare const members: { [K in Shared]: Identical<${name}[K], ${alias}[K]> }\n` +
+    `declare const members: {\n` +
+    `  [K in Shared]: Identical<Pick<${name}, K>, Pick<${alias}, K>>\n` +
+    `}\n` +
     `export const _memberParity: { [K in Shared]: true } = members\n`
   )
 }

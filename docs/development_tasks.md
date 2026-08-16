@@ -3151,25 +3151,71 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 > ```typescript
 > import { Writable } from 'node:stream'
 > import type { ILogDestination } from '../interfaces/log-destination.interface'
+> import type { DestinationHealth } from '../services/destination-health.service'
+> import { writeStdoutSafely } from '../utils/safe-stdio.util'
+> import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+> import {
+>   reportDestinationFailure,
+>   safeDestinationName
+> } from '../utils/report-destination-failure.util'
 >
-> export function destinationToStream(dest: ILogDestination): Writable {
+> export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
 >   return new Writable({
 >     write(chunk, _enc, callback) {
 >       // A failure is CONTAINED: report it and complete the write as successful.
 >       // `callback(err)` makes the Writable emit 'error', which with no listener
 >       // terminates the host — the opposite of the fail-soft contract.
 >       const reportAndContinue = (err: unknown): void => {
->         process.stderr.write(`LOGGER_DESTINATION_WRITE_FAILED ${dest.name}: ${String(err)}\n`)
+>         // RECORDED, not only reported. Without `markWriteFailed` the readiness
+>         // accounting still counts this sink as having taken the entry, and another
+>         // destination may discard the only copy it was holding.
+>         health.markWriteFailed(dest)
+>         // `reportDestinationFailure`, not a formatted write: a guarded WRITER still
+>         // evaluates `String(err)` first, and a hostile coercion hook would throw
+>         // before `callback()` — an unhandled rejection from inside the containment.
+>         // The name is read under the same protection, for the same reason.
+>         const name = safeDestinationName(dest)
+>         reportDestinationFailure(
+>           RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+>           name,
+>           err,
+>           `Log destination "${name}" failed to write; the entry was dropped`
+>         )
 >         callback()
 >       }
 >       try {
->         const r = dest.write(typeof chunk === 'string' ? chunk : chunk.toString('utf-8'))
+>         const payload = typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
+>         // A sink that failed `onInit` never became live, so it is SKIPPED rather than
+>         // written to — its `write()` may assume resources it never acquired. The
+>         // fan-out holds a stream for every REGISTERED destination, so this branch is
+>         // what keeps a failed one out of it. When NOTHING initialized, the elected
+>         // rescuer emits the raw entry to stdout so one bad sink cannot silence the app.
+>         if (health.isFailed(dest)) {
+>           if (health.shouldRescue(dest)) writeStdoutSafely(payload)
+>           callback()
+>           return
+>         }
+>         const r = dest.write(payload)
 >         // Branch on `undefined`: `instanceof Promise` is realm-local and misses a
 >         // cross-realm promise or a plain thenable, losing the entry. A rejection is
 >         // reported and then completed WITHOUT an error — `callback(err)` makes the
 >         // stream emit 'error' and takes the host down. See CHANGELOG 1.2.9.
 >         if (r === undefined) callback()
->         else Promise.resolve(r).then(() => callback(), reportAndContinue)
+>         else {
+>           // Counted while IN FLIGHT: readiness can run before this settles, and a
+>           // pending write must read as unproven rather than as silent success.
+>           health.markWritePending(dest)
+>           Promise.resolve(r).then(
+>             () => {
+>               health.markWriteSettled(dest)
+>               callback()
+>             },
+>             (err) => {
+>               health.markWriteSettled(dest)
+>               reportAndContinue(err)
+>             }
+>           )
+>         }
 >       } catch (err) {
 >         reportAndContinue(err)
 >       }
@@ -3178,12 +3224,17 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 > }
 > ```
 >
-> Modify `src/server/pino-factory.ts` to receive an additional `destinations: readonly ILogDestination[]` and configure `pino.multistream`:
+> Modify `src/server/pino-factory.ts` to receive two further arguments — `destinations: readonly ILogDestination[]` and the shared `health: DestinationHealth` the registry holds — and configure `pino.multistream`. Both are required: the adapter gates every write on health, so a second `DestinationHealth` instance would let the fan-out and the registry disagree about which sinks are live.
 >
 > ```typescript
+> import { destinationToStream } from './utils/destination-to-stream'
+> import { safeMinLevel } from './utils/report-destination-failure.util'
+>
 > const streams = destinations.map((d) => ({
->   level: d.minLevel ?? options.level,
->   stream: destinationToStream(d)
+>   // Guarded and pinned — see `safeMinLevel`: this runs at provider construction,
+>   // before any fail-soft path, and the registry must record the same answer.
+>   level: safeMinLevel(d) ?? options.level,
+>   stream: destinationToStream(d, health)
 > }))
 > const pinoInstance = pino(pinoOpts, pino.multistream(streams))
 > ```

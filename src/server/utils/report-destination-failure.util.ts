@@ -17,6 +17,8 @@
 import { toSingleLineMessage } from './escape-log-text.util'
 import { writeStderrSafely } from './safe-stdio.util'
 import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.constants'
+import type { LogLevel } from '../../shared/types/log-level.type'
+import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 
 /**
  * Write one structured destination-failure line to `process.stderr`.
@@ -70,4 +72,124 @@ export function reportDestinationFailure(
     // reported rather than anything thrown. A broken stderr is handled one layer
     // down by `writeStderrSafely`, which covers the ASYNC half a try/catch cannot.
   }
+}
+
+/**
+ * Read a destination's `name` without letting that read abort the caller.
+ *
+ * `ILogDestination` declares `readonly name: string`, which does not stop a
+ * consumer implementing it as a getter. Every reporter below is called from
+ * inside a `catch` that exists to keep one bad sink from mattering, so a name
+ * read at the CALL SITE puts the throw back outside the guard: from
+ * `onModuleInit` it aborts bootstrap, and from the write adapter it skips the
+ * stream callback and becomes an unhandled rejection.
+ *
+ * Escaping is left to the reporters, which already apply it to everything they
+ * emit; this only guarantees a string comes back.
+ *
+ * @param destination - The destination whose name is needed for a report.
+ * @returns The name, or `'unknown'` when reading it throws.
+ *
+ * @example
+ * ```ts
+ * const hostile = {
+ *   get name(): string {
+ *     throw new Error('boom')
+ *   }
+ * }
+ * safeDestinationName(hostile) // 'unknown', instead of throwing at the call site
+ * ```
+ */
+export function safeDestinationName(destination: { readonly name: string }): string {
+  try {
+    return String(destination.name)
+  } catch {
+    return 'unknown'
+  }
+}
+
+/**
+ * Whether a value is one of the six levels this library recognises.
+ *
+ * The widening is on the ARRAY, not on the value: reading `readonly LogLevel[]` as
+ * `readonly unknown[]` is always true, whereas asserting the value to be a `LogLevel`
+ * in order to ask whether it IS one states the very thing being checked. Widening to
+ * `unknown[]` rather than `string[]` also drops a `typeof` guard that `includes`
+ * already covers — strict equality against six strings rejects every other type —
+ * and with it a branch only a forged value could ever exercise.
+ *
+ * @param value - Any value, typically read from consumer-controlled configuration.
+ * @returns `true` when the value is a recognised level.
+ */
+function isLogLevel(value: unknown): value is LogLevel {
+  return (LOG_LEVEL_PRIORITY as readonly unknown[]).includes(value)
+}
+
+/**
+ * First answer per destination, so two readers cannot get different ones. Declared
+ * ABOVE the JSDoc below on purpose: a declaration between a comment block and the
+ * function it documents steals that comment, leaving the export undocumented.
+ */
+const resolvedMinLevels = new WeakMap<object, LogLevel | undefined>()
+
+/**
+ * Read a destination's `minLevel` without letting that read abort the caller, and
+ * without trusting what it returns.
+ *
+ * `readonly minLevel?: LogLevel` does not stop a consumer implementing it as a
+ * getter. It is read in two places that must not throw: the Pino factory, which
+ * builds the multistream entry BEFORE any lifecycle hook runs — a throw there
+ * fails provider construction and the application never starts — and the
+ * registry's init loop, on both branches including the catch that exists so a
+ * failing destination cannot abort bootstrap.
+ *
+ * The first answer is CACHED per destination, and that is the point rather than an
+ * optimisation. Nothing stops the getter being stateful, and the value is read by
+ * two independent consumers: the factory, which fixes the multistream entry's level,
+ * and the registry, which records the same destination's health level. A getter
+ * returning `info` to one and `error` to the other would let an `error` sink be
+ * credited with covering held `info` entries — and a buffering destination would
+ * discard its only copy of them. Pinning the first read makes the two agree by
+ * construction. `readonly minLevel?: LogLevel` says it should not change anyway.
+ *
+ * The VALUE is checked too, not only the read. `readonly minLevel?: LogLevel` is a
+ * compile-time claim, and a JavaScript consumer — or a miscast one — can return any
+ * string. An unrecognised level is not rejected by `pino.multistream`: it builds
+ * without complaint and the entry then matches NOTHING, so that destination receives
+ * zero entries while the registry, whose `indexOf` returns `-1` and loses the
+ * comparison, records it as covering the module level. Measured: a sink configured
+ * with an invalid level received 0 of 3 emitted entries, silently. Silent total loss
+ * is the worst outcome available here, so an unrecognised value is treated as absent
+ * and the destination falls back to the module level, where it receives entries.
+ * `validateOptions` already holds `options.level` to this same list; this is that
+ * check reaching the place it had not.
+ *
+ * @param destination - The destination whose configured level is needed.
+ * @returns The configured level, or `undefined` when absent, unreadable OR not a
+ *   recognised level — the same answer for all three, since each means "no usable
+ *   per-destination level". Stable across calls for a given destination.
+ *
+ * @example
+ * ```ts
+ * const hostile = {
+ *   get minLevel(): LogLevel {
+ *     throw new Error('boom')
+ *   }
+ * }
+ * safeMinLevel(hostile) // undefined, instead of throwing at the call site
+ * ```
+ */
+export function safeMinLevel(destination: { readonly minLevel?: LogLevel }): LogLevel | undefined {
+  if (resolvedMinLevels.has(destination)) {
+    return resolvedMinLevels.get(destination)
+  }
+  let resolved: LogLevel | undefined
+  try {
+    const read: unknown = destination.minLevel
+    resolved = isLogLevel(read) ? read : undefined
+  } catch {
+    resolved = undefined
+  }
+  resolvedMinLevels.set(destination, resolved)
+  return resolved
 }

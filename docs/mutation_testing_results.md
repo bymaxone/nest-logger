@@ -11,14 +11,18 @@
 | **Global mutation score**                              | **100.00 %**                |
 | Break threshold (`thresholds.break`)                   | 95 % → **PASS (exit 0)** ✅ |
 | Aspirational target (`thresholds.high`)                | 99 % → **reached**          |
-| Killed                                                 | 834                         |
+| Killed                                                 | 838                         |
 | Survived                                               | **0**                       |
 | Timeout (counts as detected)                           | 11                          |
 | Ignored — documented `// Stryker disable`              | 17                          |
 | Ignored — static mutants (`ignoreStatic: true`)        | 128                         |
-| Compile/runtime errors (type-system-guarded, excluded) | 512                         |
+| Compile/runtime errors (type-system-guarded, excluded) | 515                         |
 
-Score = `(killed + timeout) / (killed + timeout + survived)` = `845 / 845 = 100.00 %`.
+Score = `(killed + timeout) / (killed + timeout + survived)` = `849 / 849 = 100.00 %`.
+
+Last measured on 2026-08-16 with `pnpm mutation:full` semantics under Node 24.18.0, after the
+destination-name guards were added: the three files they touch report 49 / 19 / 9 killed with no
+survivor and no uncovered mutant.
 
 ### 2026-08-15 — the descriptor flags nobody could kill, deleted rather than excused
 
