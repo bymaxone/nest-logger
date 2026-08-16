@@ -224,7 +224,7 @@ something writes its own — once, not per call site.
 // after exactly that defect.
 const swallowStderrError = (): void => undefined
 
-export function reportToStderrSafely(line: string): void {
+export function reportToStderrSafely(record: string): void {
   // The listener covers the ASYNCHRONOUS half (EPIPE, see the note above), the
   // try/catch the synchronous one. Either alone still leaves a way to die.
   //
@@ -235,19 +235,24 @@ export function reportToStderrSafely(line: string): void {
     process.stderr.on('error', swallowStderrError)
   }
   try {
-    // ESCAPED at the sink. `JSON.stringify` escapes C0 and nothing else, so DEL,
-    // the C1 range (U+0085 NEL included), U+2028 and U+2029 survive verbatim into
-    // a line an operator reads in a terminal — enough to drive it, or to forge a
-    // rendered entry. The failure text here is remote-derived, so this is the last
-    // point that can neutralize it. The record's final LF is preserved.
-    process.stderr.write(escapeTerminalControls(line))
+    // ESCAPED at the sink, and the terminating newline added HERE rather than by
+    // the caller. `JSON.stringify` escapes C0 and nothing else, so DEL, the C1
+    // range (U+0085 NEL included), U+2028 and U+2029 survive verbatim into a line
+    // an operator reads in a terminal — enough to drive it, or to forge a rendered
+    // entry. The failure text is remote-derived, so this is the last point that can
+    // neutralize it.
+    //
+    // Every control character goes, INCLUDING line feeds: leaving them would let a
+    // multi-line payload split itself into a second record that an operator reads
+    // as genuine. Owning the trailing newline is what makes that safe to do.
+    process.stderr.write(`${escapeTerminalControls(record)}\n`)
   } catch {
     // A destroyed stream throws synchronously; a report is never worth a crash.
   }
 }
 
-/** Everything a terminal can act on, except the record's own line feed. */
-const TERMINAL_CONTROLS = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/g
+/** Everything a terminal can act on, line feeds included — see above. */
+const TERMINAL_CONTROLS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g
 
 function escapeTerminalControls(text: string): string {
   return text.replace(
@@ -371,7 +376,7 @@ export class LokiDestination implements ILogDestination {
           destination: 'loki',
           retained,
           error
-        }) + '\n'
+        })
       )
       throw err
     } finally {
@@ -393,7 +398,7 @@ export class LokiDestination implements ILogDestination {
         destination: 'loki',
         droppedOldest: this.dropped,
         msg: 'buffer cap reached; oldest entries discarded'
-      }) + '\n'
+      })
     )
     this.dropped = 0
   }
@@ -758,7 +763,7 @@ export class PrismaPostgresDestination implements ILogDestination {
           destination: 'postgres',
           retained,
           error
-        }) + '\n'
+        })
       )
       throw err
     } finally {
@@ -780,7 +785,7 @@ export class PrismaPostgresDestination implements ILogDestination {
         destination: 'postgres',
         droppedOldest: this.dropped,
         msg: 'buffer cap reached; oldest entries discarded'
-      }) + '\n'
+      })
     )
     this.dropped = 0
   }
