@@ -851,6 +851,17 @@ export function destinationToStream(
     write(chunk: Buffer, _enc, cb) {
       try {
         const payload = truncateIfOversized(chunk.toString('utf8'), maxEntrySizeBytes)
+        // A sink that failed `onInit` never became live, so it is SKIPPED rather
+        // than written to — its `write()` may assume resources it never acquired.
+        // The fan-out has a stream for every REGISTERED destination, so this branch
+        // is what keeps a failed one out of it. When nothing initialized at all, the
+        // elected rescuer emits the raw entry to stdout: without it, one bad
+        // destination silences the whole application.
+        if (health.isFailed(dest)) {
+          if (health.shouldRescue(dest)) writeStdoutSafely(payload)
+          cb()
+          return
+        }
         const result = dest.write(payload)
         // Branch on `undefined`, NOT on `result instanceof Promise`: `instanceof` is
         // realm-local and answers `false` for a cross-realm promise or a plain
@@ -931,7 +942,7 @@ import pino from 'pino'
 
 const maxEntrySizeBytes = options.maxEntrySizeBytes ?? 65536
 const entries = destinations.map((d) =>
-  destinationToStream(d, options.level ?? 'info', maxEntrySizeBytes)
+  destinationToStream(d, health, options.level ?? 'info', maxEntrySizeBytes)
 )
 const multistream = pino.multistream(entries, { dedupe: false })
 const logger = pino(pinoOptions, multistream)
@@ -1342,9 +1353,12 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
    *  hook iterates. */
   private readonly active: ILogDestination[] = []
 
+  // Every provider carries an explicit `@Inject`, including the class-typed one:
+  // tsup strips decorator metadata, so implicit DI resolves in development and
+  // fails in the published package.
   constructor(
     @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly destinations: ILogDestination[],
-    private readonly health: DestinationHealth,
+    @Inject(DestinationHealth) private readonly health: DestinationHealth,
     @Inject(LOGGER_OPTIONS_TOKEN) private readonly options: ResolvedBymaxLoggerModuleOptions
   ) {}
 
@@ -1412,10 +1426,19 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
     // Reverse order — first registered closes last. Over ACTIVE, not registered:
     // a destination whose `onInit` failed may never have acquired the resources
     // `onShutdown` would close.
-    const flushResults = await Promise.allSettled(
-      [...this.active].reverse().map((d) => d.onShutdown?.())
-    )
-    return { signal, flushedDestinations: flushResults.length }
+    //
+    // Sequential and per-destination guarded, NOT `Promise.allSettled`: settling
+    // every promise contains the failures but reports none of them, so a final
+    // flush that lost its batch would leave no trace anywhere.
+    for (const dest of [...this.active].reverse()) {
+      try {
+        await dest.onShutdown?.()
+      } catch (err) {
+        const detail = err instanceof Error ? (err.stack ?? err.message) : String(err)
+        writeStderrSafely(`[DestinationRegistry] Shutdown failed for "${dest.name}": ${detail}\n`)
+      }
+    }
+    return { signal, flushedDestinations: this.active.length }
   }
 }
 ```

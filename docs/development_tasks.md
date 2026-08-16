@@ -3151,7 +3151,8 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 > ```typescript
 > import { Writable } from 'node:stream'
 > import type { ILogDestination } from '../interfaces/log-destination.interface'
-> import { writeStderrSafely } from '../utils/safe-stdio.util'
+> import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+> import { reportDestinationFailure } from '../utils/report-destination-failure.util'
 >
 > export function destinationToStream(dest: ILogDestination): Writable {
 >   return new Writable({
@@ -3160,9 +3161,15 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 >       // `callback(err)` makes the Writable emit 'error', which with no listener
 >       // terminates the host — the opposite of the fail-soft contract.
 >       const reportAndContinue = (err: unknown): void => {
->         // `writeStderrSafely`, not `process.stderr.write`: a closed pipe reports
->         // EPIPE asynchronously and would kill the host from inside the containment.
->         writeStderrSafely(`LOGGER_DESTINATION_WRITE_FAILED ${dest.name}: ${String(err)}\n`)
+>         // `reportDestinationFailure`, not a formatted write: a guarded WRITER still
+>         // evaluates `String(err)` first, and a hostile coercion hook would throw
+>         // before `callback()` — an unhandled rejection from inside the containment.
+>         reportDestinationFailure(
+>           RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+>           dest.name,
+>           err,
+>           `Log destination "${dest.name}" failed to write; the entry was dropped`
+>         )
 >         callback()
 >       }
 >       try {

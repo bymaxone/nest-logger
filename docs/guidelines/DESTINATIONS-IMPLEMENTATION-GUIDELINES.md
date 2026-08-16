@@ -90,8 +90,9 @@ The lib exposes internally:
 ```typescript
 import { Writable } from 'node:stream'
 
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { DestinationHealth } from '../services/destination-health.service'
-import { writeStderrSafely } from '../utils/safe-stdio.util'
+import { reportDestinationFailure } from '../utils/report-destination-failure.util'
 
 export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
   return new Writable({
@@ -106,13 +107,21 @@ export function destinationToStream(dest: ILogDestination, health: DestinationHe
       // entry, and another destination could discard the copy it was holding.
       // Reporting alone is not containment.
       //
-      // Through `writeStderrSafely`, NOT `process.stderr.write`: a closed pipe
-      // reports EPIPE asynchronously, so a raw write here would trade a contained
-      // destination failure for an uncaught exception. See the EPIPE note in §3.
+      // Through `reportDestinationFailure`, not a raw write and not a formatted
+      // one. A guarded WRITER is not enough: `String(err)` is evaluated before the
+      // call, so a hostile `toString`/`Symbol.toPrimitive` — or an Error with a
+      // throwing `message` getter — throws here and `callback()` never runs, which
+      // in the async branch becomes the unhandled rejection this whole path exists
+      // to prevent. That helper does the coercion INSIDE its own guard, escapes the
+      // control characters a terminal would interpret, and routes through the
+      // EPIPE-safe writer (see the note in §3).
       const report = (err: unknown): void => {
         health.markWriteFailed(dest)
-        writeStderrSafely(
-          `${JSON.stringify({ level: 'error', logKey: 'LOGGER_DESTINATION_WRITE_FAILED', destination: dest.name, err: String(err) })}\n`
+        reportDestinationFailure(
+          RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+          dest.name,
+          err,
+          `Log destination "${dest.name}" failed to write; the entry was dropped`
         )
         callback()
       }
@@ -215,6 +224,9 @@ export function reportToStderrSafely(line: string): void {
 Destinations that send to the network (Loki, Datadog) MUST buffer internally and flush in batches:
 
 ```typescript
+/** Cap on entries held while Loki is unreachable — see the overflow note in `flush`. */
+const LOKI_MAX_BUFFERED = 10_000
+
 export class LokiDestination implements ILogDestination {
   readonly name = 'loki'
   private buffer: string[] = []
@@ -264,13 +276,22 @@ export class LokiDestination implements ILogDestination {
       // Fail soft is NOT the same as discarding the batch. Put it back so the next
       // flush retries it, and report — an empty catch here loses every entry in it
       // while the adapter has already recorded them as taken.
+      // Retained, but BOUNDED. Requeueing every failed batch while `write` keeps
+      // appending is an unbounded queue: a sustained outage then ends in an OOM,
+      // which loses every entry AND the application with it. The cap is the explicit
+      // trade — drop the OLDEST beyond it, because the newest entries are the ones
+      // describing the incident — and the count is reported rather than silent. A
+      // destination that cannot drop anything needs a durable spool, not a buffer.
       this.buffer.unshift(...batch)
+      const dropped = Math.max(0, this.buffer.length - LOKI_MAX_BUFFERED)
+      if (dropped > 0) this.buffer.splice(0, dropped)
       reportToStderrSafely(
         JSON.stringify({
           level: 'error',
           logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
           destination: 'loki',
           retained: batch.length,
+          droppedOldest: dropped,
           error: err instanceof Error ? err.message : String(err)
         }) + '\n'
       )
@@ -526,6 +547,9 @@ See §3 — pattern with buffer + flush timer + batch.
 ```typescript
 import type { PrismaClient } from '@prisma/client'
 
+/** Cap on entries held while the database is unreachable — see the note in `flush`. */
+const POSTGRES_MAX_BUFFERED = 10_000
+
 export class PrismaPostgresDestination implements ILogDestination {
   readonly name = 'postgres'
   private buffer: Record<string, unknown>[] = []
@@ -582,7 +606,15 @@ export class PrismaPostgresDestination implements ILogDestination {
         skipDuplicates: true
       })
     } catch (err) {
+      // Retained, but BOUNDED. Requeueing every failed batch while `write` keeps
+      // appending is an unbounded queue: a sustained outage then ends in an OOM,
+      // which loses every entry AND the application with it. The cap is the explicit
+      // trade — drop the OLDEST beyond it, because the newest entries are the ones
+      // describing the incident — and the count is reported rather than silent. A
+      // destination that cannot drop anything needs a durable spool, not a buffer.
       this.buffer.unshift(...batch)
+      const dropped = Math.max(0, this.buffer.length - POSTGRES_MAX_BUFFERED)
+      if (dropped > 0) this.buffer.splice(0, dropped)
       // Guard this write yourself — see the EPIPE note in §3. `writeStderrSafely`
       // is internal to the library and not importable from outside it.
       reportToStderrSafely(
@@ -591,6 +623,7 @@ export class PrismaPostgresDestination implements ILogDestination {
           logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
           destination: 'postgres',
           retained: batch.length,
+          droppedOldest: dropped,
           error: err instanceof Error ? err.message : String(err)
         }) + '\n'
       )

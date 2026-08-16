@@ -82,6 +82,29 @@ heading here.
   and hid a hook from anyone who buffers. It ships inside the package, which makes it the copy that
   matters most.
 
+- **A guarded WRITER does not guard the arguments handed to it.** The documented adapters called
+  `writeStderrSafely` with an interpolated `${String(err)}`, and that coercion runs before the call:
+  an unknown rejection value with a hostile `Symbol.toPrimitive`, or an `Error` whose `message` getter
+  throws, takes the handler down before `callback()` — an unhandled rejection produced from inside the
+  containment. The previous release note credited the safe writer with a protection it never had.
+  Every documented adapter now uses `reportDestinationFailure`, which does the coercion inside its own
+  guard and escapes control characters.
+
+- **Retaining a failed batch forever is a memory leak.** Requeueing on failure while `write` keeps
+  appending is an unbounded queue: a sustained outage ends in an OOM, which loses every held entry
+  AND the application. Both worked examples now cap the buffer and drop the OLDEST beyond it — the
+  newest entries describe the incident — and report the dropped count rather than discarding
+  silently. A destination that cannot lose anything is told to use a durable spool, not a buffer.
+
+- **Four defects in the specification's own examples**, all from wiring `DestinationHealth` through
+  them: the factory call site still passed the old three arguments, so a `LogLevel` landed where the
+  health tracker was expected; the adapter never checked `isFailed`/`shouldRescue`, though the
+  fan-out builds a stream for every registered destination and that branch is what keeps a
+  failed-init sink out of it; the new provider dependency omitted the explicit `@Inject` this
+  repository requires because tsup strips decorator metadata; and the shutdown loop contained
+  failures with `Promise.allSettled` while reporting none of them, contradicting the guarantee the
+  destination examples state.
+
 - **The consumer-facing stderr guard reintroduced a defect the library had already fixed.** It
   remembered `guarded = true` in a boolean, which goes stale the moment anything else removes the
   listener — a test doing cleanup is enough — and every later EPIPE is uncaught again. It also
