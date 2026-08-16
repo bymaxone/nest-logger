@@ -70,6 +70,9 @@ The lib registers all destinations via `pino.multistream` internally:
 ```typescript
 import pino from 'pino'
 
+import { destinationToStream } from '../utils/destination-to-stream'
+import { safeMinLevel } from '../utils/report-destination-failure.util'
+
 // Inside DestinationRegistry — reads providers bound to LOGGER_DESTINATIONS_TOKEN
 const streams = destinations.map((dest) => ({
   // `safeMinLevel`, not a direct read: `minLevel` is consumer-defined and this runs
@@ -277,6 +280,8 @@ Destinations that send to the network (Loki, Datadog) MUST buffer internally and
 /** Cap on entries held while Loki is unreachable — see the overflow note in `flush`. */
 const LOKI_MAX_BUFFERED = 10_000
 
+// `reportToStderrSafely` is the guarded helper defined in §3 — it lives in the
+// consumer's own module, not in this package, so there is nothing to import.
 export class LokiDestination implements ILogDestination {
   readonly name = 'loki'
   private buffer: string[] = []
@@ -520,7 +525,8 @@ The fallback inherits your destination's effective level (`minLevel`, else the m
 The lib calls `destination.onShutdown()` in **reverse registration order** — the last registered closes first. This ensures downstream destinations (e.g., Loki) process the final batch before upstream (stdout) is closed.
 
 ```typescript
-// In BymaxLoggerModule (internal)
+// Inside DestinationRegistry (internal) — `this.active` and
+// `this.reportShutdownFailure` are members of that class.
 async onApplicationShutdown(): Promise<void> {
   // Over ACTIVE, not every registered destination, and in reverse registration
   // order so the one registered first (e.g. stdout) closes last. A sink whose
@@ -535,7 +541,10 @@ async onApplicationShutdown(): Promise<void> {
       // `Symbol.toPrimitive`, throws from within the catch that exists to keep one
       // bad sink from mattering — and the throw would abort the teardown of every
       // destination still queued. See `DestinationRegistry.reportShutdownFailure`.
-      reportShutdownFailure(dest, err)
+      // An INSTANCE method on `DestinationRegistry`, not a free function: it reads
+      // the destination's name under the same guard, so a throwing `name` getter
+      // cannot abort the teardown of the destinations still queued.
+      this.reportShutdownFailure(dest, err)
       // Continue — one failure does not block the others
     }
   }
@@ -674,6 +683,8 @@ import type { PrismaClient } from '@prisma/client'
 /** Cap on entries held while the database is unreachable — see the note in `flush`. */
 const POSTGRES_MAX_BUFFERED = 10_000
 
+// `reportToStderrSafely` is the guarded helper defined in §3 — it lives in the
+// consumer's own module, not in this package, so there is nothing to import.
 export class PrismaPostgresDestination implements ILogDestination {
   readonly name = 'postgres'
   private buffer: Record<string, unknown>[] = []

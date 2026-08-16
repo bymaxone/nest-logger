@@ -3227,6 +3227,9 @@ pnpm mutation --mutate src/server/utils/normalize-url.util.ts
 > Modify `src/server/pino-factory.ts` to receive an additional `destinations: readonly ILogDestination[]` and configure `pino.multistream`:
 >
 > ```typescript
+> import { destinationToStream } from './utils/destination-to-stream'
+> import { safeMinLevel } from './utils/report-destination-failure.util'
+>
 > const streams = destinations.map((d) => ({
 >   // Guarded and pinned — see `safeMinLevel`: this runs at provider construction,
 >   // before any fail-soft path, and the registry must record the same answer.

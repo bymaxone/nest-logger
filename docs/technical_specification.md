@@ -967,6 +967,9 @@ export function createSizeBoundedSerializer<T>(
 ```typescript
 import pino from 'pino'
 
+import { destinationToStream } from './utils/destination-to-stream'
+import { safeMinLevel } from './utils/report-destination-failure.util'
+
 // The LEVEL is attached here, not returned by the adapter: `pino.multistream`
 // filters per entry, and the adapter's only job is the write fan-out.
 const entries = destinations.map((d) => ({
@@ -1379,6 +1382,25 @@ export class LogContextService {
 Manages the lifecycle of registered destinations:
 
 ```typescript
+import { Inject, Injectable } from '@nestjs/common'
+import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common'
+
+import { DestinationHealth } from './destination-health.service'
+import { PinoLoggerService } from './pino-logger.service'
+import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
+import type { ILogDestination } from '../interfaces/log-destination.interface'
+import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
+import { escapeControlCharacters, toSingleLineMessage } from '../utils/escape-log-text.util'
+import {
+  reportDestinationFailure,
+  safeDestinationName,
+  safeMinLevel
+} from '../utils/report-destination-failure.util'
+import { writeStderrSafely } from '../utils/safe-stdio.util'
+import { isErrorLike } from '../utils/sanitize-error.util'
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+import type { LogLevel } from '../../shared/types/log-level.type'
+
 @Injectable()
 class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
   /** The subset that initialized successfully — used for SHUTDOWN, not for writes.

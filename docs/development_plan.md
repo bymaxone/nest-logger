@@ -3325,18 +3325,46 @@ src/server/services/destination-registry.service.ts
 ```typescript
 import { Inject, Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
-import { LOGGER_DESTINATIONS_TOKEN } from '../constants/injection-tokens.constants'
+import {
+  LOGGER_DESTINATIONS_TOKEN,
+  LOGGER_OPTIONS_TOKEN
+} from '../constants/injection-tokens.constants'
 import { PinoLoggerService } from './pino-logger.service'
+import { DestinationHealth } from './destination-health.service'
+import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
+import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
+import type { LogLevel } from '../../shared/types/log-level.type'
+import {
+  reportDestinationFailure,
+  safeDestinationName,
+  safeMinLevel
+} from '../utils/report-destination-failure.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 @Injectable()
 export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
-  private active: ILogDestination[] = []
+  /** Initialized successfully — drives shutdown; writes are gated per entry by health. */
+  private readonly active: ILogDestination[] = []
 
+  // Every provider carries an explicit `@Inject`, class-typed ones included: tsup
+  // strips decorator metadata, so implicit DI resolves in dev and fails when published.
   constructor(
     @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly registered: readonly ILogDestination[],
-    private readonly logger: PinoLoggerService
+    @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
+    @Inject(DestinationHealth) private readonly health: DestinationHealth,
+    @Inject(LOGGER_OPTIONS_TOKEN) private readonly options: ResolvedBymaxLoggerModuleOptions
   ) {}
+
+  /** The STRICTER of the module level and the destination's own, read through the
+   *  guard so a throwing or stateful `minLevel` getter cannot abort boot or make
+   *  this recording disagree with the factory. */
+  private effectiveLevelOf(dest: ILogDestination): LogLevel {
+    const configured = safeMinLevel(dest)
+    if (configured === undefined) return this.options.level
+    return LOG_LEVEL_PRIORITY.indexOf(configured) > LOG_LEVEL_PRIORITY.indexOf(this.options.level)
+      ? configured
+      : this.options.level
+  }
 
   async onModuleInit(): Promise<void> {
     for (const dest of this.registered) {
@@ -3471,6 +3499,7 @@ And `pino-factory` switches to using `pino.multistream`:
 ```typescript
 import pino from 'pino'
 import { destinationToStream } from './utils/destination-to-stream'
+import { safeMinLevel } from './utils/report-destination-failure.util'
 
 // inside buildPinoInstance:
 const streams = destinations.map((d) => ({
