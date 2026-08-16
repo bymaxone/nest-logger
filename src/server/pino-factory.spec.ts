@@ -519,6 +519,37 @@ describe('buildPinoInstance', () => {
   })
 
   it(/*
+   * REGRESSION — a destination whose `minLevel` is a throwing getter must not stop
+   * the logger from being built. This read happens at provider-construction time,
+   * BEFORE any lifecycle hook, so an escape here fails the factory and the
+   * application never starts — earlier than any fail-soft path can contain it, and
+   * therefore not covered by the guard in the registry's `effectiveLevelOf`.
+   *
+   * Unreadable is treated as absent: the destination falls back to the module
+   * level, which is what a destination without a `minLevel` receives anyway.
+   * Asserted on the sink still RECEIVING at the module level, not merely on the
+   * absence of a throw.
+   */
+  'builds the logger when a destination minLevel getter throws', () => {
+    const capture = createCapture('hostile')
+    const hostile = { ...capture.destination }
+    Object.defineProperty(hostile, 'minLevel', {
+      get() {
+        throw new Error('minLevel getter exploded')
+      }
+    })
+
+    const logger = buildPinoInstance(
+      applyDefaults({ ...baseOptions, level: 'info' }),
+      new LogContextService(),
+      [hostile]
+    )
+    logger.info({ logKey: 'INFO_EVT' }, 'info-msg')
+
+    expect(capture.entries().map((entry) => entry['msg'])).toEqual(['info-msg'])
+  })
+
+  it(/*
    * Both the default and consumer-supplied serializers must be size-bounded:
    * an oversized custom-serialized field is replaced by the truncation envelope
    * rather than flooding the sink (verifies the LOG-047 wiring in the factory).

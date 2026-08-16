@@ -84,6 +84,14 @@ heading here.
   which covers every call site at once, and falls back to the module level: what a destination
   without a `minLevel` gets anyway. Same defect class as the `name` getter, in the sibling property.
 
+  The registry was not even the FIRST reader. `pino-factory` builds the multistream entry from
+  `destination.minLevel` at provider-construction time, outside any guard and before any lifecycle
+  hook — so a hostile getter failed the factory and the application never started, earlier than any
+  fail-soft path could contain it. Found by sweeping every consumer-defined property read in
+  `src/server` rather than by fixing the site that was reported: eight of the nine were already
+  inside a `try`, and that ninth one made the registry fix unreachable in practice. Both sites share
+  one `safeMinLevel` now.
+
 - **The shutdown reporter could be made to forge a second stderr record.** Its guard used
   `escapeControlCharacters`, which preserves newlines ON PURPOSE because a stack trace is
   legitimately multi-line — but it was applied to `cause.message` when no stack existed, and to any

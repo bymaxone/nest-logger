@@ -39,7 +39,8 @@ import { escapeControlCharacters, toSingleLineMessage } from '../utils/escape-lo
 import { detectOtelTraceApi } from '../utils/otel-detector'
 import {
   reportDestinationFailure,
-  safeDestinationName
+  safeDestinationName,
+  safeMinLevel
 } from '../utils/report-destination-failure.util'
 import { writeStderrSafely } from '../utils/safe-stdio.util'
 import { isErrorLike } from '../utils/sanitize-error.util'
@@ -172,12 +173,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
     // would take the application down at start-up and strand every destination
     // after this one. Falling back to the module level is the safe answer: it is
     // what a destination without a `minLevel` gets anyway.
-    let configured: LogLevel | undefined
-    try {
-      configured = destination.minLevel
-    } catch {
-      return this.options.level
-    }
+    const configured = safeMinLevel(destination)
     if (configured === undefined) {
       return this.options.level
     }

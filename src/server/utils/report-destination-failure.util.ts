@@ -17,6 +17,7 @@
 import { toSingleLineMessage } from './escape-log-text.util'
 import { writeStderrSafely } from './safe-stdio.util'
 import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.constants'
+import type { LogLevel } from '../../shared/types/log-level.type'
 
 /**
  * Write one structured destination-failure line to `process.stderr`.
@@ -98,6 +99,38 @@ export function reportDestinationFailure(
  * safeDestinationName(hostile) // 'unknown', instead of throwing at the call site
  * ```
  */
+/**
+ * Read a destination's `minLevel` without letting that read abort the caller.
+ *
+ * `readonly minLevel?: LogLevel` does not stop a consumer implementing it as a
+ * getter. It is read in two places that must not throw: the Pino factory, which
+ * builds the multistream entry BEFORE any lifecycle hook runs — a throw there
+ * fails provider construction and the application never starts — and the
+ * registry's init loop, on both branches including the catch that exists so a
+ * failing destination cannot abort bootstrap.
+ *
+ * @param destination - The destination whose configured level is needed.
+ * @returns The configured level, or `undefined` when absent OR unreadable — the
+ *   same answer, since both mean "no usable per-destination level".
+ *
+ * @example
+ * ```ts
+ * const hostile = {
+ *   get minLevel(): LogLevel {
+ *     throw new Error('boom')
+ *   }
+ * }
+ * safeMinLevel(hostile) // undefined, instead of throwing at the call site
+ * ```
+ */
+export function safeMinLevel(destination: { readonly minLevel?: LogLevel }): LogLevel | undefined {
+  try {
+    return destination.minLevel
+  } catch {
+    return undefined
+  }
+}
+
 export function safeDestinationName(destination: { readonly name: string }): string {
   try {
     return String(destination.name)
