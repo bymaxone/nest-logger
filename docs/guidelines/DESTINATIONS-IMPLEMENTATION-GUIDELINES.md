@@ -36,18 +36,18 @@ export interface ILogDestination {
    * Called for every log entry. Receives the JSON-stringified payload
    * with trailing newline. MUST be non-blocking.
    */
-  write(payload: string): void | Promise<void>
+  write(payload: string): void | PromiseLike<void>
 
   /** Called once at NestJS bootstrap. */
-  onInit?(): void | Promise<void>
+  onInit?(): void | PromiseLike<void>
 
   /** Called after EVERY destination's `onInit` settled. Only useful if you buffer. */
   onRegistryReady?(status: {
     readonly heldEntriesDeliveredElsewhere: boolean
-  }): void | Promise<void>
+  }): void | PromiseLike<void>
 
   /** Called at NestJS shutdown. MUST flush + close resources. */
-  onShutdown?(): void | Promise<void>
+  onShutdown?(): void | PromiseLike<void>
 }
 ```
 

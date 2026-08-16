@@ -126,7 +126,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
   private async notifyRegistryReady(): Promise<void> {
     for (const destination of this.registered) {
       try {
-        // AWAITED. The hook is declared `void | Promise<void>` because TypeScript
+        // AWAITED. The hook is declared `void | PromiseLike<void>` because TypeScript
         // accepts an `async` implementation where a void-returning member is
         // declared: not awaiting one would let its rejection escape as an
         // unhandled promise, and let the bootstrap entry be emitted before the

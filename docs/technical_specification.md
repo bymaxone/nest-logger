@@ -780,12 +780,12 @@ export interface ILogDestination {
    *
    * @param payload - Final JSON string (UTF-8) representing one log entry, including trailing newline.
    */
-  write(payload: string): void | Promise<void>
+  write(payload: string): void | PromiseLike<void>
 
   /**
    * Called once during NestJS bootstrap. Use for opening connections, buffers, etc.
    */
-  onInit?(): void | Promise<void>
+  onInit?(): void | PromiseLike<void>
 
   /**
    * Called once after EVERY destination's `onInit` has settled, and awaited. Only
@@ -800,12 +800,12 @@ export interface ILogDestination {
    */
   onRegistryReady?(status: {
     readonly heldEntriesDeliveredElsewhere: boolean
-  }): void | Promise<void>
+  }): void | PromiseLike<void>
 
   /**
    * Called during NestJS `onApplicationShutdown`. MUST flush pending writes and close resources.
    */
-  onShutdown?(): void | Promise<void>
+  onShutdown?(): void | PromiseLike<void>
 }
 ```
 

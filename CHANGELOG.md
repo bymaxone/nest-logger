@@ -38,20 +38,36 @@ heading here.
   only copy of an entry that was about to fail. Losing an entry is the one outcome this path does not
   accept.
 
-  The branch is now on `undefined`, which is what the declared `void | Promise<void>` actually
+  The branch is now on `undefined`, which is what the declared `void | PromiseLike<void>` actually
   distinguishes, and the result goes through `Promise.resolve` — which assimilates both shapes.
   Synchronous writes keep the synchronous path, so back-pressure is unchanged.
 
   This library learned the realm-local lesson once already, from `instanceof Error`, which is why
   `isErrorLike` exists. The same mistake sat one file away.
 
-### Changed
+### Breaking
 
-- **`ILogDestination` accepts `void | PromiseLike<void>` instead of `void | Promise<void>`,** on
-  `write`, `onInit`, `onRegistryReady` and `onShutdown`. The fix above supports a thenable at
-  runtime; the public type still forbade one, so a TypeScript consumer could not return the very
-  shape the release claims to handle — the tests needed casts precisely because of that gap, and the
-  casts are gone. A widening, so nothing that compiled before stops compiling.
+- **`ILogDestination` declares `void | PromiseLike<void>` instead of `void | Promise<void>`,** on
+  `write`, `onInit`, `onRegistryReady` and `onShutdown`. The fix above handles a thenable at runtime;
+  the public type still forbade one, so a TypeScript consumer could not return the very shape the
+  release claims to support — the tests needed casts precisely because of that gap, and the casts are
+  gone.
+
+  **This is source-breaking for CALLERS, and an earlier draft of this note wrongly said it was not.**
+  Widening what an implementation may return necessarily narrows what a caller receives: `PromiseLike`
+  exposes only `then`, so code that called `.catch()` or `.finally()` on the result no longer type-checks.
+
+  ```ts
+  // before
+  destination.write(payload).catch(handle)
+
+  // after — assimilate at the call site
+  Promise.resolve(destination.write(payload)).catch(handle)
+  ```
+
+  There is no type that gives implementations the freedom and callers a full `Promise`; this release
+  chooses the implementations, because a destination that cannot be written in the first place is the
+  worse failure.
 
 ### Documentation
 
@@ -69,7 +85,7 @@ heading here.
   is told to ignore the flag and always emit. The guide, the specification and the JSDoc now say the
   same thing, so a reader meets one story instead of three.
 
-## [1.2.8] - 2026-08-15
+## 1.2.8 - 2026-08-15 (merged, never published)
 
 ### Fixed
 
@@ -1427,7 +1443,9 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 
 [Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.9...HEAD
 [1.2.9]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.9
-[1.2.8]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.8
+
+<!-- 1.2.8 has no link: it was merged but never tagged, so there is no v1.2.8 to compare against. See its section above. -->
+
 [1.2.7]: https://github.com/bymaxone/nest-logger/compare/v1.2.6...v1.2.7
 [1.2.6]: https://github.com/bymaxone/nest-logger/compare/v1.2.5...v1.2.6
 [1.2.5]: https://github.com/bymaxone/nest-logger/compare/v1.2.4...v1.2.5

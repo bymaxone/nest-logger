@@ -219,8 +219,18 @@ describe('destinationToStream', () => {
       await expect(writeOnce(stream, 'entry\n')).resolves.toBeUndefined()
       await new Promise((resolve) => setTimeout(resolve, 10))
 
-      // Reported rather than escaping as an unhandled rejection.
-      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('async write failed'))
+      // Reported rather than escaping as an unhandled rejection — asserted by
+      // PARSING the emitted NDJSON, not by matching a substring of it. A substring
+      // check passes on any line that happens to quote the cause, including one
+      // emitted under the wrong key or at the wrong level; the report is a contract
+      // and the whole record is what consumers parse.
+      const report: unknown = JSON.parse(stderrSpy.mock.calls[0]?.[0] as string)
+      expect(report).toMatchObject({
+        level: 'error',
+        logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+        destination: 'thenable',
+        err: { type: 'Error', message: 'async write failed' }
+      })
       stderrSpy.mockRestore()
     })
 

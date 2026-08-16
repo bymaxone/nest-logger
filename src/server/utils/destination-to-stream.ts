@@ -119,7 +119,7 @@ export function destinationToStream(
         }
         const result = destination.write(payload)
         // Branch on `undefined`, NOT on `instanceof Promise`. The declared return
-        // is `void | Promise<void>`, but `instanceof` is realm-local and answers
+        // is `void | PromiseLike<void>`, but `instanceof` is realm-local and answers
         // `false` for a promise from another realm (a worker, a vm context) and
         // for any structurally valid thenable — measured, both. Either would take
         // the synchronous path here: the callback would fire immediately, a later
