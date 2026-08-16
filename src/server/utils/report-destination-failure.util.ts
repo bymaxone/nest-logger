@@ -18,6 +18,7 @@ import { toSingleLineMessage } from './escape-log-text.util'
 import { writeStderrSafely } from './safe-stdio.util'
 import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.constants'
 import type { LogLevel } from '../../shared/types/log-level.type'
+import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 
 /**
  * Write one structured destination-failure line to `process.stderr`.
@@ -108,7 +109,32 @@ export function safeDestinationName(destination: { readonly name: string }): str
 }
 
 /**
- * Read a destination's `minLevel` without letting that read abort the caller.
+ * Whether a value is one of the six levels this library recognises.
+ *
+ * The widening is on the ARRAY, not on the value: reading `readonly LogLevel[]` as
+ * `readonly unknown[]` is always true, whereas asserting the value to be a `LogLevel`
+ * in order to ask whether it IS one states the very thing being checked. Widening to
+ * `unknown[]` rather than `string[]` also drops a `typeof` guard that `includes`
+ * already covers — strict equality against six strings rejects every other type —
+ * and with it a branch only a forged value could ever exercise.
+ *
+ * @param value - Any value, typically read from consumer-controlled configuration.
+ * @returns `true` when the value is a recognised level.
+ */
+function isLogLevel(value: unknown): value is LogLevel {
+  return (LOG_LEVEL_PRIORITY as readonly unknown[]).includes(value)
+}
+
+/**
+ * First answer per destination, so two readers cannot get different ones. Declared
+ * ABOVE the JSDoc below on purpose: a declaration between a comment block and the
+ * function it documents steals that comment, leaving the export undocumented.
+ */
+const resolvedMinLevels = new WeakMap<object, LogLevel | undefined>()
+
+/**
+ * Read a destination's `minLevel` without letting that read abort the caller, and
+ * without trusting what it returns.
  *
  * `readonly minLevel?: LogLevel` does not stop a consumer implementing it as a
  * getter. It is read in two places that must not throw: the Pino factory, which
@@ -126,10 +152,22 @@ export function safeDestinationName(destination: { readonly name: string }): str
  * discard its only copy of them. Pinning the first read makes the two agree by
  * construction. `readonly minLevel?: LogLevel` says it should not change anyway.
  *
+ * The VALUE is checked too, not only the read. `readonly minLevel?: LogLevel` is a
+ * compile-time claim, and a JavaScript consumer — or a miscast one — can return any
+ * string. An unrecognised level is not rejected by `pino.multistream`: it builds
+ * without complaint and the entry then matches NOTHING, so that destination receives
+ * zero entries while the registry, whose `indexOf` returns `-1` and loses the
+ * comparison, records it as covering the module level. Measured: a sink configured
+ * with an invalid level received 0 of 3 emitted entries, silently. Silent total loss
+ * is the worst outcome available here, so an unrecognised value is treated as absent
+ * and the destination falls back to the module level, where it receives entries.
+ * `validateOptions` already holds `options.level` to this same list; this is that
+ * check reaching the place it had not.
+ *
  * @param destination - The destination whose configured level is needed.
- * @returns The configured level, or `undefined` when absent OR unreadable — the
- *   same answer, since both mean "no usable per-destination level". Stable across
- *   calls for a given destination.
+ * @returns The configured level, or `undefined` when absent, unreadable OR not a
+ *   recognised level — the same answer for all three, since each means "no usable
+ *   per-destination level". Stable across calls for a given destination.
  *
  * @example
  * ```ts
@@ -141,15 +179,14 @@ export function safeDestinationName(destination: { readonly name: string }): str
  * safeMinLevel(hostile) // undefined, instead of throwing at the call site
  * ```
  */
-const resolvedMinLevels = new WeakMap<object, LogLevel | undefined>()
-
 export function safeMinLevel(destination: { readonly minLevel?: LogLevel }): LogLevel | undefined {
   if (resolvedMinLevels.has(destination)) {
     return resolvedMinLevels.get(destination)
   }
   let resolved: LogLevel | undefined
   try {
-    resolved = destination.minLevel
+    const read: unknown = destination.minLevel
+    resolved = isLogLevel(read) ? read : undefined
   } catch {
     resolved = undefined
   }

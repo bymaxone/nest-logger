@@ -20,6 +20,19 @@ heading here.
 
 ### Fixed
 
+- **A destination whose `minLevel` was not one of the six levels received NOTHING, silently.**
+  `readonly minLevel?: LogLevel` is a compile-time claim, and a JavaScript consumer — or a
+  miscast one — can return any string; `'verbose'` is a real NestJS level name and a natural
+  thing to write. `pino.multistream` does not reject an unrecognised level: it builds without
+  complaint and the entry then matches nothing. Measured on a sink configured that way: **0 of 3
+  emitted entries delivered**, while the registry recorded it as covering the module level,
+  because `LOG_LEVEL_PRIORITY.indexOf` returned `-1` and lost the comparison. A destination
+  believed healthy and receiving, receiving nothing, is the worst failure this library has.
+  `safeMinLevel` now validates the value against the canonical list and treats an unrecognised
+  one as absent, so the destination falls back to the module level and keeps receiving.
+  `validateOptions` already held `options.level` to that same list; this is the check reaching
+  the one place it had not.
+
 - **A write returning a thenable that is not `instanceof Promise` no longer takes the synchronous
   path, where its rejection escaped and its entry could be discarded.** `instanceof` is realm-local:
   it answers `false` for a promise built in another realm — a worker, a `vm` context — and for any

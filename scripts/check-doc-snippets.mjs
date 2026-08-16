@@ -32,7 +32,7 @@
  * prose introduces. Flagging those means flagging every excerpt variable, and the
  * noise would retire the check. That case stays a matter of writing the prose well.
  *
- * The baseline. The planning documents carry 40 distinct file-and-symbol pairs from
+ * The baseline. The planning documents carry 43 distinct file-and-symbol pairs from
  * before the check existed — fewer than the raw occurrence count, since one missing
  * import usually shows up in several snippets of the same document. Fixing all of them
  * is not the same job as stopping new ones, so they are recorded in
@@ -43,9 +43,10 @@
  * reproduces, so it can only remove entries. A defect introduced in the same edit is
  * not adopted by it; the run still fails.
  *
- * Widening what the check looks at is the one case where the list legitimately grows —
- * accepting `ts` fences alongside `typescript` surfaced three pre-existing findings that
- * were nobody's regression. That takes `--adopt-new`, a separate flag precisely so the
+ * Widening what the check looks at is the one case where the list legitimately grows.
+ * It has happened twice: accepting `ts` fences alongside `typescript`, then accepting
+ * indented and longer fences plus destructured exports. Each surfaced pre-existing
+ * findings in documents nobody had touched — not regressions. That takes `--adopt-new`, a separate flag precisely so the
  * decision is made on purpose and stated in the commit rather than taken silently by the
  * routine command.
  *
@@ -78,6 +79,29 @@ function walk(dir, filter) {
 }
 
 /**
+ * Add every name a declaration binds, including through a destructuring pattern.
+ *
+ * `export const { ConfigurableModuleClass: Base, OPTIONS_TYPE } = builder()` binds two
+ * names and matches none of the plain-identifier cases, so four real exports of this
+ * package were invisible to the check and a snippet could use them unimported.
+ *
+ * @param name - A declaration's name node: an identifier or a binding pattern.
+ * @param into - The set to add the bound names to.
+ */
+function collectBindingNames(name, into) {
+  if (ts.isIdentifier(name)) {
+    into.add(name.text)
+    return
+  }
+  if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+    for (const element of name.elements) {
+      // Array patterns contain holes (`[, second]`), which have no name to bind.
+      if (ts.isBindingElement(element)) collectBindingNames(element.name, into)
+    }
+  }
+}
+
+/**
  * Every name this package declares at module level in `src/` — exported or not.
  * A snippet may legitimately use any of them, but only after saying where it came
  * from, and these are the only names whose origin this script can know.
@@ -95,7 +119,7 @@ function internalSymbols() {
     for (const statement of source.statements) {
       if (ts.isVariableStatement(statement)) {
         for (const decl of statement.declarationList.declarations) {
-          if (ts.isIdentifier(decl.name)) names.add(decl.name.text)
+          collectBindingNames(decl.name, names)
         }
       } else if (
         (ts.isFunctionDeclaration(statement) ||
@@ -207,16 +231,18 @@ function snippetsOf(markdown) {
     // quote most of theirs, and skipping them hid three of the reported defects.
     const bare = line.replace(/^>\s?/, '')
     if (start === -1) {
-      // The fence can be LONGER than three backticks — a snippet that itself shows a
-      // fenced example has to be wrapped in more of them, and `development_plan.md`
-      // does exactly that. Matching exactly three skipped that whole block.
-      const opening = /^(`{3,})(?:ts|typescript)\s*$/.exec(bare)
+      // Two things vary besides the label. The fence can be LONGER than three
+      // backticks — a snippet that itself shows a fenced example has to be wrapped in
+      // more of them — and CommonMark allows up to three spaces of indentation before
+      // it, which the task documents use. Requiring exactly three backticks at column
+      // zero skipped six real blocks.
+      const opening = /^ {0,3}(`{3,})(?:ts|typescript)\s*$/.exec(bare)
       if (opening) {
         fence = opening[1].length
         start = index + 1
         buffer = []
       }
-    } else if (new RegExp(`^\`{${fence},}\\s*$`).test(bare)) {
+    } else if (new RegExp(`^ {0,3}\`{${fence},}\\s*$`).test(bare)) {
       blocks.push({ line: start, code: buffer.join('\n') })
       start = -1
     } else {

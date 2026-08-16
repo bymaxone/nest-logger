@@ -58,6 +58,27 @@ describe('safeMinLevel', () => {
   })
 
   it(/*
+   * REGRESSION — the declared type is a compile-time claim a JavaScript consumer
+   * does not have to keep. An unrecognised level is NOT rejected by
+   * `pino.multistream`: it builds without complaint and the entry then matches
+   * nothing, so the destination receives zero entries while the registry — whose
+   * `indexOf` returns -1 and loses the comparison — records it as covering the
+   * module level. Silent total loss for that sink.
+   *
+   * Treated as absent so the destination falls back to the module level and keeps
+   * receiving. Reverting the `isLogLevel` check makes this fail.
+   */
+  'treats an unrecognised level as absent rather than passing it through', () => {
+    // Parsed rather than asserted, because that is how the value really arrives: a
+    // level read from configuration crosses into the type system without being
+    // checked by it. `'verbose'` is a real NestJS level name and a natural thing to
+    // write; it is not one of Pino's six.
+    const miscast: { readonly minLevel?: LogLevel } = JSON.parse('{"minLevel":"verbose"}')
+
+    expect(safeMinLevel(miscast)).toBeUndefined()
+  })
+
+  it(/*
    * The cache is per destination, not global: two destinations configured
    * differently must keep their own levels.
    */
