@@ -195,19 +195,6 @@ export class DestinationHealth {
   }
 
   /**
-   * Whether ANY destination initialized, regardless of level.
-   *
-   * Read together with {@link deliveredByHealthySink}: "a sink is alive" and "a
-   * sink received what I received" are different facts, and the gap between them
-   * is a live sink whose level sits ABOVE the asking destination's.
-   *
-   * @returns `true` when at least one destination is live.
-   */
-  hasHealthySink(): boolean {
-    return this.healthy.size > 0
-  }
-
-  /**
    * Whether a LIVE sink received everything a destination at `effectiveLevel`
    * received — the question a destination holding pre-init entries actually has
    * before discarding them.

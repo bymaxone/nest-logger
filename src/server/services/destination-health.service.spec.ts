@@ -118,11 +118,12 @@ describe('DestinationHealth', () => {
    */
   'reports whether any destination initialized', () => {
     const health = new DestinationHealth()
-    expect(health.hasHealthySink()).toBe(false)
+    const asker = makeDestination('asker')
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(false)
 
     health.markHealthy(makeDestination('healthy-info'), 'info')
 
-    expect(health.hasHealthySink()).toBe(true)
+    expect(health.deliveredByHealthySink(asker, 'info')).toBe(true)
   })
 
   it(/*
@@ -155,7 +156,6 @@ describe('DestinationHealth', () => {
     const asker = makeDestination('asker')
 
     expect(health.deliveredByHealthySink(asker, 'fatal')).toBe(false)
-    expect(health.hasHealthySink()).toBe(false)
   })
 
   it(/*
@@ -185,8 +185,6 @@ describe('DestinationHealth', () => {
     health.markHealthy(asker, 'info')
 
     expect(health.deliveredByHealthySink(asker, 'info')).toBe(false)
-    // It IS alive, though — the two facts are different.
-    expect(health.hasHealthySink()).toBe(true)
   })
 
   it(/*
@@ -270,8 +268,6 @@ describe('DestinationHealth', () => {
     health.markWriteFailed(throwing)
 
     expect(health.deliveredByHealthySink(asker, 'info')).toBe(false)
-    // Still live, though — it keeps receiving entries and may recover.
-    expect(health.hasHealthySink()).toBe(true)
   })
 
   it(/*

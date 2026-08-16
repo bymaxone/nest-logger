@@ -314,7 +314,7 @@ export class PrettyDevDestination implements ILogDestination {
       // every boot entry printed twice.
       //
       // The decision moves to {@link onRegistryReady}, which the registry calls
-      // once every `onInit` has settled and `hasHealthySink` is a fact. Nothing
+      // once every `onInit` has settled and delivery is a proven fact. Nothing
       // is lost by waiting: `onShutdown` still drains raw for a destination that
       // was never registered, so the hook never running is also covered.
       throw new Error(

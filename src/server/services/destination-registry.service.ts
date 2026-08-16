@@ -107,17 +107,11 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * Tell every REGISTERED destination — live or failed — what happened to the
    * entries it may be holding, before the first post-init entry is emitted.
    *
-   * Two facts, and each answers a question the destination cannot answer alone:
-   *
-   *   - `heldEntriesDeliveredElsewhere` — whether a LIVE sink accepted everything
-   *     this destination accepted. Not "did any sink survive": `pino.multistream`
-   *     filters per stream, so a healthy `error` sink never saw the `info` boot
-   *     entries a pretty sink at `info` buffered, and discarding them because
-   *     something else was alive would lose them.
-   *   - `isElectedRescuer` — when NOTHING survived, which single destination
-   *     speaks. Two buffering destinations hold the same entries, so telling both
-   *     to drain recreates the duplicate this hook exists to remove. The election
-   *     is the one `DestinationHealth` already runs for per-write rescue.
+   * The fact it carries is one the destination cannot compute: whether ANOTHER
+   * live sink provably accepted everything this one accepted. `pino.multistream`
+   * filters per stream, a destination is not its own witness, a sink whose write
+   * threw did not receive that entry, and one whose write has not settled has not
+   * proven anything yet — all of which live in `deliveredByHealthySink`.
    *
    * Each notification is isolated: a destination that throws here is reported and
    * skipped rather than aborting the remaining ones or the bootstrap entry.
