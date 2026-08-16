@@ -82,6 +82,30 @@ heading here.
   and hid a hook from anyone who buffers. It ships inside the package, which makes it the copy that
   matters most.
 
+- **The guide told destinations to swallow their own write failures — a loss path, in the document
+  that defines the fail-soft contract.** "Catch every error in `write` and log it via
+  `process.stderr.write`" reads as prudence and is the opposite: a swallowed failure looks like a
+  successful write from outside, so `markWriteFailed` never runs for that sink, readiness can then
+  credit it with entries it dropped, and ANOTHER destination discards the held copies it was keeping.
+  The entry stops existing anywhere — exactly the outcome this release exists to prevent. The advice
+  is now to let the failure reach the adapter, which contains it, RECORDS it and reports it. Two
+  anti-pattern entries carried the same instruction, and the worked Postgres destination practised
+  it; all three are corrected.
+
+- **Every reporter in the documented examples wrote to `process.stderr` directly.** The guide
+  explains, three sections earlier, that a closed pipe reports EPIPE asynchronously and kills the
+  process — which is why `safe-stdio.util.ts` exists. The containment helpers added one commit ago
+  ignored that and would have traded a contained destination failure for an uncaught exception. The
+  library's own paths now route through `writeStderrSafely` in every example. The consumer-facing
+  examples do not, because that helper is internal and unexported; they point at the EPIPE note
+  instead, which is the honest instruction for code outside this package.
+
+- **The technical specification did not state that `onRegistryReady` runs for a destination whose own
+  `onInit` rejected.** It runs for every registered destination, verified against
+  `notifyRegistryReady`, and a sink that failed to initialize is exactly the one most likely to be
+  holding entries it now has to resolve. Left unstated, an implementer would reasonably assume the
+  opposite and strand them.
+
 - **The drain contract described a return value `_write` does not have.** It said the adapter signals
   backpressure by `_write` returning `false`; `_write` returns `void`. Deferring its callback is the
   actual mechanism — the chunk stays in flight, the internal buffer grows, and it is the PUBLIC
@@ -114,9 +138,11 @@ heading here.
   assignable in both directions and is how the absent `onRegistryReady` survived; per-member type
   identity catches a changed PARAMETER, which stays bivariant even under `strictFunctionTypes`.
 
-  The third was added because the first version of the gate did not have it and **passed** a README
-  declaring `write(payload: unknown)` — measured by making that edit, not reasoned about. Each
-  assertion was verified the same way: introduce the drift, watch the gate name it, restore.
+  Both of the later assertions were added because a measured version of the gate let a real drift
+  through: the first passed a README declaring `write(payload: unknown)`, and the second — comparing
+  members as `T[K]` — passed one that dropped `readonly`, because indexed access discards property
+  modifiers. Each hole was reproduced against the version that had it before being closed, and each
+  assertion is verified the same way: introduce the drift, watch the gate name it, restore.
 
 - **`heldEntriesDeliveredElsewhere` is documented as best-effort rather than as proof.** The JSDoc
   said `true` requires no write still in flight, which reads as complete accounting — while the

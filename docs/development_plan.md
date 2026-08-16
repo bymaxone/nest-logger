@@ -3391,7 +3391,9 @@ export function destinationToStream(dest: ILogDestination): Writable {
       // `callback(err)` makes the Writable emit 'error', which with no listener
       // terminates the host — the opposite of the fail-soft contract.
       const reportAndContinue = (err: unknown): void => {
-        process.stderr.write(`LOGGER_DESTINATION_WRITE_FAILED ${dest.name}: ${String(err)}\n`)
+        // `writeStderrSafely`, not `process.stderr.write`: a closed pipe reports
+        // EPIPE asynchronously and would kill the host from inside the containment.
+        writeStderrSafely(`LOGGER_DESTINATION_WRITE_FAILED ${dest.name}: ${String(err)}\n`)
         callback()
       }
       try {

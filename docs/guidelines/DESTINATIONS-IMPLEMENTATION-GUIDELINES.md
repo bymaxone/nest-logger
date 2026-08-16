@@ -90,15 +90,21 @@ The lib exposes internally:
 ```typescript
 import { Writable } from 'node:stream'
 
+import { writeStderrSafely } from '../utils/safe-stdio.util'
+
 export function destinationToStream(dest: ILogDestination): Writable {
   return new Writable({
     write(chunk: Buffer, _encoding, callback) {
       // A failure is CONTAINED, never propagated. `callback(err)` makes the
       // `Writable` emit `'error'`, which with no listener terminates the host —
-      // the opposite of the fail-soft contract in §3. Report the failure on
-      // stderr, then signal success so the fan-out reaches the other sinks.
+      // the opposite of the fail-soft contract in §3. Report the failure, then
+      // signal success so the fan-out reaches the other sinks.
+      //
+      // Through `writeStderrSafely`, NOT `process.stderr.write`: a closed pipe
+      // reports EPIPE asynchronously, so a raw write here would trade a contained
+      // destination failure for an uncaught exception. See the EPIPE note in §3.
       const report = (err: unknown): void => {
-        process.stderr.write(
+        writeStderrSafely(
           `${JSON.stringify({ level: 'error', logKey: 'LOGGER_DESTINATION_WRITE_FAILED', destination: dest.name, err: String(err) })}\n`
         )
         callback()
@@ -204,7 +210,9 @@ export class LokiDestination implements ILogDestination {
 
 ### Fail-soft is REQUIRED
 
-A destination that **throws** in `write()` breaks Pino multi-stream — a failure in one destination MUST NOT affect the others. **Principle**: catch every error in `write` (try/catch) and log it via `process.stderr.write` only. Never via the logger itself (infinite loop).
+A failure in one destination MUST NOT affect the others — and the adapter, not your destination, is what guarantees that. **Principle: let the failure reach the adapter.** Throw, or return a rejecting promise; `destinationToStream` catches both, reports the failure on stderr and completes the write without an error.
+
+**Do not catch and swallow.** A swallowed failure looks like a successful write from the outside, so `DestinationHealth.markWriteFailed` never runs for your sink — and readiness may then credit it with having taken entries it actually dropped, letting ANOTHER destination discard the held copies it was keeping. Hiding your own failure is how an entry stops existing anywhere. If you must log something yourself, never do it via the logger (infinite loop), and see the EPIPE note below before writing to `process.stderr` directly.
 
 > **A `try/catch` around `process.stderr.write` is not EPIPE protection**, and this was measured rather than assumed. When the reader closes the pipe (`node app | head`), the stream reports `EPIPE` **asynchronously** through its `'error'` event, after `write()` has already returned — so the `catch` sees nothing, and because Node attaches no default handler to these streams the emit becomes an uncaught exception that kills the process (measured: 0 listeners, no synchronous throw, exit code 42). If your destination writes to `process.stdout`/`process.stderr` directly, attach a swallowing `'error'` listener to the stream once, in addition to the `try/catch` — the catch covers the synchronous half (a destroyed stream can still throw from `write()`), the listener covers the asynchronous one, and either alone leaves a way to die. The library's own fallback paths route every raw write through one internal helper that does exactly this.
 
@@ -291,7 +299,7 @@ async onApplicationShutdown(): Promise<void> {
     try {
       await dest.onShutdown?.()
     } catch (err) {
-      process.stderr.write(`Destination "${dest.name}" shutdown failed: ${err}\n`)
+      writeStderrSafely(`Destination "${dest.name}" shutdown failed: ${err}\n`)
       // Continue — one failure does not block the others
     }
   }
@@ -442,20 +450,13 @@ export class PrismaPostgresDestination implements ILogDestination {
   }
 
   write(payload: string): void {
-    try {
-      this.buffer.push(JSON.parse(payload) as Record<string, unknown>)
-      if (this.buffer.length >= (this.opts.batchSize ?? 50)) void this.flush()
-    } catch (e) {
-      // Emit reserved key so the failure is searchable in dashboards
-      process.stderr.write(
-        JSON.stringify({
-          level: 'error',
-          logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
-          destination: 'postgres',
-          error: (e as Error).message
-        }) + '\n'
-      )
-    }
+    // No try/catch. A malformed payload throws, the adapter catches it, records
+    // the sink as write-failed and reports it under LOGGER_DESTINATION_WRITE_FAILED
+    // — all of which a `catch` here would suppress, leaving readiness to credit
+    // this sink with an entry it never buffered. Swallowing your own failure is
+    // the one thing a destination must not do (§3).
+    this.buffer.push(JSON.parse(payload) as Record<string, unknown>)
+    if (this.buffer.length >= (this.opts.batchSize ?? 50)) void this.flush()
   }
 
   private async flush(): Promise<void> {
@@ -491,10 +492,10 @@ export class PrismaPostgresDestination implements ILogDestination {
 ## 6. Anti-patterns
 
 ❌ **Synchronous `write()` that performs blocking I/O** (e.g., `fs.writeFileSync`)
-❌ **`write()` that throws an exception** — the adapter contains it, but the entry is lost; catch and report on stderr instead
+❌ **Catching and swallowing your own failure** — the adapter can only contain and RECORD what reaches it; a hidden failure lets readiness credit a sink that dropped the entry
 ❌ **Logging via the logger itself inside `write`** — infinite loop
 ❌ **Mutating the `payload`** — other destinations receive the same string
-❌ **Expecting `write` to accept a rejected Promise as an error** — catch and log via stderr
+❌ **Assuming a rejected promise is ignored** — it is not: the adapter awaits it, records the failure and reports it, which is why it must not be swallowed first
 ❌ **Forgetting `onShutdown`** — loses the final batch on deploy
 ❌ **Sharing a buffer across multiple destinations** — race conditions
 

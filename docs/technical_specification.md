@@ -788,8 +788,13 @@ export interface ILogDestination {
   onInit?(): void | PromiseLike<void>
 
   /**
-   * Called once after EVERY destination's `onInit` has settled, and awaited. Only
-   * useful to a destination holding entries written before its own `onInit` ran:
+   * Called once after EVERY destination's `onInit` has settled, and awaited.
+   *
+   * It runs for EVERY registered destination, including one whose own `onInit`
+   * rejected — a sink that failed to initialize is exactly the one most likely to
+   * be holding entries it now has to resolve, so skipping it would strand them.
+   *
+   * Only useful to a destination holding entries written before its own `onInit` ran:
    * `heldEntriesDeliveredElsewhere` says whether another live sink appears to have
    * taken them, so a held copy can be dropped instead of duplicating a line. It is
    * a DEDUPLICATION SIGNAL, not a proof — writes still queued inside the Writable
@@ -853,7 +858,7 @@ export function destinationToStream(
           Promise.resolve(result).then(
             () => cb(),
             (err: unknown) => {
-              process.stderr.write(
+              writeStderrSafely(
                 JSON.stringify({
                   level: 40,
                   logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
@@ -869,7 +874,7 @@ export function destinationToStream(
         }
         cb()
       } catch (err) {
-        process.stderr.write(
+        writeStderrSafely(
           JSON.stringify({
             level: 40,
             logKey: 'LOGGER_DESTINATION_WRITE_FAILED',
@@ -1335,7 +1340,7 @@ class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
         await dest.onInit?.()
         survivors.push(dest)
       } catch (err) {
-        process.stderr.write(
+        writeStderrSafely(
           JSON.stringify({
             level: 50,
             logKey: 'LOGGER_DESTINATION_INIT_FAILED',
