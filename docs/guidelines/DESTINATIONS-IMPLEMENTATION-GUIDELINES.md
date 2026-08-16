@@ -41,6 +41,11 @@ export interface ILogDestination {
   /** Called once at NestJS bootstrap. */
   onInit?(): void | Promise<void>
 
+  /** Called after EVERY destination's `onInit` settled. Only useful if you buffer. */
+  onRegistryReady?(status: {
+    readonly heldEntriesDeliveredElsewhere: boolean
+  }): void | Promise<void>
+
   /** Called at NestJS shutdown. MUST flush + close resources. */
   onShutdown?(): void | Promise<void>
 }
@@ -51,6 +56,8 @@ export interface ILogDestination {
 - `write` receives a **serialized JSON string** — the destination does not need to parse it (but may).
 - `write` is the **hot path** — any extra allocation impacts throughput.
 - `onInit` / `onShutdown` are optional; the presence of both ensures proper lifecycle.
+- `onRegistryReady` is optional and only matters if you hold entries written **before** your own
+  `onInit` ran — see §4.1.
 
 ---
 
@@ -189,11 +196,49 @@ A destination that **throws** in `write()` breaks Pino multi-stream — a failur
 
 ## 4. Lifecycle
 
-| Hook         | When                                   | What to do                                             |
-| ------------ | -------------------------------------- | ------------------------------------------------------ |
-| `onInit`     | NestJS bootstrap, before the first log | Open connections, start flush timer, validate config   |
-| `write`      | Every log                              | Push to internal buffer; flush in batch if ≥ batchSize |
-| `onShutdown` | NestJS `SIGTERM` / `app.close()`       | Stop timers, flush remaining buffer, close connections |
+| Hook              | When                                       | What to do                                             |
+| ----------------- | ------------------------------------------ | ------------------------------------------------------ |
+| `onInit`          | NestJS bootstrap, before the first log     | Open connections, start flush timer, validate config   |
+| `write`           | Every log                                  | Push to internal buffer; flush in batch if ≥ batchSize |
+| `onRegistryReady` | After every destination's `onInit` settled | Resolve anything you buffered before your own init     |
+| `onShutdown`      | NestJS `SIGTERM` / `app.close()`           | Stop timers, flush remaining buffer, close connections |
+
+### 4.1 `onRegistryReady` — only if you buffer before init
+
+Skip this hook unless your destination holds entries written before its own `onInit` ran. If you do
+hold them, you face a question you cannot answer alone: **were those entries also delivered by
+someone else?** The fan-out hands each entry to every registered destination whose level accepts it,
+so a held copy may be a second copy — emitting it duplicates a line, and dropping it may lose one.
+
+The library answers it for you, once, after every `onInit` has settled:
+
+```ts
+onRegistryReady(status: { readonly heldEntriesDeliveredElsewhere: boolean }): void {
+  // Discard ONLY on proof. Emit otherwise.
+  if (status.heldEntriesDeliveredElsewhere) {
+    this.buffer.length = 0
+    return
+  }
+  for (const payload of this.buffer.splice(0)) writeRawSomewhere(payload)
+}
+```
+
+`heldEntriesDeliveredElsewhere` is `true` only when another sink is not you, initialized, sits at or
+below your effective level, has had no write failure, and has no write still in flight. Anything less
+certain is reported as `false`.
+
+**It is best-effort, not a proof, and the difference matters if you are about to drop your only
+copy.** The accounting covers writes the library has handed to a destination; one still queued inside
+the `Writable` adapter, behind a slow async sink not yet called, is invisible. It normally arrives —
+queued, not lost — but when in doubt, emit. The library's own policy is that a duplicated line beats
+a lost one.
+
+Two more things this hook guarantees, because they were each a defect first:
+
+- **It is called on FAILED destinations too** — the one that could not initialize is exactly the one
+  still holding entries.
+- **It is awaited.** Return a promise if you need to; a rejection is reported and contained, and the
+  bootstrap entry is not emitted until every hook has settled.
 
 ### What happens when `onInit` fails
 

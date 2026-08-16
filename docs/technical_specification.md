@@ -788,6 +788,17 @@ export interface ILogDestination {
   onInit?(): void | Promise<void>
 
   /**
+   * Called once after EVERY destination's `onInit` has settled, and awaited. Only
+   * useful to a destination holding entries written before its own `onInit` ran:
+   * `heldEntriesDeliveredElsewhere` says whether another live sink took them, so
+   * a held copy can be dropped instead of duplicating a line. Best-effort —
+   * discard only on proof, emit otherwise.
+   */
+  onRegistryReady?(status: {
+    readonly heldEntriesDeliveredElsewhere: boolean
+  }): void | Promise<void>
+
+  /**
    * Called during NestJS `onApplicationShutdown`. MUST flush pending writes and close resources.
    */
   onShutdown?(): void | Promise<void>

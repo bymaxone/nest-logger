@@ -13,6 +13,11 @@ heading here.
 
 ## [1.2.9] - 2026-08-16
 
+> **`1.2.8` was merged but never published.** The defect below was found in it after the merge and
+> before any tag existed, so the version was left untagged rather than released and superseded. npm
+> therefore goes `1.2.7` → `1.2.9`; the `1.2.8` section stays as the record of what landed, because
+> it is what `main` contains.
+
 ### Fixed
 
 - **A write returning a thenable that is not `instanceof Promise` no longer takes the synchronous
