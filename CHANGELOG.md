@@ -31,7 +31,11 @@ heading here.
   remains the caller's guarantee about the caller's own object.
 
   A non-configurable secret is now **censored** rather than dropped: same protection, without
-  losing the surrounding fields. `LOGGER_REDACTION_FAILED` is unchanged for the case it was written
+  losing the surrounding fields. The frozen error also keeps its **stack** again — V8 exposes it as
+  an own property bound to the original's internal state, so the clone pins a resolved copy, and on
+  a frozen error that pin was failing silently too. The case that did NOT drop the record was
+  therefore already reaching the sink with its trace erased, which is the same defect wearing a
+  healthy face; a consumer measured that independently. `LOGGER_REDACTION_FAILED` is unchanged for the case it was written
   for — a record the walk cannot READ, such as a throwing getter or a hostile proxy.
 
 ## [1.2.9] - 2026-08-16

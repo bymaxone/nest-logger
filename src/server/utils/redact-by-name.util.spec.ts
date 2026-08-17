@@ -769,6 +769,43 @@ describe('createNameRedactor', () => {
    *
    * Reverting the descriptor relaxation in `cloneError` makes this fail.
    */
+  'should keep the stack of a frozen error', () => {
+    const err = new Error('boom')
+    Object.defineProperty(err, 'code', {
+      value: 'E_CFG',
+      enumerable: true,
+      writable: false,
+      configurable: false
+    })
+    Object.freeze(err)
+
+    const result = redact({ err }) as Record<string, unknown>
+    const cloned = result['err'] as Error
+
+    // V8 exposes `stack` as an own property bound to the original's internal state,
+    // so the clone gets a resolved copy pinned onto it. On a FROZEN error that pin
+    // used to fail silently — `Reflect.defineProperty` returns `false` rather than
+    // throwing — and the entry reached the sink with its trace erased, in the case
+    // that did NOT drop the record and therefore looked healthy.
+    expect(cloned).toBeInstanceOf(Error)
+    expect(cloned.stack).toContain('boom')
+  })
+
+  it(/*
+   * REGRESSION — a FROZEN error lost every field, including its own message.
+   * A consumer that freezes its errors so nobody mutates an issue list after the
+   * throw hands over properties that are neither writable nor configurable. The
+   * clone inherited those descriptors, and rewriting a key whose walked value is
+   * a fresh object — any nested array or object, censored or not — could not
+   * redefine it. That failure reached the caller's guard and dropped the record,
+   * so the one entry worth logging became `_redactionFailed: true` and nothing
+   * else. Total silent loss on the error that crashed the process.
+   *
+   * A frozen error with a SCALAR property never showed it: redefining with the
+   * same primitive succeeds, so only a nested object exposes the defect.
+   *
+   * Reverting the descriptor relaxation in `cloneError` makes this fail.
+   */
   'should keep a frozen error whose property is an object', () => {
     const err = new Error('config invalid')
     Object.defineProperty(err, 'issues', {
