@@ -33,6 +33,15 @@ heading here.
   `validateOptions` already held `options.level` to that same list; this is the check reaching
   the one place it had not.
 
+  **On upgrade this changes your log volume, upward, and it will not look like a fix.** A sink
+  that was configured with an unrecognised level and was therefore silent starts delivering at
+  the module level the moment you install this version. Read as a graph, that is a step change in
+  ingestion cost arriving with a patch; read correctly, it is entries that were always supposed
+  to be delivered and never were. If you see one, check that destination's `minLevel` before
+  treating it as a regression — the value has to be one of `'trace'`, `'debug'`, `'info'`,
+  `'warn'`, `'error'` or `'fatal'`. `'verbose'` and `'log'` are NestJS level names, not Pino
+  ones, and are the likely culprits for anyone arriving from `LoggerService`.
+
 - **A write returning a thenable that is not `instanceof Promise` no longer takes the synchronous
   path, where its rejection escaped and its entry could be discarded.** `instanceof` is realm-local:
   it answers `false` for a promise built in another realm — a worker, a `vm` context — and for any
