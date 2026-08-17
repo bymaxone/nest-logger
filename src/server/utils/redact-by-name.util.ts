@@ -165,10 +165,31 @@ function resolveToJson(value: object): ResolvedToJson {
  * @returns A structurally identical error with its own descriptors copied.
  */
 function cloneError(error: Error): Error {
-  const clone = Object.create(
-    Object.getPrototypeOf(error) as object,
-    Object.getOwnPropertyDescriptors(error)
-  ) as Error
+  // Descriptors are copied for their SHAPE, not their immutability. A consumer
+  // that freezes its errors — a deliberate, documented practice, so nobody mutates
+  // an issue list after the throw — hands us properties that are neither writable
+  // nor configurable, and the clone inherited that. Every own enumerable key is
+  // then rewritten below with its walked value, and redefining a non-configurable
+  // property fails whenever that value is a fresh object rather than the original
+  // reference: a censored secret, or simply the structural copy the walk makes of
+  // a nested array. The failure used to reach the caller's guard and drop the
+  // WHOLE record, so a frozen error carrying an array lost every field including
+  // its own message — total silent loss of the one thing worth logging.
+  //
+  // The clone is transient: built here, serialized, discarded. Nothing downstream
+  // reads its descriptors, so relaxing them changes only whether this function can
+  // finish its job. Freezing is the CALLER's guarantee about the CALLER's object,
+  // which is untouched either way.
+  // `configurable` alone: `Reflect.defineProperty` redefines a configurable property
+  // whatever its `writable` flag says, and nothing here ever ASSIGNS to the clone.
+  // Relaxing `writable` too was in the first version of this fix and mutation testing
+  // showed it — four surviving mutants on that line, because no input can tell the
+  // difference.
+  const descriptors = Object.getOwnPropertyDescriptors(error)
+  for (const descriptor of Object.values(descriptors)) {
+    descriptor.configurable = true
+  }
+  const clone = Object.create(Object.getPrototypeOf(error) as object, descriptors) as Error
   // V8 exposes `stack` as an own ACCESSOR bound to the original error's internal
   // state, so copying the descriptor hands the clone a getter that resolves to a
   // near-empty string. Pin the already-resolved trace as a plain data property —
@@ -213,7 +234,6 @@ const BUFFER_TO_JSON: unknown = Buffer.prototype.toJSON
  * message is never surfaced — this value never leaves the module — and a
  * pre-allocated instance keeps the failure path allocation-free.
  */
-const WRITE_FAILED = new Error()
 
 /**
  * Write a key onto a copy without triggering a setter.
@@ -236,15 +256,15 @@ function defineOwn(target: Record<string, unknown>, key: string, value: unknown)
   // tolerates a non-writable property on the record it censors). Stating them
   // would be two more literals no test could ever pin.
   //
-  // The RESULT is checked because `Reflect.defineProperty` reports failure by
-  // returning `false` rather than throwing. An `Error` cloned with a
-  // non-configurable enumerable property keeps that descriptor, so redefining it
-  // silently no-ops and the raw value survives into the log. A censor that
-  // cannot be written is a failed redaction, and a failed redaction must fail
-  // closed — this throws into the caller's guard, which drops the record.
-  if (!Reflect.defineProperty(target, key, { value, enumerable: true })) {
-    throw WRITE_FAILED
-  }
+  // The write cannot fail, and that is established at CONSTRUCTION rather than
+  // checked here. Every target is either a fresh `{}` or an error clone whose
+  // descriptors `cloneError` relaxes precisely so a censor always lands. This once
+  // checked the result — `Reflect.defineProperty` reports failure by returning
+  // `false`, not by throwing — and threw into the caller's guard, which dropped the
+  // whole record. That guard was reachable only because the clone could reject the
+  // write; with that fixed at the source, keeping the check would leave a branch no
+  // input can take, which is untested code claiming a guarantee.
+  Reflect.defineProperty(target, key, { value, enumerable: true })
 }
 
 /**

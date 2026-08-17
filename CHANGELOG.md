@@ -11,6 +11,29 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A frozen `Error` lost every field, including its own message.** A consumer that freezes its
+  errors — deliberate and documented practice, so nobody mutates an issue list after the throw —
+  hands over properties that are neither writable nor configurable. The redactor's clone inherited
+  those descriptors, and rewriting any key whose walked value is a fresh object (a censored secret,
+  or simply the structural copy the walk makes of a nested array) could not redefine it. That
+  failure reached the fail-closed guard and dropped the **whole** record, so the entry became
+  `_redactionFailed: true` and nothing else — total silent loss on the error that crashed the
+  process, which is the one entry worth logging.
+
+  A frozen error carrying only scalars never showed it, because redefining a property with the same
+  primitive succeeds; it took a nested object to expose it. Reported against 1.2.7 by a consumer and
+  reproduced unchanged on 1.2.9.
+
+  The clone is transient — built, serialized, discarded — so it is now built with relaxed
+  descriptors and the write always lands. **The caller's error is never touched**, and freezing
+  remains the caller's guarantee about the caller's own object.
+
+  A non-configurable secret is now **censored** rather than dropped: same protection, without
+  losing the surrounding fields. `LOGGER_REDACTION_FAILED` is unchanged for the case it was written
+  for — a record the walk cannot READ, such as a throwing getter or a hostile proxy.
+
 ## [1.2.9] - 2026-08-16
 
 > **`1.2.8` was merged but never published.** The defect below was found in it after the merge and
