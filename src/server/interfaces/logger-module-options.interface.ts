@@ -29,6 +29,21 @@ export interface HttpOptions {
    * Paths that bypass HTTP logging (health checks, metrics). Defaults:
    * `/health`, `/metrics`.
    *
+   * The defaults do NOT cover `@bymax-one/nest-core`, and that is the common case
+   * worth knowing before you rely on them. It serves liveness and readiness at
+   * `/health/live` and `/health/ready`, and no bare `/health` at all, so
+   * `/^\/health$/` excludes a route that does not exist while both probes are
+   * logged. Measured on one deployment: 8272 of 8274 HTTP entries were the
+   * liveness probe. Set `excludePaths` yourself when wiring the two together —
+   * `[/^\/health\/(live|ready)$/, /^\/metrics$/]` matches the stock layout.
+   *
+   * The defaults are not widened to include those subpaths because both prefixes
+   * are CONFIGURABLE there (`DEFAULT_HEALTH_PATH`, `DEFAULT_METRICS_PATH`): any
+   * default naming specific subpaths would be less wrong rather than correct, and
+   * a prefix pattern would silently swallow a consumer's own `/health/*` route
+   * that they did want logged. Excluding a path is a decision about which requests
+   * disappear from the record, so it stays explicit.
+   *
    * SECURITY: each pattern is `.test()`-ed against the (attacker-controllable)
    * request path on every request. Supply only anchored, linear-time regexes
    * (e.g. `/^\/health$/`); a pattern with catastrophic backtracking would turn a
