@@ -1075,19 +1075,17 @@ There is no name rule that reaches the second one, and scanning inside values fo
 The case above is a secret inside a field's **value**. The sharper version is a value interpolated into the message itself, where there is no field at all:
 
 ```ts
-// The token, the id and the email are now message text.
+// Both identifiers are now message text: there is no `userId` field and no
+// `familyId` field for any strategy to match, only a string that happens to
+// contain them.
 logger.warn(`reissueTokens: family revoked userId=${userId} familyId=${familyId}`)
 
 // Same facts, as fields. The logKey is yours — `RESERVED_LOG_KEYS` holds the
-// library's own keys, not your domain's — and follows MODULE_ACTION_RESULT.
-logger.warnStructured(
-  'AUTH_TOKEN_REUSE_DETECTED',
-  'token family revoked after reuse detection',
-  userId,
-  {
-    familyId
-  }
-)
+// library's own keys, not your domain's — and follows MODULE_ACTION_RESULT:
+// module AUTH, action REUSE, result DETECTED.
+logger.warnStructured('AUTH_REUSE_DETECTED', 'token family revoked after reuse detection', userId, {
+  familyId
+})
 ```
 
 Redaction matches names. An interpolated value does not have one — not an uncovered name, none — so there is nothing for any strategy to match, and no configuration you can add will change that. This is not a gap to be closed later: scanning message text for secret-shaped substrings would mean rewriting what you asked to be logged, which is the wrong trade in both directions.
