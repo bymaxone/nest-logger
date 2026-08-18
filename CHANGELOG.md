@@ -40,6 +40,23 @@ heading here.
   healthy face; a consumer measured that independently. `LOGGER_REDACTION_FAILED` is unchanged for the case it was written
   for — a record the walk cannot READ, such as a throwing getter or a hostile proxy.
 
+### Documentation
+
+- **The limit of field-based redaction now ships.** A value interpolated into the message has no
+  field name for any strategy to match — not an uncovered one, none — so no configuration closes
+  that gap and the rule is "a value that matters is a field, not text". It was stated only in
+  `docs/OBSERVABILITY-CONTRACT.md`, which is not in `files`: it reached whoever had the repository
+  and nobody who installs from npm. The decision it governs is made at a call site in a derived
+  backend whose only copy of this contract is what the registry delivers, so it is in the README's
+  security model now, beside the case it sharpens — that one covers a secret inside a field's
+  **value**, this one a value with no field at all.
+
+- **The `minLevel` entry below, under 1.2.9, now names the direction of its change.** The behaviour
+  changed in that release and its record stays there; what shipped here is the paragraph explaining
+  what upgrading does. A sink configured with an unrecognised level was silent and starts delivering
+  at the module level, which arrives as a step change in ingestion cost and reads as a noise
+  regression unless the note says which way it moves. Two consumers asked for this independently.
+
 ## [1.2.9] - 2026-08-16
 
 > **`1.2.8` was merged but never published.** The defect below was found in it after the merge and
