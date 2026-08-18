@@ -18,6 +18,8 @@
 
 - All code, comments, JSDoc, variable names, and docs in English. JSDoc on every public export.
 - Log messages emitted by the library itself use English and follow the `MODULE_ACTION_RESULT` convention (e.g., `LOGGER_BOOTSTRAP_OK`).
+- **Everything that reaches GitHub is English too**, and this is the half that gets forgotten: commit messages, branch names, pull request titles and bodies, **review comments and replies**, issues, labels and release notes. The rule is about the published artefact, not about the conversation — a session held in another language still writes English here, because the reader of a review thread is not the person you are talking to.
+- Found something already published in Portuguese? Rewrite it in place: `gh api repos/{owner}/{repo}/issues/comments/<id> --method PATCH -f body=@file` for a PR comment, and `.../pulls/comments/<id>` for an inline review reply. Rewriting an already-pushed commit message needs a force-push, so ask first.
 
 **3. TypeScript — Zero `any`**
 
