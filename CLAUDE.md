@@ -104,30 +104,36 @@ mutation testing to `prepublishOnly` or the per-PR CI — it runs automatically 
 
 Files outside `files` — `scripts/`, `.github/`, `docs/`, `CLAUDE.md`, config — do not ship and do not justify a release on their own.
 
-### The version stays on the `1.2.x` line — do not leave it
+### The version stays on the `1.3.x` line — do not leave it
 
 **This overrides the rule above while it holds.** The version in `package.json` must NOT be bumped
 by any change — break, feature or fix — until the maintainer asks explicitly, and when it does move
-it moves **within `1.2.x`**. `1.2.1` is published; `1.2.2` is the current line. `1.3.0` was cut on
-2026-08-13 and renamed back down on the maintainer's word before it was ever tagged.
+it moves **within `1.3.x`**. `1.3.0` is published and tagged; `1.3.1` is the next number on this
+line.
 
-The reason is that **the library has no consumers yet** and many changes are still coming. SemVer's
-major exists to protect existing consumers; with none, a break costs nothing, and spending majors
-and minors during heavy change burns the numbering without informing anyone. This is a deliberate
-mislabel, not an oversight: the current section carries an `### Added` block that SemVer would call
-a minor. It has been raised and decided — do not re-litigate it.
+**The `1.2.x` line ended on 2026-08-18**, when the maintainer instructed `1.3.0` rather than
+`1.2.10` and it was cut, tagged and published. Do not restore the old rule from memory of an
+earlier session: `1.2.9` is history, not the current line.
 
-What still applies: keep adding to the current `## [1.2.x]` CHANGELOG section, and document every
-break under a `### Breaking` heading with its migration path. That prose is what replaces the
-signal the version number is no longer giving.
+The reason the freeze continues is unchanged — spending numbers during heavy change burns them
+without informing anyone — but one premise it used to rest on is **gone**. The library **has real
+consumers now**: `bymax-one` and `quadratic/community-core`. A break therefore costs them
+something, and the migration prose in the CHANGELOG is what they read instead of a number. Write
+it as if the number will not warn them, because it will not.
 
-**Never infer a bump from an observable event** — not from a publication, not from an internal
-project adopting the package, not from another agent reporting consumers. The exit condition is an
-instruction in the maintainer's own words. That distinction has been missed once already.
+What still applies: keep adding to the current `## [1.3.x]` CHANGELOG section, and document every
+break under a `### Breaking` heading with its migration path.
 
-**Check before assuming this still holds:** the moment a real consumer adopts the library, 1.2.x
-stops applying and breaking changes need a major again. Most of the open audit backlog in
-`docs/observability_audit.md` adds public API and would otherwise be a minor.
+**Never infer a bump from an observable event** — not from a publication, not from a project
+adopting the package, not from another agent reporting consumers, and not from a peer session
+asking for a release. The exit condition is an instruction in the maintainer's own words, naming
+the number. That distinction has been missed once already; `1.3.0` itself was chosen by the
+maintainer against this file's own advice, which is exactly how the exit is supposed to work.
+
+**Consequence of having consumers, and it is now live:** a break needs a major to mean anything.
+When the next one lands, raise it with the maintainer before writing the number rather than
+picking `1.3.x` by habit. The open audit backlog in `docs/observability_audit.md` adds public API
+and would otherwise be a minor.
 
 ---
 
