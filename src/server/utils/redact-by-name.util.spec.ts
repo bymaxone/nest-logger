@@ -725,13 +725,20 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
-   * REGRESSION — `Reflect.defineProperty` reports failure by RETURNING `false`,
-   * it does not throw. An `Error` carrying a non-configurable enumerable secret
-   * keeps that descriptor through the clone, so writing the censor silently
-   * no-opped and the raw value survived into the log. A censor that cannot be
-   * written is a failed redaction, and a failed redaction must fail closed.
+   * REGRESSION — an `Error` carrying a NON-CONFIGURABLE enumerable secret once
+   * leaked it: `Reflect.defineProperty` reports failure by returning `false`
+   * rather than throwing, so writing the censor silently no-opped and the raw
+   * value survived into the log. The guard that closed the leak dropped the whole
+   * record instead, which traded a leak for total loss.
+   *
+   * Neither is necessary. The clone is transient — built, serialized, discarded —
+   * so it is now built with relaxed descriptors and the censor always lands. The
+   * security assertion below is UNCHANGED and still the point: `SECRET` must not
+   * appear. What changed is that the surrounding fields survive with it.
+   *
+   * Reverting the descriptor relaxation in `cloneError` makes this fail.
    */
-  'should fail closed when the censor cannot be written', () => {
+  'should censor a non-configurable secret instead of leaking or dropping it', () => {
     const err = new Error('boom')
     Object.defineProperty(err, 'password', {
       value: 'SECRET',
@@ -742,9 +749,81 @@ describe('createNameRedactor', () => {
 
     const result = redact({ err }) as Record<string, unknown>
 
-    expect(result['_redactionFailed']).toBe(true)
-    expect(result['_logKey']).toBe(RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED)
     expect(JSON.stringify(result)).not.toContain('SECRET')
+    expect((result['err'] as Record<string, unknown>)['password']).toBe(CENSOR)
+    expect(result['_redactionFailed']).toBeUndefined()
+  })
+
+  it(/*
+   * REGRESSION — a FROZEN error lost every field, including its own message.
+   * A consumer that freezes its errors so nobody mutates an issue list after the
+   * throw hands over properties that are neither writable nor configurable. The
+   * clone inherited those descriptors, and rewriting a key whose walked value is
+   * a fresh object — any nested array or object, censored or not — could not
+   * redefine it. That failure reached the caller's guard and dropped the record,
+   * so the one entry worth logging became `_redactionFailed: true` and nothing
+   * else. Total silent loss on the error that crashed the process.
+   *
+   * A frozen error with a SCALAR property never showed it: redefining with the
+   * same primitive succeeds, so only a nested object exposes the defect.
+   *
+   * Reverting the descriptor relaxation in `cloneError` makes this fail.
+   */
+  'should keep the stack of a frozen error', () => {
+    const err = new Error('boom')
+    Object.defineProperty(err, 'code', {
+      value: 'E_CFG',
+      enumerable: true,
+      writable: false,
+      configurable: false
+    })
+    Object.freeze(err)
+
+    const result = redact({ err }) as Record<string, unknown>
+    const cloned = result['err'] as Error
+
+    // V8 exposes `stack` as an own property bound to the original's internal state,
+    // so the clone gets a resolved copy pinned onto it. On a FROZEN error that pin
+    // used to fail silently — `Reflect.defineProperty` returns `false` rather than
+    // throwing — and the entry reached the sink with its trace erased, in the case
+    // that did NOT drop the record and therefore looked healthy.
+    expect(cloned).toBeInstanceOf(Error)
+    expect(cloned.stack).toContain('boom')
+  })
+
+  it(/*
+   * REGRESSION — a FROZEN error lost every field, including its own message.
+   * A consumer that freezes its errors so nobody mutates an issue list after the
+   * throw hands over properties that are neither writable nor configurable. The
+   * clone inherited those descriptors, and rewriting a key whose walked value is
+   * a fresh object — any nested array or object, censored or not — could not
+   * redefine it. That failure reached the caller's guard and dropped the record,
+   * so the one entry worth logging became `_redactionFailed: true` and nothing
+   * else. Total silent loss on the error that crashed the process.
+   *
+   * A frozen error with a SCALAR property never showed it: redefining with the
+   * same primitive succeeds, so only a nested object exposes the defect.
+   *
+   * Reverting the descriptor relaxation in `cloneError` makes this fail.
+   */
+  'should keep a frozen error whose property is an object', () => {
+    const err = new Error('config invalid')
+    Object.defineProperty(err, 'issues', {
+      value: Object.freeze([{ path: 'database.url' }]),
+      enumerable: true,
+      writable: false,
+      configurable: false
+    })
+    Object.freeze(err)
+
+    const result = redact({ err }) as Record<string, unknown>
+
+    expect(result['_redactionFailed']).toBeUndefined()
+    // Still an Error, still carrying its own message — `message` is non-enumerable,
+    // so it is the `err` serializer that lifts it into the entry, not this layer.
+    expect(result['err']).toBeInstanceOf(Error)
+    expect((result['err'] as Error).message).toBe('config invalid')
+    expect(JSON.stringify(result)).toContain('database.url')
   })
 
   it(/*
