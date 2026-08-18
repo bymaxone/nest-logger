@@ -188,7 +188,11 @@ export function safeMinLevel(destination: { readonly minLevel?: LogLevel }): Log
     const read: unknown = destination.minLevel
     resolved = isLogLevel(read) ? read : undefined
   } catch {
-    resolved = undefined
+    // Deliberately empty: `resolved` is already `undefined` from its declaration
+    // and nothing assigned to it before the throw, so re-assigning it here would
+    // restate the initializer. Writing it out left a mutant no test could kill —
+    // emptying the block changed no output for any input — and an equivalent
+    // mutant that can be deleted instead of annotated should be.
   }
   resolvedMinLevels.set(destination, resolved)
   return resolved
