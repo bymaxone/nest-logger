@@ -49,9 +49,11 @@
  * costs ~26 % of the entry throughput, measured, and the walk is still ~36x
  * faster than the path expansion it replaced.
  *
- * Any internal failure — including a censor that cannot be written — degrades the
- * whole record to a marked, secret-free envelope rather than crashing the request
- * that produced it.
+ * Any internal failure — a throwing getter, a hostile proxy, a value the walk
+ * cannot READ — degrades the whole record to a marked, secret-free envelope rather
+ * than crashing the request that produced it. Writing the censor is not among those
+ * failures: every copy is built so the write cannot fail, which is why a frozen
+ * error keeps its fields instead of costing the record.
  *
  * @see {@link createNameRedactor}
  */
@@ -225,15 +227,6 @@ export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
  * pointer compare, and so a later reassignment of the global cannot redirect it.
  */
 const BUFFER_TO_JSON: unknown = Buffer.prototype.toJSON
-
-/**
- * Internal control-flow signal: a censor could not be written onto a copy.
- *
- * Thrown by {@link defineOwn} and caught by {@link createNameRedactor}, which
- * turns it into the fail-closed envelope. It carries no message because the
- * message is never surfaced — this value never leaves the module — and a
- * pre-allocated instance keeps the failure path allocation-free.
- */
 
 /**
  * Write a key onto a copy without triggering a setter.
