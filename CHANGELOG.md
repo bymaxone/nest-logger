@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-18
+
 ### Fixed
 
 - **A frozen `Error` lost every field, including its own message.** A consumer that freezes its
@@ -1775,7 +1777,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.2.9...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/bymaxone/nest-logger/compare/v1.2.9...v1.3.0
 [1.2.9]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.9
 
 <!-- 1.2.8 has no link: it was merged but never tagged, so there is no v1.2.8 to compare against. See its section above. -->
