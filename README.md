@@ -1070,6 +1070,28 @@ There is no name rule that reaches the second one, and scanning inside values fo
 
 `redactStrategy` governs **your** payload — the record you log, your child bindings, and the output of any serializer you supply. The built-in `err` serializer is the library's own output and is always name-walked, including under `'paths'`, because `fast-redact`'s four-wildcard ceiling cannot reach the depth a `cause` chain serializes to.
 
+#### A value interpolated into the message has no name to redact
+
+The case above is a secret inside a field's **value**. The sharper version is a value interpolated into the message itself, where there is no field at all:
+
+```ts
+// Both identifiers are now message text: there is no `userId` field and no
+// `familyId` field for any strategy to match, only a string that happens to
+// contain them.
+logger.warn(`reissueTokens: family revoked userId=${userId} familyId=${familyId}`)
+
+// Same facts, as fields. The logKey is yours — `RESERVED_LOG_KEYS` holds the
+// library's own keys, not your domain's — and follows MODULE_ACTION_RESULT:
+// module AUTH, action REUSE, result DETECTED.
+logger.warnStructured('AUTH_REUSE_DETECTED', 'token family revoked after reuse detection', userId, {
+  familyId
+})
+```
+
+Redaction matches names. An interpolated value does not have one — not an uncovered name, none — so there is nothing for any strategy to match, and no configuration you can add will change that. This is not a gap to be closed later: scanning message text for secret-shaped substrings would mean rewriting what you asked to be logged, which is the wrong trade in both directions.
+
+The rule that follows is short: **a value that matters is a field, not text.** A field can be redacted, queried, aggregated and correlated; the same value inside `msg` can only be read by a human who happens to be looking. That applies most to the values you would least like to interpolate — tokens, identifiers, addresses — and it is the one part of this contract the library cannot enforce for you, because the decision is made at the call site.
+
 ### A closed pipe does not kill the process
 
 `node app | head` closes the read end of stdout while the application is still writing. The stream reports that as `EPIPE` **asynchronously**, through its `'error'` event, after `write()` has already returned — so a `try/catch` around the write catches nothing, and because Node attaches no default handler to `process.stdout`, the emit becomes an uncaught exception and the process dies. Measured, not assumed: `0` listeners, no synchronous throw, `UNCAUGHT:EPIPE`, exit 42.
