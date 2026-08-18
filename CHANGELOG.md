@@ -11,6 +11,34 @@ heading here.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-08-18
+
+### Documentation
+
+- **`excludePaths` says what its defaults do not reach.** The defaults are
+  `[/^\/health$/, /^\/metrics$/]`, and `@bymax-one/nest-core` serves liveness and readiness at
+  `/health/live` and `/health/ready` with no bare `/health` at all — so the default excludes a
+  route that does not exist while logging both probes. A consumer running both measured **8272 of
+  8274** HTTP entries as the liveness probe, at one container healthcheck every ten seconds; at
+  orchestrator volume it is the same shape with more zeros. There is no error and no warning, and
+  the config reads as though it were handled.
+
+  The defaults are **not** widened, and the reason is checkable rather than a preference: both
+  prefixes are configurable there (`DEFAULT_HEALTH_PATH`, `DEFAULT_METRICS_PATH`). A default
+  naming specific subpaths would be less wrong rather than correct, and a prefix pattern would
+  silently swallow a consumer's own `/health/*` route they did want logged. Excluding a path
+  decides which requests vanish from the record, so it stays explicit — the docblock now carries
+  the one-line fix for the stock layout, and it ships in the `.d.ts` where someone wiring the two
+  libraries reads it.
+
+### Internal
+
+- **The last surviving mutant is gone, by deletion rather than annotation.** A `catch` in
+  `report-destination-failure` re-assigned `undefined` to a variable already `undefined` from its
+  declaration, so emptying the block changed no output for any input and no test could kill it. A
+  Stryker directive was tried first and was not honoured at that position. The project scores
+  **100.00** on a cold run: 1515 mutants, 841 killed, zero survivors, 145 documented equivalents.
+
 ## [1.3.0] - 2026-08-18
 
 ### Fixed
@@ -1794,7 +1822,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/bymaxone/nest-logger/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/bymaxone/nest-logger/compare/v1.2.9...v1.3.0
 [1.2.9]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.9
 
