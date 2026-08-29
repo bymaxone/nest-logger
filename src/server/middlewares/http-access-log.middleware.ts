@@ -53,6 +53,7 @@ import {
   HTTP_CLIENT_ERROR_MIN,
   HTTP_REDIRECT_MIN,
   HTTP_SERVER_ERROR_MIN,
+  isRecorderActive,
   markRecorderActive,
   readRecordedError,
   readUserAgent,
@@ -94,6 +95,17 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
    * @param next - The next handler in the chain.
    */
   use(req: LoggableRequest, res: LoggableResponse, next: NextHandler): void {
+    // Someone upstream already claimed this request's log lifecycle, so this is a
+    // SECOND mount of the same middleware — `applyAccessLog(app)` from `main.ts`
+    // plus `applyRequestIdMiddleware(consumer)` is the wiring that produces it,
+    // and it is a reasonable one to end up with while migrating from the second
+    // to the first. Emitting here would double every access-log line for every
+    // request. The claim is per-request state, so this is safe under concurrency.
+    if (isRecorderActive(req)) {
+      next()
+      return
+    }
+
     // `applyRequestIdMiddleware` is ALSO the public wiring for correlation alone,
     // and `http.isEnabled` defaults to false. Registering this middleware there
     // would otherwise start emitting an access log for consumers who asked only

@@ -63,6 +63,14 @@ scope, at any async depth, with these guarantees:
   readable at close time, falling back to the context captured at middleware registration. This is
   what keeps a normal request attributed to the innermost active span and an aborted request still
   carrying its `requestId`.
+- **What the access log covers depends on where it is mounted, and this is part of the contract.**
+  `applyAccessLog(app)` (from `main.ts`, since `1.4.0`) mounts ahead of the body parser and covers
+  every request that reaches the process: the parser rejection, the unmatched-route 404, the guard
+  rejection, the handled request and the aborted connection. `applyRequestIdMiddleware(consumer)`
+  mounts through `configure(consumer)`, which NestJS registers AFTER the parser, so a request the
+  parser refuses — malformed body, oversized payload, unsupported content type — produces no access
+  log and opens no correlation scope, whatever else the application may log about it. Neither
+  wiring is deprecated; a consumer whose dashboards assume total coverage needs the first.
 
 ## Resource identity contract
 

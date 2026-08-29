@@ -106,35 +106,38 @@ mutation testing to `prepublishOnly` or the per-PR CI — it runs automatically 
 
 Files outside `files` — `scripts/`, `.github/`, `docs/`, `CLAUDE.md`, config — do not ship and do not justify a release on their own.
 
-### The version stays on the `1.3.x` line — do not leave it
+### The version stays on the `1.4.x` line — do not leave it
 
 **This overrides the rule above while it holds.** The version in `package.json` must NOT be bumped
 by any change — break, feature or fix — until the maintainer asks explicitly, and when it does move
-it moves **within `1.3.x`**. `1.3.0` is published and tagged; `1.3.1` is the next number on this
-line.
+it moves **within `1.4.x`**. `1.4.0` is the current number; `1.4.1` is the next one on this line.
 
-**The `1.2.x` line ended on 2026-08-18**, when the maintainer instructed `1.3.0` rather than
-`1.2.10` and it was cut, tagged and published. Do not restore the old rule from memory of an
-earlier session: `1.2.9` is history, not the current line.
+**The `1.3.x` line ended on 2026-08-29**, when the maintainer instructed `1.4.0` for the
+pre-routing access-log work (`applyAccessLog`, the `HttpAccessLogMiddleware` export and
+`runMerged` — new public API, no break) and it was cut. **The `1.2.x` line ended on 2026-08-18**,
+when the maintainer instructed `1.3.0` rather than `1.2.10`. Do not restore an older rule from
+memory of an earlier session: `1.2.9` and `1.3.1` are history, not the current line.
 
 The reason the freeze continues is unchanged — spending numbers during heavy change burns them
-without informing anyone — but one premise it used to rest on is **gone**. The library **has real
-consumers now**: `bymax-one` and `quadratic/community-core`. A break therefore costs them
-something, and the migration prose in the CHANGELOG is what they read instead of a number. Write
-it as if the number will not warn them, because it will not.
+without informing anyone — and the premise that the library **has real consumers** (`bymax-one`
+and `quadratic/community-core`) is now load-bearing. A break costs them something, and the
+migration prose in the CHANGELOG is what they read instead of a number. Write it as if the number
+will not warn them, because it will not.
 
-What still applies: keep adding to the current `## [1.3.x]` CHANGELOG section, and document every
+What still applies: keep adding to the current `## [1.4.x]` CHANGELOG section, and document every
 break under a `### Breaking` heading with its migration path.
 
 **Never infer a bump from an observable event** — not from a publication, not from a project
 adopting the package, not from another agent reporting consumers, and not from a peer session
 asking for a release. The exit condition is an instruction in the maintainer's own words, naming
-the number. That distinction has been missed once already; `1.3.0` itself was chosen by the
-maintainer against this file's own advice, which is exactly how the exit is supposed to work.
+the number. Both exits so far worked exactly that way: `1.3.0` and `1.4.0` were each chosen by the
+maintainer, the second after a peer session reported the access-log gap and was told the decision
+was the maintainer's to make. A peer reporting a real defect is a reason to raise the question,
+never a reason to answer it.
 
 **Consequence of having consumers, and it is now live:** a break needs a major to mean anything.
 When the next one lands, raise it with the maintainer before writing the number rather than
-picking `1.3.x` by habit. The open audit backlog in `docs/observability_audit.md` adds public API
+picking `1.4.x` by habit. The open audit backlog in `docs/observability_audit.md` adds public API
 and would otherwise be a minor.
 
 ---

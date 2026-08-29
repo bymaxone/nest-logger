@@ -107,32 +107,124 @@ export class RequestIdMiddleware implements NestMiddleware {
 
   /**
    * Echo or mint the `x-request-id`, expose it on the response, and run the
-   * remainder of the request inside a fresh log-context scope.
+   * remainder of the request inside its own log-context scope.
+   *
+   * Idempotent: mounting this middleware twice on the same request mints one id,
+   * not two. The scope is opened with `runMerged`, so an enclosing scope's fields
+   * are carried in rather than discarded, and the request still gets its own
+   * store rather than writing into a shared one.
+   *
+   * The one shape this cannot tell apart is an enclosing scope that already
+   * carries a `requestId` and outlives a single request — a correlation id set
+   * outside any request, which the second mount would then adopt for every
+   * request. Set `requestId` per request, which is what this middleware and
+   * `LogContextService` both assume.
    *
    * @param req - The incoming request (Express satisfies the contract).
    * @param res - The outgoing response (Express satisfies the contract).
    * @param next - The next handler in the chain.
    */
   use(req: LoggableRequest, res: LoggableResponse, next: NextHandler): void {
-    // `Reflect.get` keeps both header lookups off the
-    // `security/detect-object-injection` sink list (the names are runtime
-    // configuration / named constants, not inline literals).
-    const incoming: unknown = Reflect.get(req.headers, REQUEST_ID_HEADER)
-    const fromHeader = isAcceptableHeaderValue(incoming) ? incoming : undefined
-    // Honor `shouldGenerateRequestId`: with it disabled (and no inbound header),
-    // correlation is left to the upstream gateway — no id is minted or exposed.
-    const requestId = fromHeader ?? (this.shouldGenerateRequestId ? randomUUID() : undefined)
+    const existingRequestId = this.logContext.getStore()?.requestId
+    // A correlation id is ALREADY in scope, so this is a second mount of this
+    // middleware on the same request — `applyAccessLog(app)` in `main.ts`
+    // alongside `applyRequestIdMiddleware(consumer)` is the wiring that produces
+    // it, and a reasonable one to hold while migrating between the two.
+    //
+    // Adopt it rather than minting again. A fresh mint here would put a second,
+    // different id on a request that already has one, leaving the response header
+    // and the log entries disagreeing about the request's identity — each answer
+    // internally consistent, which is why the defect survived: nothing looks
+    // broken from either side alone.
+    if (existingRequestId !== undefined) {
+      this.adoptExistingScope(existingRequestId, req, res)
+      next()
+      return
+    }
 
     const context: LogContext = {}
+    const requestId = this.resolveRequestId(req)
     if (requestId !== undefined) {
       res.setHeader(REQUEST_ID_HEADER, requestId)
       context.requestId = requestId
     }
-    const rawTenantId: unknown = Reflect.get(req.headers, this.tenantIdHeader)
-    if (isAcceptableHeaderValue(rawTenantId)) {
-      context.tenantId = rawTenantId
+    const tenantId = this.resolveTenantId(req)
+    if (tenantId !== undefined) {
+      context.tenantId = tenantId
     }
 
-    this.logContext.run(context, () => next())
+    // `runMerged`, not `run`, and the difference is load-bearing twice over.
+    //
+    // It carries an enclosing scope's fields INTO the request scope, where plain
+    // `run()` would discard them: a consumer that resolves a tenant at the edge
+    // and opens its own scope would otherwise lose it for the whole request,
+    // silently — `get()` just returns `undefined`.
+    //
+    // And it opens a NEW store rather than writing into the enclosing one, which
+    // is what keeps requests isolated. Measured on the version that enriched an
+    // enclosing scope in place: with the server created inside a `run()` scope —
+    // every request handler then inherits that store — two sequential requests
+    // were handed the SAME `requestId`, and the shared store kept the first
+    // request's id after both finished. Correlation that silently merges two
+    // requests is worse than none, because it is trusted.
+    this.logContext.runMerged(context, () => next())
+  }
+
+  /**
+   * Second mount on a request that already carries a correlation id: echo the id
+   * onto the response and fill in a tenant the scope does not have yet, without
+   * opening another scope.
+   *
+   * Nothing is minted and nothing already set is overwritten, so a third mount —
+   * or a thirtieth — changes nothing. The response header is written on every
+   * pass because the enclosing scope may have been opened by consumer code that
+   * never exposed it.
+   *
+   * @param requestId - The id already in scope, which wins.
+   * @param req - The incoming request, read for the tenant header.
+   * @param res - The outgoing response, where the effective id is exposed.
+   */
+  private adoptExistingScope(requestId: string, req: LoggableRequest, res: LoggableResponse): void {
+    res.setHeader(REQUEST_ID_HEADER, requestId)
+    if (this.logContext.get('tenantId') === undefined) {
+      const tenantId = this.resolveTenantId(req)
+      if (tenantId !== undefined) {
+        this.logContext.set('tenantId', tenantId)
+      }
+    }
+  }
+
+  /**
+   * The correlation id for this request: the inbound header when acceptable,
+   * otherwise a fresh UUID — or nothing at all when `shouldGenerateRequestId` is
+   * off and the caller sent none, which leaves correlation to the upstream
+   * gateway.
+   *
+   * @param req - The incoming request.
+   * @returns The id, or `undefined` when none is available and none is minted.
+   */
+  private resolveRequestId(req: LoggableRequest): string | undefined {
+    // `Reflect.get` keeps the header lookup off the
+    // `security/detect-object-injection` sink list (the name is a named
+    // constant, not an inline literal).
+    const incoming: unknown = Reflect.get(req.headers, REQUEST_ID_HEADER)
+    const fromHeader = isAcceptableHeaderValue(incoming) ? incoming : undefined
+    return fromHeader ?? (this.shouldGenerateRequestId ? randomUUID() : undefined)
+  }
+
+  /**
+   * The tenant id carried by the configured header, when it is acceptable.
+   *
+   * Never minted: a tenant is an assertion about who the request belongs to, and
+   * inventing one would be a fabricated claim rather than a correlation aid.
+   *
+   * @param req - The incoming request.
+   * @returns The tenant id, or `undefined`.
+   */
+  private resolveTenantId(req: LoggableRequest): string | undefined {
+    // `Reflect.get` keeps the lookup off the `security/detect-object-injection`
+    // sink list (the name is runtime configuration, not an inline literal).
+    const raw: unknown = Reflect.get(req.headers, this.tenantIdHeader)
+    return isAcceptableHeaderValue(raw) ? raw : undefined
   }
 }

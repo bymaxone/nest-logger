@@ -4,6 +4,9 @@ import { Test } from '@nestjs/testing'
 import request from 'supertest'
 
 import { applyRequestIdMiddleware } from './apply-request-id-middleware'
+import { RequestIdMiddleware } from './request-id.middleware'
+import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
+import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { BymaxLoggerModule } from '../logger.module'
 import { LogContextService } from '../services/log-context.service'
 
@@ -229,5 +232,209 @@ describe('RequestIdMiddleware with shouldGenerateRequestId disabled', () => {
 
     expect(res.headers['x-request-id']).toBe('gw-1')
     expect(res.body.requestId).toBe('gw-1')
+  })
+})
+
+/** Options double carrying only what the middleware reads. */
+function createOptions(shouldGenerateRequestId = true): ResolvedBymaxLoggerModuleOptions {
+  return {
+    http: { tenantIdHeader: 'x-tenant-id', shouldGenerateRequestId }
+  } as unknown as ResolvedBymaxLoggerModuleOptions
+}
+
+/** Response double recording the correlation header it is given. */
+function createResponse(): { res: LoggableResponse; setHeader: jest.Mock } {
+  const setHeader = jest.fn()
+  return { res: { setHeader } as unknown as LoggableResponse, setHeader }
+}
+
+/** Request double carrying only inbound headers. */
+function createRequest(headers: Record<string, string> = {}): LoggableRequest {
+  return { headers, method: 'GET', url: '/ctx' } as unknown as LoggableRequest
+}
+
+describe('RequestIdMiddleware mounted a second time', () => {
+  let logContext: LogContextService
+
+  beforeEach(() => {
+    logContext = new LogContextService()
+  })
+
+  it(/*
+   * Two mounts must not mint two ids. Before this, `applyAccessLog(app)` next to
+   * `applyRequestIdMiddleware(consumer)` produced UUID A on the response header
+   * and UUID B in the context, so the header and the log entries disagreed about
+   * which id the request had. The id already in scope wins.
+   */
+  'adopts the id already in scope instead of minting a second', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res, setHeader } = createResponse()
+
+    logContext.run({ requestId: 'outer-1' }, () => {
+      middleware.use(createRequest(), res, () => {
+        expect(logContext.get('requestId')).toBe('outer-1')
+      })
+    })
+
+    expect(setHeader).toHaveBeenCalledWith('x-request-id', 'outer-1')
+  })
+
+  it(/*
+   * Adopting must not open another scope at all. Asserting object IDENTITY is
+   * what proves it: an equal-but-fresh store would pass a value comparison while
+   * having actually opened a third scope on a request that needed none.
+   */
+  'adopts without opening another scope', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ requestId: 'outer-1', tenantId: 't_1' }, () => {
+      const outerStore = logContext.getStore()
+      middleware.use(createRequest(), res, () => {
+        expect(logContext.getStore()).toBe(outerStore)
+        expect(logContext.get('tenantId')).toBe('t_1')
+      })
+    })
+  })
+
+  it(/*
+   * An enclosing scope carrying no correlation id is NOT a second mount — it is
+   * consumer code that opened its own scope. The request gets its own id, and the
+   * enclosing scope's fields are carried in by `runMerged` rather than discarded,
+   * which is the failure `run()` would produce here: a tenantId resolved at the
+   * edge silently absent for the whole request.
+   */
+  'takes its own scope and inherits the enclosing fields', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res, setHeader } = createResponse()
+
+    logContext.run({ tenantId: 't_1' }, () => {
+      middleware.use(createRequest({ 'x-request-id': 'inbound-9' }), res, () => {
+        expect(logContext.get('requestId')).toBe('inbound-9')
+        expect(logContext.get('tenantId')).toBe('t_1')
+      })
+    })
+
+    expect(setHeader).toHaveBeenCalledWith('x-request-id', 'inbound-9')
+  })
+
+  it(/*
+   * With generation disabled and no inbound header there is no id to carry, so no
+   * header is exposed and no requestId reaches the scope — the gateway owns
+   * correlation on that configuration — while the enclosing fields still survive.
+   */
+  'exposes no id when generation is disabled and none is available', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions(false))
+    const { res, setHeader } = createResponse()
+
+    logContext.run({ tenantId: 't_1' }, () => {
+      middleware.use(createRequest(), res, () => {
+        expect(logContext.get('requestId')).toBeUndefined()
+      })
+    })
+
+    expect(setHeader).not.toHaveBeenCalled()
+  })
+
+  it(/*
+   * A tenant id already in scope must not be overwritten by the header. The
+   * enclosing scope resolved it deliberately — from an auth claim, say — and a
+   * client-supplied header must not be able to displace that.
+   */
+  'keeps a tenant id already in scope over the inbound header', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ requestId: 'r_1', tenantId: 'from-auth' }, () => {
+      middleware.use(createRequest({ 'x-tenant-id': 'from-header' }), res, () => {
+        expect(logContext.get('tenantId')).toBe('from-auth')
+      })
+    })
+  })
+
+  it(/*
+   * A scope missing the tenant id must still pick it up from the header —
+   * the counterpart branch to the one above.
+   */
+  'fills in a missing tenant id on an already-open scope', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ requestId: 'r_1' }, () => {
+      middleware.use(createRequest({ 'x-tenant-id': 'acme' }), res, () => {
+        expect(logContext.get('tenantId')).toBe('acme')
+      })
+    })
+  })
+
+  it(/*
+   * An unacceptable tenant header (a space is outside the id-safe set) must be
+   * dropped on the enrich path too, not just when opening a fresh scope — the
+   * validation gate cannot be bypassed by arriving through the second mount.
+   */
+  'drops an unacceptable tenant header on the adopt path', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ requestId: 'r_1' }, () => {
+      middleware.use(createRequest({ 'x-tenant-id': 'acme evil' }), res, () => {
+        // The exact shape, not just a `toBeUndefined()` read: the contract is
+        // "absent means absent — no key is ever written holding `undefined` to
+        // mean not set", and a store carrying `tenantId: undefined` reads as
+        // undefined through `get()` while still having the key. Only comparing
+        // the whole object can tell those apart.
+        expect(logContext.getStore()).toEqual({ requestId: 'r_1' })
+        expect(Object.keys(logContext.getStore() ?? {})).not.toContain('tenantId')
+      })
+    })
+  })
+  it(/*
+   * REGRESSION — two requests must never share a correlation id.
+   *
+   * An earlier version of this middleware ENRICHED an enclosing scope in place
+   * instead of opening its own. Measured on that version, with the server created
+   * inside a `run()` scope (every request handler then inherits that store):
+   * the first request wrote its UUID into the shared store, the second adopted it,
+   * and both were logged under one id — while the shared store kept that id after
+   * both had finished. Correlation that silently merges two requests is worse than
+   * no correlation, because it is trusted.
+   */
+  'gives two requests inside one enclosing scope different ids', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+    const seen: (string | undefined)[] = []
+
+    logContext.run({ service: 'api' }, () => {
+      middleware.use(createRequest(), res, () => {
+        seen.push(logContext.get<string>('requestId'))
+      })
+      middleware.use(createRequest(), res, () => {
+        seen.push(logContext.get<string>('requestId'))
+      })
+
+      // The shared store must be exactly as it was: no requestId leaked into it.
+      expect(logContext.getStore()).toEqual({ service: 'api' })
+    })
+
+    expect(seen[0]).toBeDefined()
+    expect(seen[1]).toBeDefined()
+    expect(seen[0]).not.toBe(seen[1])
+  })
+
+  it(/*
+   * The enclosing scope's own fields must still reach the request's entries —
+   * isolation must not be bought by dropping what the caller had set, which is
+   * the trade `run()` would have made.
+   */
+  'carries the enclosing fields into each isolated request scope', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ service: 'api' }, () => {
+      middleware.use(createRequest(), res, () => {
+        expect(logContext.get('service')).toBe('api')
+        expect(logContext.get('requestId')).toBeDefined()
+      })
+    })
   })
 })

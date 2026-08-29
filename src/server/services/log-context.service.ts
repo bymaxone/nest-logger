@@ -37,8 +37,21 @@ export class LogContextService {
    * Run `callback` inside a fresh context scope. Every log emitted
    * synchronously or asynchronously within the callback inherits `context`.
    *
+   * **A nested `run()` REPLACES the enclosing context, it does not extend it.**
+   * The scope starts from `context` alone, so a field an outer scope had set —
+   * a `tenantId` resolved at the edge, say — is absent for the whole inner
+   * scope: nothing throws, `get()` simply returns `undefined`, and the field is
+   * missing from every entry the callback emits. Reach for {@link runMerged}
+   * when the inner scope should extend the outer one.
+   *
+   * Replacement is the deliberate default because the opposite leaks: a
+   * background job started inside a request scope would silently inherit the
+   * caller's `userId` and attribute its entries to a user who never triggered
+   * it. A missing field is visibly missing; an inherited one is wrong while
+   * looking right.
+   *
    * @typeParam T - Return type of the callback.
-   * @param context - Initial context bag for the scope.
+   * @param context - Initial context bag for the scope. Becomes the WHOLE scope.
    * @param callback - Function executed within the scope.
    * @returns Whatever `callback` returns.
    * @example
@@ -48,6 +61,40 @@ export class LogContextService {
    */
   run<T>(context: LogContext, callback: () => T): T {
     return this.als.run(this.sanitizeContext(context), callback)
+  }
+
+  /**
+   * Run `callback` inside a scope that EXTENDS the enclosing one: the active
+   * context's fields are carried in, and `context` overrides them key by key.
+   *
+   * The explicit counterpart to {@link run}'s replacement semantics, for the
+   * case where an inner scope is genuinely a refinement of the outer — adding a
+   * `userId` once authentication resolved it, without having to restate the
+   * `requestId` the middleware already set.
+   *
+   * Outside any scope there is nothing to merge and this behaves exactly like
+   * {@link run}. Writes inside the new scope never reach the enclosing one: the
+   * merge produces a fresh object, so the outer context is intact after the
+   * callback returns.
+   *
+   * @typeParam T - Return type of the callback.
+   * @param context - Fields to add or override on top of the active context.
+   * @param callback - Function executed within the merged scope.
+   * @returns Whatever `callback` returns.
+   * @example
+   *   logContext.run({ requestId: 'r_1' }, () => {
+   *     logContext.runMerged({ userId: 'u_1' }, () => {
+   *       logContext.get('requestId') // 'r_1' — carried in from the outer scope
+   *     })
+   *   })
+   */
+  runMerged<T>(context: LogContext, callback: () => T): T {
+    // Spreading `getStore()` covers the out-of-scope case without a branch:
+    // `{ ...undefined }` is `{}`, so an empty enclosing context and an absent
+    // one produce the same merged object. An explicit `=== undefined` guard here
+    // would be a branch whose arms cannot differ for any input.
+    const merged: LogContext = { ...this.als.getStore(), ...this.sanitizeContext(context) }
+    return this.als.run(merged, callback)
   }
 
   /**

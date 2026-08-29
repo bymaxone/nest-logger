@@ -11,6 +11,104 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-29
+
+No breaking changes. Nothing you have wired stops working, and no export was renamed.
+
+### Added
+
+- **`applyAccessLog(app)` — the access log mounted ahead of the body parser.** A request the body
+  parser rejects never reaches module middleware, so until now it never reached the access log
+  either. NestJS registers the parser one line before it registers module middleware
+  (`@nestjs/core/nest-application.js`: `registerParserMiddleware()` then `registerModules()`), and
+  Express dispatches in registration order, so `next(err)` from the parser skips every remaining
+  non-error handler — module middleware, guards, interceptors and the route handler alike. A `POST`
+  carrying truncated JSON produced no access log at all, and the same hole covers a payload over the
+  body limit and an unsupported content type: the requests a client got wrong or an attacker shaped.
+
+  What you got before this release depended on your wiring, and neither answer was good. With
+  `forRoot` and the default `shouldCaptureExceptions`, the filter **did** catch the parser rejection
+  and emit one `HTTP_EXCEPTION_HANDLED` line — measured, not assumed — but with **no `requestId`**,
+  because the correlation scope is mounted behind the parser too and never opened. The client could
+  send `x-request-id` and the entry carried nothing to join it to. With `forRootAsync`, or with
+  `shouldCaptureExceptions: false`, there was nothing at all. A 400 you cannot trace to the caller
+  is the same defect as a missing 400, wearing a healthier face.
+
+  `INestApplication.use()` delegates straight to the HTTP adapter and `init()` — where the parser is
+  registered — does not run until `listen()`, so mounting from `main.ts` lands ahead of the parser,
+  the same reason `helmet` and `cookie-parser` are mounted that way. `HttpAccessLogMiddleware`
+  needed no new logic to work there: it already emits from the response's `'close'` event, reading
+  `statusCode` and `writableFinished`, so it never depended on a route matching, a handler running
+  or a filter catching anything. It was written correctly and mounted too late.
+
+  One line in and one line out now cover the parser rejection, the unmatched-route 404, the guard
+  rejection and the aborted connection alike. Call it after `NestFactory.create()` and **before**
+  `listen()`; calling it after still mounts, but behind the parser, which forfeits the entire point.
+
+- **`HttpAccessLogMiddleware` is exported.** Without the class, an early mount was impossible to
+  express — a consumer with its own bootstrap sequence had no way to reach it. It is the same class
+  `applyRequestIdMiddleware` has always wired; only its visibility changed.
+
+- **`LogContextService.runMerged(context, callback)`** — a scope that EXTENDS the enclosing one
+  instead of replacing it, for the case where an inner scope is genuinely a refinement of the outer:
+  adding a `userId` once authentication resolved it, without restating the `requestId` the
+  middleware already set. Outside any scope it behaves exactly like `run()`. Writes inside it never
+  reach the enclosing context — the merge produces a fresh object.
+
+### Fixed
+
+- **Two mounts of `RequestIdMiddleware` minted two different correlation ids.** `use()` sets the id
+  on the RESPONSE header and never writes it back onto `req.headers`, so a second mount with no
+  inbound header saw nothing and minted its own: the outer set the response header to one UUID and
+  the inner overwrote the log context with another, leaving the header and the entries disagreeing
+  about which id the request had. Each answer was internally consistent, which is why it survived —
+  nothing looked broken from either side alone.
+
+  The middleware is now idempotent, and off the ALS store rather than off a header write-back: an
+  id already in scope is ADOPTED — echoed onto the response, never replaced — instead of a second
+  one being minted. Writing the minted id back onto `req.headers` would have worked too and was
+  rejected deliberately: it conflates "the client sent this id" with "we minted this id", and
+  anything downstream treating an inbound header as client-attested would start reading our own
+  UUID as the caller's.
+
+  The request's own scope is now opened with `runMerged` rather than `run`, which fixes a second
+  thing in the same place: a consumer that opened its own scope upstream — a tenant resolved at the
+  edge — had it **discarded** for the whole request, because `run()` replaces the context. Its
+  fields are carried in now.
+
+  A first attempt at this enriched the enclosing scope in place instead of opening one, and was
+  caught in review before release: with the server created inside a `run()` scope — every request
+  handler then inherits that store — two sequential requests were measured sharing ONE `requestId`,
+  and the shared store kept it after both finished. Correlation that silently merges two requests is
+  worse than none, because it is trusted. `runMerged` gives each request its own store while still
+  inheriting the enclosing fields; the regression is pinned by a test.
+
+  This is also what makes wiring both helpers safe, which is the state a consumer lands on
+  mid-migration.
+
+- **A second mount of `HttpAccessLogMiddleware` doubled every access-log line.** It claims the
+  request's log lifecycle so the interceptor stays silent, but never checked whether the claim was
+  already made. It now stands down on an already-claimed request: one START and one terminal entry
+  per request no matter how many times it is mounted. The claim is per-request state, so a
+  different request is unaffected.
+
+### Documentation
+
+- **`run()` now says that a nested scope DISCARDS the enclosing one.** The docblock said "a fresh
+  context scope", which does not tell a reader that an outer scope's fields are gone for the whole
+  inner one — nothing throws, `get()` just returns `undefined`, and the field is missing from every
+  entry the callback emits. Reported by a consumer that lost a `tenantId` resolved at the edge.
+
+  Replacement remains the default, and the reason is the direction the other choice leaks: a
+  background job started inside a request scope would silently inherit the caller's `userId` and
+  attribute its entries to a user who never triggered it. A missing field is visibly missing; an
+  inherited one is wrong while looking right. `runMerged()` is the explicit opt-in.
+
+- **The README states what is not logged, and what a rejected request actually produces today.** The
+  absence read as a misconfiguration to whoever went looking for it, and cost a consumer real time
+  before it was traced to the parser. The new §5 subsection carries the ordering, the two-row table
+  of what each wiring emits, and the `main.ts` snippet.
+
 ## [1.3.1] - 2026-08-18
 
 ### Documentation
@@ -1822,7 +1920,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/bymaxone/nest-logger/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/bymaxone/nest-logger/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/bymaxone/nest-logger/compare/v1.2.9...v1.3.0
 [1.2.9]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.9
