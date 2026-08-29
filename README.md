@@ -376,7 +376,10 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true })
   BymaxLoggerModule.useNestLogger(app)
 
-  // BEFORE listen(): listen() runs init(), which is where the parser is mounted.
+  // BEFORE the app initializes. init() is where the parser is mounted, and
+  // listen() only triggers init() when you have not called it yourself — so a
+  // serverless entry point or a test that does `await app.init()` first must
+  // mount before THAT, not merely before listen().
   applyAccessLog(app)
 
   await app.listen(3000)

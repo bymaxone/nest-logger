@@ -86,6 +86,19 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   This is also what makes wiring both helpers safe, which is the state a consumer lands on
   mid-migration.
 
+  **The adopt path is gated on a per-request mark, not on the store**, and that distinction is a
+  security boundary rather than bookkeeping. `LogContextService.set()` takes `unknown`, so consumer
+  middleware can place a raw user-controlled header value under `requestId`. Adopting whatever the
+  store holds would echo it back on the response header verbatim: measured on Node 24,
+  `res.setHeader` accepts a 5000-character value without complaint and throws `ERR_INVALID_CHAR` on
+  one carrying CR/LF — which would break the request before it reached the application. An id this
+  middleware established has been through `isAcceptableHeaderValue`; one it merely found has not.
+  Raised by Codex against the first version of this change.
+
+  A consumer's own `requestId` in an enclosing scope is therefore not adopted: the request gets a
+  validated id of its own, which is what `run()` did before this release anyway. To have the library
+  honour an upstream id, set `shouldGenerateRequestId: false` and let it carry through the merge.
+
 - **A second mount of `HttpAccessLogMiddleware` doubled every access-log line.** It claims the
   request's log lifecycle so the interceptor stays silent, but never checked whether the claim was
   already made. It now stands down on an already-claimed request: one START and one terminal entry
@@ -108,6 +121,15 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   absence read as a misconfiguration to whoever went looking for it, and cost a consumer real time
   before it was traced to the parser. The new §5 subsection carries the ordering, the two-row table
   of what each wiring emits, and the `main.ts` snippet.
+
+- **`applyAccessLog` names `init()` as its deadline, not `listen()`.** `listen()` only triggers
+  `init()` when it has not run yet, so "before `listen()`" is true for the usual bootstrap and
+  false for a serverless entry point or an integration test that does `await app.init()` and wires
+  up afterwards — that mount lands behind the parser and logs nothing extra, with no error to say
+  so. A late mount is not rejected at runtime because NestJS exposes no supported signal for it
+  (`isInitialized` is private, and inspecting the adapter's router would break on a patch release
+  while claiming to be a safety net), so the deadline is documented at the call site instead. Raised
+  by Codex.
 
 ## [1.3.1] - 2026-08-18
 

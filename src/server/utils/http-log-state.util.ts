@@ -28,6 +28,8 @@ const UNKNOWN_USER_AGENT = 'unknown'
 const RECORDER_ACTIVE = Symbol('bymax-one/nest-logger:recorder')
 /** Holds the error the interceptor observed, for the middleware to serialize. */
 const RECORDED_ERROR = Symbol('bymax-one/nest-logger:error')
+/** Marks a request whose correlation scope `RequestIdMiddleware` itself opened. */
+const CORRELATION_OPENED = Symbol('bymax-one/nest-logger:correlation')
 
 /** A thrown value captured downstream, wrapped so `undefined` stays meaningful. */
 export interface RecordedError {
@@ -58,6 +60,37 @@ export function markRecorderActive(req: object): void {
  */
 export function isRecorderActive(req: object): boolean {
   return Reflect.get(req, RECORDER_ACTIVE) === true
+}
+
+/**
+ * Record that `RequestIdMiddleware` opened this request's correlation scope.
+ *
+ * @param req - The request object to mark.
+ */
+export function markCorrelationOpened(req: object): void {
+  Reflect.set(req, CORRELATION_OPENED, true)
+}
+
+/**
+ * Whether the correlation id in scope was put there by `RequestIdMiddleware`.
+ *
+ * This is what separates a SECOND MOUNT of that middleware from an enclosing
+ * scope some consumer opened. The distinction is a security boundary, not
+ * bookkeeping: an id the middleware minted or read has passed
+ * `isAcceptableHeaderValue`, while `LogContextService.set()` takes `unknown`, so
+ * a consumer can put a raw user-controlled value under `requestId`. Echoing that
+ * onto the response header verbatim would hand a client an unbounded value in
+ * every log entry, and a value carrying CR/LF makes `res.setHeader` throw
+ * `ERR_INVALID_CHAR` before the request reaches the application.
+ *
+ * Marking the request, rather than trusting whatever the store holds, is what
+ * keeps the adopt path reachable only for a value this library validated.
+ *
+ * @param req - The request object to inspect.
+ * @returns `true` when this library opened the correlation scope.
+ */
+export function isCorrelationOpened(req: object): boolean {
+  return Reflect.get(req, CORRELATION_OPENED) === true
 }
 
 /**

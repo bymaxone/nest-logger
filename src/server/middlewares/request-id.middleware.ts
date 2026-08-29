@@ -23,6 +23,7 @@ import type {
 import type { LogContext } from '../interfaces/log-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { LogContextService } from '../services/log-context.service'
+import { isCorrelationOpened, markCorrelationOpened } from '../utils/http-log-state.util'
 
 /** Response/request header carrying the correlation id. */
 const REQUEST_ID_HEADER = 'x-request-id'
@@ -125,23 +126,33 @@ export class RequestIdMiddleware implements NestMiddleware {
    * @param next - The next handler in the chain.
    */
   use(req: LoggableRequest, res: LoggableResponse, next: NextHandler): void {
-    const existingRequestId = this.logContext.getStore()?.requestId
-    // A correlation id is ALREADY in scope, so this is a second mount of this
-    // middleware on the same request — `applyAccessLog(app)` in `main.ts`
-    // alongside `applyRequestIdMiddleware(consumer)` is the wiring that produces
-    // it, and a reasonable one to hold while migrating between the two.
+    // The id is adopted only when THIS middleware put it there, which the
+    // per-request mark establishes and the store alone cannot. `set()` takes
+    // `unknown`, so a consumer can place a raw user-controlled value under
+    // `requestId`; echoing that back would put an unbounded string on the
+    // response header and in every entry, and a CR/LF value makes `setHeader`
+    // throw `ERR_INVALID_CHAR` before the request reaches the application. An id
+    // this middleware set has been through `isAcceptableHeaderValue`.
+    const ownRequestId = isCorrelationOpened(req)
+      ? this.logContext.getStore()?.requestId
+      : undefined
+    // A correlation id this library already established, so this is a second
+    // mount on the same request — `applyAccessLog(app)` in `main.ts` alongside
+    // `applyRequestIdMiddleware(consumer)` is the wiring that produces it, and a
+    // reasonable one to hold while migrating between the two.
     //
     // Adopt it rather than minting again. A fresh mint here would put a second,
     // different id on a request that already has one, leaving the response header
     // and the log entries disagreeing about the request's identity — each answer
     // internally consistent, which is why the defect survived: nothing looks
     // broken from either side alone.
-    if (existingRequestId !== undefined) {
-      this.adoptExistingScope(existingRequestId, req, res)
+    if (ownRequestId !== undefined) {
+      this.adoptExistingScope(ownRequestId, req, res)
       next()
       return
     }
 
+    markCorrelationOpened(req)
     const context: LogContext = {}
     const requestId = this.resolveRequestId(req)
     if (requestId !== undefined) {

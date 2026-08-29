@@ -269,14 +269,18 @@ describe('RequestIdMiddleware mounted a second time', () => {
   'adopts the id already in scope instead of minting a second', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res, setHeader } = createResponse()
+    const req = createRequest({ 'x-request-id': 'inbound-1' })
 
-    logContext.run({ requestId: 'outer-1' }, () => {
-      middleware.use(createRequest(), res, () => {
-        expect(logContext.get('requestId')).toBe('outer-1')
+    // Two real mounts on the SAME request, which is what `applyAccessLog(app)`
+    // alongside `applyRequestIdMiddleware(consumer)` produces.
+    middleware.use(req, res, () => {
+      middleware.use(req, res, () => {
+        expect(logContext.get('requestId')).toBe('inbound-1')
       })
     })
 
-    expect(setHeader).toHaveBeenCalledWith('x-request-id', 'outer-1')
+    const written = setHeader.mock.calls.map(([, value]) => value)
+    expect(written).toEqual(['inbound-1', 'inbound-1'])
   })
 
   it(/*
@@ -287,11 +291,12 @@ describe('RequestIdMiddleware mounted a second time', () => {
   'adopts without opening another scope', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
+    const req = createRequest({ 'x-tenant-id': 't_1' })
 
-    logContext.run({ requestId: 'outer-1', tenantId: 't_1' }, () => {
-      const outerStore = logContext.getStore()
-      middleware.use(createRequest(), res, () => {
-        expect(logContext.getStore()).toBe(outerStore)
+    middleware.use(req, res, () => {
+      const firstStore = logContext.getStore()
+      middleware.use(req, res, () => {
+        expect(logContext.getStore()).toBe(firstStore)
         expect(logContext.get('tenantId')).toBe('t_1')
       })
     })
@@ -341,13 +346,18 @@ describe('RequestIdMiddleware mounted a second time', () => {
    * enclosing scope resolved it deliberately — from an auth claim, say — and a
    * client-supplied header must not be able to displace that.
    */
-  'keeps a tenant id already in scope over the inbound header', () => {
+  'keeps a tenant id already in scope over a later header value', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
+    const headers: Record<string, string> = { 'x-tenant-id': 'resolved-first' }
+    const req = createRequest(headers)
 
-    logContext.run({ requestId: 'r_1', tenantId: 'from-auth' }, () => {
-      middleware.use(createRequest({ 'x-tenant-id': 'from-header' }), res, () => {
-        expect(logContext.get('tenantId')).toBe('from-auth')
+    middleware.use(req, res, () => {
+      // Something downstream rewrote the header between the two mounts. The
+      // tenant already in scope is the one the request was admitted under.
+      headers['x-tenant-id'] = 'rewritten'
+      middleware.use(req, res, () => {
+        expect(logContext.get('tenantId')).toBe('resolved-first')
       })
     })
   })
@@ -356,12 +366,16 @@ describe('RequestIdMiddleware mounted a second time', () => {
    * A scope missing the tenant id must still pick it up from the header —
    * the counterpart branch to the one above.
    */
-  'fills in a missing tenant id on an already-open scope', () => {
+  'fills in a tenant id the first mount did not have', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
+    const headers: Record<string, string> = {}
+    const req = createRequest(headers)
 
-    logContext.run({ requestId: 'r_1' }, () => {
-      middleware.use(createRequest({ 'x-tenant-id': 'acme' }), res, () => {
+    middleware.use(req, res, () => {
+      // Upstream auth resolved the tenant after the correlation scope opened.
+      headers['x-tenant-id'] = 'acme'
+      middleware.use(req, res, () => {
         expect(logContext.get('tenantId')).toBe('acme')
       })
     })
@@ -375,16 +389,18 @@ describe('RequestIdMiddleware mounted a second time', () => {
   'drops an unacceptable tenant header on the adopt path', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
+    const headers: Record<string, string> = {}
+    const req = createRequest(headers)
 
-    logContext.run({ requestId: 'r_1' }, () => {
-      middleware.use(createRequest({ 'x-tenant-id': 'acme evil' }), res, () => {
+    middleware.use(req, res, () => {
+      headers['x-tenant-id'] = 'acme evil'
+      middleware.use(req, res, () => {
         // The exact shape, not just a `toBeUndefined()` read: the contract is
         // "absent means absent — no key is ever written holding `undefined` to
         // mean not set", and a store carrying `tenantId: undefined` reads as
         // undefined through `get()` while still having the key. Only comparing
         // the whole object can tell those apart.
-        expect(logContext.getStore()).toEqual({ requestId: 'r_1' })
-        expect(Object.keys(logContext.getStore() ?? {})).not.toContain('tenantId')
+        expect(Object.keys(logContext.getStore() ?? {})).toEqual(['requestId'])
       })
     })
   })
@@ -436,5 +452,72 @@ describe('RequestIdMiddleware mounted a second time', () => {
         expect(logContext.get('requestId')).toBeDefined()
       })
     })
+  })
+  it(/*
+   * SECURITY — an id a consumer put in the store is NOT adopted.
+   *
+   * `LogContextService.set()` takes `unknown`, so consumer middleware can place a
+   * raw user-controlled header value under `requestId`. Adopting it would echo it
+   * onto the response header verbatim: this value carries CR/LF, and Node's
+   * `res.setHeader` throws ERR_INVALID_CHAR on it — measured — which would break
+   * the request before it reached the application. The adopt path is reachable
+   * only for an id THIS middleware established, which the per-request mark
+   * establishes and the store alone cannot.
+   */
+  'does not adopt a request id the middleware did not set', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res, setHeader } = createResponse()
+
+    logContext.run({ requestId: 'evil\r\nInjected: 1' }, () => {
+      middleware.use(createRequest(), res, () => {
+        expect(logContext.get('requestId')).not.toBe('evil\r\nInjected: 1')
+        expect(logContext.get<string>('requestId')).toMatch(UUID_V4)
+      })
+    })
+
+    const [, written] = setHeader.mock.calls[0] as [string, string]
+    expect(written).toMatch(UUID_V4)
+  })
+
+  it(/*
+   * The same gate for the length bound: an oversized value in an enclosing scope
+   * must not reach the response header. `setHeader` accepts a 5000-character
+   * value without complaint — measured — so nothing downstream would catch it,
+   * and it would ride on every entry for the request's lifetime.
+   */
+  'does not adopt an oversized request id from an enclosing scope', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res, setHeader } = createResponse()
+    const oversized = 'y'.repeat(5000)
+
+    logContext.run({ requestId: oversized }, () => {
+      middleware.use(createRequest(), res, () => {
+        expect(logContext.get('requestId')).not.toBe(oversized)
+      })
+    })
+
+    const [, written] = setHeader.mock.calls[0] as [string, string]
+    expect(written).not.toBe(oversized)
+    expect(written).toMatch(UUID_V4)
+  })
+
+  it(/*
+   * With generation disabled and no inbound header the middleware sets no id, so
+   * a second mount finds the request marked but the store empty and simply takes
+   * the ordinary path again. Pins the third branch of the mark/store pair, which
+   * is reachable and would otherwise be an untested combination.
+   */
+  'takes the ordinary path on a second mount that established no id', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions(false))
+    const { res, setHeader } = createResponse()
+    const req = createRequest()
+
+    middleware.use(req, res, () => {
+      middleware.use(req, res, () => {
+        expect(logContext.get('requestId')).toBeUndefined()
+      })
+    })
+
+    expect(setHeader).not.toHaveBeenCalled()
   })
 })

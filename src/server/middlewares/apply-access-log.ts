@@ -15,10 +15,14 @@
  * handler — reaches no module middleware, no guard, no interceptor and no
  * handler. Measured: a `POST` with truncated JSON produced no access log at all.
  *
- * `INestApplication.use()` delegates straight to the HTTP adapter, and `init()`
- * (where the parser is registered) does not run until `listen()`, so a handler
- * mounted here from `main.ts` lands AHEAD of the parser — the same reason
- * `helmet` and `cookie-parser` are mounted this way.
+ * `INestApplication.use()` delegates straight to the HTTP adapter, so a handler
+ * mounted here lands in the Express stack at call time — the same reason `helmet`
+ * and `cookie-parser` are mounted this way.
+ *
+ * The boundary is **`init()`**, not `listen()`. `listen()` merely triggers `init()`
+ * when it has not run yet, so "before `listen()`" is true only for the usual
+ * bootstrap that never calls `init()` itself. A serverless handler or a test that
+ * does `await app.init()` and mounts afterwards is already behind the parser.
  *
  * {@link HttpAccessLogMiddleware} needed no new logic to work there: it emits
  * from the response's `'close'` event, so it never depends on a route matching,
@@ -92,10 +96,22 @@ function resolveDependencies(app: INestApplication): AccessLogDependencies {
 /**
  * Mount the correlation scope and the HTTP access log ahead of the body parser.
  *
- * Call in `main.ts` AFTER `NestFactory.create()` and BEFORE `app.listen()`.
- * Calling it after `listen()` still mounts, but behind the parser, which
- * forfeits the entire reason to use it — the parser-rejected request would go
- * unlogged exactly as before.
+ * Call AFTER `NestFactory.create()` and BEFORE the application initializes —
+ * that is, before `app.init()`, or before `app.listen()` in the usual bootstrap
+ * that never calls `init()` directly.
+ *
+ * **`init()` is the real deadline, and `listen()` is only where most bootstraps
+ * meet it.** A serverless entry point or an integration test typically does
+ * `await app.init()` and then wires things up; mounting there still mounts, but
+ * BEHIND the parser, which forfeits the entire reason to use this helper — the
+ * parser-rejected request goes unlogged exactly as before, with no error to say
+ * so. The mount is not rejected when it is late because NestJS exposes no
+ * supported signal for "already initialized" — `isInitialized` is private, and
+ * reaching into the adapter's router to guess would break on a NestJS patch
+ * release while claiming to be a safety net.
+ *
+ * The ordering is the one thing to get right here, so it is worth a glance at
+ * the call site rather than trust: mount it immediately after `NestFactory.create()`.
  *
  * Requires `http.isEnabled` for the access log itself; with HTTP logging off the
  * correlation scope is still opened (matching `applyRequestIdMiddleware`) and no
@@ -108,7 +124,7 @@ function resolveDependencies(app: INestApplication): AccessLogDependencies {
  *
  *   const app = await NestFactory.create(AppModule, { bufferLogs: true })
  *   BymaxLoggerModule.useNestLogger(app)
- *   applyAccessLog(app)
+ *   applyAccessLog(app) // before init(): listen() triggers it if you have not
  *   await app.listen(3000)
  */
 export function applyAccessLog(app: INestApplication): void {
