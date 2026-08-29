@@ -28,8 +28,8 @@ const UNKNOWN_USER_AGENT = 'unknown'
 const RECORDER_ACTIVE = Symbol('bymax-one/nest-logger:recorder')
 /** Holds the error the interceptor observed, for the middleware to serialize. */
 const RECORDED_ERROR = Symbol('bymax-one/nest-logger:error')
-/** Marks a request whose correlation scope `RequestIdMiddleware` itself opened. */
-const CORRELATION_OPENED = Symbol('bymax-one/nest-logger:correlation')
+/** Holds the correlation id `RequestIdMiddleware` itself minted or accepted. */
+const OWN_REQUEST_ID = Symbol('bymax-one/nest-logger:request-id')
 
 /** A thrown value captured downstream, wrapped so `undefined` stays meaningful. */
 export interface RecordedError {
@@ -63,34 +63,38 @@ export function isRecorderActive(req: object): boolean {
 }
 
 /**
- * Record that `RequestIdMiddleware` opened this request's correlation scope.
+ * Remember the correlation id this library established for the request.
  *
- * @param req - The request object to mark.
+ * @param req - The request object to attach to.
+ * @param requestId - The id, already through `isAcceptableHeaderValue`.
  */
-export function markCorrelationOpened(req: object): void {
-  Reflect.set(req, CORRELATION_OPENED, true)
+export function markOwnRequestId(req: object, requestId: string): void {
+  Reflect.set(req, OWN_REQUEST_ID, requestId)
 }
 
 /**
- * Whether the correlation id in scope was put there by `RequestIdMiddleware`.
+ * Read back the correlation id this library established, if any.
  *
- * This is what separates a SECOND MOUNT of that middleware from an enclosing
- * scope some consumer opened. The distinction is a security boundary, not
- * bookkeeping: an id the middleware minted or read has passed
- * `isAcceptableHeaderValue`, while `LogContextService.set()` takes `unknown`, so
- * a consumer can put a raw user-controlled value under `requestId`. Echoing that
- * onto the response header verbatim would hand a client an unbounded value in
- * every log entry, and a value carrying CR/LF makes `res.setHeader` throw
+ * This is a security boundary rather than bookkeeping, and it is deliberately
+ * the VALUE rather than a "we opened the scope" flag. `LogContextService.set()`
+ * takes `unknown`, so middleware running between two mounts can replace
+ * `requestId` in the store with a raw user-controlled header. A flag would still
+ * read true afterwards, and the second mount would echo that replacement onto
+ * the response header — where an oversized value rides on every entry for the
+ * request's lifetime and a CR/LF value makes `res.setHeader` throw
  * `ERR_INVALID_CHAR` before the request reaches the application.
  *
- * Marking the request, rather than trusting whatever the store holds, is what
- * keeps the adopt path reachable only for a value this library validated.
+ * Reading the id from the REQUEST means what is echoed is what this library
+ * validated, whatever the store holds by then.
  *
  * @param req - The request object to inspect.
- * @returns `true` when this library opened the correlation scope.
+ * @returns The validated id, or `undefined` when this library set none.
  */
-export function isCorrelationOpened(req: object): boolean {
-  return Reflect.get(req, CORRELATION_OPENED) === true
+export function readOwnRequestId(req: object): string | undefined {
+  // No `typeof` guard: the absent case already reads as `undefined`, and only
+  // a validated string is ever written here — a guard would add an arm no input
+  // can distinguish.
+  return Reflect.get(req, OWN_REQUEST_ID) as string | undefined
 }
 
 /**

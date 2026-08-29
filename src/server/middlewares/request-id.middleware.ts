@@ -23,7 +23,7 @@ import type {
 import type { LogContext } from '../interfaces/log-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { LogContextService } from '../services/log-context.service'
-import { isCorrelationOpened, markCorrelationOpened } from '../utils/http-log-state.util'
+import { markOwnRequestId, readOwnRequestId } from '../utils/http-log-state.util'
 
 /** Response/request header carrying the correlation id. */
 const REQUEST_ID_HEADER = 'x-request-id'
@@ -126,16 +126,12 @@ export class RequestIdMiddleware implements NestMiddleware {
    * @param next - The next handler in the chain.
    */
   use(req: LoggableRequest, res: LoggableResponse, next: NextHandler): void {
-    // The id is adopted only when THIS middleware put it there, which the
-    // per-request mark establishes and the store alone cannot. `set()` takes
-    // `unknown`, so a consumer can place a raw user-controlled value under
-    // `requestId`; echoing that back would put an unbounded string on the
-    // response header and in every entry, and a CR/LF value makes `setHeader`
-    // throw `ERR_INVALID_CHAR` before the request reaches the application. An id
-    // this middleware set has been through `isAcceptableHeaderValue`.
-    const ownRequestId = isCorrelationOpened(req)
-      ? this.logContext.getStore()?.requestId
-      : undefined
+    // Adopt only an id THIS middleware established, read back from the REQUEST
+    // rather than from the store. A "we opened the scope" flag is not enough:
+    // `set()` takes `unknown`, so middleware running between two mounts can
+    // replace `requestId` in the store with a raw user-controlled header, and the
+    // flag would still read true. What gets echoed must be what was validated.
+    const ownRequestId = readOwnRequestId(req)
     // A correlation id this library already established, so this is a second
     // mount on the same request — `applyAccessLog(app)` in `main.ts` alongside
     // `applyRequestIdMiddleware(consumer)` is the wiring that produces it, and a
@@ -152,32 +148,31 @@ export class RequestIdMiddleware implements NestMiddleware {
       return
     }
 
-    markCorrelationOpened(req)
+    const store = this.logContext.getStore()
     const context: LogContext = {}
     const requestId = this.resolveRequestId(req)
     if (requestId !== undefined) {
       res.setHeader(REQUEST_ID_HEADER, requestId)
       context.requestId = requestId
+      markOwnRequestId(req, requestId)
     }
-    const tenantId = this.resolveTenantId(req)
-    if (tenantId !== undefined) {
-      context.tenantId = tenantId
+    // The header is read only when the enclosing scope has NO tenant. `runMerged`
+    // lets this context override the outer store key by key, so copying the
+    // header unconditionally would let a client replace a tenant the application
+    // resolved at the edge — from an auth claim — on every entry the request
+    // produces. The adopt path already gave the resolved tenant precedence; this
+    // is the same rule on the path that opens the scope.
+    //
+    // `requestId` is deliberately NOT symmetric: correlation is this library's to
+    // own and it mints a validated one, while a tenant is an assertion about who
+    // the request belongs to and is never invented or overridden here.
+    if (store?.tenantId === undefined) {
+      const tenantId = this.resolveTenantId(req)
+      if (tenantId !== undefined) {
+        context.tenantId = tenantId
+      }
     }
 
-    // `runMerged`, not `run`, and the difference is load-bearing twice over.
-    //
-    // It carries an enclosing scope's fields INTO the request scope, where plain
-    // `run()` would discard them: a consumer that resolves a tenant at the edge
-    // and opens its own scope would otherwise lose it for the whole request,
-    // silently — `get()` just returns `undefined`.
-    //
-    // And it opens a NEW store rather than writing into the enclosing one, which
-    // is what keeps requests isolated. Measured on the version that enriched an
-    // enclosing scope in place: with the server created inside a `run()` scope —
-    // every request handler then inherits that store — two sequential requests
-    // were handed the SAME `requestId`, and the shared store kept the first
-    // request's id after both finished. Correlation that silently merges two
-    // requests is worse than none, because it is trusted.
     this.logContext.runMerged(context, () => next())
   }
 

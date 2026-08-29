@@ -520,4 +520,69 @@ describe('RequestIdMiddleware mounted a second time', () => {
 
     expect(setHeader).not.toHaveBeenCalled()
   })
+  it(/*
+   * SECURITY — a value written into the store BETWEEN two mounts is not echoed.
+   *
+   * The previous fix marked the request with a boolean, which proved only that
+   * this middleware opened the scope. Middleware running between the two mounts
+   * can call set('requestId', rawHeader), and the flag still read true — so the
+   * second mount echoed the replacement, and a CR/LF value there makes
+   * res.setHeader throw ERR_INVALID_CHAR before the request reaches the
+   * application. The id is now read back from the REQUEST, so what is echoed is
+   * what was validated, whatever the store holds by then.
+   */
+  'echoes its own id even when the store was overwritten between mounts', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res, setHeader } = createResponse()
+    const req = createRequest({ 'x-request-id': 'validated-1' })
+
+    middleware.use(req, res, () => {
+      // Consumer middleware, running between the two mounts.
+      logContext.set('requestId', 'evil\r\nInjected: 1')
+      middleware.use(req, res, () => {
+        expect(true).toBe(true)
+      })
+    })
+
+    const written = setHeader.mock.calls.map(([, value]) => value)
+    expect(written).toEqual(['validated-1', 'validated-1'])
+  })
+
+  it(/*
+   * SECURITY — a client-supplied x-tenant-id must not displace a tenant the
+   * application already resolved.
+   *
+   * `runMerged` lets the new context override the enclosing store key by key, so
+   * copying the header unconditionally let a client rewrite the tenant on every
+   * entry the request produced. The adopt path already preserved a resolved
+   * tenant; this pins the same rule on the path that opens the scope, which is
+   * where the asymmetry actually bit.
+   */
+  'does not let the tenant header override a tenant already resolved upstream', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ tenantId: 'from-auth' }, () => {
+      middleware.use(createRequest({ 'x-tenant-id': 'attacker' }), res, () => {
+        expect(logContext.get('tenantId')).toBe('from-auth')
+      })
+    })
+  })
+
+  it(/*
+   * The counterpart branch: with no tenant in the enclosing scope the header is
+   * still the source, so the gate above narrows the rule rather than disabling
+   * tenant propagation.
+   */
+  'still takes the tenant header when the enclosing scope has none', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ userId: 'u_1' }, () => {
+      middleware.use(createRequest({ 'x-tenant-id': 'acme' }), res, () => {
+        expect(logContext.get('tenantId')).toBe('acme')
+        expect(logContext.get('userId')).toBe('u_1')
+      })
+    })
+  })
 })

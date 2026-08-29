@@ -99,6 +99,22 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   validated id of its own, which is what `run()` did before this release anyway. To have the library
   honour an upstream id, set `shouldGenerateRequestId: false` and let it carry through the merge.
 
+  The mark holds the validated **id**, not a "we opened the scope" flag, and the difference is the
+  whole protection. Middleware running BETWEEN two mounts can call
+  `logContext.set('requestId', rawHeader)`; a flag would still read true afterwards and the second
+  mount would echo that replacement. Reading the id back from the request means what reaches the
+  header is what this library validated, whatever the store holds by then.
+
+- **A client-supplied `x-tenant-id` could displace a tenant the application had already resolved.**
+  `runMerged` lets the request's context override the enclosing store key by key, and the header was
+  copied in unconditionally — so a tenant resolved at the edge, from an auth claim, was replaced by
+  whatever the client sent, on every entry the request produced. The header is now read only when
+  the enclosing scope has no tenant, which is the rule the adopt path already followed.
+
+  `requestId` is deliberately not symmetric with this: correlation is the library's to own and it
+  mints a validated id, while a tenant is an assertion about who the request belongs to and is
+  never invented or overridden here.
+
 - **A second mount of `HttpAccessLogMiddleware` doubled every access-log line.** It claims the
   request's log lifecycle so the interceptor stays silent, but never checked whether the claim was
   already made. It now stands down on an already-claimed request: one START and one terminal entry
