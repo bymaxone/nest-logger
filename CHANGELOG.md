@@ -68,12 +68,27 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   about which id the request had. Each answer was internally consistent, which is why it survived —
   nothing looked broken from either side alone.
 
-  The middleware is now idempotent, and off the ALS store rather than off a header write-back: an
-  id already in scope is ADOPTED — echoed onto the response, never replaced — instead of a second
-  one being minted. Writing the minted id back onto `req.headers` would have worked too and was
-  rejected deliberately: it conflates "the client sent this id" with "we minted this id", and
-  anything downstream treating an inbound header as client-attested would start reading our own
-  UUID as the caller's.
+  The middleware is now idempotent, off two marks kept on the REQUEST rather than off a header
+  write-back. Writing the minted id back onto `req.headers` would have worked and was rejected
+  deliberately: it conflates "the client sent this id" with "we minted this id", and anything
+  downstream treating an inbound header as client-attested would start reading our own UUID as the
+  caller's.
+
+  **What is adopted is the id this library validated for this request — not whatever the log context
+  happens to hold**, and the difference decides how a gateway-provided id has to be passed. An id
+  that reaches the middleware only through an enclosing `LogContextService` scope is never adopted
+  and never echoed. With generation on, the request gets its own id: the inbound `x-request-id`, else
+  a fresh UUID. With `shouldGenerateRequestId: false` and no inbound header, an enclosing `requestId`
+  is inherited into the request's entries but no response header is set. **To have an upstream id
+  echoed, send it as `x-request-id`.**
+
+  The marks are two because they answer two questions and either can be true alone. One records that
+  a scope for this request was opened, and decides whether a second mount opens another. The other
+  records the validated id, and decides what may be echoed — read from the request rather than the
+  store, so a value middleware replaced between the mounts (`set()` takes `unknown`) cannot reach the
+  response header. The adopt path also **restores** the validated id to the active context, because
+  the emitted entry reads `requestId` from the store: echoing one value while leaving another in the
+  store would produce the same header/entry split this change exists to remove.
 
   The request's own scope now starts from the enclosing scope's fields rather than from nothing,
   which fixes a second thing in the same place: a consumer that opened its own scope upstream — a
