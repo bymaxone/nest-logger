@@ -544,4 +544,64 @@ describe('HttpAccessLogMiddleware — terminal-entry async context', () => {
 
     expect(seenScopes).toEqual(['mw-scope', 'mw-scope'])
   })
+  it(/*
+   * A second mount of this middleware on the same request must stand down.
+   * `applyAccessLog(app)` in main.ts alongside `applyRequestIdMiddleware(consumer)`
+   * is a reasonable state to be in mid-migration, and without the claim check it
+   * doubles every access-log line: two STARTs, two terminal entries, twice the
+   * ingestion bill for the same traffic.
+   */
+  'emits nothing when the request lifecycle is already claimed', () => {
+    const { logger, info } = createLogger()
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
+    const req = createRequest()
+    const { res, fireClose } = createResponse()
+    const next = jest.fn()
+
+    middleware.use(req, res, next)
+    middleware.use(req, res, next)
+    fireClose()
+
+    expect(info).toHaveBeenCalledTimes(2)
+    expect(next).toHaveBeenCalledTimes(2)
+  })
+
+  it(/*
+   * Standing down must still CONTINUE the chain. An early return that forgot
+   * `next()` would hang every request the moment a consumer wired both helpers —
+   * a far worse failure than the double logging it prevents.
+   */
+  'continues the chain when it stands down', () => {
+    const { logger } = createLogger()
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
+    const req = createRequest()
+    const { res } = createResponse()
+    const next = jest.fn()
+
+    middleware.use(req, res, jest.fn())
+    middleware.use(req, res, next)
+
+    expect(next).toHaveBeenCalledTimes(1)
+  })
+
+  it(/*
+   * The claim is per-REQUEST state, so a different request must be unaffected —
+   * the providers here are singletons and a claim stored on the instance would
+   * silence every subsequent request in the process.
+   */
+  'still logs a different request after standing down on one', () => {
+    const { logger, info } = createLogger()
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
+    const first = createRequest()
+    const { res: firstRes } = createResponse()
+    const second = createRequest()
+    const { res: secondRes } = createResponse()
+
+    middleware.use(first, firstRes, jest.fn())
+    middleware.use(first, firstRes, jest.fn())
+    info.mockClear()
+    middleware.use(second, secondRes, jest.fn())
+
+    expect(info).toHaveBeenCalledTimes(1)
+  })
 })

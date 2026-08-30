@@ -11,6 +11,165 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-29
+
+No breaking changes. Nothing you have wired stops working, and no export was renamed.
+
+### Added
+
+- **`applyAccessLog(app)` — the access log mounted ahead of the body parser.** A request the body
+  parser rejects never reaches module middleware, so until now it never reached the access log
+  either. NestJS registers the parser one line before it registers module middleware
+  (`@nestjs/core/nest-application.js`: `registerParserMiddleware()` then `registerModules()`), and
+  Express dispatches in registration order, so `next(err)` from the parser skips every remaining
+  non-error handler — module middleware, guards, interceptors and the route handler alike. A `POST`
+  carrying truncated JSON produced no access log at all, and the same hole covers a payload over the
+  body limit and an unsupported content type: the requests a client got wrong or an attacker shaped.
+
+  What you got before this release depended on your wiring, and neither answer was good. With
+  `forRoot` and the default `shouldCaptureExceptions`, the filter **did** catch the parser rejection
+  and emit one `HTTP_EXCEPTION_HANDLED` line — measured, not assumed — but with **no `requestId`**,
+  because the correlation scope is mounted behind the parser too and never opened. The client could
+  send `x-request-id` and the entry carried nothing to join it to. With `forRootAsync`, or with
+  `shouldCaptureExceptions: false`, there was nothing at all. A 400 you cannot trace to the caller
+  is the same defect as a missing 400, wearing a healthier face.
+
+  `INestApplication.use()` delegates straight to the HTTP adapter and `init()` — where the parser is
+  registered — does not run until `listen()`, so mounting from `main.ts` lands ahead of the parser,
+  the same reason `helmet` and `cookie-parser` are mounted that way. `HttpAccessLogMiddleware`
+  needed no new logic to work there: it already emits from the response's `'close'` event, reading
+  `statusCode` and `writableFinished`, so it never depended on a route matching, a handler running
+  or a filter catching anything. It was written correctly and mounted too late.
+
+  One line in and one line out now cover the parser rejection, the unmatched-route 404, the guard
+  rejection and the aborted connection alike. Call it after `NestFactory.create()` and **before the
+  application initializes** — that is, before `app.init()`. `listen()` only triggers `init()` when it
+  has not already run, so "before `listen()`" is the same deadline for the usual bootstrap and the
+  WRONG one for a serverless entry point or an integration test that does `await app.init()` and
+  wires up afterwards: that mount lands behind the parser and logs nothing extra, with no error to
+  say so.
+
+- **`HttpAccessLogMiddleware` is exported.** Without the class, an early mount was impossible to
+  express — a consumer with its own bootstrap sequence had no way to reach it. It is the same class
+  `applyRequestIdMiddleware` has always wired; only its visibility changed.
+
+- **`LogContextService.runMerged(context, callback)`** — a scope that EXTENDS the enclosing one
+  instead of replacing it, for the case where an inner scope is genuinely a refinement of the outer:
+  adding a `userId` once authentication resolved it, without restating the `requestId` the
+  middleware already set. Outside any scope it behaves exactly like `run()`. Writes inside it never
+  reach the enclosing context — the merge produces a fresh object.
+
+### Fixed
+
+- **Two mounts of `RequestIdMiddleware` minted two different correlation ids.** `use()` sets the id
+  on the RESPONSE header and never writes it back onto `req.headers`, so a second mount with no
+  inbound header saw nothing and minted its own: the outer set the response header to one UUID and
+  the inner overwrote the log context with another, leaving the header and the entries disagreeing
+  about which id the request had. Each answer was internally consistent, which is why it survived —
+  nothing looked broken from either side alone.
+
+  The middleware is now idempotent, off two marks kept on the REQUEST rather than off a header
+  write-back. Writing the minted id back onto `req.headers` would have worked and was rejected
+  deliberately: it conflates "the client sent this id" with "we minted this id", and anything
+  downstream treating an inbound header as client-attested would start reading our own UUID as the
+  caller's.
+
+  **What is adopted is the id this library validated for this request — not whatever the log context
+  happens to hold**, and the difference decides how a gateway-provided id has to be passed. An id
+  that reaches the middleware only through an enclosing `LogContextService` scope is never adopted
+  and never echoed. With generation on, the request gets its own id: the inbound `x-request-id`, else
+  a fresh UUID. With `shouldGenerateRequestId: false` and no inbound header, an enclosing `requestId`
+  is inherited into the request's entries but no response header is set. **To have an upstream id
+  echoed, send it as `x-request-id`.**
+
+  The marks are two because they answer two questions and either can be true alone. One records that
+  a scope for this request was opened, and decides whether a second mount opens another. The other
+  records the validated id, and decides what may be echoed — read from the request rather than the
+  store, so a value middleware replaced between the mounts (`set()` takes `unknown`) cannot reach the
+  response header. The adopt path also **restores** the validated id to the active context, because
+  the emitted entry reads `requestId` from the store: echoing one value while leaving another in the
+  store would produce the same header/entry split this change exists to remove.
+
+  The request's own scope now starts from the enclosing scope's fields rather than from nothing,
+  which fixes a second thing in the same place: a consumer that opened its own scope upstream — a
+  tenant resolved at the edge — had it **discarded** for the whole request, because `run()` replaces
+  the context.
+
+  What it inherits is an ALLOWLIST — `requestId` and `tenantId`, the library's own correlation
+  fields — and that shape took three review rounds to reach. A denylist cannot be made safe here:
+  `LogContext` explicitly permits arbitrary consumer keys, so an application-defined `accountId` or
+  `sessionId` misattributes a request exactly the way `userId` does, and no list of forbidden names
+  is ever complete. Measured on the denylist version: a request opened inside a scope holding
+  `{ accountId, sessionId }` inherited both.
+
+  The identity cases the denylist did catch are worth recording, because they are what the allowlist
+  now covers by construction. `userId` is resolved by a guard that runs after this middleware, and
+  the mixin copies the store onto every entry while `PinoLoggerService` deliberately does not write
+  `userId: undefined` when the argument is omitted — so an anonymous request inside a scope holding
+  `userId: 'admin-u1'` was logged under `admin-u1`. Trace fields leak the same way, in every naming:
+  the mixin overwrites them from the active span but only when there IS one, and the field names are
+  configurable (`otel.fieldFormat: 'snake_case'` renames all three), so a literal exclusion was
+  wrong in both directions at once.
+
+  Dropping a field a consumer set upstream is not a regression — before this release `run()`
+  discarded all of it — and it fails in the safe direction: a missing field is visibly missing,
+  where an inherited identity is wrong while looking right.
+
+- **A `g` or `y` flag on an `excludePaths` pattern excluded the path only every other time.**
+  `RegExp.prototype.test` on such a pattern advances its `lastIndex` and resumes from it, so the
+  same pattern tested twice against the same path returns `true`, then `false`. Measured on
+  `/^\/health$/g` against `/health`: `true, false, true, false`. The patterns live in module
+  options — one frozen array shared by the access-log middleware and the HTTP interceptor for the
+  lifetime of the process — so a consumer who carried a `g` flag in from a copied pattern saw
+  excluded health checks reappear at half rate, with no error and nothing to suggest the config was
+  not working.
+
+  This predates `1.4.0`; mounting both wiring helpers only made it sharper, because the two mounts
+  then test the same pattern twice within a single request and disagree outright. Both call sites now
+  go through one matcher that clears the stored position before testing, so the answer depends only
+  on the pattern and the path. Flags that say WHAT matches (`i`, `m`, `s`, `u`) are the consumer's
+  expressed intent and are untouched. Raised by Codex.
+
+  The clear happens only for a pattern that actually carries a position, and that guard is
+  load-bearing: `Object.freeze` on a `RegExp` — which a deep-freeze over a config module reaches —
+  makes `lastIndex` non-writable, and under ESM's strict mode assigning to it throws
+  `TypeError: Cannot assign to read only property 'lastIndex'` while `.test()` on the same pattern
+  works. Clearing unconditionally would have turned a working configuration into a throw on the
+  request path. A frozen pattern that IS global stays broken, and not by this: `test()` writes
+  `lastIndex` itself, so it throws before any of this runs.
+
+- **A second mount of `HttpAccessLogMiddleware` doubled every access-log line.** It claims the
+  request's log lifecycle so the interceptor stays silent, but never checked whether the claim was
+  already made. It now stands down on an already-claimed request: one START and one terminal entry
+  per request no matter how many times it is mounted. The claim is per-request state, so a
+  different request is unaffected.
+
+### Documentation
+
+- **`run()` now says that a nested scope DISCARDS the enclosing one.** The docblock said "a fresh
+  context scope", which does not tell a reader that an outer scope's fields are gone for the whole
+  inner one — nothing throws, `get()` just returns `undefined`, and the field is missing from every
+  entry the callback emits. Reported by a consumer that lost a `tenantId` resolved at the edge.
+
+  Replacement remains the default, and the reason is the direction the other choice leaks: a
+  background job started inside a request scope would silently inherit the caller's `userId` and
+  attribute its entries to a user who never triggered it. A missing field is visibly missing; an
+  inherited one is wrong while looking right. `runMerged()` is the explicit opt-in.
+
+- **The README states what is not logged, and what a rejected request actually produces today.** The
+  absence read as a misconfiguration to whoever went looking for it, and cost a consumer real time
+  before it was traced to the parser. The new §5 subsection carries the ordering, the two-row table
+  of what each wiring emits, and the `main.ts` snippet.
+
+- **`applyAccessLog` names `init()` as its deadline, not `listen()`.** `listen()` only triggers
+  `init()` when it has not run yet, so "before `listen()`" is true for the usual bootstrap and
+  false for a serverless entry point or an integration test that does `await app.init()` and wires
+  up afterwards — that mount lands behind the parser and logs nothing extra, with no error to say
+  so. A late mount is not rejected at runtime because NestJS exposes no supported signal for it
+  (`isInitialized` is private, and inspecting the adapter's router would break on a patch release
+  while claiming to be a safety net), so the deadline is documented at the call site instead. Raised
+  by Codex.
+
 ## [1.3.1] - 2026-08-18
 
 ### Documentation
@@ -1822,7 +1981,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/bymaxone/nest-logger/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/bymaxone/nest-logger/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/bymaxone/nest-logger/compare/v1.2.9...v1.3.0
 [1.2.9]: https://github.com/bymaxone/nest-logger/compare/v1.2.7...v1.2.9

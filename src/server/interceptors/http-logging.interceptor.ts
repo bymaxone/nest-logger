@@ -34,6 +34,7 @@ import {
   recordError,
   toError
 } from '../utils/http-log-state.util'
+import { matchesExcludePath } from '../utils/matches-exclude-path.util'
 import { normalizeUrl, stripQueryString } from '../utils/normalize-url.util'
 
 /** Lower bound of the HTTP success (2xx) range. */
@@ -68,7 +69,7 @@ export class HttpLoggingInterceptor implements NestInterceptor {
    * @returns `true` when the path matches a configured exclude pattern.
    */
   private isExcluded(path: string): boolean {
-    return this.excludePaths.some((pattern) => pattern.test(path))
+    return matchesExcludePath(this.excludePaths, path)
   }
 
   /**

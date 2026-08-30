@@ -23,7 +23,17 @@ export type { PrettyViewOptions } from './destinations/pretty-dev.destination'
 // HTTP integration (interceptor, filter, middleware)
 export { HttpExceptionFilter } from './filters/http-exception.filter'
 export { HttpLoggingInterceptor } from './interceptors/http-logging.interceptor'
+// Two wiring helpers, and the difference between them is WHERE the mount lands.
+// `applyAccessLog(app)` mounts from `main.ts`, ahead of the body parser, so a
+// request the parser rejects still produces a line; `applyRequestIdMiddleware`
+// mounts through `configure(consumer)`, which NestJS registers after the parser.
+// `HttpAccessLogMiddleware` is exported alongside them because a consumer with
+// its own bootstrap sequence has to be able to mount it directly — without the
+// class, the early mount is impossible to express. Wiring both helpers is safe:
+// neither the correlation id nor the access-log line is produced twice.
+export { applyAccessLog } from './middlewares/apply-access-log'
 export { applyRequestIdMiddleware } from './middlewares/apply-request-id-middleware'
+export { HttpAccessLogMiddleware } from './middlewares/http-access-log.middleware'
 export { RequestIdMiddleware } from './middlewares/request-id.middleware'
 
 // Decorators

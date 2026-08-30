@@ -301,7 +301,7 @@ Output (pretty-print, development):
 
 ### 5. HTTP logging (automatic)
 
-Enable `http.isEnabled: true` in the module options and wire `applyRequestIdMiddleware(consumer)` (see [Context propagation](#7-context-propagation-with-logcontextservice)). The access log is recorded from **middleware**, which emits:
+Enable `http.isEnabled: true` in the module options and wire the access log — `applyAccessLog(app)` in `main.ts` (recommended, see [Requests rejected before routing](#requests-rejected-before-routing)) or `applyRequestIdMiddleware(consumer)` (see [Context propagation](#7-context-propagation-with-logcontextservice)). The access log is recorded from **middleware**, which emits:
 
 | Log key                     | When                                                |
 | --------------------------- | --------------------------------------------------- |
@@ -331,6 +331,73 @@ URLs are automatically normalized — `/users/550e8400-e29b-41d4-a716-4466554400
 >
 > A consumer who does not wire the middleware keeps the previous interceptor-based behaviour rather
 > than losing HTTP logs — including its blind spot.
+
+#### Requests rejected before routing
+
+Middleware wired through `configure(consumer)` is not early enough for every request. NestJS
+registers the body parser **one line before** it registers module middleware:
+
+```js
+// @nestjs/core/nest-application.js
+useBodyParser && this.registerParserMiddleware()
+await this.registerModules() // everything from configure(consumer)
+```
+
+Express dispatches in registration order, so when the parser rejects a body it calls `next(err)`
+and every remaining non-error handler is skipped — module middleware, guards, interceptors and the
+route handler all never run. **A `POST` carrying truncated JSON therefore produces no access log
+at all**, and the same hole covers a payload over the body limit and an unsupported content type:
+exactly the requests a client got wrong or an attacker shaped.
+
+What you get today depends on your wiring, and neither answer is good:
+
+| Wiring                                                 | A body the parser rejects produces                        |
+| ------------------------------------------------------ | --------------------------------------------------------- |
+| `forRoot` with `shouldCaptureExceptions` (the default) | **one** `HTTP_EXCEPTION_HANDLED` line, **no `requestId`** |
+| `forRootAsync`, or `shouldCaptureExceptions: false`    | **nothing at all**                                        |
+
+The first row is the one worth reading twice. The line exists, so a dashboard counting entries
+looks healthy — but the correlation scope is mounted behind the parser too, so it never opened:
+the client can send `x-request-id: measure-me` and the entry carries no `requestId` to join it to.
+A 400 you cannot trace to the caller is the same defect as a missing 400 wearing a healthier face.
+
+`applyAccessLog(app)` closes both rows. `INestApplication.use()` delegates straight to the HTTP
+adapter and `init()` (where the parser is registered) does not run until `listen()`, so mounting
+from `main.ts` lands **ahead** of the parser — the same reason `helmet` and `cookie-parser` are
+mounted this way:
+
+```typescript
+// main.ts
+import { NestFactory } from '@nestjs/core'
+import { BymaxLoggerModule, applyAccessLog } from '@bymax-one/nest-logger'
+import { AppModule } from './app.module'
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, { bufferLogs: true })
+  BymaxLoggerModule.useNestLogger(app)
+
+  // BEFORE the app initializes. init() is where the parser is mounted, and
+  // listen() only triggers init() when you have not called it yourself — so a
+  // serverless entry point or a test that does `await app.init()` first must
+  // mount before THAT, not merely before listen().
+  applyAccessLog(app)
+
+  await app.listen(3000)
+}
+
+void bootstrap()
+```
+
+The access log needs nothing else to work there — it emits from the response's `'close'` event,
+reading `statusCode` and `writableFinished`, so it never depends on a route matching, a handler
+running or a filter catching anything. One line in, one line out, for the parser rejection, the
+unmatched-route 404, the guard rejection and the aborted connection alike.
+
+`applyRequestIdMiddleware(consumer)` remains supported and unchanged; it is the right choice when
+correlation should be scoped to a route subtree rather than the whole application. **Wiring both is
+safe** — the correlation middleware adopts an id already in scope instead of minting a second one,
+and the access log stands down when it finds the request's lifecycle already claimed, so nothing is
+minted twice and nothing is logged twice.
 
 **Delivery is reported separately from status.** `HTTP_REQUEST_ABORTED` is emitted when the
 connection closed before the response was flushed, and it **keeps the real status the server
@@ -1227,11 +1294,24 @@ There are **two** APIs on this class, and they do not share a signature shape.
 
 ### `LogContextService`
 
-| Method     | Signature           | Description                                                                                                                          |
-| ---------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `run`      | `(store, callback)` | Opens an ALS scope. Any log inside `callback` carries `store` fields                                                                 |
-| `set`      | `(key, value)`      | Adds/updates a field in the current scope. Throws if called outside `run()`. Fields set here reach every subsequent log in the scope |
-| `getStore` | `()`                | Returns current scope or `undefined` outside a `run()` call                                                                          |
+| Method      | Signature           | Description                                                                                                                           |
+| ----------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `run`       | `(store, callback)` | Opens an ALS scope. Any log inside `callback` carries `store` fields. **A nested `run()` REPLACES the enclosing context** — see below |
+| `runMerged` | `(store, callback)` | Opens a scope that EXTENDS the enclosing one: outer fields are carried in, `store` overrides them key by key                          |
+| `set`       | `(key, value)`      | Adds/updates a field in the current scope. Throws if called outside `run()`. Fields set here reach every subsequent log in the scope  |
+| `getStore`  | `()`                | Returns current scope or `undefined` outside a `run()` call                                                                           |
+
+> [!IMPORTANT]
+> **A nested `run()` discards the enclosing context.** The inner scope starts from its own `store`
+> alone, so a field an outer scope had set — a `tenantId` resolved at the edge, say — is absent for
+> the whole inner scope. Nothing throws; `get()` simply returns `undefined` and the field is missing
+> from every entry the callback emits, which is the kind of thing found by losing a field in
+> production. Use `runMerged()` when the inner scope should extend the outer one.
+>
+> Replacement stays the default because the opposite leaks in a worse direction: a background job
+> started inside a request scope would silently inherit the caller's `userId` and attribute its
+> entries to a user who never triggered it. A missing field is visibly missing; an inherited one is
+> wrong while looking right.
 
 ### Decorators
 
