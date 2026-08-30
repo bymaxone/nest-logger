@@ -42,8 +42,12 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   or a filter catching anything. It was written correctly and mounted too late.
 
   One line in and one line out now cover the parser rejection, the unmatched-route 404, the guard
-  rejection and the aborted connection alike. Call it after `NestFactory.create()` and **before**
-  `listen()`; calling it after still mounts, but behind the parser, which forfeits the entire point.
+  rejection and the aborted connection alike. Call it after `NestFactory.create()` and **before the
+  application initializes** — that is, before `app.init()`. `listen()` only triggers `init()` when it
+  has not already run, so "before `listen()`" is the same deadline for the usual bootstrap and the
+  WRONG one for a serverless entry point or an integration test that does `await app.init()` and
+  wires up afterwards: that mount lands behind the parser and logs nothing extra, with no error to
+  say so.
 
 - **`HttpAccessLogMiddleware` is exported.** Without the class, an early mount was impossible to
   express — a consumer with its own bootstrap sequence had no way to reach it. It is the same class
@@ -104,6 +108,11 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   `logContext.set('requestId', rawHeader)`; a flag would still read true afterwards and the second
   mount would echo that replacement. Reading the id back from the request means what reaches the
   header is what this library validated, whatever the store holds by then.
+
+  The adopt path also **restores** that id to the active context, because the emitted entry reads
+  `requestId` from the store. Echoing the validated id while leaving a replacement in the store
+  would produce the same header/entry split this change exists to remove, with the log line carrying
+  the value that never passed validation.
 
 - **A client-supplied `x-tenant-id` could displace a tenant the application had already resolved.**
   `runMerged` lets the request's context override the enclosing store key by key, and the header was

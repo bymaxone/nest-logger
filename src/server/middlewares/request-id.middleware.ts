@@ -192,6 +192,15 @@ export class RequestIdMiddleware implements NestMiddleware {
    */
   private adoptExistingScope(requestId: string, req: LoggableRequest, res: LoggableResponse): void {
     res.setHeader(REQUEST_ID_HEADER, requestId)
+    // Put the validated id BACK into the store, because the emitted entry reads
+    // `requestId` from there. Middleware between the two mounts can have replaced
+    // it — `set()` takes `unknown` — and echoing the validated id while leaving
+    // the replacement in the store produces exactly the split this whole change
+    // exists to remove: the response header saying one thing and every subsequent
+    // log line saying another, with the log line carrying a value that never
+    // passed validation. `requestId` is this library's field to own, which is the
+    // same reason an enclosing scope's id does not win above.
+    this.logContext.set('requestId', requestId)
     if (this.logContext.get('tenantId') === undefined) {
       const tenantId = this.resolveTenantId(req)
       if (tenantId !== undefined) {

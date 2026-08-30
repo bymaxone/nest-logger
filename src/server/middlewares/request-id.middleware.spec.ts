@@ -540,7 +540,11 @@ describe('RequestIdMiddleware mounted a second time', () => {
       // Consumer middleware, running between the two mounts.
       logContext.set('requestId', 'evil\r\nInjected: 1')
       middleware.use(req, res, () => {
-        expect(true).toBe(true)
+        // The STORE, not just the header. The emitted entry reads `requestId`
+        // from here, so asserting only the header would leave every subsequent
+        // log line carrying the injected value while the response said otherwise
+        // — the same header/entry split this change exists to remove.
+        expect(logContext.get('requestId')).toBe('validated-1')
       })
     })
 
