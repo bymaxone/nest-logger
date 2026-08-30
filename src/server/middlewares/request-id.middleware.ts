@@ -115,11 +115,19 @@ export class RequestIdMiddleware implements NestMiddleware {
    * are carried in rather than discarded, and the request still gets its own
    * store rather than writing into a shared one.
    *
-   * The one shape this cannot tell apart is an enclosing scope that already
-   * carries a `requestId` and outlives a single request — a correlation id set
-   * outside any request, which the second mount would then adopt for every
-   * request. Set `requestId` per request, which is what this middleware and
-   * `LogContextService` both assume.
+   * An enclosing scope's `requestId` is never adopted and never echoed: adoption
+   * reads a value this middleware recorded on the REQUEST, which a scope opened
+   * elsewhere does not have. What the two generation modes do with one, measured
+   * on two requests sharing a long-lived enclosing scope:
+   *
+   *   - `shouldGenerateRequestId: true` (default) — each request mints its own
+   *     id, the two requests differ, and the enclosing value reaches neither the
+   *     header nor the entries.
+   *   - `shouldGenerateRequestId: false` with no inbound header — nothing is
+   *     minted, so `runMerged` inherits the enclosing `requestId` and every
+   *     request inside that scope logs under it. No header is exposed. That is
+   *     the consumer's own scope being inherited, not correlation being reused,
+   *     and it is the configuration that says the gateway owns the id.
    *
    * @param req - The incoming request (Express satisfies the contract).
    * @param res - The outgoing response (Express satisfies the contract).

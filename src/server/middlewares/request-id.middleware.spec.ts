@@ -589,4 +589,53 @@ describe('RequestIdMiddleware mounted a second time', () => {
       })
     })
   })
+  it(/*
+   * Pins the documented behaviour of the DEFAULT generation mode under a
+   * long-lived enclosing scope, because the JSDoc used to warn about the
+   * opposite. Adoption reads a value recorded on the REQUEST, which a scope
+   * opened elsewhere does not have — so the enclosing id reaches neither the
+   * header nor the entries, and two requests differ.
+   */
+  'never adopts an enclosing scope id when generation is on', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res, setHeader } = createResponse()
+    const seen: (string | undefined)[] = []
+
+    logContext.run({ requestId: 'LONG-LIVED' }, () => {
+      for (let i = 0; i < 2; i += 1) {
+        const req = createRequest()
+        middleware.use(req, res, () => {
+          middleware.use(req, res, () => {
+            seen.push(logContext.get<string>('requestId'))
+          })
+        })
+      }
+    })
+
+    expect(seen[0]).not.toBe('LONG-LIVED')
+    expect(seen[0]).not.toBe(seen[1])
+    expect(setHeader.mock.calls.map(([, value]) => value)).not.toContain('LONG-LIVED')
+  })
+
+  it(/*
+   * The other generation mode, and the one where an enclosing id DOES reach the
+   * entries — by `runMerged` inheriting the consumer's own scope, not by
+   * adoption. Nothing is minted and no header is exposed, which is what
+   * `shouldGenerateRequestId: false` means: the gateway owns the id.
+   */
+  'inherits an enclosing scope id when generation is off, without echoing it', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions(false))
+    const { res, setHeader } = createResponse()
+    const seen: (string | undefined)[] = []
+
+    logContext.run({ requestId: 'LONG-LIVED' }, () => {
+      const req = createRequest()
+      middleware.use(req, res, () => {
+        seen.push(logContext.get<string>('requestId'))
+      })
+    })
+
+    expect(seen).toEqual(['LONG-LIVED'])
+    expect(setHeader).not.toHaveBeenCalled()
+  })
 })
