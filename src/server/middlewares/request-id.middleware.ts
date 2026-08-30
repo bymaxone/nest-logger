@@ -23,7 +23,12 @@ import type {
 import type { LogContext } from '../interfaces/log-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { LogContextService } from '../services/log-context.service'
-import { markOwnRequestId, readOwnRequestId } from '../utils/http-log-state.util'
+import {
+  isCorrelationOpened,
+  markCorrelationOpened,
+  markOwnRequestId,
+  readOwnRequestId
+} from '../utils/http-log-state.util'
 
 /** Response/request header carrying the correlation id. */
 const REQUEST_ID_HEADER = 'x-request-id'
@@ -53,24 +58,26 @@ const MAX_CORRELATION_ID_LENGTH = 256
 const CORRELATION_ID_CHARSET = /^[A-Za-z0-9._:/+=-]+$/
 
 /**
- * The authenticated identity, which a request scope never inherits.
+ * The only fields a request scope inherits from an enclosing scope.
  *
- * `userId` is resolved by a guard that runs AFTER this middleware, so an
- * enclosing scope cannot hold a correct value for the request. Inheriting one
- * attributes an anonymous request, or another user's request, to whoever the
- * outer scope names. Measured before this was excluded: an anonymous request
- * inside a scope holding `userId: 'admin-u1'` logged under `admin-u1`, because
- * the mixin copies the store onto every entry and `PinoLoggerService`
- * deliberately does not write `userId: undefined` when the argument is omitted.
+ * An ALLOWLIST, and the choice is the whole safety property. `LogContext`
+ * explicitly permits arbitrary consumer keys, so no list of forbidden names can
+ * ever be complete: an application-defined `accountId`, `sessionId` or any other
+ * identity the library does not know by name leaks exactly the way `userId` did.
+ * Measured on the denylist version — a request opened inside a scope holding
+ * `{ accountId, sessionId }` inherited both, attributing an unrelated request to
+ * another account.
  *
- * This is the leak `run()` replaces by default to avoid, and inheriting has to
- * carry the same rule or it reopens it. A missing field is visibly missing; an
- * inherited identity is wrong while looking right.
+ * These two are the library's OWN correlation fields, and they are the ones an
+ * enclosing scope can hold a correct value for. Everything else is per-request
+ * and has to be set inside the request.
  *
- * The trace fields are excluded too, but they are NOT listed here: their names
- * are configurable, so the set is built per instance from the resolved options.
+ * Dropping a field a consumer set upstream is not a regression: before this
+ * release `run()` discarded ALL of it, so this is strictly more than a consumer
+ * had. And it fails in the safe direction — a missing field is visibly missing,
+ * where an inherited identity is wrong while looking right.
  */
-const NON_INHERITABLE_IDENTITY_KEY = 'userId'
+const INHERITABLE_CONTEXT_KEYS: readonly string[] = ['requestId', 'tenantId']
 
 /**
  * Whether a raw header value is an acceptable correlation/tenant id: a non-empty
@@ -110,17 +117,6 @@ export class RequestIdMiddleware implements NestMiddleware {
   private readonly tenantIdHeader: string
   /** Whether to mint a `requestId` when the inbound header is absent. */
   private readonly shouldGenerateRequestId: boolean
-  /**
-   * Fields an enclosing scope may not lend to a request scope: the authenticated
-   * identity, plus every field name the trace mixin emits under the resolved
-   * OTel configuration.
-   *
-   * The trace fields matter because the mixin overwrites them from the active
-   * span, but only when there IS one — so a stale value inherited here survives
-   * into every entry of a request with no span and points at another request's
-   * trace.
-   */
-  private readonly nonInheritableKeys: readonly string[]
 
   /**
    * @param logContext - The AsyncLocalStorage-backed context service. Injected by
@@ -135,21 +131,6 @@ export class RequestIdMiddleware implements NestMiddleware {
   ) {
     this.tenantIdHeader = options.http.tenantIdHeader
     this.shouldGenerateRequestId = options.http.shouldGenerateRequestId
-    // Built from the RESOLVED option names rather than hard-coded, because the
-    // trace fields are configurable: `otel.fieldFormat: 'snake_case'` emits
-    // `trace_id` / `span_id` / `trace_flags`, and each name can be overridden
-    // individually. A literal `['traceId', 'spanId']` would exclude the fields
-    // this library is not emitting under that configuration while inheriting the
-    // ones it is — and it missed `traceFlags` even on the defaults.
-    //
-    // The rule is "whatever this library emits as trace correlation", which is
-    // exactly what these three options name.
-    this.nonInheritableKeys = [
-      NON_INHERITABLE_IDENTITY_KEY,
-      options.otel.traceIdField,
-      options.otel.spanIdField,
-      options.otel.traceFlagsField
-    ]
   }
 
   /**
@@ -158,8 +139,8 @@ export class RequestIdMiddleware implements NestMiddleware {
    *
    * Idempotent: mounting this middleware twice on the same request mints one id,
    * not two. The request gets its OWN store, started from the enclosing scope's
-   * fields minus the authenticated identity and the trace fields, which only a
-   * downstream guard or an active span can establish.
+   * correlation fields — see {@link INHERITABLE_CONTEXT_KEYS} — and nothing
+   * else, because no other field can be known to belong to this request.
    *
    * An enclosing scope's `requestId` is never adopted and never echoed: adoption
    * reads a value this middleware recorded on the REQUEST, which a scope opened
@@ -180,28 +161,32 @@ export class RequestIdMiddleware implements NestMiddleware {
    * @param next - The next handler in the chain.
    */
   use(req: LoggableRequest, res: LoggableResponse, next: NextHandler): void {
-    // Adopt only an id THIS middleware established, read back from the REQUEST
-    // rather than from the store. A "we opened the scope" flag is not enough:
-    // `set()` takes `unknown`, so middleware running between two mounts can
-    // replace `requestId` in the store with a raw user-controlled header, and the
-    // flag would still read true. What gets echoed must be what was validated.
-    const ownRequestId = readOwnRequestId(req)
-    // A correlation id this library already established, so this is a second
-    // mount on the same request — `applyAccessLog(app)` in `main.ts` alongside
-    // `applyRequestIdMiddleware(consumer)` is the wiring that produces it, and a
-    // reasonable one to hold while migrating between the two.
+    // Two marks, because they answer two different questions and either can be
+    // present without the other.
     //
-    // Adopt it rather than minting again. A fresh mint here would put a second,
-    // different id on a request that already has one, leaving the response header
-    // and the log entries disagreeing about the request's identity — each answer
-    // internally consistent, which is why the defect survived: nothing looks
-    // broken from either side alone.
-    if (ownRequestId !== undefined) {
-      this.adoptExistingScope(ownRequestId, req, res)
+    // `isCorrelationOpened` says a scope for this request already exists, so this
+    // is a SECOND mount and must not open another. `readOwnRequestId` says which
+    // id this library validated, which is the only value that may be echoed onto
+    // the response — read from the REQUEST rather than the store, because `set()`
+    // takes `unknown` and middleware between the mounts can replace `requestId`
+    // there with a raw user-controlled header.
+    //
+    // With `shouldGenerateRequestId: false` and no inbound header the first is
+    // true while the second is undefined. Collapsing them into one mark treated
+    // that as a fresh request and opened a second scope, which starts from the
+    // inherited fields — so a `userId` a guard had established between the mounts
+    // was DISCARDED. Measured: the authenticated identity was gone from every log
+    // the request produced after that point.
+    if (isCorrelationOpened(req)) {
+      const ownRequestId = readOwnRequestId(req)
+      if (ownRequestId !== undefined) {
+        this.adoptExistingScope(ownRequestId, req, res)
+      }
       next()
       return
     }
 
+    markCorrelationOpened(req)
     const context = this.inheritableContext()
     const requestId = this.resolveRequestId(req)
     if (requestId !== undefined) {
@@ -209,12 +194,12 @@ export class RequestIdMiddleware implements NestMiddleware {
       context.requestId = requestId
       markOwnRequestId(req, requestId)
     }
-    // The header is read only when the enclosing scope has NO tenant. The
-    // inherited context is the outer store's, so copying the
-    // header unconditionally would let a client replace a tenant the application
-    // resolved at the edge — from an auth claim — on every entry the request
-    // produces. The adopt path already gave the resolved tenant precedence; this
-    // is the same rule on the path that opens the scope.
+    // The header is read only when the inherited context carries NO tenant, which
+    // is the enclosing scope's. Copying the header unconditionally would let a
+    // client replace a tenant the application resolved at the edge — from an auth
+    // claim — on every entry the request produces. The adopt path already gave
+    // the resolved tenant precedence; this is the same rule on the path that
+    // opens the scope.
     //
     // `requestId` is deliberately NOT symmetric: correlation is this library's to
     // own and it mints a validated one, while a tenant is an assertion about who
@@ -239,10 +224,9 @@ export class RequestIdMiddleware implements NestMiddleware {
   /**
    * The enclosing scope's fields that a request scope may start from.
    *
-   * Everything the caller had set is carried in — a tenant resolved at the edge,
-   * a field of the consumer's own — except {@link nonInheritableKeys}.
-   * Plain `run()` would discard all of it and a plain merge would carry the
-   * identity too; this is the middle a request scope actually needs.
+   * Plain `run()` would discard everything the caller had set and a plain merge
+   * would carry identity across requests; {@link INHERITABLE_CONTEXT_KEYS} is
+   * the middle a request scope actually needs.
    *
    * @returns A fresh bag, never the enclosing store itself, so writes inside the
    *   request never reach the scope that opened it.
@@ -250,10 +234,16 @@ export class RequestIdMiddleware implements NestMiddleware {
   private inheritableContext(): LogContext {
     // Spreading a possibly-absent store covers the no-enclosing-scope case
     // without a branch: `{ ...undefined }` is `{}`.
-    const inherited: LogContext = { ...this.logContext.getStore() }
-    for (const key of this.nonInheritableKeys) {
-      // `Reflect` keeps the dynamic delete off the object-injection sink list.
-      Reflect.deleteProperty(inherited, key)
+    const store: LogContext = { ...this.logContext.getStore() }
+    const inherited: LogContext = {}
+    for (const key of INHERITABLE_CONTEXT_KEYS) {
+      // `Reflect` keeps the dynamic read/write off the object-injection sink list.
+      const value: unknown = Reflect.get(store, key)
+      // Absent stays absent: no key is ever written holding `undefined` to mean
+      // "not set", which is what the emitted-record contract promises.
+      if (value !== undefined) {
+        Reflect.set(inherited, key, value)
+      }
     }
     return inherited
   }

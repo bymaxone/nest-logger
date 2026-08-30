@@ -235,24 +235,10 @@ describe('RequestIdMiddleware with shouldGenerateRequestId disabled', () => {
   })
 })
 
-/**
- * Options double carrying only what the middleware reads.
- *
- * `otel` is required as well as `http`: the non-inheritable set is built from the
- * RESOLVED trace field names, so the middleware reads them in its constructor.
- */
-function createOptions(
-  shouldGenerateRequestId = true,
-  otel: Partial<ResolvedBymaxLoggerModuleOptions['otel']> = {}
-): ResolvedBymaxLoggerModuleOptions {
+/** Options double carrying only what the middleware reads. */
+function createOptions(shouldGenerateRequestId = true): ResolvedBymaxLoggerModuleOptions {
   return {
-    http: { tenantIdHeader: 'x-tenant-id', shouldGenerateRequestId },
-    otel: {
-      traceIdField: 'traceId',
-      spanIdField: 'spanId',
-      traceFlagsField: 'traceFlags',
-      ...otel
-    }
+    http: { tenantIdHeader: 'x-tenant-id', shouldGenerateRequestId }
   } as unknown as ResolvedBymaxLoggerModuleOptions
 }
 
@@ -452,17 +438,17 @@ describe('RequestIdMiddleware mounted a second time', () => {
   })
 
   it(/*
-   * The enclosing scope's own fields must still reach the request's entries —
-   * isolation must not be bought by dropping what the caller had set, which is
-   * the trade `run()` would have made.
+   * The library's OWN correlation fields still reach the request — isolation must
+   * not be bought by discarding the tenant a consumer resolved at the edge, which
+   * is the trade plain `run()` makes.
    */
-  'carries the enclosing fields into each isolated request scope', () => {
+  'carries the enclosing tenant into each isolated request scope', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
 
-    logContext.run({ service: 'api' }, () => {
+    logContext.run({ tenantId: 'acme' }, () => {
       middleware.use(createRequest(), res, () => {
-        expect(logContext.get('service')).toBe('api')
+        expect(logContext.get('tenantId')).toBe('acme')
         expect(logContext.get('requestId')).toBeDefined()
       })
     })
@@ -599,8 +585,8 @@ describe('RequestIdMiddleware mounted a second time', () => {
     logContext.run({ region: 'eu-west-1' }, () => {
       middleware.use(createRequest({ 'x-tenant-id': 'acme' }), res, () => {
         expect(logContext.get('tenantId')).toBe('acme')
-        // An ordinary consumer field IS inherited; identity is the exception.
-        expect(logContext.get('region')).toBe('eu-west-1')
+        // An arbitrary consumer field is NOT inherited — see the allowlist test.
+        expect(logContext.get('region')).toBeUndefined()
       })
     })
   })
@@ -658,11 +644,9 @@ describe('RequestIdMiddleware mounted a second time', () => {
    *
    * `userId` is resolved by a guard that runs AFTER this middleware, so an
    * enclosing scope cannot hold a correct value for the request. Measured before
-   * this guard existed: an anonymous request inside a scope holding
+   * the allowlist: an anonymous request inside a scope holding
    * `userId: 'admin-u1'` was logged under `admin-u1`, because the mixin copies
    * the store onto every entry and omitting the argument does not erase it.
-   * This is the exact leak `run()` replaces by default to avoid, and inheriting
-   * reopened it.
    */
   'does not inherit userId from an enclosing scope', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
@@ -670,110 +654,95 @@ describe('RequestIdMiddleware mounted a second time', () => {
 
     logContext.run({ userId: 'admin-u1', tenantId: 'acme' }, () => {
       middleware.use(createRequest(), res, () => {
-        expect(logContext.get('userId')).toBeUndefined()
-        // The field is absent, not present-and-undefined: the contract is that
-        // no key is ever written holding `undefined` to mean "not set".
+        // Absent, not present-and-undefined: no key is ever written holding
+        // `undefined` to mean "not set".
         expect(Object.keys(logContext.getStore() ?? {})).not.toContain('userId')
-        // The tenant still comes through — the rule is narrow, not a blanket ban.
         expect(logContext.get('tenantId')).toBe('acme')
       })
     })
   })
 
   it(/*
-   * The same rule for trace correlation. The mixin overwrites `traceId` from the
-   * active span, but only when there IS one — so a stale value inherited here
-   * survives into every entry of a request with no span and points at another
-   * request's trace.
+   * SECURITY — and the reason this is an ALLOWLIST rather than a list of
+   * forbidden names. `LogContext` explicitly permits arbitrary consumer keys, so
+   * no denylist can be complete: an application-defined `accountId` or
+   * `sessionId` misattributes a request exactly the way `userId` did. Measured on
+   * the denylist version, a request inside a scope holding both inherited both.
    */
-  'does not inherit traceId or spanId from an enclosing scope', () => {
+  'does not inherit an arbitrary consumer identity field', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
 
-    logContext.run({ traceId: 'stale-trace', spanId: 'stale-span' }, () => {
+    logContext.run({ accountId: 'acct-of-another-request', sessionId: 's-1' }, () => {
       middleware.use(createRequest(), res, () => {
-        const keys = Object.keys(logContext.getStore() ?? {})
-        expect(keys).not.toContain('traceId')
-        expect(keys).not.toContain('spanId')
+        expect(logContext.get('accountId')).toBeUndefined()
+        expect(logContext.get('sessionId')).toBeUndefined()
       })
     })
   })
 
   it(/*
-   * The enclosing scope must be left exactly as it was — dropping the identity
-   * happens on the request's own copy, never by deleting from the caller's store.
+   * Trace correlation is per-request and is never inherited, whatever the fields
+   * are NAMED. The mixin overwrites them from the active span but only when there
+   * IS one, so a stale value would survive into every entry of a request without
+   * a span. The allowlist covers every naming — camelCase defaults, the
+   * `snake_case` wire shape, and any individual override — without the exclusion
+   * having to track the option names.
    */
-  'leaves the enclosing scope intact when dropping identity', () => {
+  'does not inherit trace fields under any naming', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
 
-    logContext.run({ userId: 'admin-u1', traceId: 't', spanId: 's' }, () => {
+    logContext.run(
+      {
+        traceId: 'stale',
+        spanId: 'stale',
+        traceFlags: '01',
+        trace_id: 'stale',
+        span_id: 'stale',
+        trace_flags: '01',
+        'correlation.trace': 'stale'
+      },
+      () => {
+        middleware.use(createRequest(), res, () => {
+          expect(Object.keys(logContext.getStore() ?? {}).sort()).toEqual(['requestId'])
+        })
+      }
+    )
+  })
+
+  it(/*
+   * The enclosing scope must be left exactly as it was — the request starts from
+   * a copy, never by deleting from the caller's store.
+   */
+  'leaves the enclosing scope intact', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ userId: 'admin-u1', accountId: 'a-1' }, () => {
       middleware.use(createRequest(), res, () => undefined)
-      expect(logContext.getStore()).toEqual({ userId: 'admin-u1', traceId: 't', spanId: 's' })
-    })
-  })
-  it(/*
-   * `traceFlags` was missing from the exclusion even on the DEFAULT options — the
-   * first version listed `traceId` and `spanId` literally and forgot the third
-   * field the mixin emits. A stale flags value inherited here survives into every
-   * entry of a request with no active span, exactly like the other two.
-   */
-  'does not inherit traceFlags from an enclosing scope', () => {
-    const middleware = new RequestIdMiddleware(logContext, createOptions())
-    const { res } = createResponse()
-
-    logContext.run({ traceFlags: '01' }, () => {
-      middleware.use(createRequest(), res, () => {
-        expect(Object.keys(logContext.getStore() ?? {})).not.toContain('traceFlags')
-      })
+      expect(logContext.getStore()).toEqual({ userId: 'admin-u1', accountId: 'a-1' })
     })
   })
 
   it(/*
-   * The trace field NAMES are configurable, so the exclusion cannot be literal.
-   * Under `fieldFormat: 'snake_case'` the mixin emits `trace_id` / `span_id` /
-   * `trace_flags` — the OTel Logs Data Model wire shape — and a hard-coded
-   * camelCase list would inherit exactly the fields the library is emitting while
-   * excluding ones it is not.
+   * REGRESSION — a second mount must not open another scope even when the first
+   * established NO id. With `shouldGenerateRequestId: false` and no inbound
+   * header there is nothing to record as the validated id, and collapsing "a
+   * scope exists" into "an id exists" made the second mount treat the request as
+   * fresh: it opened another scope from the inherited fields, DISCARDING the
+   * `userId` a guard had set between the mounts. Measured: the authenticated
+   * identity was gone from every log after that point.
    */
-  'does not inherit the snake_case trace fields when they are configured', () => {
-    const middleware = new RequestIdMiddleware(
-      logContext,
-      createOptions(true, {
-        traceIdField: 'trace_id',
-        spanIdField: 'span_id',
-        traceFlagsField: 'trace_flags'
-      })
-    )
+  'keeps an identity set between mounts when no id was established', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions(false))
     const { res } = createResponse()
+    const req = createRequest()
 
-    logContext.run({ trace_id: 'stale', span_id: 'stale', trace_flags: '01' }, () => {
-      middleware.use(createRequest(), res, () => {
-        const keys = Object.keys(logContext.getStore() ?? {})
-        expect(keys).not.toContain('trace_id')
-        expect(keys).not.toContain('span_id')
-        expect(keys).not.toContain('trace_flags')
-      })
-    })
-  })
-
-  it(/*
-   * An individually overridden field name is honoured too, and a field the
-   * library is NOT emitting under that configuration stays an ordinary consumer
-   * field — the rule is "whatever this library emits as trace correlation",
-   * neither wider nor narrower.
-   */
-  'excludes a custom trace field name while inheriting the unused default', () => {
-    const middleware = new RequestIdMiddleware(
-      logContext,
-      createOptions(true, { traceIdField: 'correlation.trace' })
-    )
-    const { res } = createResponse()
-
-    logContext.run({ 'correlation.trace': 'stale', traceId: 'a-consumer-field' }, () => {
-      middleware.use(createRequest(), res, () => {
-        expect(logContext.get('correlation.trace')).toBeUndefined()
-        expect(logContext.get('traceId')).toBe('a-consumer-field')
+    middleware.use(req, res, () => {
+      logContext.set('userId', 'authenticated-u1')
+      middleware.use(req, res, () => {
+        expect(logContext.get('userId')).toBe('authenticated-u1')
       })
     })
   })

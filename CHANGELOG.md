@@ -80,66 +80,25 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   tenant resolved at the edge — had it **discarded** for the whole request, because `run()` replaces
   the context.
 
-  Inheriting carries one rule with it, and getting this wrong was caught in review: the
-  authenticated identity and the trace fields are NOT inherited. They are established downstream of this middleware, per
-  request, so an enclosing scope cannot hold a correct value for any of them. Measured on the
-  version without the exclusion: an anonymous request inside a scope holding `userId: 'admin-u1'`
-  was logged under `admin-u1`, because the mixin copies the store onto every entry and omitting the
-  argument does not erase it. A stale `traceId` leaked the same way into every entry of a request
-  with no active span. That is precisely the leak `run()` replaces by default to avoid, so
-  inheriting had to carry the same rule or it reopened it. Everything else — a tenant, a field of
-  the consumer's own — is carried in.
+  What it inherits is an ALLOWLIST — `requestId` and `tenantId`, the library's own correlation
+  fields — and that shape took three review rounds to reach. A denylist cannot be made safe here:
+  `LogContext` explicitly permits arbitrary consumer keys, so an application-defined `accountId` or
+  `sessionId` misattributes a request exactly the way `userId` does, and no list of forbidden names
+  is ever complete. Measured on the denylist version: a request opened inside a scope holding
+  `{ accountId, sessionId }` inherited both.
 
-  The trace half of that set is built from the RESOLVED option names, not hard-coded. `traceIdField`,
-  `spanIdField` and `traceFlagsField` are configurable and `otel.fieldFormat: 'snake_case'` renames
-  all three to the OTel wire shape, so a literal `['traceId', 'spanId']` would inherit exactly the
-  fields the library is emitting under that configuration while excluding ones it is not — and it
-  missed `traceFlags` even on the defaults. The rule is "whatever this library emits as trace
-  correlation", which is what those three options name.
+  The identity cases the denylist did catch are worth recording, because they are what the allowlist
+  now covers by construction. `userId` is resolved by a guard that runs after this middleware, and
+  the mixin copies the store onto every entry while `PinoLoggerService` deliberately does not write
+  `userId: undefined` when the argument is omitted — so an anonymous request inside a scope holding
+  `userId: 'admin-u1'` was logged under `admin-u1`. Trace fields leak the same way, in every naming:
+  the mixin overwrites them from the active span but only when there IS one, and the field names are
+  configurable (`otel.fieldFormat: 'snake_case'` renames all three), so a literal exclusion was
+  wrong in both directions at once.
 
-  A first attempt at this enriched the enclosing scope in place instead of opening one, and was
-  caught in review before release: with the server created inside a `run()` scope — every request
-  handler then inherits that store — two sequential requests were measured sharing ONE `requestId`,
-  and the shared store kept it after both finished. Correlation that silently merges two requests is
-  worse than none, because it is trusted. Each request now gets its own store while still
-  inheriting the enclosing fields; the regression is pinned by a test.
-
-  This is also what makes wiring both helpers safe, which is the state a consumer lands on
-  mid-migration.
-
-  **The adopt path is gated on a per-request mark, not on the store**, and that distinction is a
-  security boundary rather than bookkeeping. `LogContextService.set()` takes `unknown`, so consumer
-  middleware can place a raw user-controlled header value under `requestId`. Adopting whatever the
-  store holds would echo it back on the response header verbatim: measured on Node 24,
-  `res.setHeader` accepts a 5000-character value without complaint and throws `ERR_INVALID_CHAR` on
-  one carrying CR/LF — which would break the request before it reached the application. An id this
-  middleware established has been through `isAcceptableHeaderValue`; one it merely found has not.
-  Raised by Codex against the first version of this change.
-
-  A consumer's own `requestId` in an enclosing scope is therefore not adopted: the request gets a
-  validated id of its own, which is what `run()` did before this release anyway. To have the library
-  honour an upstream id, set `shouldGenerateRequestId: false` and let it carry through the merge.
-
-  The mark holds the validated **id**, not a "we opened the scope" flag, and the difference is the
-  whole protection. Middleware running BETWEEN two mounts can call
-  `logContext.set('requestId', rawHeader)`; a flag would still read true afterwards and the second
-  mount would echo that replacement. Reading the id back from the request means what reaches the
-  header is what this library validated, whatever the store holds by then.
-
-  The adopt path also **restores** that id to the active context, because the emitted entry reads
-  `requestId` from the store. Echoing the validated id while leaving a replacement in the store
-  would produce the same header/entry split this change exists to remove, with the log line carrying
-  the value that never passed validation.
-
-- **A client-supplied `x-tenant-id` could displace a tenant the application had already resolved.**
-  The request's context overrides the inherited fields key by key, and the header was
-  copied in unconditionally — so a tenant resolved at the edge, from an auth claim, was replaced by
-  whatever the client sent, on every entry the request produced. The header is now read only when
-  the enclosing scope has no tenant, which is the rule the adopt path already followed.
-
-  `requestId` is deliberately not symmetric with this: correlation is the library's to own and it
-  mints a validated id, while a tenant is an assertion about who the request belongs to and is
-  never invented or overridden here.
+  Dropping a field a consumer set upstream is not a regression — before this release `run()`
+  discarded all of it — and it fails in the safe direction: a missing field is visibly missing,
+  where an inherited identity is wrong while looking right.
 
 - **A `g` or `y` flag on an `excludePaths` pattern excluded the path only every other time.**
   `RegExp.prototype.test` on such a pattern advances its `lastIndex` and resumes from it, so the

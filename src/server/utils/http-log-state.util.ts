@@ -30,6 +30,8 @@ const RECORDER_ACTIVE = Symbol('bymax-one/nest-logger:recorder')
 const RECORDED_ERROR = Symbol('bymax-one/nest-logger:error')
 /** Holds the correlation id `RequestIdMiddleware` itself minted or accepted. */
 const OWN_REQUEST_ID = Symbol('bymax-one/nest-logger:request-id')
+/** Marks a request whose correlation scope `RequestIdMiddleware` itself opened. */
+const CORRELATION_OPENED = Symbol('bymax-one/nest-logger:correlation')
 
 /** A thrown value captured downstream, wrapped so `undefined` stays meaningful. */
 export interface RecordedError {
@@ -60,6 +62,32 @@ export function markRecorderActive(req: object): void {
  */
 export function isRecorderActive(req: object): boolean {
   return Reflect.get(req, RECORDER_ACTIVE) === true
+}
+
+/**
+ * Record that `RequestIdMiddleware` opened this request's correlation scope.
+ *
+ * Tracked separately from {@link markOwnRequestId} because the two answer
+ * different questions and one of them can be absent. With
+ * `shouldGenerateRequestId: false` and no inbound header there is no id to
+ * record, yet the scope was still opened — and a second mount that mistakes that
+ * for a fresh request opens ANOTHER scope, which starts from the inherited
+ * fields and so discards whatever a guard between the mounts had established.
+ *
+ * @param req - The request object to mark.
+ */
+export function markCorrelationOpened(req: object): void {
+  Reflect.set(req, CORRELATION_OPENED, true)
+}
+
+/**
+ * Whether `RequestIdMiddleware` already opened this request's correlation scope.
+ *
+ * @param req - The request object to inspect.
+ * @returns `true` when a second mount must not open another scope.
+ */
+export function isCorrelationOpened(req: object): boolean {
+  return Reflect.get(req, CORRELATION_OPENED) === true
 }
 
 /**
