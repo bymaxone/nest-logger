@@ -80,8 +80,8 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   tenant resolved at the edge — had it **discarded** for the whole request, because `run()` replaces
   the context.
 
-  Inheriting carries one rule with it, and getting this wrong was caught in review: `userId`,
-  `traceId` and `spanId` are NOT inherited. They are established downstream of this middleware, per
+  Inheriting carries one rule with it, and getting this wrong was caught in review: the
+  authenticated identity and the trace fields are NOT inherited. They are established downstream of this middleware, per
   request, so an enclosing scope cannot hold a correct value for any of them. Measured on the
   version without the exclusion: an anonymous request inside a scope holding `userId: 'admin-u1'`
   was logged under `admin-u1`, because the mixin copies the store onto every entry and omitting the
@@ -89,6 +89,13 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   with no active span. That is precisely the leak `run()` replaces by default to avoid, so
   inheriting had to carry the same rule or it reopened it. Everything else — a tenant, a field of
   the consumer's own — is carried in.
+
+  The trace half of that set is built from the RESOLVED option names, not hard-coded. `traceIdField`,
+  `spanIdField` and `traceFlagsField` are configurable and `otel.fieldFormat: 'snake_case'` renames
+  all three to the OTel wire shape, so a literal `['traceId', 'spanId']` would inherit exactly the
+  fields the library is emitting under that configuration while excluding ones it is not — and it
+  missed `traceFlags` even on the defaults. The rule is "whatever this library emits as trace
+  correlation", which is what those three options name.
 
   A first attempt at this enriched the enclosing scope in place instead of opening one, and was
   caught in review before release: with the server created inside a `run()` scope — every request

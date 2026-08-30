@@ -53,29 +53,24 @@ const MAX_CORRELATION_ID_LENGTH = 256
 const CORRELATION_ID_CHARSET = /^[A-Za-z0-9._:/+=-]+$/
 
 /**
- * Context fields an enclosing scope may NOT lend to a request scope.
+ * The authenticated identity, which a request scope never inherits.
  *
- * Everything else is inherited, which is the point: a consumer that resolved a
- * tenant at the edge, or set a field of its own, keeps it for the request. These
- * three are different in kind — they are established DOWNSTREAM of this
- * middleware, per request, and an enclosing scope cannot hold a correct value
- * for any of them.
- *
- *   - `userId` is an authenticated identity, resolved by a guard that has not
- *     run yet. Inheriting one attributes an anonymous request, or another user's
- *     request, to whoever the outer scope names. Measured before this guard
- *     existed: an anonymous request inside a scope holding `userId: 'admin-u1'`
- *     logged under `admin-u1`.
- *   - `traceId` / `spanId` are per-request trace correlation. The mixin
- *     overwrites them from the active span, but only when there IS one, so a
- *     stale value inherited here survives into every entry of a request that has
- *     no span and points at somebody else's trace.
+ * `userId` is resolved by a guard that runs AFTER this middleware, so an
+ * enclosing scope cannot hold a correct value for the request. Inheriting one
+ * attributes an anonymous request, or another user's request, to whoever the
+ * outer scope names. Measured before this was excluded: an anonymous request
+ * inside a scope holding `userId: 'admin-u1'` logged under `admin-u1`, because
+ * the mixin copies the store onto every entry and `PinoLoggerService`
+ * deliberately does not write `userId: undefined` when the argument is omitted.
  *
  * This is the leak `run()` replaces by default to avoid, and inheriting has to
  * carry the same rule or it reopens it. A missing field is visibly missing; an
  * inherited identity is wrong while looking right.
+ *
+ * The trace fields are excluded too, but they are NOT listed here: their names
+ * are configurable, so the set is built per instance from the resolved options.
  */
-const NON_INHERITABLE_CONTEXT_KEYS: readonly string[] = ['userId', 'traceId', 'spanId']
+const NON_INHERITABLE_IDENTITY_KEY = 'userId'
 
 /**
  * Whether a raw header value is an acceptable correlation/tenant id: a non-empty
@@ -115,6 +110,17 @@ export class RequestIdMiddleware implements NestMiddleware {
   private readonly tenantIdHeader: string
   /** Whether to mint a `requestId` when the inbound header is absent. */
   private readonly shouldGenerateRequestId: boolean
+  /**
+   * Fields an enclosing scope may not lend to a request scope: the authenticated
+   * identity, plus every field name the trace mixin emits under the resolved
+   * OTel configuration.
+   *
+   * The trace fields matter because the mixin overwrites them from the active
+   * span, but only when there IS one — so a stale value inherited here survives
+   * into every entry of a request with no span and points at another request's
+   * trace.
+   */
+  private readonly nonInheritableKeys: readonly string[]
 
   /**
    * @param logContext - The AsyncLocalStorage-backed context service. Injected by
@@ -129,6 +135,21 @@ export class RequestIdMiddleware implements NestMiddleware {
   ) {
     this.tenantIdHeader = options.http.tenantIdHeader
     this.shouldGenerateRequestId = options.http.shouldGenerateRequestId
+    // Built from the RESOLVED option names rather than hard-coded, because the
+    // trace fields are configurable: `otel.fieldFormat: 'snake_case'` emits
+    // `trace_id` / `span_id` / `trace_flags`, and each name can be overridden
+    // individually. A literal `['traceId', 'spanId']` would exclude the fields
+    // this library is not emitting under that configuration while inheriting the
+    // ones it is — and it missed `traceFlags` even on the defaults.
+    //
+    // The rule is "whatever this library emits as trace correlation", which is
+    // exactly what these three options name.
+    this.nonInheritableKeys = [
+      NON_INHERITABLE_IDENTITY_KEY,
+      options.otel.traceIdField,
+      options.otel.spanIdField,
+      options.otel.traceFlagsField
+    ]
   }
 
   /**
@@ -137,8 +158,8 @@ export class RequestIdMiddleware implements NestMiddleware {
    *
    * Idempotent: mounting this middleware twice on the same request mints one id,
    * not two. The request gets its OWN store, started from the enclosing scope's
-   * fields minus the ones only a downstream guard can establish — see
-   * {@link NON_INHERITABLE_CONTEXT_KEYS}.
+   * fields minus the authenticated identity and the trace fields, which only a
+   * downstream guard or an active span can establish.
    *
    * An enclosing scope's `requestId` is never adopted and never echoed: adoption
    * reads a value this middleware recorded on the REQUEST, which a scope opened
@@ -219,7 +240,7 @@ export class RequestIdMiddleware implements NestMiddleware {
    * The enclosing scope's fields that a request scope may start from.
    *
    * Everything the caller had set is carried in — a tenant resolved at the edge,
-   * a field of the consumer's own — except {@link NON_INHERITABLE_CONTEXT_KEYS}.
+   * a field of the consumer's own — except {@link nonInheritableKeys}.
    * Plain `run()` would discard all of it and a plain merge would carry the
    * identity too; this is the middle a request scope actually needs.
    *
@@ -230,7 +251,7 @@ export class RequestIdMiddleware implements NestMiddleware {
     // Spreading a possibly-absent store covers the no-enclosing-scope case
     // without a branch: `{ ...undefined }` is `{}`.
     const inherited: LogContext = { ...this.logContext.getStore() }
-    for (const key of NON_INHERITABLE_CONTEXT_KEYS) {
+    for (const key of this.nonInheritableKeys) {
       // `Reflect` keeps the dynamic delete off the object-injection sink list.
       Reflect.deleteProperty(inherited, key)
     }

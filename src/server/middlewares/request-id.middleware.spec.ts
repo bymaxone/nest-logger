@@ -235,10 +235,24 @@ describe('RequestIdMiddleware with shouldGenerateRequestId disabled', () => {
   })
 })
 
-/** Options double carrying only what the middleware reads. */
-function createOptions(shouldGenerateRequestId = true): ResolvedBymaxLoggerModuleOptions {
+/**
+ * Options double carrying only what the middleware reads.
+ *
+ * `otel` is required as well as `http`: the non-inheritable set is built from the
+ * RESOLVED trace field names, so the middleware reads them in its constructor.
+ */
+function createOptions(
+  shouldGenerateRequestId = true,
+  otel: Partial<ResolvedBymaxLoggerModuleOptions['otel']> = {}
+): ResolvedBymaxLoggerModuleOptions {
   return {
-    http: { tenantIdHeader: 'x-tenant-id', shouldGenerateRequestId }
+    http: { tenantIdHeader: 'x-tenant-id', shouldGenerateRequestId },
+    otel: {
+      traceIdField: 'traceId',
+      spanIdField: 'spanId',
+      traceFlagsField: 'traceFlags',
+      ...otel
+    }
   } as unknown as ResolvedBymaxLoggerModuleOptions
 }
 
@@ -696,6 +710,71 @@ describe('RequestIdMiddleware mounted a second time', () => {
     logContext.run({ userId: 'admin-u1', traceId: 't', spanId: 's' }, () => {
       middleware.use(createRequest(), res, () => undefined)
       expect(logContext.getStore()).toEqual({ userId: 'admin-u1', traceId: 't', spanId: 's' })
+    })
+  })
+  it(/*
+   * `traceFlags` was missing from the exclusion even on the DEFAULT options — the
+   * first version listed `traceId` and `spanId` literally and forgot the third
+   * field the mixin emits. A stale flags value inherited here survives into every
+   * entry of a request with no active span, exactly like the other two.
+   */
+  'does not inherit traceFlags from an enclosing scope', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ traceFlags: '01' }, () => {
+      middleware.use(createRequest(), res, () => {
+        expect(Object.keys(logContext.getStore() ?? {})).not.toContain('traceFlags')
+      })
+    })
+  })
+
+  it(/*
+   * The trace field NAMES are configurable, so the exclusion cannot be literal.
+   * Under `fieldFormat: 'snake_case'` the mixin emits `trace_id` / `span_id` /
+   * `trace_flags` — the OTel Logs Data Model wire shape — and a hard-coded
+   * camelCase list would inherit exactly the fields the library is emitting while
+   * excluding ones it is not.
+   */
+  'does not inherit the snake_case trace fields when they are configured', () => {
+    const middleware = new RequestIdMiddleware(
+      logContext,
+      createOptions(true, {
+        traceIdField: 'trace_id',
+        spanIdField: 'span_id',
+        traceFlagsField: 'trace_flags'
+      })
+    )
+    const { res } = createResponse()
+
+    logContext.run({ trace_id: 'stale', span_id: 'stale', trace_flags: '01' }, () => {
+      middleware.use(createRequest(), res, () => {
+        const keys = Object.keys(logContext.getStore() ?? {})
+        expect(keys).not.toContain('trace_id')
+        expect(keys).not.toContain('span_id')
+        expect(keys).not.toContain('trace_flags')
+      })
+    })
+  })
+
+  it(/*
+   * An individually overridden field name is honoured too, and a field the
+   * library is NOT emitting under that configuration stays an ordinary consumer
+   * field — the rule is "whatever this library emits as trace correlation",
+   * neither wider nor narrower.
+   */
+  'excludes a custom trace field name while inheriting the unused default', () => {
+    const middleware = new RequestIdMiddleware(
+      logContext,
+      createOptions(true, { traceIdField: 'correlation.trace' })
+    )
+    const { res } = createResponse()
+
+    logContext.run({ 'correlation.trace': 'stale', traceId: 'a-consumer-field' }, () => {
+      middleware.use(createRequest(), res, () => {
+        expect(logContext.get('correlation.trace')).toBeUndefined()
+        expect(logContext.get('traceId')).toBe('a-consumer-field')
+      })
     })
   })
 })
