@@ -11,7 +11,7 @@ heading here.
 
 ## [Unreleased]
 
-## [1.4.0] - 2026-08-29
+## [1.4.0] - 2026-08-30
 
 No breaking changes. Nothing you have wired stops working, and no export was renamed.
 
