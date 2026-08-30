@@ -75,10 +75,20 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   anything downstream treating an inbound header as client-attested would start reading our own
   UUID as the caller's.
 
-  The request's own scope is now opened with `runMerged` rather than `run`, which fixes a second
-  thing in the same place: a consumer that opened its own scope upstream — a tenant resolved at the
-  edge — had it **discarded** for the whole request, because `run()` replaces the context. Its
-  fields are carried in now.
+  The request's own scope now starts from the enclosing scope's fields rather than from nothing,
+  which fixes a second thing in the same place: a consumer that opened its own scope upstream — a
+  tenant resolved at the edge — had it **discarded** for the whole request, because `run()` replaces
+  the context.
+
+  Inheriting carries one rule with it, and getting this wrong was caught in review: `userId`,
+  `traceId` and `spanId` are NOT inherited. They are established downstream of this middleware, per
+  request, so an enclosing scope cannot hold a correct value for any of them. Measured on the
+  version without the exclusion: an anonymous request inside a scope holding `userId: 'admin-u1'`
+  was logged under `admin-u1`, because the mixin copies the store onto every entry and omitting the
+  argument does not erase it. A stale `traceId` leaked the same way into every entry of a request
+  with no active span. That is precisely the leak `run()` replaces by default to avoid, so
+  inheriting had to carry the same rule or it reopened it. Everything else — a tenant, a field of
+  the consumer's own — is carried in.
 
   A first attempt at this enriched the enclosing scope in place instead of opening one, and was
   caught in review before release: with the server created inside a `run()` scope — every request

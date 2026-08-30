@@ -582,10 +582,11 @@ describe('RequestIdMiddleware mounted a second time', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
 
-    logContext.run({ userId: 'u_1' }, () => {
+    logContext.run({ region: 'eu-west-1' }, () => {
       middleware.use(createRequest({ 'x-tenant-id': 'acme' }), res, () => {
         expect(logContext.get('tenantId')).toBe('acme')
-        expect(logContext.get('userId')).toBe('u_1')
+        // An ordinary consumer field IS inherited; identity is the exception.
+        expect(logContext.get('region')).toBe('eu-west-1')
       })
     })
   })
@@ -637,5 +638,64 @@ describe('RequestIdMiddleware mounted a second time', () => {
 
     expect(seen).toEqual(['LONG-LIVED'])
     expect(setHeader).not.toHaveBeenCalled()
+  })
+  it(/*
+   * SECURITY — a request must never inherit an authenticated identity.
+   *
+   * `userId` is resolved by a guard that runs AFTER this middleware, so an
+   * enclosing scope cannot hold a correct value for the request. Measured before
+   * this guard existed: an anonymous request inside a scope holding
+   * `userId: 'admin-u1'` was logged under `admin-u1`, because the mixin copies
+   * the store onto every entry and omitting the argument does not erase it.
+   * This is the exact leak `run()` replaces by default to avoid, and inheriting
+   * reopened it.
+   */
+  'does not inherit userId from an enclosing scope', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ userId: 'admin-u1', tenantId: 'acme' }, () => {
+      middleware.use(createRequest(), res, () => {
+        expect(logContext.get('userId')).toBeUndefined()
+        // The field is absent, not present-and-undefined: the contract is that
+        // no key is ever written holding `undefined` to mean "not set".
+        expect(Object.keys(logContext.getStore() ?? {})).not.toContain('userId')
+        // The tenant still comes through — the rule is narrow, not a blanket ban.
+        expect(logContext.get('tenantId')).toBe('acme')
+      })
+    })
+  })
+
+  it(/*
+   * The same rule for trace correlation. The mixin overwrites `traceId` from the
+   * active span, but only when there IS one — so a stale value inherited here
+   * survives into every entry of a request with no span and points at another
+   * request's trace.
+   */
+  'does not inherit traceId or spanId from an enclosing scope', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ traceId: 'stale-trace', spanId: 'stale-span' }, () => {
+      middleware.use(createRequest(), res, () => {
+        const keys = Object.keys(logContext.getStore() ?? {})
+        expect(keys).not.toContain('traceId')
+        expect(keys).not.toContain('spanId')
+      })
+    })
+  })
+
+  it(/*
+   * The enclosing scope must be left exactly as it was — dropping the identity
+   * happens on the request's own copy, never by deleting from the caller's store.
+   */
+  'leaves the enclosing scope intact when dropping identity', () => {
+    const middleware = new RequestIdMiddleware(logContext, createOptions())
+    const { res } = createResponse()
+
+    logContext.run({ userId: 'admin-u1', traceId: 't', spanId: 's' }, () => {
+      middleware.use(createRequest(), res, () => undefined)
+      expect(logContext.getStore()).toEqual({ userId: 'admin-u1', traceId: 't', spanId: 's' })
+    })
   })
 })

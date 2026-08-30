@@ -53,6 +53,31 @@ const MAX_CORRELATION_ID_LENGTH = 256
 const CORRELATION_ID_CHARSET = /^[A-Za-z0-9._:/+=-]+$/
 
 /**
+ * Context fields an enclosing scope may NOT lend to a request scope.
+ *
+ * Everything else is inherited, which is the point: a consumer that resolved a
+ * tenant at the edge, or set a field of its own, keeps it for the request. These
+ * three are different in kind — they are established DOWNSTREAM of this
+ * middleware, per request, and an enclosing scope cannot hold a correct value
+ * for any of them.
+ *
+ *   - `userId` is an authenticated identity, resolved by a guard that has not
+ *     run yet. Inheriting one attributes an anonymous request, or another user's
+ *     request, to whoever the outer scope names. Measured before this guard
+ *     existed: an anonymous request inside a scope holding `userId: 'admin-u1'`
+ *     logged under `admin-u1`.
+ *   - `traceId` / `spanId` are per-request trace correlation. The mixin
+ *     overwrites them from the active span, but only when there IS one, so a
+ *     stale value inherited here survives into every entry of a request that has
+ *     no span and points at somebody else's trace.
+ *
+ * This is the leak `run()` replaces by default to avoid, and inheriting has to
+ * carry the same rule or it reopens it. A missing field is visibly missing; an
+ * inherited identity is wrong while looking right.
+ */
+const NON_INHERITABLE_CONTEXT_KEYS: readonly string[] = ['userId', 'traceId', 'spanId']
+
+/**
  * Whether a raw header value is an acceptable correlation/tenant id: a non-empty
  * string within the length bound and drawn only from {@link CORRELATION_ID_CHARSET}.
  * Anything else — a non-string, an oversized value, or one carrying a character
@@ -111,9 +136,9 @@ export class RequestIdMiddleware implements NestMiddleware {
    * remainder of the request inside its own log-context scope.
    *
    * Idempotent: mounting this middleware twice on the same request mints one id,
-   * not two. The scope is opened with `runMerged`, so an enclosing scope's fields
-   * are carried in rather than discarded, and the request still gets its own
-   * store rather than writing into a shared one.
+   * not two. The request gets its OWN store, started from the enclosing scope's
+   * fields minus the ones only a downstream guard can establish — see
+   * {@link NON_INHERITABLE_CONTEXT_KEYS}.
    *
    * An enclosing scope's `requestId` is never adopted and never echoed: adoption
    * reads a value this middleware recorded on the REQUEST, which a scope opened
@@ -124,7 +149,7 @@ export class RequestIdMiddleware implements NestMiddleware {
    *     id, the two requests differ, and the enclosing value reaches neither the
    *     header nor the entries.
    *   - `shouldGenerateRequestId: false` with no inbound header — nothing is
-   *     minted, so `runMerged` inherits the enclosing `requestId` and every
+   *     minted, so the request scope inherits the enclosing `requestId` and every
    *     request inside that scope logs under it. No header is exposed. That is
    *     the consumer's own scope being inherited, not correlation being reused,
    *     and it is the configuration that says the gateway owns the id.
@@ -156,16 +181,15 @@ export class RequestIdMiddleware implements NestMiddleware {
       return
     }
 
-    const store = this.logContext.getStore()
-    const context: LogContext = {}
+    const context = this.inheritableContext()
     const requestId = this.resolveRequestId(req)
     if (requestId !== undefined) {
       res.setHeader(REQUEST_ID_HEADER, requestId)
       context.requestId = requestId
       markOwnRequestId(req, requestId)
     }
-    // The header is read only when the enclosing scope has NO tenant. `runMerged`
-    // lets this context override the outer store key by key, so copying the
+    // The header is read only when the enclosing scope has NO tenant. The
+    // inherited context is the outer store's, so copying the
     // header unconditionally would let a client replace a tenant the application
     // resolved at the edge — from an auth claim — on every entry the request
     // produces. The adopt path already gave the resolved tenant precedence; this
@@ -174,14 +198,43 @@ export class RequestIdMiddleware implements NestMiddleware {
     // `requestId` is deliberately NOT symmetric: correlation is this library's to
     // own and it mints a validated one, while a tenant is an assertion about who
     // the request belongs to and is never invented or overridden here.
-    if (store?.tenantId === undefined) {
+    if (context.tenantId === undefined) {
       const tenantId = this.resolveTenantId(req)
       if (tenantId !== undefined) {
         context.tenantId = tenantId
       }
     }
 
-    this.logContext.runMerged(context, () => next())
+    // A NEW store, never a write into the enclosing one, which is what keeps
+    // requests isolated. Measured on the version that enriched an enclosing scope
+    // in place — with the server created inside a `run()` scope, every request
+    // handler then inherits that store — two sequential requests were handed the
+    // SAME `requestId`, and the shared store kept the first request's id after
+    // both finished. Correlation that silently merges two requests is worse than
+    // none, because it is trusted.
+    this.logContext.run(context, () => next())
+  }
+
+  /**
+   * The enclosing scope's fields that a request scope may start from.
+   *
+   * Everything the caller had set is carried in — a tenant resolved at the edge,
+   * a field of the consumer's own — except {@link NON_INHERITABLE_CONTEXT_KEYS}.
+   * Plain `run()` would discard all of it and a plain merge would carry the
+   * identity too; this is the middle a request scope actually needs.
+   *
+   * @returns A fresh bag, never the enclosing store itself, so writes inside the
+   *   request never reach the scope that opened it.
+   */
+  private inheritableContext(): LogContext {
+    // Spreading a possibly-absent store covers the no-enclosing-scope case
+    // without a branch: `{ ...undefined }` is `{}`.
+    const inherited: LogContext = { ...this.logContext.getStore() }
+    for (const key of NON_INHERITABLE_CONTEXT_KEYS) {
+      // `Reflect` keeps the dynamic delete off the object-injection sink list.
+      Reflect.deleteProperty(inherited, key)
+    }
+    return inherited
   }
 
   /**
