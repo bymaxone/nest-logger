@@ -94,7 +94,7 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   caught in review before release: with the server created inside a `run()` scope — every request
   handler then inherits that store — two sequential requests were measured sharing ONE `requestId`,
   and the shared store kept it after both finished. Correlation that silently merges two requests is
-  worse than none, because it is trusted. `runMerged` gives each request its own store while still
+  worse than none, because it is trusted. Each request now gets its own store while still
   inheriting the enclosing fields; the regression is pinned by a test.
 
   This is also what makes wiring both helpers safe, which is the state a consumer lands on
@@ -125,7 +125,7 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   the value that never passed validation.
 
 - **A client-supplied `x-tenant-id` could displace a tenant the application had already resolved.**
-  `runMerged` lets the request's context override the enclosing store key by key, and the header was
+  The request's context overrides the inherited fields key by key, and the header was
   copied in unconditionally — so a tenant resolved at the edge, from an auth claim, was replaced by
   whatever the client sent, on every entry the request produced. The header is now read only when
   the enclosing scope has no tenant, which is the rule the adopt path already followed.

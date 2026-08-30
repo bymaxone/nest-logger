@@ -305,8 +305,8 @@ describe('RequestIdMiddleware mounted a second time', () => {
   it(/*
    * An enclosing scope carrying no correlation id is NOT a second mount — it is
    * consumer code that opened its own scope. The request gets its own id, and the
-   * enclosing scope's fields are carried in by `runMerged` rather than discarded,
-   * which is the failure `run()` would produce here: a tenantId resolved at the
+   * enclosing scope's fields are carried into it rather than discarded, which is
+   * the failure `run()` would produce here: a tenantId resolved at the
    * edge silently absent for the whole request.
    */
   'takes its own scope and inherits the enclosing fields', () => {
@@ -556,7 +556,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
    * SECURITY — a client-supplied x-tenant-id must not displace a tenant the
    * application already resolved.
    *
-   * `runMerged` lets the new context override the enclosing store key by key, so
+   * The request's context overrides the inherited fields key by key, so
    * copying the header unconditionally let a client rewrite the tenant on every
    * entry the request produced. The adopt path already preserved a resolved
    * tenant; this pins the same rule on the path that opens the scope, which is
@@ -620,7 +620,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
 
   it(/*
    * The other generation mode, and the one where an enclosing id DOES reach the
-   * entries — by `runMerged` inheriting the consumer's own scope, not by
+   * entries — by the request scope inheriting the consumer's own, not by
    * adoption. Nothing is minted and no header is exposed, which is what
    * `shouldGenerateRequestId: false` means: the gateway owns the id.
    */
