@@ -59,6 +59,7 @@ import {
   readUserAgent,
   readUserId
 } from '../utils/http-log-state.util'
+import { matchesExcludePath } from '../utils/matches-exclude-path.util'
 import { normalizeUrl, stripQueryString } from '../utils/normalize-url.util'
 
 /**
@@ -127,7 +128,7 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
     // health-check and metrics traffic does not flood the sink. The recorder is
     // NOT marked active here, so the interceptor keeps its own exclude handling
     // and the two agree on what is skipped.
-    if (this.excludePaths.some((pattern) => pattern.test(path))) {
+    if (matchesExcludePath(this.excludePaths, path)) {
       next()
       return
     }

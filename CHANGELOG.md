@@ -124,6 +124,29 @@ No breaking changes. Nothing you have wired stops working, and no export was ren
   mints a validated id, while a tenant is an assertion about who the request belongs to and is
   never invented or overridden here.
 
+- **A `g` or `y` flag on an `excludePaths` pattern excluded the path only every other time.**
+  `RegExp.prototype.test` on such a pattern advances its `lastIndex` and resumes from it, so the
+  same pattern tested twice against the same path returns `true`, then `false`. Measured on
+  `/^\/health$/g` against `/health`: `true, false, true, false`. The patterns live in module
+  options — one frozen array shared by the access-log middleware and the HTTP interceptor for the
+  lifetime of the process — so a consumer who carried a `g` flag in from a copied pattern saw
+  excluded health checks reappear at half rate, with no error and nothing to suggest the config was
+  not working.
+
+  This predates `1.4.0`; mounting both wiring helpers only made it sharper, because the two mounts
+  then test the same pattern twice within a single request and disagree outright. Both call sites now
+  go through one matcher that clears the stored position before testing, so the answer depends only
+  on the pattern and the path. Flags that say WHAT matches (`i`, `m`, `s`, `u`) are the consumer's
+  expressed intent and are untouched. Raised by Codex.
+
+  The clear happens only for a pattern that actually carries a position, and that guard is
+  load-bearing: `Object.freeze` on a `RegExp` — which a deep-freeze over a config module reaches —
+  makes `lastIndex` non-writable, and under ESM's strict mode assigning to it throws
+  `TypeError: Cannot assign to read only property 'lastIndex'` while `.test()` on the same pattern
+  works. Clearing unconditionally would have turned a working configuration into a throw on the
+  request path. A frozen pattern that IS global stays broken, and not by this: `test()` writes
+  `lastIndex` itself, so it throws before any of this runs.
+
 - **A second mount of `HttpAccessLogMiddleware` doubled every access-log line.** It claims the
   request's log lifecycle so the interceptor stays silent, but never checked whether the claim was
   already made. It now stands down on an already-claimed request: one START and one terminal entry
