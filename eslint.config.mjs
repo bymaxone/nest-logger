@@ -10,7 +10,19 @@ import globals from 'globals'
 export default [
   // Global ignores — only build artifacts and coverage, NOT config files
   {
-    ignores: ['node_modules/**', 'dist/**', 'coverage/**', 'reports/**', '.stryker-tmp/**']
+    // Anchored with `**/` on purpose. A flat-config ignore is ROOT-relative, so
+    // `coverage/**` matches only the top-level directory — measured, a stray
+    // `src/coverage/` from a jest run with the wrong cwd was being linted, three
+    // files of generated reporter JavaScript. It passed, which is luck rather
+    // than design: nobody wrote those files and a rule they happen to trip would
+    // fail CI on vendor output. Git already ignores them; the linter now does too.
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/coverage/**',
+      '**/reports/**',
+      '**/.stryker-tmp/**'
+    ]
   },
 
   // Base recommended config
