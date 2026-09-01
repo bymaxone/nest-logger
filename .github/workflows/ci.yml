@@ -24,12 +24,18 @@ jobs:
     uses: bymaxone/.github/.github/workflows/node-lib-ci.yml@v1
     with:
       # No `format:check` script exists, so the shared job has nothing to call.
-      # Formatting is still gated: `prettier/prettier` is an ERROR on every path
-      # `pnpm lint` reaches — src, specs, scripts and the config files — so a
-      # badly formatted file fails the Lint job. Before that it was a warning on
-      # production source only and absent everywhere else, which made the previous
-      # version of this line ("prettier runs via lint/pre-commit") false in its
-      # lint half: measured, a formatting violation exited 0.
+      #
+      # Formatting of CODE is gated by lint instead: `prettier/prettier` is an
+      # error on every path `pnpm lint` passes — src, unit and e2e specs, bench,
+      # scripts and the root config files — so a badly formatted source file fails
+      # the Lint job.
+      #
+      # What that does NOT cover, stated because the gap is the reason this input
+      # stays `false` rather than a claim that nothing is missing: Markdown, JSON
+      # and YAML are formatted by prettier through lint-staged at commit time and
+      # by nothing in CI. `README.md` and `CHANGELOG.md` ship in the package, so
+      # closing that needs a real `format:check` script and this input flipped to
+      # `true`, not a wider eslint glob — eslint does not format those file types.
       run-format-check: false
       run-build: false # build + integrity + size verified in the `verify` job below
       unit-command: pnpm test:cov:all

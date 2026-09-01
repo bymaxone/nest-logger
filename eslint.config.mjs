@@ -172,7 +172,7 @@ export default [
   // non-defect. A `.ts` helper here would be skipped in silence instead, which is
   // the same class again; keep scripts plain JavaScript.
   {
-    files: ['scripts/**/*.mjs', 'scripts/**/*.cjs', 'scripts/**/*.js'],
+    files: ['scripts/**/*.mjs', 'scripts/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
@@ -187,6 +187,43 @@ export default [
       'no-eval': 'error',
       'no-new-func': 'error',
       'security/detect-object-injection': 'warn'
+    }
+  },
+
+  // CommonJS, for every `.cjs` the lint invocation reaches: root configs and any
+  // helper under `scripts/`.
+  //
+  // `sourceType: 'commonjs'` must be explicit and must NOT be `'module'`. ESLint
+  // infers commonjs from the extension and so supplies `module` and `require`,
+  // but NOT `process`, `__dirname` or `Buffer` — a `.cjs` file using any of those
+  // fails `no-undef` on valid code without `globals.node` here. Declaring
+  // `'module'` instead is the opposite failure: ESM syntax in a `.cjs` file then
+  // parses clean and no rule objects, while Node rejects it at require time with
+  // `SyntaxError: Unexpected token 'export'`.
+  {
+    files: ['*.config.cjs', 'scripts/**/*.cjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node
+      }
+    },
+    plugins: {
+      security
+    },
+    rules: {
+      'no-eval': 'error',
+      'no-new-func': 'error',
+      'security/detect-object-injection': 'warn'
+      //
+      // The crypto guard-rail the ESM config block carries is deliberately NOT
+      // repeated here. `no-restricted-imports` only sees `import` — measured, a
+      // `.cjs` file doing `require('uuid')` and `require('crypto')` produces zero
+      // findings, while the same import in a `.mjs` produces one. Declaring it
+      // for `.cjs` would be a rule that reports nothing, which is the shape this
+      // block exists to avoid. A `.cjs` file wanting that guarantee should be
+      // `.mjs`.
     }
   },
 
@@ -228,7 +265,21 @@ export default [
 
   // Test files — Jest + Node globals, relaxed rules.
   {
-    files: ['**/*.spec.ts', '**/*.test.ts'],
+    // `**/*.spec.ts` does not match `foo.e2e-spec.ts` — a glob needs the literal
+    // `.spec.ts`, and the hyphen breaks it. Unmatched, those files reach no block
+    // with a TypeScript parser and every one of them reports
+    // `Parsing error: Unexpected token {`. lint-staged runs eslint on staged
+    // `*.ts` by basename, so leaving them out makes any commit that touches an
+    // e2e spec or a bench file fail the pre-commit hook on a parse error rather
+    // than a defect — and the usual escape from that is `--no-verify`, which
+    // disables the hook entirely.
+    files: [
+      '**/*.spec.ts',
+      '**/*.test.ts',
+      '**/*.e2e-spec.ts',
+      '**/*.bench.ts',
+      'test/**/fixtures/**/*.ts'
+    ],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
