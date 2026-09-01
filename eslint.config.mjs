@@ -151,10 +151,7 @@ export default [
         }
       ],
       'import/no-cycle': 'error',
-      'import/no-self-import': 'error',
-
-      // Prettier — reads from .prettierrc (no inline options to avoid conflicts)
-      'prettier/prettier': 'warn'
+      'import/no-self-import': 'error'
     }
   },
 
@@ -253,6 +250,28 @@ export default [
       'no-unused-vars': 'off',
       'no-undef': 'off',
       'no-console': 'off'
+    }
+  },
+
+  // Formatting, as an ERROR and on every path the lint invocation reaches.
+  //
+  // It was `'warn'` on `src/**/*.ts` and absent everywhere else — measured, the
+  // rule was NOT SET for specs, for `scripts/**` and for the config files. With no
+  // `--max-warnings 0` a formatting violation exited 0, so `pnpm lint` never failed
+  // on formatting anywhere, while `ci.yml` justified skipping the format-check job
+  // on the grounds that "prettier runs via lint/pre-commit". The lint half of that
+  // was not true. This makes it true rather than rewording the claim.
+  //
+  // `'error'` rather than `--max-warnings 0`, deliberately: that flag would also
+  // promote `security/detect-object-injection`, a warning on purpose in the scripts
+  // and spec blocks. Raising formatting must not silently raise an unrelated rule.
+  //
+  // Options stay in `.prettierrc`; passing them here would let the two disagree.
+  {
+    files: ['**/*.{ts,mjs,cjs,js}'],
+    plugins: { prettier },
+    rules: {
+      'prettier/prettier': 'error'
     }
   },
 

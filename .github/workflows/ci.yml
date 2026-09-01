@@ -23,7 +23,14 @@ jobs:
   ci:
     uses: bymaxone/.github/.github/workflows/node-lib-ci.yml@v1
     with:
-      run-format-check: false # no format:check script; prettier runs via lint/pre-commit
+      # No `format:check` script exists, so the shared job has nothing to call.
+      # Formatting is still gated: `prettier/prettier` is an ERROR on every path
+      # `pnpm lint` reaches — src, specs, scripts and the config files — so a
+      # badly formatted file fails the Lint job. Before that it was a warning on
+      # production source only and absent everywhere else, which made the previous
+      # version of this line ("prettier runs via lint/pre-commit") false in its
+      # lint half: measured, a formatting violation exited 0.
+      run-format-check: false
       run-build: false # build + integrity + size verified in the `verify` job below
       unit-command: pnpm test:cov:all
       run-mutation: true
