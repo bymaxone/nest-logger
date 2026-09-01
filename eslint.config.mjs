@@ -158,9 +158,14 @@ export default [
     }
   },
 
-  // Node.js scripts — plain ESM, no TypeScript parser needed
+  // Node.js scripts. `.cjs` is listed even though none exists today: `pnpm lint`
+  // now reaches this directory, and a file the invocation reaches but no block
+  // matches gets `js.configs.recommended` with no `globals.node` — measured, a
+  // `.cjs` helper failed with "'process' is not defined", a gate failing on a
+  // non-defect. A `.ts` helper here would be skipped in silence instead, which is
+  // the same class again; keep scripts plain JavaScript.
   {
-    files: ['scripts/**/*.mjs', 'scripts/**/*.js'],
+    files: ['scripts/**/*.mjs', 'scripts/**/*.cjs', 'scripts/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
