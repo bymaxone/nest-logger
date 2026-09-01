@@ -10,12 +10,11 @@ import globals from 'globals'
 export default [
   // Global ignores — only build artifacts and coverage, NOT config files
   {
-    // Anchored with `**/` on purpose. A flat-config ignore is ROOT-relative, so
-    // `coverage/**` matches only the top-level directory — measured, a stray
-    // `src/coverage/` from a jest run with the wrong cwd was being linted, three
-    // files of generated reporter JavaScript. It passed, which is luck rather
-    // than design: nobody wrote those files and a rule they happen to trip would
-    // fail CI on vendor output. Git already ignores them; the linter now does too.
+    // Every entry is anchored with `**/`, and must stay that way. A flat-config
+    // ignore is ROOT-relative, so a bare `coverage/**` excludes the top-level
+    // directory and nothing else — a nested one (a jest run with the wrong cwd
+    // leaves `src/coverage/`) is then linted, and generated reporter JavaScript
+    // that nobody wrote can fail CI on a rule it happens to trip.
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
@@ -50,16 +49,16 @@ export default [
       security
     },
     settings: {
-      // Without this mapping the graph rules below are decorative. The RESOLVER
+      // Required for `no-cycle` below to detect anything at all. The RESOLVER
       // decides where a specifier points; a separate DEPENDENCY PARSER decides
       // what the resolved file exports, and it skips in silence every extension
-      // it cannot map — on a TypeScript project, all of them. Measured here: a
-      // real two-file cycle produced `--print-config` saying `no-cycle` is [2]
-      // and a lint run with exit 0 and no output; with this line, two errors.
+      // it cannot map — on a TypeScript project, all of them. Remove this line and
+      // `--print-config` still reports `no-cycle` as [2] while a real cycle lints
+      // clean, so a green run proves nothing about it.
       //
-      // Only the rule that WALKS the graph needs it. `no-self-import` compares a
-      // resolved path against the current file, so it fires either way and cannot
-      // stand in as evidence that this mapping is present — measured both ways.
+      // Only the rule that WALKS the graph needs this. `no-self-import` compares a
+      // resolved path against the current file and fires either way, so it cannot
+      // stand in as evidence that this mapping is present.
       'import/parsers': { '@typescript-eslint/parser': ['.ts'] },
       'import/resolver': {
         typescript: {
@@ -252,18 +251,17 @@ export default [
     }
   },
 
-  // Formatting, as an ERROR and on every path the lint invocation reaches.
+  // Formatting is an ERROR, on every path the lint invocation reaches.
   //
-  // It was `'warn'` on `src/**/*.ts` and absent everywhere else — measured, the
-  // rule was NOT SET for specs, for `scripts/**` and for the config files. With no
-  // `--max-warnings 0` a formatting violation exited 0, so `pnpm lint` never failed
-  // on formatting anywhere, while `ci.yml` justified skipping the format-check job
-  // on the grounds that "prettier runs via lint/pre-commit". The lint half of that
-  // was not true. This makes it true rather than rewording the claim.
+  // `'error'` and not `--max-warnings 0`: that flag raises EVERY warning, and
+  // `security/detect-object-injection` is a warning on purpose in the scripts and
+  // spec blocks. Formatting has to be able to fail the build without dragging an
+  // unrelated rule up with it.
   //
-  // `'error'` rather than `--max-warnings 0`, deliberately: that flag would also
-  // promote `security/detect-object-injection`, a warning on purpose in the scripts
-  // and spec blocks. Raising formatting must not silently raise an unrelated rule.
+  // `ci.yml` passes `run-format-check: false` and points here for the guarantee,
+  // so this rule is the only thing gating formatting in CI. It has to cover every
+  // path `pnpm lint` passes — a rule declared for a path the invocation never
+  // reaches gates nothing.
   //
   // Options stay in `.prettierrc`; passing them here would let the two disagree.
   {
