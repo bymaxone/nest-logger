@@ -47,7 +47,6 @@ export default [
     plugins: {
       '@typescript-eslint': tsPlugin,
       import: importPlugin,
-      prettier,
       security
     },
     settings: {
