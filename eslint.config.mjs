@@ -165,12 +165,14 @@ export default [
     }
   },
 
-  // Node.js scripts. `.cjs` is listed even though none exists today: `pnpm lint`
-  // now reaches this directory, and a file the invocation reaches but no block
-  // matches gets `js.configs.recommended` with no `globals.node` — measured, a
-  // `.cjs` helper failed with "'process' is not defined", a gate failing on a
-  // non-defect. A `.ts` helper here would be skipped in silence instead, which is
-  // the same class again; keep scripts plain JavaScript.
+  // Node.js ESM scripts. `.cjs` under `scripts/` belongs to the CommonJS block
+  // below, not here: `sourceType` differs and one block cannot serve both.
+  //
+  // Every extension `pnpm lint` passes needs a block that matches it. Reached but
+  // unmatched, a file falls through to `js.configs.recommended` with no
+  // `globals.node`, and valid Node code fails `no-undef` — the gate rejecting a
+  // non-defect. `.ts` under `scripts/` matches no block at all and is skipped in
+  // silence, so keep these plain JavaScript.
   {
     files: ['scripts/**/*.mjs', 'scripts/**/*.js'],
     languageOptions: {
@@ -271,8 +273,8 @@ export default [
     // `Parsing error: Unexpected token {`. lint-staged runs eslint on staged
     // `*.ts` by basename, so leaving them out makes any commit that touches an
     // e2e spec or a bench file fail the pre-commit hook on a parse error rather
-    // than a defect — and the usual escape from that is `--no-verify`, which
-    // disables the hook entirely.
+    // than a defect, and the usual escape from a hook that cries wolf is to bypass
+    // it entirely.
     files: [
       '**/*.spec.ts',
       '**/*.test.ts',
