@@ -39,6 +39,17 @@ export default [
       security
     },
     settings: {
+      // Without this mapping the graph rules below are decorative. The RESOLVER
+      // decides where a specifier points; a separate DEPENDENCY PARSER decides
+      // what the resolved file exports, and it skips in silence every extension
+      // it cannot map — on a TypeScript project, all of them. Measured here: a
+      // real two-file cycle produced `--print-config` saying `no-cycle` is [2]
+      // and a lint run with exit 0 and no output; with this line, two errors.
+      //
+      // Only the rule that WALKS the graph needs it. `no-self-import` compares a
+      // resolved path against the current file, so it fires either way and cannot
+      // stand in as evidence that this mapping is present — measured both ways.
+      'import/parsers': { '@typescript-eslint/parser': ['.ts'] },
       'import/resolver': {
         typescript: {
           alwaysTryTypes: true,
