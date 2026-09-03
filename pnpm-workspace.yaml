@@ -20,5 +20,24 @@ overrides:
   'brace-expansion@2': '^2.1.4'
   'brace-expansion@5': '^5.0.9'
   'esbuild': '^0.28.1'
-  'fast-uri': '^3.1.5'
-  'qs': '^6.15.3'
+  # Floors RAISED, not new entries — and the previous values are why raising them is
+  # needed rather than redundant. `^3.1.5` and `^6.15.3` already admitted the fixed
+  # versions, but a caret in an override is a floor on the past, not a ceiling on the
+  # future: nothing re-resolves a lockfile that already satisfies the range. When
+  # deciding whether a package is patched, read the resolved version in
+  # pnpm-lock.yaml, never the range here.
+  #
+  # fast-uri: GHSA-jqff-g426-hqxp — host confusion via skipped IDN canonicalisation.
+  # Introduced 3.0.0, fixed 3.1.6 (read from the OSV API); the lockfile held 3.1.5.
+  # Reached through ajv, under @stryker-mutator/core and @commitlint/config-validator.
+  'fast-uri': '^3.1.6'
+  # qs: GHSA-x5fp-wj9c-mxmx — denial of service via an attacker-controlled isBuffer.
+  # Introduced 6.14.2, fixed 6.16.0; the lockfile held 6.15.3. Reached through express
+  # under @nestjs/platform-express, through supertest, and through typed-rest-client
+  # under @stryker-mutator/core.
+  #
+  # Both are devDependency-only here: `dependencies` is empty and `files` ships dist,
+  # LICENSE, README.md and CHANGELOG.md, so no consumer of the published package is
+  # reachable through either. Build-surface exposure, patched because a compromised
+  # build environment is real — not because a consumer is at risk.
+  'qs': '^6.16.0'
