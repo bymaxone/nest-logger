@@ -20,5 +20,29 @@ overrides:
   'brace-expansion@2': '^2.1.4'
   'brace-expansion@5': '^5.0.9'
   'esbuild': '^0.28.1'
-  'fast-uri': '^3.1.5'
-  'qs': '^6.15.3'
+  # A range here is NOT evidence that a package is patched. An override is a floor
+  # on resolution, and nothing re-resolves a lockfile that already satisfies the
+  # range — so an entry can name a secure version while pnpm-lock.yaml holds a
+  # vulnerable one. Read the resolved version in the lockfile when checking, and
+  # enumerate every resolution rather than matching the one expected: a package can
+  # resolve to a vulnerable and a fixed version at once, and an unanchored name
+  # matches its `@types/` sibling.
+  #
+  # fast-uri: minimum secure 3.1.6 (GHSA-jqff-g426-hqxp, host confusion via skipped
+  # IDN canonicalisation; affects >= 3.0.0). Reached through ajv, under
+  # @stryker-mutator/core and @commitlint/config-validator.
+  'fast-uri': '^3.1.6'
+  # qs: minimum secure 6.16.0 (GHSA-x5fp-wj9c-mxmx, denial of service via an
+  # attacker-controlled isBuffer; affects >= 6.14.2). Reached through express under
+  # @nestjs/platform-express, through supertest, and through typed-rest-client under
+  # @stryker-mutator/core.
+  #
+  # Both keys are bare rather than majored because each resolves within a single
+  # major here — `js-yaml` and `brace-expansion` above span majors and need the
+  # majored form, or one key would move every one of them.
+  #
+  # Both are devDependency-only: `dependencies` is empty and `files` ships dist,
+  # LICENSE, README.md and CHANGELOG.md, so no consumer of the published package is
+  # reachable through either. Build-surface exposure — worth patching because a
+  # compromised build environment is real, not because a consumer is at risk.
+  'qs': '^6.16.0'
