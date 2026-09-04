@@ -515,9 +515,19 @@ describe('applyAccessLog without the module', () => {
     const moduleRef = await Test.createTestingModule({ imports: [BareModule] }).compile()
     const app = moduleRef.createNestApplication({ logger: false })
 
-    expect(() => {
+    // Compared for equality rather than with `toThrow`, which substring-matches a string
+    // and would still pass if the cryptic DI failure this helper exists to replace were
+    // prepended to the clear one. Passing an Error instead is not the way out: expect
+    // compares `cause` too, and this error carries the DI failure there on purpose.
+    let caught: unknown
+    try {
       applyAccessLog(app)
-    }).toThrow('applyAccessLog(app) called but BymaxLoggerModule was not imported')
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as Error).message).toBe(
+      '[BymaxLoggerModule] applyAccessLog(app) called but BymaxLoggerModule was not imported'
+    )
 
     await app.close()
   })
