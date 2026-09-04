@@ -37,6 +37,12 @@ overrides:
   # The four lower bounds differ, which is the trap for anyone rewriting this entry
   # as a range: a range keyed on one of them is correct for that advisory and
   # silently wrong for the others. A floor at the fixed version covers all four.
+  # Those bounds are the 3.x line, the only one this tree resolves. Each of the four
+  # also reaches 2.x (patched 2.4.5) and 4.x (patched 4.1.3), which matters because
+  # the key is bare: pnpm applies a bare override to every request for the package,
+  # so a dependency asking for fast-uri ^4.0.0 is forced down onto ^3.1.6 rather than
+  # left unconstrained — measured, it resolves 3.1.7 and the specifier is rewritten.
+  # Secure, and possibly incompatible. Major the key before a 4.x consumer arrives.
   # Reached through ajv, under @stryker-mutator/core and @commitlint/config-validator.
   'fast-uri': '^3.1.6'
   # qs: minimum secure 6.16.0. Two advisories, both patched there. GitHub rates both
