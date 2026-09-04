@@ -28,7 +28,8 @@ overrides:
   # resolve to a vulnerable and a fixed version at once, and an unanchored name
   # matches its `@types/` sibling.
   #
-  # fast-uri: minimum secure 3.1.6. Four advisories, all CVSS 7.5, all patched there:
+  # fast-uri: minimum secure 3.1.6. Four advisories, all CVSS v3 7.5 (high band), all
+  # patched there. No v4 vector is published for any of them, so v3 is the only scale:
   #   GHSA-jqff-g426-hqxp  host confusion, percent-encoded scheme normalization  >= 3.0.0
   #   GHSA-f65p-4m7j-42xc  SSRF, malformed IPv6 normalisation                    >= 3.0.0
   #   GHSA-fph4-wmhf-6fwf  SSRF, repeated hostname percent-decoding              >= 3.1.2
@@ -38,10 +39,12 @@ overrides:
   # silently wrong for the others. A floor at the fixed version covers all four.
   # Reached through ajv, under @stryker-mutator/core and @commitlint/config-validator.
   'fast-uri': '^3.1.6'
-  # qs: minimum secure 6.16.0. Two advisories, both medium, both patched there:
-  #   GHSA-x5fp-wj9c-mxmx  array-limit bypass, bracket-key comma parsing    3.7  >= 6.14.2
-  #   GHSA-4mjr-xmp4-gh2g  denial of service, attacker-controlled isBuffer  5.3  >= 2.2.5
-  # The severity sits with fast-uri above, not here. Reached through express under
+  # qs: minimum secure 6.16.0. Two advisories, both patched there. GitHub rates both
+  # medium from CVSS v4 6.3; their v3 scores land in different bands, so the scale is
+  # named rather than left to the reader to infer:
+  #   GHSA-x5fp-wj9c-mxmx  array-limit bypass, bracket-key comma parsing    v3 3.7  low     >= 6.14.2
+  #   GHSA-4mjr-xmp4-gh2g  denial of service, attacker-controlled isBuffer  v3 5.3  medium  >= 2.2.5
+  # On either scale the urgency sits with fast-uri above, not here. Reached through express under
   # @nestjs/platform-express, through supertest, and through typed-rest-client under
   # @stryker-mutator/core.
   #
