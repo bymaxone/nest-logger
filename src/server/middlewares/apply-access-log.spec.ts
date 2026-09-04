@@ -56,6 +56,30 @@ async function waitForHttpEntries(capture: CaptureDestination, count: number): P
   })
 }
 
+/**
+ * Wait until `capture` holds an entry with `logKey`, then settle one more turn.
+ *
+ * Use this wherever the assertion names one key. Waiting on a COUNT is a guess
+ * about how many entries a request produces, and a wrong guess races in either
+ * direction: too high and the deadline expires before the assertion, too low and
+ * it returns while the entry the test is about has not arrived. Waiting on the key
+ * the assertion names cannot be wrong about it.
+ *
+ * The count-based sibling stays for the tests that assert an exact sequence, where
+ * the count IS the claim.
+ */
+async function waitForHttpKey(capture: CaptureDestination, logKey: string): Promise<void> {
+  const deadline = Date.now() + 2000
+  while (!capture.httpKeys().includes(logKey) && Date.now() < deadline) {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 5)
+    })
+  }
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 10)
+  })
+}
+
 const earlyCapture = new CaptureDestination()
 const lateCapture = new CaptureDestination()
 const bothCapture = new CaptureDestination()
@@ -423,7 +447,7 @@ describe('applyAccessLog under setGlobalPrefix', () => {
       .set('Content-Type', 'application/json')
       .send(TRUNCATED_JSON)
       .expect(400)
-    await waitForHttpEntries(prefixCapture, 3)
+    await waitForHttpKey(prefixCapture, RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR)
 
     expect(prefixCapture.httpKeys()).toContain(RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR)
   })

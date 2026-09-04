@@ -10,7 +10,18 @@ import globals from 'globals'
 export default [
   // Global ignores — only build artifacts and coverage, NOT config files
   {
-    ignores: ['node_modules/**', 'dist/**', 'coverage/**', 'reports/**', '.stryker-tmp/**']
+    // Every entry is anchored with `**/`, and must stay that way. A flat-config
+    // ignore is ROOT-relative, so a bare `coverage/**` excludes the top-level
+    // directory and nothing else — a nested one (a jest run with the wrong cwd
+    // leaves `src/coverage/`) is then linted, and generated reporter JavaScript
+    // that nobody wrote can fail CI on a rule it happens to trip.
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/coverage/**',
+      '**/reports/**',
+      '**/.stryker-tmp/**'
+    ]
   },
 
   // Base recommended config
@@ -35,10 +46,20 @@ export default [
     plugins: {
       '@typescript-eslint': tsPlugin,
       import: importPlugin,
-      prettier,
       security
     },
     settings: {
+      // Required for `no-cycle` below to detect anything at all. The RESOLVER
+      // decides where a specifier points; a separate DEPENDENCY PARSER decides
+      // what the resolved file exports, and it skips in silence every extension
+      // it cannot map — on a TypeScript project, all of them. Remove this line and
+      // `--print-config` still reports `no-cycle` as [2] while a real cycle lints
+      // clean, so a green run proves nothing about it.
+      //
+      // Only the rule that WALKS the graph needs this. `no-self-import` compares a
+      // resolved path against the current file and fires either way, so it cannot
+      // stand in as evidence that this mapping is present.
+      'import/parsers': { '@typescript-eslint/parser': ['.ts'] },
       'import/resolver': {
         typescript: {
           alwaysTryTypes: true,
@@ -128,10 +149,7 @@ export default [
         }
       ],
       'import/no-cycle': 'error',
-      'import/no-self-import': 'error',
-
-      // Prettier — reads from .prettierrc (no inline options to avoid conflicts)
-      'prettier/prettier': 'warn'
+      'import/no-self-import': 'error'
     }
   },
 
@@ -147,7 +165,14 @@ export default [
     }
   },
 
-  // Node.js scripts — plain ESM, no TypeScript parser needed
+  // Node.js ESM scripts. `.cjs` under `scripts/` belongs to the CommonJS block
+  // below, not here: `sourceType` differs and one block cannot serve both.
+  //
+  // Every extension `pnpm lint` passes needs a block that matches it. Reached but
+  // unmatched, a file falls through to `js.configs.recommended` with no
+  // `globals.node`, and valid Node code fails `no-undef` — the gate rejecting a
+  // non-defect. `.ts` under `scripts/` matches no block at all and is skipped in
+  // silence, so keep these plain JavaScript.
   {
     files: ['scripts/**/*.mjs', 'scripts/**/*.js'],
     languageOptions: {
@@ -164,6 +189,43 @@ export default [
       'no-eval': 'error',
       'no-new-func': 'error',
       'security/detect-object-injection': 'warn'
+    }
+  },
+
+  // CommonJS, for every `.cjs` the lint invocation reaches: root configs and any
+  // helper under `scripts/`.
+  //
+  // `sourceType: 'commonjs'` must be explicit and must NOT be `'module'`. ESLint
+  // infers commonjs from the extension and so supplies `module` and `require`,
+  // but NOT `process`, `__dirname` or `Buffer` — a `.cjs` file using any of those
+  // fails `no-undef` on valid code without `globals.node` here. Declaring
+  // `'module'` instead is the opposite failure: ESM syntax in a `.cjs` file then
+  // parses clean and no rule objects, while Node rejects it at require time with
+  // `SyntaxError: Unexpected token 'export'`.
+  {
+    files: ['*.config.cjs', 'scripts/**/*.cjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node
+      }
+    },
+    plugins: {
+      security
+    },
+    rules: {
+      'no-eval': 'error',
+      'no-new-func': 'error',
+      'security/detect-object-injection': 'warn'
+      //
+      // The crypto guard-rail the ESM config block carries is deliberately NOT
+      // repeated here. `no-restricted-imports` only sees `import` — measured, a
+      // `.cjs` file doing `require('uuid')` and `require('crypto')` produces zero
+      // findings, while the same import in a `.mjs` produces one. Declaring it
+      // for `.cjs` would be a rule that reports nothing, which is the shape this
+      // block exists to avoid. A `.cjs` file wanting that guarantee should be
+      // `.mjs`.
     }
   },
 
@@ -205,7 +267,21 @@ export default [
 
   // Test files — Jest + Node globals, relaxed rules.
   {
-    files: ['**/*.spec.ts', '**/*.test.ts'],
+    // `**/*.spec.ts` does not match `foo.e2e-spec.ts` — a glob needs the literal
+    // `.spec.ts`, and the hyphen breaks it. Unmatched, those files reach no block
+    // with a TypeScript parser and every one of them reports
+    // `Parsing error: Unexpected token {`. lint-staged runs eslint on staged
+    // `*.ts` by basename, so leaving them out makes any commit that touches an
+    // e2e spec or a bench file fail the pre-commit hook on a parse error rather
+    // than a defect, and the usual escape from a hook that cries wolf is to bypass
+    // it entirely.
+    files: [
+      '**/*.spec.ts',
+      '**/*.test.ts',
+      '**/*.e2e-spec.ts',
+      '**/*.bench.ts',
+      'test/**/fixtures/**/*.ts'
+    ],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
@@ -225,6 +301,27 @@ export default [
       'no-unused-vars': 'off',
       'no-undef': 'off',
       'no-console': 'off'
+    }
+  },
+
+  // Formatting is an ERROR, on every path the lint invocation reaches.
+  //
+  // `'error'` and not `--max-warnings 0`: that flag raises EVERY warning, and
+  // `security/detect-object-injection` is a warning on purpose in the scripts and
+  // spec blocks. Formatting has to be able to fail the build without dragging an
+  // unrelated rule up with it.
+  //
+  // `ci.yml` passes `run-format-check: false` and points here for the guarantee,
+  // so this rule is the only thing gating formatting in CI. It has to cover every
+  // path `pnpm lint` passes — a rule declared for a path the invocation never
+  // reaches gates nothing.
+  //
+  // Options stay in `.prettierrc`; passing them here would let the two disagree.
+  {
+    files: ['**/*.{ts,mjs,cjs,js}'],
+    plugins: { prettier },
+    rules: {
+      'prettier/prettier': 'error'
     }
   },
 
