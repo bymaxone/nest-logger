@@ -33,9 +33,11 @@ describe('PinoUnexpectedErrorSink', () => {
   let sink: PinoUnexpectedErrorSink
 
   beforeEach(() => {
-    // A real but silent Pino instance: the spy sees exactly what reaches Pino.
+    // `error` is replaced by a `jest.fn()` that never calls through, so only the
+    // arguments handed to Pino are under test. The silent instance exists to give
+    // the remaining methods the `Logger` type without a cast.
     rawLogger = pino({ enabled: false })
-    errorSpy = jest.spyOn(rawLogger, 'error')
+    errorSpy = jest.spyOn(rawLogger, 'error').mockImplementation(() => undefined)
     sink = new PinoUnexpectedErrorSink(new PinoLoggerService(rawLogger))
   })
 
