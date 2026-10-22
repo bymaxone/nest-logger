@@ -414,8 +414,9 @@ operationally: the slow upstream, the load-balancer timeout, the cancelled reque
 #### Unexpected errors behind `@bymax-one/nest-core`
 
 When nest-core's exception filter answers, an unexpected error becomes a fixed
-`500 BYMAX_INTERNAL_ERROR`, and by default the only record of it is the access-log line, which has
-no cause. nest-core 1.6.2 adds an optional sink token, `BYMAX_UNEXPECTED_ERROR_SINK`, and
+`500 BYMAX_INTERNAL_ERROR`. The access-log line for that response carries the cause only when this
+package's HTTP interceptor saw the error, which it does not for an error raised before it (in a
+guard or a middleware) or with HTTP logging off. nest-core 1.6.2 adds an optional sink token, `BYMAX_UNEXPECTED_ERROR_SINK`, and
 `PinoUnexpectedErrorSink` is a ready implementation of it. Bind it from a global module:
 
 ```typescript
@@ -441,8 +442,10 @@ the key `HTTP_UNEXPECTED_ERROR`:
 | `route`         | Matched route template (`/invoices/:id`), or `<unmatched>` before routing — never the raw URL           |
 | `correlationId` | nest-core's correlation id, when one resolved                                                           |
 
-The entry carries no request body, headers or query string, and default redaction applies to the
-error's own fields. The trace id comes from the trace mixin, as on every other entry. `record()`
+The sink adds nothing from the request beyond `method`, `route` and `correlationId`: no body,
+headers or query string. The error is serialized as on every `err` entry, own enumerable fields
+included, so an error object that itself carries request data (a `url` with a query string, a copy
+of the headers) brings that data along, under the same key-name redaction. The trace id comes from the trace mixin, as on every other entry. `record()`
 never throws, so a failing destination cannot change the response. This package does not import
 nest-core: the class matches nest-core's contract by shape, and `IUnexpectedErrorSink` /
 `UnexpectedErrorReport` are exported for reference.

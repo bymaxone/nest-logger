@@ -1,6 +1,7 @@
 /**
  * Structural mirror of `@bymax-one/nest-core`'s unexpected-error sink contract.
  *
+ * Layer: server/interfaces — the shapes `PinoUnexpectedErrorSink` implements.
  * Declared here, not imported: this package has no dependency on nest-core and
  * does not take one. TypeScript compares the two contracts by shape, so
  * `PinoUnexpectedErrorSink` binds to nest-core's `BYMAX_UNEXPECTED_ERROR_SINK`

@@ -2,10 +2,12 @@
  * Pino-backed receiver for `@bymax-one/nest-core`'s unexpected-error sink.
  *
  * Layer: server/sinks — nest-core's exception filter answers an unexpected error
- * with a fixed `500` body, and the access-log line for that response carries no
- * cause. Binding this class to nest-core's `BYMAX_UNEXPECTED_ERROR_SINK` token
- * writes one `error` entry per such error, with the original error's name,
- * message and stack:
+ * with a fixed `500` body. The access-log line for that response carries the
+ * cause only when this package's HTTP interceptor saw the error, which it does
+ * not for an error raised before it (a guard, a middleware) or with HTTP logging
+ * off. Binding this class to nest-core's `BYMAX_UNEXPECTED_ERROR_SINK` token
+ * writes one `error` entry per such error regardless, with the original error's
+ * name, message and stack:
  *
  * ```ts
  * import { BYMAX_UNEXPECTED_ERROR_SINK } from '@bymax-one/nest-core'

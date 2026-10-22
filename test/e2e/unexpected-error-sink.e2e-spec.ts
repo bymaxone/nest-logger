@@ -72,21 +72,33 @@ class InvoiceController {
   }
 }
 
+/**
+ * Boot an application wired the way a consumer would: the global logger
+ * module, the sink bound from its own global module, and the nest-core-like
+ * filter as `APP_FILTER`.
+ *
+ * @returns The initialized application.
+ */
+async function createSinkApp(): Promise<INestApplication> {
+  const moduleRef = await Test.createTestingModule({
+    imports: [
+      BymaxLoggerModule.forRoot({ service: { name: 'e2e-sink', version: '0.0.0' } }),
+      UnexpectedErrorSinkModule
+    ],
+    controllers: [InvoiceController],
+    providers: [{ provide: APP_FILTER, useClass: NestCoreLikeFilter }]
+  }).compile()
+  const app = moduleRef.createNestApplication({ logger: false })
+  await app.init()
+  return app
+}
+
 describe('Logger E2E — PinoUnexpectedErrorSink bound to the nest-core token', () => {
   let app: INestApplication
   let stdoutSpy: jest.SpyInstance
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        BymaxLoggerModule.forRoot({ service: { name: 'e2e-sink', version: '0.0.0' } }),
-        UnexpectedErrorSinkModule
-      ],
-      controllers: [InvoiceController],
-      providers: [{ provide: APP_FILTER, useClass: NestCoreLikeFilter }]
-    }).compile()
-    app = moduleRef.createNestApplication({ logger: false })
-    await app.init()
+    app = await createSinkApp()
   })
 
   afterAll(async () => {

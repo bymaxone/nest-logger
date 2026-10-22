@@ -16,13 +16,16 @@ No breaking changes.
 ### Added
 
 - **`PinoUnexpectedErrorSink` — the cause of a nest-core `500`, logged.** When nest-core's exception
-  filter turns an unexpected error into `500 BYMAX_INTERNAL_ERROR`, the only record used to be the
-  access-log line, with a synthetic `Error("GET /url → 500")` and no cause. nest-core 1.6.2 adds an
+  filter turns an unexpected error into `500 BYMAX_INTERNAL_ERROR`, the access-log line carries the
+  cause only when this package's HTTP interceptor saw the error. An error raised before it (in a
+  guard or a middleware), or any error with HTTP logging off, left a synthetic
+  `Error("GET /url → 500")` or no line at all. nest-core 1.6.2 adds an
   optional `BYMAX_UNEXPECTED_ERROR_SINK` token. This class implements it: one `error` entry per
   unexpected error, keyed `HTTP_UNEXPECTED_ERROR`, with the original error's type, message, stack
   and cause chain, plus `method`, the route template (`route`, never the raw URL) and
-  `correlationId`. It never carries the request body, headers or query string, and `record()`
-  never throws.
+  `correlationId`. It adds nothing else from the request — no body, headers or query string — and
+  `record()` never throws. The error keeps its own enumerable fields, as on every `err` entry, so
+  request data an error object carries itself is logged under the usual key-name redaction.
 
   This package still does not depend on nest-core. The class matches nest-core's contract by
   shape, and the types it implements are exported as `IUnexpectedErrorSink` and

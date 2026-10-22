@@ -7,9 +7,9 @@ import { PinoLoggerService } from '../services/pino-logger.service'
 import { PinoUnexpectedErrorSink } from './pino-unexpected-error.sink'
 
 /**
- * nest-core's 1.6.2 contract, copied verbatim. The sink must stay assignable to
- * it without importing nest-core: the assignment in the first test is the
- * compile-time check.
+ * nest-core's 1.6.2 contract, copied with one deliberate change (below). The
+ * sink must stay assignable to it without importing nest-core: the assignment
+ * in the first test is the compile-time check.
  *
  * `record` is declared as a property, not a method, on purpose: a method
  * signature compares its parameter bivariantly, so a report that stopped
@@ -27,25 +27,43 @@ interface NestCoreUnexpectedErrorSink {
   record: (report: NestCoreUnexpectedErrorReport) => void
 }
 
-describe('PinoUnexpectedErrorSink', () => {
-  let rawLogger: Logger
-  let errorSpy: jest.SpyInstance
-  let sink: PinoUnexpectedErrorSink
+/** One sink over a logger whose `error` is a non-delegating mock. */
+interface Harness {
+  readonly sink: PinoUnexpectedErrorSink
+  readonly errorSpy: jest.SpyInstance
+  /** The payload object handed to `pino.error` by the single expected call. */
+  readonly emittedPayload: () => Record<string, unknown>
+}
+
+/**
+ * Build a fresh {@link Harness}. `error` is replaced by a `jest.fn()` that never
+ * calls through, so only the arguments handed to Pino are under test; the
+ * silent instance exists to give the remaining methods the `Logger` type
+ * without a cast.
+ *
+ * @returns The sink, the `error` mock and a reader for its single payload.
+ */
+function createHarness(): Harness {
+  const rawLogger: Logger = pino({ enabled: false })
+  const errorSpy: jest.SpyInstance = jest
+    .spyOn(rawLogger, 'error')
+    .mockImplementation(() => undefined)
+  return {
+    sink: new PinoUnexpectedErrorSink(new PinoLoggerService(rawLogger)),
+    errorSpy,
+    emittedPayload: () => {
+      expect(errorSpy).toHaveBeenCalledTimes(1)
+      return errorSpy.mock.calls[0][0] as Record<string, unknown>
+    }
+  }
+}
+
+describe('PinoUnexpectedErrorSink — nest-core contract', () => {
+  let h: Harness
 
   beforeEach(() => {
-    // `error` is replaced by a `jest.fn()` that never calls through, so only the
-    // arguments handed to Pino are under test. The silent instance exists to give
-    // the remaining methods the `Logger` type without a cast.
-    rawLogger = pino({ enabled: false })
-    errorSpy = jest.spyOn(rawLogger, 'error').mockImplementation(() => undefined)
-    sink = new PinoUnexpectedErrorSink(new PinoLoggerService(rawLogger))
+    h = createHarness()
   })
-
-  /** The payload object handed to `pino.error` by the single expected call. */
-  function emittedPayload(): Record<string, unknown> {
-    expect(errorSpy).toHaveBeenCalledTimes(1)
-    return errorSpy.mock.calls[0][0] as Record<string, unknown>
-  }
 
   it(/*
    * The class is bound to nest-core's token by shape alone, so its shape is the
@@ -53,11 +71,19 @@ describe('PinoUnexpectedErrorSink', () => {
    * typecheck when nest-core's report stops providing a field this sink reads.
    */
   'is structurally assignable to the nest-core sink contract', () => {
-    const asNestCore: NestCoreUnexpectedErrorSink = sink
+    const asNestCore: NestCoreUnexpectedErrorSink = h.sink
 
     asNestCore.record({ error: new Error('boom'), method: 'GET', route: '/x' })
 
-    expect(errorSpy).toHaveBeenCalledTimes(1)
+    expect(h.errorSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('PinoUnexpectedErrorSink — entry shape', () => {
+  let h: Harness
+
+  beforeEach(() => {
+    h = createHarness()
   })
 
   it(/*
@@ -68,17 +94,17 @@ describe('PinoUnexpectedErrorSink', () => {
   'writes one HTTP_UNEXPECTED_ERROR entry with the error and request coordinates', () => {
     const error = new TypeError('x is undefined')
 
-    sink.record({ error, method: 'GET', route: '/invoices/:id', correlationId: 'req-1' })
+    h.sink.record({ error, method: 'GET', route: '/invoices/:id', correlationId: 'req-1' })
 
-    expect(emittedPayload()).toEqual({
+    expect(h.emittedPayload()).toEqual({
       logKey: 'HTTP_UNEXPECTED_ERROR',
       err: error,
       method: 'GET',
       route: '/invoices/:id',
       correlationId: 'req-1'
     })
-    expect(emittedPayload()['err']).toBe(error)
-    expect(errorSpy.mock.calls[0][1]).toBe('x is undefined')
+    expect(h.emittedPayload()['err']).toBe(error)
+    expect(h.errorSpy.mock.calls[0][1]).toBe('x is undefined')
   })
 
   it(/*
@@ -86,9 +112,17 @@ describe('PinoUnexpectedErrorSink', () => {
    * must not then carry `correlationId: undefined`.
    */
   'omits correlationId when the report has none', () => {
-    sink.record({ error: new Error('boom'), method: 'POST', route: '<unmatched>' })
+    h.sink.record({ error: new Error('boom'), method: 'POST', route: '<unmatched>' })
 
-    expect(Object.keys(emittedPayload())).not.toContain('correlationId')
+    expect(Object.keys(h.emittedPayload())).not.toContain('correlationId')
+  })
+})
+
+describe('PinoUnexpectedErrorSink — what the entry leaves out', () => {
+  let h: Harness
+
+  beforeEach(() => {
+    h = createHarness()
   })
 
   it(/*
@@ -97,26 +131,14 @@ describe('PinoUnexpectedErrorSink', () => {
    * and bypass `shouldAutoInjectTraceContext: false`.
    */
   'does not write the report traceId', () => {
-    sink.record({
+    h.sink.record({
       error: new Error('boom'),
       method: 'GET',
       route: '/x',
       traceId: '4bf92f3577b34da6a3ce929d0e0e4736'
     })
 
-    expect(Object.keys(emittedPayload())).not.toContain('traceId')
-  })
-
-  it(/*
-   * nest-core passes the thrown value uncut, and a thrown value need not be an
-   * Error. A string must still produce a readable entry rather than a blank
-   * message or a throw.
-   */
-  'normalizes a non-error thrown value', () => {
-    sink.record({ error: 'plain string', method: 'GET', route: '/x' })
-
-    expect(emittedPayload()['err']).toEqual({ name: 'UnknownError', message: 'plain string' })
-    expect(errorSpy.mock.calls[0][1]).toBe('plain string')
+    expect(Object.keys(h.emittedPayload())).not.toContain('traceId')
   })
 
   it(/*
@@ -136,25 +158,30 @@ describe('PinoUnexpectedErrorSink', () => {
       url: '/x?token=reset-code'
     }
 
-    sink.record(report)
+    h.sink.record(report)
 
-    expect(Object.keys(emittedPayload()).sort()).toEqual(['err', 'logKey', 'method', 'route'])
-    expect(JSON.stringify(emittedPayload())).not.toMatch(/secret-token|hunter2|reset-code/)
+    expect(Object.keys(h.emittedPayload()).sort()).toEqual(['err', 'logKey', 'method', 'route'])
+    expect(JSON.stringify(h.emittedPayload())).not.toMatch(/secret-token|hunter2|reset-code/)
+  })
+})
+
+describe('PinoUnexpectedErrorSink — arbitrary thrown values', () => {
+  let h: Harness
+
+  beforeEach(() => {
+    h = createHarness()
   })
 
   it(/*
-   * The sink runs on nest-core's response path. A failing logger (a throwing
-   * serializer or destination surfacing synchronously) must not escape.
+   * nest-core passes the thrown value uncut, and a thrown value need not be an
+   * Error. A string must still produce a readable entry rather than a blank
+   * message or a throw.
    */
-  'never throws when the logger throws', () => {
-    errorSpy.mockImplementation(() => {
-      throw new Error('serializer exploded')
-    })
+  'normalizes a non-error thrown value', () => {
+    h.sink.record({ error: 'plain string', method: 'GET', route: '/x' })
 
-    expect(() => {
-      sink.record({ error: new Error('boom'), method: 'GET', route: '/x' })
-    }).not.toThrow()
-    expect(errorSpy).toHaveBeenCalledTimes(1)
+    expect(h.emittedPayload()['err']).toEqual({ name: 'UnknownError', message: 'plain string' })
+    expect(h.errorSpy.mock.calls[0][1]).toBe('plain string')
   })
 
   it(/*
@@ -171,14 +198,37 @@ describe('PinoUnexpectedErrorSink', () => {
       }
     })
 
-    sink.record({ error: hostile, method: 'GET', route: '/x' })
+    h.sink.record({ error: hostile, method: 'GET', route: '/x' })
 
-    expect(emittedPayload()).toMatchObject({
+    expect(h.emittedPayload()).toMatchObject({
       logKey: 'HTTP_UNEXPECTED_ERROR',
       err: { name: 'SanitizeFailed' },
       method: 'GET',
       route: '/x'
     })
+  })
+})
+
+describe('PinoUnexpectedErrorSink — failure containment', () => {
+  let h: Harness
+
+  beforeEach(() => {
+    h = createHarness()
+  })
+
+  it(/*
+   * The sink runs on nest-core's response path. A failing logger (a throwing
+   * serializer or destination surfacing synchronously) must not escape.
+   */
+  'never throws when the logger throws', () => {
+    h.errorSpy.mockImplementation(() => {
+      throw new Error('serializer exploded')
+    })
+
+    expect(() => {
+      h.sink.record({ error: new Error('boom'), method: 'GET', route: '/x' })
+    }).not.toThrow()
+    expect(h.errorSpy).toHaveBeenCalledTimes(1)
   })
 
   it(/*
@@ -193,8 +243,8 @@ describe('PinoUnexpectedErrorSink', () => {
     })
 
     expect(() => {
-      sink.record(report)
+      h.sink.record(report)
     }).not.toThrow()
-    expect(errorSpy).not.toHaveBeenCalled()
+    expect(h.errorSpy).not.toHaveBeenCalled()
   })
 })
