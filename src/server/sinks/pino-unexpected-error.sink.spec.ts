@@ -7,9 +7,14 @@ import { PinoLoggerService } from '../services/pino-logger.service'
 import { PinoUnexpectedErrorSink } from './pino-unexpected-error.sink'
 
 /**
- * nest-core's contract as nest-core-8b published it for 1.6.2, copied verbatim.
- * The sink must stay assignable to it without importing nest-core: the
- * assignment in the first test is the compile-time check.
+ * nest-core's 1.6.2 contract, copied verbatim. The sink must stay assignable to
+ * it without importing nest-core: the assignment in the first test is the
+ * compile-time check.
+ *
+ * `record` is declared as a property, not a method, on purpose: a method
+ * signature compares its parameter bivariantly, so a report that stopped
+ * guaranteeing a field this sink reads (an optional `route`) would still
+ * typecheck. As a property it fails under `strictFunctionTypes`.
  */
 interface NestCoreUnexpectedErrorReport {
   readonly error: unknown
@@ -19,7 +24,7 @@ interface NestCoreUnexpectedErrorReport {
   readonly traceId?: string
 }
 interface NestCoreUnexpectedErrorSink {
-  record(report: NestCoreUnexpectedErrorReport): void
+  record: (report: NestCoreUnexpectedErrorReport) => void
 }
 
 describe('PinoUnexpectedErrorSink', () => {
@@ -43,7 +48,7 @@ describe('PinoUnexpectedErrorSink', () => {
   it(/*
    * The class is bound to nest-core's token by shape alone, so its shape is the
    * contract. Assigning it to a verbatim copy of nest-core's interface fails
-   * typecheck the moment the two drift apart.
+   * typecheck when nest-core's report stops providing a field this sink reads.
    */
   'is structurally assignable to the nest-core sink contract', () => {
     const asNestCore: NestCoreUnexpectedErrorSink = sink
@@ -151,15 +156,39 @@ describe('PinoUnexpectedErrorSink', () => {
   })
 
   it(/*
-   * A hostile report — a getter that throws — must not escape either.
+   * The thrown value is arbitrary application data. One whose `name` or
+   * `message` getter throws must still produce the entry — degraded to the
+   * sanitizer's failure shape — rather than being dropped while detecting
+   * whether it is an error at all.
    */
-  'never throws on a report whose fields throw when read', () => {
-    const report = Object.defineProperty({ error: new Error('boom'), route: '/x' }, 'method', {
+  'still writes the entry when the thrown value has a throwing getter', () => {
+    const hostile = Object.defineProperty({ name: 'Error' }, 'message', {
       enumerable: true,
       get(): string {
         throw new Error('hostile getter')
       }
-    }) as unknown as UnexpectedErrorReport
+    })
+
+    sink.record({ error: hostile, method: 'GET', route: '/x' })
+
+    expect(emittedPayload()).toMatchObject({
+      logKey: 'HTTP_UNEXPECTED_ERROR',
+      err: { name: 'SanitizeFailed' },
+      method: 'GET',
+      route: '/x'
+    })
+  })
+
+  it(/*
+   * A hostile report — a getter that throws — must not escape either.
+   */
+  'never throws on a report whose fields throw when read', () => {
+    const report: UnexpectedErrorReport = { error: new Error('boom'), method: 'GET', route: '/x' }
+    Object.defineProperty(report, 'method', {
+      get(): string {
+        throw new Error('hostile getter')
+      }
+    })
 
     expect(() => {
       sink.record(report)

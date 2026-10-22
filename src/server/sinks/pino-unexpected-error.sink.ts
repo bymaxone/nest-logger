@@ -1,11 +1,11 @@
 /**
  * Pino-backed receiver for `@bymax-one/nest-core`'s unexpected-error sink.
  *
- * Layer: server/sinks — nest-core's exception filter turns an unexpected error
- * into a fixed `500` body and, until this sink existed, the only trace of it was
- * the access-log line with a synthetic `Error("GET /url → 500")`. Binding this
- * class to nest-core's `BYMAX_UNEXPECTED_ERROR_SINK` token writes one `error`
- * entry per such error, with the original error's name, message and stack:
+ * Layer: server/sinks — nest-core's exception filter answers an unexpected error
+ * with a fixed `500` body, and the access-log line for that response carries no
+ * cause. Binding this class to nest-core's `BYMAX_UNEXPECTED_ERROR_SINK` token
+ * writes one `error` entry per such error, with the original error's name,
+ * message and stack:
  *
  * ```ts
  * import { BYMAX_UNEXPECTED_ERROR_SINK } from '@bymax-one/nest-core'
@@ -72,13 +72,9 @@ export class PinoUnexpectedErrorSink implements IUnexpectedErrorSink {
       if (report.correlationId !== undefined) {
         metadata['correlationId'] = report.correlationId
       }
-      // An error-like value goes through RAW so the `err` serializer keeps its
-      // real type and cause chain. Anything else (a thrown string, `undefined`)
-      // is normalized first: `errorStructured` reads `.message` for the line.
-      const error = isErrorLike(report.error) ? report.error : sanitizeError(report.error)
       this.logger.errorStructured(
         RESERVED_LOG_KEYS.HTTP_UNEXPECTED_ERROR,
-        error,
+        toLoggableError(report.error),
         undefined,
         metadata
       )
@@ -87,5 +83,26 @@ export class PinoUnexpectedErrorSink implements IUnexpectedErrorSink {
       // the sink as well, but the guarantee belongs here too: a hostile report
       // or a failing destination must never change the response.
     }
+  }
+}
+
+/**
+ * The thrown value in the form `errorStructured` takes.
+ *
+ * An error-like value goes through RAW so the `err` serializer keeps its real
+ * type and cause chain. Anything else (a thrown string, `undefined`) is
+ * normalized first, because `errorStructured` reads `.message` for the line.
+ *
+ * @param value - The thrown value, as nest-core reported it.
+ * @returns The value itself when it reads as an error, else its sanitized form.
+ */
+function toLoggableError(value: unknown): Error {
+  try {
+    return isErrorLike(value) ? value : sanitizeError(value)
+  } catch {
+    // `isErrorLike` reads `name` and `message`, and a getter that throws there
+    // would otherwise cost the whole entry. `sanitizeError` never throws: it
+    // degrades such a value to its `SanitizeFailed` shape.
+    return sanitizeError(value)
   }
 }
