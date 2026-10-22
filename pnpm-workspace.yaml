@@ -12,13 +12,20 @@ allowBuilds:
 # an override placed there does nothing — it warns, but it does nothing.
 overrides:
   # GHSA-5p4m-2wfm-xmqj (CVSS 7.5) — quadratic CPU while resolving !!omap.
+  # GHSA-2883-xcg3-v3hh (CVSS v3 7.5) — maxTotalMergeKeys does not bound CPU for
+  # empty merge sources; patched 3.15.2 and 4.3.2, which the floors below now name.
   # Transitive and build-time only; patched rather than ignored, because a
   # scanner told to skip dev dependencies stays blind after this one is gone.
-  'js-yaml@3': '^3.15.1'
-  'js-yaml@4': '^4.3.1'
-  'brace-expansion@1': '^1.1.18'
-  'brace-expansion@2': '^2.1.4'
-  'brace-expansion@5': '^5.0.9'
+  'js-yaml@3': '^3.15.2'
+  'js-yaml@4': '^4.3.2'
+  # brace-expansion: three denial-of-service advisories, each patched per major:
+  #   GHSA-6j4f-fj2g-mc7p  v3 7.5  recursion in parseCommaParts, stack exhaustion  1.1.19 / 2.1.5 / 5.0.10
+  #   GHSA-qhr7-859c-m2p7  v3 7.5  recursion on nested brace groups                1.1.20 / 2.1.6 / 5.0.11
+  #   GHSA-q2hr-2g5m-vwhr  v3 5.3  quadratic-time `{a},b}` rewrite                 1.1.21 / 2.1.7 / 5.0.12
+  # The floors are the last of the three on each major, which covers all three.
+  'brace-expansion@1': '^1.1.21'
+  'brace-expansion@2': '^2.1.7'
+  'brace-expansion@5': '^5.0.12'
   'esbuild': '^0.28.1'
   # A range here is NOT evidence that a package is patched. An override is a floor
   # on resolution, and nothing re-resolves a lockfile that already satisfies the
@@ -28,8 +35,10 @@ overrides:
   # resolve to a vulnerable and a fixed version at once, and an unanchored name
   # matches its `@types/` sibling.
   #
-  # fast-uri: minimum secure 3.1.6. Four advisories, all CVSS v3 7.5 (high band), all
-  # patched there. No v4 vector is published for any of them, so v3 is the only scale:
+  # fast-uri: minimum secure 3.1.8. A fifth advisory, GHSA-hrr3-gc8f-f4qj (v3 4.8, medium:
+  # inconsistent host case normalisation through percent-encoded octets), is patched in
+  # 3.1.8 and sets the floor. The four below are all CVSS v3 7.5 (high band), all
+  # patched at 3.1.6. No v4 vector is published for any of them, so v3 is the only scale:
   #   GHSA-jqff-g426-hqxp  host confusion, percent-encoded scheme normalization  >= 3.0.0
   #   GHSA-f65p-4m7j-42xc  SSRF, malformed IPv6 normalisation                    >= 3.0.0
   #   GHSA-fph4-wmhf-6fwf  SSRF, repeated hostname percent-decoding              >= 3.1.2
@@ -40,11 +49,11 @@ overrides:
   # Those bounds are the 3.x line, the only one this tree resolves. Each of the four
   # also reaches 2.x (patched 2.4.5) and 4.x (patched 4.1.3), which matters because
   # the key is bare: pnpm applies a bare override to every request for the package,
-  # so a dependency asking for fast-uri ^4.0.0 is forced down onto ^3.1.6 rather than
-  # left unconstrained — measured, it resolves 3.1.7 and the specifier is rewritten.
+  # so a dependency asking for fast-uri ^4.0.0 is forced down onto ^3.1.8 rather than
+  # left unconstrained — measured, it resolves within 3.x and the specifier is rewritten.
   # Secure, and possibly incompatible. Major the key before a 4.x consumer arrives.
   # Reached through ajv, under @stryker-mutator/core and @commitlint/config-validator.
-  'fast-uri': '^3.1.6'
+  'fast-uri': '^3.1.8'
   # qs: minimum secure 6.16.0. Two advisories, both patched there. GitHub rates both
   # medium from CVSS v4 6.3; their v3 scores land in different bands, so the scale is
   # named rather than left to the reader to infer:
@@ -63,3 +72,27 @@ overrides:
   # reachable through either. Build-surface exposure — worth patching because a
   # compromised build environment is real, not because a consumer is at risk.
   'qs': '^6.16.0'
+  #
+  # The four below are devDependency-only for the same reason, and each is a floor at
+  # the first patched version:
+  #
+  # handlebars 4.7.10, reached through ts-jest. Three template-compilation injection
+  # advisories, all patched there:
+  #   GHSA-8r5x-fm3f-whwj  v3 9.8  AST type confusion in compile (bypass of CVE-2026-33937)
+  #   GHSA-p8wg-vrv2-v86f  v4 9.2  own-property check bypass
+  #   GHSA-xw65-4hp5-5hc7  v3 4.7  unsafe inline embedding of precompiled templates
+  'handlebars': '^4.7.10'
+  # multer 2.4.0, reached through @nestjs/platform-express, which pins multer at exactly
+  # 2.2.0, so without an override nothing short of a Nest upgrade moves it. Five advisories:
+  #   GHSA-535w-7cp7-47q4  v3 7.5  DoS, oversized array index in field names     2.3.0
+  #   GHSA-qfvm-cv95-jqjf  v3 7.5  DoS, file descriptor leak on aborted uploads  2.3.0
+  #   GHSA-wc9g-mqfw-jrwm  v3 7.5  DoS, crafted multipart field names            2.3.0
+  #   GHSA-3pph-fpjx-jg34  v3 5.3  DoS, orphaned disk writes on aborted uploads  2.4.0
+  #   GHSA-qvfw-j98x-7q72  v3 3.7  size-limit bypass, async fileFilter race      2.3.0
+  'multer': '^2.4.0'
+  # proxy-addr 2.0.8, reached through express under @nestjs/platform-express.
+  # GHSA-jqcg-44mw-7w3h (v3 9.1): IP spoofing through an IPv4-mapped IPv6 trust subnet.
+  'proxy-addr': '^2.0.8'
+  # fast-copy 4.1.0, reached through pino-pretty. GHSA-jggr-w7fw-pc2j (v4 6.3): stack
+  # exhaustion copying deeply nested values.
+  'fast-copy': '^4.1.0'
