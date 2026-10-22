@@ -411,6 +411,42 @@ flushed** is reported as the success it was — the server completed and flushed
 peer read it is not knowable from the server side. What this catches is the case that matters
 operationally: the slow upstream, the load-balancer timeout, the cancelled request.
 
+#### Unexpected errors behind `@bymax-one/nest-core`
+
+When nest-core's exception filter answers, an unexpected error becomes a fixed
+`500 BYMAX_INTERNAL_ERROR`, and by default the only record of it is the access-log line, which has
+no cause. nest-core 1.6.2 adds an optional sink token, `BYMAX_UNEXPECTED_ERROR_SINK`, and
+`PinoUnexpectedErrorSink` is a ready implementation of it. Bind it from a global module:
+
+```typescript
+import { Global, Module } from '@nestjs/common'
+import { BYMAX_UNEXPECTED_ERROR_SINK } from '@bymax-one/nest-core'
+import { PinoUnexpectedErrorSink } from '@bymax-one/nest-logger'
+
+@Global()
+@Module({
+  providers: [{ provide: BYMAX_UNEXPECTED_ERROR_SINK, useClass: PinoUnexpectedErrorSink }],
+  exports: [BYMAX_UNEXPECTED_ERROR_SINK]
+})
+export class UnexpectedErrorSinkModule {}
+```
+
+Import it next to `BymaxLoggerModule`. Each unexpected error then produces one `error` entry with
+the key `HTTP_UNEXPECTED_ERROR`:
+
+| Field           | Content                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------- |
+| `err`           | The original error through the `err` serializer: type, message, scrubbed stack, cause chain, own fields |
+| `method`        | HTTP method                                                                                             |
+| `route`         | Matched route template (`/invoices/:id`), or `<unmatched>` before routing — never the raw URL           |
+| `correlationId` | nest-core's correlation id, when one resolved                                                           |
+
+The entry carries no request body, headers or query string, and default redaction applies to the
+error's own fields. The trace id comes from the trace mixin, as on every other entry. `record()`
+never throws, so a failing destination cannot change the response. This package does not import
+nest-core: the class matches nest-core's contract by shape, and `IUnexpectedErrorSink` /
+`UnexpectedErrorReport` are exported for reference.
+
 ### 6. OpenTelemetry correlation
 
 Initialize the OTel SDK **before** importing NestJS — this is critical:
@@ -729,7 +765,7 @@ function assertValidLogKey(key: string) {
 
 The following keys are used internally by the library — do not reuse them in application code:
 
-`LOGGER_BOOTSTRAP_OK` · `LOGGER_BOOTSTRAP_WARNING` · `LOGGER_SHUTDOWN_OK` · `HTTP_REQUEST_START` · `HTTP_REQUEST_SUCCESS` · `HTTP_REQUEST_REDIRECT` · `HTTP_REQUEST_CLIENT_ERROR` · `HTTP_REQUEST_SERVER_ERROR` · `HTTP_REQUEST_ABORTED` · `HTTP_REQUEST_COMPLETED` · `HTTP_EXCEPTION_HANDLED` · `HTTP_EXCEPTION_UNHANDLED` · `METHOD_EXECUTION` · `METHOD_SLOW_EXECUTION` · `LOGGER_DESTINATION_INIT_FAILED` · `LOGGER_DESTINATION_WRITE_FAILED` · `LOGGER_ENTRY_TRUNCATED` · `LOGGER_REDACTION_FAILED`
+`LOGGER_BOOTSTRAP_OK` · `LOGGER_BOOTSTRAP_WARNING` · `LOGGER_SHUTDOWN_OK` · `HTTP_REQUEST_START` · `HTTP_REQUEST_SUCCESS` · `HTTP_REQUEST_REDIRECT` · `HTTP_REQUEST_CLIENT_ERROR` · `HTTP_REQUEST_SERVER_ERROR` · `HTTP_REQUEST_ABORTED` · `HTTP_REQUEST_COMPLETED` · `HTTP_EXCEPTION_HANDLED` · `HTTP_EXCEPTION_UNHANDLED` · `HTTP_UNEXPECTED_ERROR` · `METHOD_EXECUTION` · `METHOD_SLOW_EXECUTION` · `LOGGER_DESTINATION_INIT_FAILED` · `LOGGER_DESTINATION_WRITE_FAILED` · `LOGGER_ENTRY_TRUNCATED` · `LOGGER_REDACTION_FAILED`
 
 All reserved keys are exported as the `RESERVED_LOG_KEYS` constant from `@bymax-one/nest-logger/shared`.
 
