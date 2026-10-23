@@ -11,6 +11,49 @@ heading here.
 
 ## [Unreleased]
 
+No breaking changes.
+
+### Added
+
+- **`PinoUnexpectedErrorSink` — the cause of a nest-core `500`, logged.** When nest-core's exception
+  filter turns an unexpected error into `500 BYMAX_INTERNAL_ERROR`, the access-log line carries the
+  cause only when this package's HTTP interceptor saw the error. An error raised before it (in a
+  guard or a middleware), or any error with HTTP logging off, left a synthetic
+  `Error("GET /url → 500")` or no line at all. nest-core 1.6.2 adds an
+  optional `BYMAX_UNEXPECTED_ERROR_SINK` token. This class implements it: one `error` entry per
+  unexpected error, keyed `HTTP_UNEXPECTED_ERROR`, with the original error's type, message, stack
+  and cause chain, plus `method`, the route template (`route`, never the raw URL) and
+  `correlationId`. It adds nothing else from the request — no body, headers or query string — and
+  `record()` never throws. The error keeps its own enumerable fields, as on every `err` entry, so
+  request data an error object carries itself is logged under the usual key-name redaction.
+
+  This package still does not depend on nest-core. The class matches nest-core's contract by
+  shape, and the types it implements are exported as `IUnexpectedErrorSink` and
+  `UnexpectedErrorReport`.
+
+  `HTTP_UNEXPECTED_ERROR` joins `RESERVED_LOG_KEYS`. An application that already writes that key
+  for its own events should rename them, or its queries will mix the two.
+
+#### Apply to a derived backend
+
+Requires `@bymax-one/nest-core` 1.6.2 or later. Nothing changes until you bind the sink: the token
+is optional and unbound by default. Bind it from a `@Global()` module imported next to
+`BymaxLoggerModule`:
+
+```typescript
+@Global()
+@Module({
+  providers: [{ provide: BYMAX_UNEXPECTED_ERROR_SINK, useClass: PinoUnexpectedErrorSink }],
+  exports: [BYMAX_UNEXPECTED_ERROR_SINK]
+})
+export class UnexpectedErrorSinkModule {}
+```
+
+`BYMAX_UNEXPECTED_ERROR_SINK` comes from `@bymax-one/nest-core` and `PinoUnexpectedErrorSink` from
+`@bymax-one/nest-logger`. To verify, make a route throw a plain `Error`: the response stays
+`500 BYMAX_INTERNAL_ERROR`, and the log gains one `HTTP_UNEXPECTED_ERROR` line next to the
+access-log line.
+
 ## [1.4.0] - 2026-08-30
 
 No breaking changes. Nothing you have wired stops working, and no export was renamed.

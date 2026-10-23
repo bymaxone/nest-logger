@@ -36,6 +36,12 @@ export { applyRequestIdMiddleware } from './middlewares/apply-request-id-middlew
 export { HttpAccessLogMiddleware } from './middlewares/http-access-log.middleware'
 export { RequestIdMiddleware } from './middlewares/request-id.middleware'
 
+// nest-core integration
+// Matches `@bymax-one/nest-core`'s `BYMAX_UNEXPECTED_ERROR_SINK` contract by
+// shape, so the consumer binds it to that token without this package importing
+// nest-core.
+export { PinoUnexpectedErrorSink } from './sinks/pino-unexpected-error.sink'
+
 // Decorators
 export { InjectLogger } from './decorators/inject-logger.decorator'
 export { LogContext, LOG_CONTEXT_METADATA_KEY } from './decorators/log-context.decorator'
@@ -61,6 +67,8 @@ export type {
   ResolvedBymaxLoggerModuleOptions,
   HttpOptions,
   OtelOptions,
+  IUnexpectedErrorSink,
+  UnexpectedErrorReport,
   LogContext as LogContextBag
 } from './interfaces'
 
