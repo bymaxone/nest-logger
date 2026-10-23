@@ -6,6 +6,7 @@ export type {
   NextHandler
 } from './http-context.interface'
 export type { LogContext } from './log-context.interface'
+export type { IUnexpectedErrorSink, UnexpectedErrorReport } from './unexpected-error-sink.interface'
 export type {
   BymaxLoggerModuleOptions,
   BymaxLoggerModuleAsyncOptions,
