@@ -67,7 +67,7 @@ describe('PinoUnexpectedErrorSink — nest-core contract', () => {
 
   it(/*
    * The class is bound to nest-core's token by shape alone, so its shape is the
-   * contract. Assigning it to a verbatim copy of nest-core's interface fails
+   * contract. Assigning it to the local copy of nest-core's interface fails
    * typecheck when nest-core's report stops providing a field this sink reads.
    */
   'is structurally assignable to the nest-core sink contract', () => {

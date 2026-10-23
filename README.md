@@ -432,8 +432,10 @@ import { PinoUnexpectedErrorSink } from '@bymax-one/nest-logger'
 export class UnexpectedErrorSinkModule {}
 ```
 
-Import it next to `BymaxLoggerModule`. Each unexpected error then produces one `error` entry with
-the key `HTTP_UNEXPECTED_ERROR`:
+Import it next to `BymaxLoggerModule`. The binding resolves `PinoLoggerService` because
+`BymaxLoggerModule` is global by default; with `isGlobal: false`, add `BymaxLoggerModule` to the
+sink module's `imports`. Each unexpected error then produces one `error` entry with the key
+`HTTP_UNEXPECTED_ERROR`:
 
 | Field           | Content                                                                                                 |
 | --------------- | ------------------------------------------------------------------------------------------------------- |

@@ -99,5 +99,7 @@ overrides:
   # GHSA-jqcg-44mw-7w3h (v3 9.1): IP spoofing through an IPv4-mapped IPv6 trust subnet.
   'proxy-addr': '^2.0.8'
   # fast-copy 4.1.0, reached through pino-pretty. GHSA-jggr-w7fw-pc2j (v4 6.3): stack
-  # exhaustion copying deeply nested values.
+  # exhaustion copying deeply nested values. pino-pretty is also an optional peer, so a
+  # consumer who installs it resolves fast-copy in their own tree, where this floor does
+  # not apply.
   'fast-copy': '^4.1.0'
