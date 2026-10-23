@@ -433,8 +433,8 @@ export class UnexpectedErrorSinkModule {}
 ```
 
 Import it next to `BymaxLoggerModule`. The binding resolves `PinoLoggerService` because
-`BymaxLoggerModule` is global by default; with `isGlobal: false`, add `BymaxLoggerModule` to the
-sink module's `imports`. Each unexpected error then produces one `error` entry with the key
+`BymaxLoggerModule` is global by default; with `isGlobal: false`, add the configured module (the
+`forRoot`/`forRootAsync` result) to the sink module's `imports`. Each unexpected error then produces one `error` entry with the key
 `HTTP_UNEXPECTED_ERROR`:
 
 | Field           | Content                                                                                                 |
