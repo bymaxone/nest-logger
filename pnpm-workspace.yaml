@@ -6,6 +6,11 @@
 allowBuilds:
   esbuild: true
   unrs-resolver: true
+  # Denied explicitly, because an unlisted package fails the install. Reached
+  # through jest-haste-map. Its install script compiles from source only when
+  # npm_config_build_from_source=true and otherwise does nothing; the prebuilt
+  # binary arrives as a platform-specific optional dependency.
+  '@parcel/watcher': false
 
 # Forced versions for vulnerable transitive dev dependencies. These live here and
 # NOT in package.json: pnpm 11 no longer reads the `pnpm` field of package.json, so
