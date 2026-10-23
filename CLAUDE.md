@@ -110,7 +110,10 @@ Files outside `files` — `scripts/`, `.github/`, `docs/`, `CLAUDE.md`, config �
 
 **This overrides the rule above while it holds.** The version in `package.json` must NOT be bumped
 by any change — break, feature or fix — until the maintainer asks explicitly, and when it does move
-it moves **within `1.4.x`**. `1.4.0` is the current number; `1.4.1` is the next one on this line.
+it moves **within `1.4.x`**. `1.4.1` is the current number; `1.4.2` is the next one on this line.
+The maintainer named `1.4.1` on 2026-10-22 for `PinoUnexpectedErrorSink`. That makes it new public
+API shipped as a patch, by the maintainer's decision rather than by semver, so do not read it as a
+precedent for picking a number.
 
 **The `1.3.x` line ended on 2026-08-29**, when the maintainer instructed `1.4.0` for the
 pre-routing access-log work (`applyAccessLog`, the `HttpAccessLogMiddleware` export and

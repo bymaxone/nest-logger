@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-23
+
 No breaking changes.
 
 ### Added
@@ -2024,7 +2026,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/bymaxone/nest-logger/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/bymaxone/nest-logger/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/bymaxone/nest-logger/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/bymaxone/nest-logger/compare/v1.2.9...v1.3.0
