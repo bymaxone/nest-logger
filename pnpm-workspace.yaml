@@ -59,11 +59,13 @@ overrides:
   # Secure, and possibly incompatible. Major the key before a 4.x consumer arrives.
   # Reached through ajv, under @stryker-mutator/core and @commitlint/config-validator.
   'fast-uri': '^3.1.8'
-  # qs: minimum secure 6.16.0. Two advisories, both patched there. GitHub rates both
-  # medium from CVSS v4 6.3; their v3 scores land in different bands, so the scale is
-  # named rather than left to the reader to infer:
+  # qs: minimum secure 6.16.1. Three advisories, all patched there. GitHub rates the
+  # first two medium from CVSS v4 6.3; their v3 scores land in different bands, so the
+  # scale is named rather than left to the reader to infer:
   #   GHSA-x5fp-wj9c-mxmx  array-limit bypass, bracket-key comma parsing    v3 3.7  low     >= 6.14.2
   #   GHSA-4mjr-xmp4-gh2g  denial of service, attacker-controlled isBuffer  v3 5.3  medium  >= 2.2.5
+  #   GHSA-6pq8-jhm2-2vcw  uncaught TypeError in stringify, arrayFormat     v3 5.3  medium  >= 6.16.1
+  #                        'comma' with a non-callable own toString (DoS)   (v4 6.3)
   # On either scale the urgency sits with fast-uri above, not here. Reached through express under
   # @nestjs/platform-express, through supertest, and through typed-rest-client under
   # @stryker-mutator/core.
@@ -76,7 +78,7 @@ overrides:
   # LICENSE, README.md and CHANGELOG.md, so no consumer of the published package is
   # reachable through either. Build-surface exposure — worth patching because a
   # compromised build environment is real, not because a consumer is at risk.
-  'qs': '^6.16.0'
+  'qs': '^6.16.1'
   #
   # The four below are devDependency-only for the same reason, and each is a floor at
   # the first patched version:
@@ -87,14 +89,27 @@ overrides:
   #   GHSA-p8wg-vrv2-v86f  v4 9.2  own-property check bypass
   #   GHSA-xw65-4hp5-5hc7  v3 4.7  unsafe inline embedding of precompiled templates
   'handlebars': '^4.7.10'
-  # multer 2.4.0, reached through @nestjs/platform-express, which pins multer at exactly
+  # multer 2.5.0, reached through @nestjs/platform-express, which pins multer at exactly
   # 2.2.0, so without an override nothing short of a Nest upgrade moves it. Five advisories:
   #   GHSA-535w-7cp7-47q4  v3 7.5  DoS, oversized array index in field names     2.3.0
   #   GHSA-qfvm-cv95-jqjf  v3 7.5  DoS, file descriptor leak on aborted uploads  2.3.0
   #   GHSA-wc9g-mqfw-jrwm  v3 7.5  DoS, crafted multipart field names            2.3.0
   #   GHSA-3pph-fpjx-jg34  v3 5.3  DoS, orphaned disk writes on aborted uploads  2.4.0
   #   GHSA-qvfw-j98x-7q72  v3 3.7  size-limit bypass, async fileFilter race      2.3.0
-  'multer': '^2.4.0'
+  #   GHSA-q7qp-rjg7-q26m  v3 7.5  DoS, pending async fileFilter after teardown  2.5.0
+  # The last one sets the floor. Drop this entry once @nestjs/platform-express pins
+  # multer >= 2.5.0 itself.
+  'multer': '^2.5.0'
+  # body-parser 2.4.0, reached through express under @nestjs/platform-express.
+  # GHSA-27r3-jxmh-p828 (v3 7.5): DoS via trailing bytes after a compressed request body.
+  # Majored because the 1.x line (patched 1.20.9) is not in this tree. Drop it once
+  # express pins body-parser >= 2.4.0 itself.
+  'body-parser@2': '^2.4.0'
+  # zod 4.6.6, reached through mutation-server-protocol under @stryker-mutator/core.
+  # GHSA-mrhx-c7xc-m3w5 (v3 7.5, v4 8.2): memory exhaustion validating oversized
+  # constrained collections. Build-time only. Drop it once @stryker-mutator/core
+  # resolves zod >= 4.6.6 itself.
+  'zod@4': '^4.6.6'
   # proxy-addr 2.0.8, reached through express under @nestjs/platform-express.
   # GHSA-jqcg-44mw-7w3h (v3 9.1): IP spoofing through an IPv4-mapped IPv6 trust subnet.
   'proxy-addr': '^2.0.8'
