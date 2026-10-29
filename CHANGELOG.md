@@ -36,7 +36,7 @@ runtime JavaScript in `dist/` is byte-identical to `1.4.1`.
 - Resolve `@opentelemetry/api` to 1.10.0 in the lockfile (was 1.9.1), so the test suite runs
   against the current API release. The `^1.9.0` range in `package.json`, devDependency and peer
   alike, is unchanged.
-- Bump `github/codeql-action/upload-sarif` to 4.39.1 in the CodeQL workflow. CI only; nothing
+- Bump `github/codeql-action/upload-sarif` to 4.39.1 in the Scorecard workflow. CI only; nothing
   ships.
 
 ## [1.4.1] - 2026-10-23
