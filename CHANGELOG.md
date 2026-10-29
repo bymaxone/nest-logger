@@ -16,7 +16,7 @@ runtime JavaScript in `dist/` is byte-identical to `1.4.1`.
 
 ### Security
 
-- Raise the pnpm override floors for four transitive devDependencies that resolved to versions
+- Raise the pnpm override floors for transitive devDependencies that resolved to versions
   with new advisories: `body-parser` `^2.4.0` (GHSA-27r3-jxmh-p828, DoS on trailing bytes after a
   compressed body), `multer` `^2.5.0` (GHSA-q7qp-rjg7-q26m, DoS from a pending async
   `fileFilter`), `qs` `^6.16.1` (GHSA-6pq8-jhm2-2vcw, `qs.stringify` DoS) and `zod` `^4.6.6`
@@ -33,8 +33,9 @@ runtime JavaScript in `dist/` is byte-identical to `1.4.1`.
   byte-identical; the `.d.ts` and `.d.cts` files re-emit type exports as a separate
   `export type { … }` statement instead of inline `type` modifiers, which declares the same
   public surface. `attw` reports no problems and the bundle-size budgets hold.
-- Raise the `@opentelemetry/api` devDependency to 1.10.0 (was 1.9.1), so the test suite runs
-  against the current API release. The peer range stays `^1.9.0`.
+- Resolve `@opentelemetry/api` to 1.10.0 in the lockfile (was 1.9.1), so the test suite runs
+  against the current API release. The `^1.9.0` range in `package.json`, devDependency and peer
+  alike, is unchanged.
 - Bump `github/codeql-action/upload-sarif` to 4.39.1 in the CodeQL workflow. CI only; nothing
   ships.
 
