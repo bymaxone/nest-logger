@@ -33,6 +33,10 @@ runtime JavaScript in `dist/` is byte-identical to `1.4.1`.
   byte-identical; the `.d.ts` and `.d.cts` files re-emit type exports as a separate
   `export type { … }` statement instead of inline `type` modifiers, which declares the same
   public surface. `attw` reports no problems and the bundle-size budgets hold.
+- Raise the `@opentelemetry/api` devDependency to 1.10.0 (was 1.9.1), so the test suite runs
+  against the current API release. The peer range stays `^1.9.0`.
+- Bump `github/codeql-action/upload-sarif` to 4.39.1 in the CodeQL workflow. CI only; nothing
+  ships.
 
 ## [1.4.1] - 2026-10-23
 
