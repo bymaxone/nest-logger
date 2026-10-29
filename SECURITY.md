@@ -4,14 +4,12 @@
 
 ## Supported versions
 
-Security patches are issued for the most recent minor on the active `1.x` line.
+Only the most recent minor receives security fixes; upgrade to it.
 
 | Version | Status                              |
 | ------- | ----------------------------------- |
 | `1.4.x` | ✅ Active — receives security fixes |
 | `< 1.4` | ❌ End-of-life                      |
-
-If you are stuck on an older version and need a backport, open a private advisory (see below) and we will discuss feasibility on a case-by-case basis.
 
 ## Reporting a vulnerability
 
