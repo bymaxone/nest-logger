@@ -11,6 +11,29 @@ heading here.
 
 ## [Unreleased]
 
+Dependency and build-tooling maintenance only. No source file under `src/` changes and the
+runtime JavaScript in `dist/` is byte-identical to `1.4.1`.
+
+### Security
+
+- Raise the pnpm override floors for four transitive devDependencies that resolved to versions
+  with new advisories: `body-parser` `^2.4.0` (GHSA-27r3-jxmh-p828, DoS on trailing bytes after a
+  compressed body), `multer` `^2.5.0` (GHSA-q7qp-rjg7-q26m, DoS from a pending async
+  `fileFilter`), `qs` `^6.16.1` (GHSA-6pq8-jhm2-2vcw, `qs.stringify` DoS) and `zod` `^4.6.6`
+  (GHSA-mrhx-c7xc-m3w5, memory exhaustion on oversized collections). Dev-only: the published
+  package has zero runtime dependencies.
+- Ignore GHSA-gcqx-w48m-w2h4 (`deepmerge` <= 4.3.1, prototype poisoning in `mergeObject`) in
+  `osv-scanner.toml` until 2027-01-27. No patched release exists, and `deepmerge` is reached
+  only through `jest-config`, a devDependency. Remove the entry when a fixed `deepmerge` ships
+  or jest drops it.
+
+### Changed
+
+- Build with `tsup` 9 (devDependency, was 8.5). The published `.mjs` and `.cjs` bundles are
+  byte-identical; the `.d.ts` and `.d.cts` files re-emit type exports as a separate
+  `export type { … }` statement instead of inline `type` modifiers, which declares the same
+  public surface. `attw` reports no problems and the bundle-size budgets hold.
+
 ## [1.4.1] - 2026-10-23
 
 No breaking changes.

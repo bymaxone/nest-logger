@@ -2482,7 +2482,7 @@ The lib has **no direct dependencies**. The entire ecosystem comes via peer deps
   "@opentelemetry/sdk-trace-base": "^1.x",
   "@opentelemetry/context-async-hooks": "^1.x",
   "@types/jest": "^30",
-  "@types/node": "^24",
+  "@types/node": "^26",
   "@types/supertest": "^7",
   "@typescript-eslint/eslint-plugin": "^8",
   "@typescript-eslint/parser": "^8",
@@ -2497,7 +2497,7 @@ The lib has **no direct dependencies**. The entire ecosystem comes via peer deps
   "reflect-metadata": "^0.2",
   "supertest": "^7",
   "ts-jest": "^29",
-  "tsup": "^8.5",
+  "tsup": "^9.0",
   "typescript": "^5.9"
 }
 ```
