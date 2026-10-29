@@ -348,7 +348,7 @@ history and the measured cost of each design.
 
 Every deployment must have tests ensuring:
 
-- [ ] `DEFAULT_REDACT_PATHS.length` matches the expected value (**165**: `REDACT_COMMON_FIELDS.length × 5 + REDACT_ABSOLUTE_PATHS.length`)
+- [ ] `DEFAULT_REDACT_PATHS.length` matches `REDACT_COMMON_FIELDS.length × 5 + REDACT_ABSOLUTE_PATHS.length`
 - [ ] `compileRedactPaths(extras, false)` includes defaults AND extras, with no duplicates
 - [ ] `compileRedactPaths(extras, true)` returns only extras
 - [ ] A log with `{ password: 'x' }` produces JSON with `"password":"[REDACTED]"`
