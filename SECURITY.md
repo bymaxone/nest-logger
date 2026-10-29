@@ -4,7 +4,7 @@
 
 ## Supported versions
 
-Only the most recent minor receives security fixes, currently `1.4.x`. Every earlier version is end-of-life; upgrade to the latest `1.4.x`.
+Only the most recent minor receives security fixes; upgrade to it.
 
 | Version | Status                              |
 | ------- | ----------------------------------- |
