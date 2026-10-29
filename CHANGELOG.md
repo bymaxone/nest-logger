@@ -11,6 +11,34 @@ heading here.
 
 ## [Unreleased]
 
+Dependency and build-tooling maintenance only. No source file under `src/` changes and the
+runtime JavaScript in `dist/` is byte-identical to `1.4.1`.
+
+### Security
+
+- Raise the pnpm override floors for transitive devDependencies that resolved to versions
+  with new advisories: `body-parser` `^2.4.0` (GHSA-27r3-jxmh-p828, DoS on trailing bytes after a
+  compressed body), `multer` `^2.5.0` (GHSA-q7qp-rjg7-q26m, DoS from a pending async
+  `fileFilter`), `qs` `^6.16.1` (GHSA-6pq8-jhm2-2vcw, `qs.stringify` DoS) and `zod` `^4.6.6`
+  (GHSA-mrhx-c7xc-m3w5, memory exhaustion on oversized collections). Dev-only: the published
+  package has zero runtime dependencies.
+- Ignore GHSA-gcqx-w48m-w2h4 (`deepmerge` <= 4.3.1, prototype poisoning in `mergeObject`) in
+  `osv-scanner.toml` until 2027-01-27. No patched release exists, and `deepmerge` is reached
+  only through `jest-config`, a devDependency. Remove the entry when a fixed `deepmerge` ships
+  or jest drops it.
+
+### Changed
+
+- Build with `tsup` 9 (devDependency, was 8.5). The published `.mjs` and `.cjs` bundles are
+  byte-identical; the `.d.ts` and `.d.cts` files re-emit type exports as a separate
+  `export type { … }` statement instead of inline `type` modifiers, which declares the same
+  public surface. `attw` reports no problems and the bundle-size budgets hold.
+- Resolve `@opentelemetry/api` to 1.10.0 in the lockfile (was 1.9.1), so the test suite runs
+  against the current API release. The `^1.9.0` range in `package.json`, devDependency and peer
+  alike, is unchanged.
+- Bump `github/codeql-action/upload-sarif` to 4.39.1 in the Scorecard workflow. CI only; nothing
+  ships.
+
 ## [1.4.1] - 2026-10-23
 
 No breaking changes.
@@ -1699,8 +1727,9 @@ identical to `1.0.8`, and nothing changed but the version number.
 
 ## [1.0.8] - 2026-08-10
 
-Remediation of a local audit's redaction, attribution and correlation-id findings. No API
-changed; the fixes are in the default redact set, the acting-user resolution and the docs.
+Remediation of a local audit's redaction, attribution and correlation-id findings. The public
+API is unchanged; the fixes are in the default redact set, the acting-user resolution, the
+correlation-id validation and the docs.
 
 ### Fixed
 
@@ -1712,6 +1741,14 @@ changed; the fixes are in the default redact set, the acting-user resolution and
   exception filter now resolve the acting user as `sub ?? id`, so a JWT principal (every
   `@bymax-one/nest-auth` token) is attributed to its subject rather than an ORM `id` when a
   principal carries both.
+- **Inbound correlation and tenant ids are confined to an id-safe charset.** The inbound
+  `x-request-id` and tenant-id header values are now accepted only when they are drawn from an
+  id-safe character set and fit the length bound; anything else (control bytes, whitespace,
+  markup characters) is rejected. A rejected request id is replaced by a generated one (when
+  `shouldGenerateRequestId` is on) and a rejected tenant id is omitted. The request id is echoed
+  on the `x-request-id` response header and both ids are stored in the log context, so this keeps
+  a client from planting a control byte or markup fragment in the logs and the header of every
+  request it makes.
 
 ### Documentation
 
@@ -1956,11 +1993,11 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
   Dev-only: the published package has zero runtime dependencies.
 - Force `qs` to `^6.15.3` (via `pnpm.overrides`) to clear GHSA-q8mj-m7cp-5q26
   (`qs.stringify` DoS). `typed-rest-client`, pulled in by Stryker, pins `qs` at
-  the affected `6.15.1` exactly, so no dependency refresh could resolve it
+  the affected `6.15.1` exactly, so no dependency refresh could resolve it.
 - Pin every third-party and GitHub-owned action to a full commit SHA, with the
   release tag kept as a trailing comment so Dependabot can still bump them. The
   org's own `bymaxone/.github` reusable workflows and composite action stay on
-  the `@v1` moving tag by design, so shared-pipeline fixes keep propagating
+  the `@v1` moving tag by design, so shared-pipeline fixes keep propagating.
 
 ### Changed
 

@@ -4,12 +4,12 @@
 
 ## Supported versions
 
-Security patches are issued for the most recent minor on the active `0.x` line. Once v1.0 ships, the support table will be updated.
+Security patches are issued for the most recent minor on the active `1.x` line.
 
 | Version | Status                              |
 | ------- | ----------------------------------- |
-| `0.1.x` | ✅ Active — receives security fixes |
-| `< 0.1` | ❌ End-of-life                      |
+| `1.4.x` | ✅ Active — receives security fixes |
+| `< 1.4` | ❌ End-of-life                      |
 
 If you are stuck on an older version and need a backport, open a private advisory (see below) and we will discuss feasibility on a case-by-case basis.
 
@@ -28,7 +28,7 @@ If you cannot use the GitHub form (e.g., you do not have an account), email **su
 A useful report contains:
 
 - A clear description of the vulnerability and its impact (CIA triad — confidentiality, integrity, availability)
-- Step-by-step reproduction against the latest `0.x` release
+- Step-by-step reproduction against the latest `1.x` release
 - The affected subpath (`.` or `./shared`)
 - A suggested fix or mitigation, if you have one
 - Whether you would like to be credited in the published advisory (and how — name, handle, affiliation)
@@ -61,7 +61,7 @@ The following classes are explicitly in scope:
 
 These are not vulnerabilities in `@bymax-one/nest-logger` itself:
 
-- Issues only reproducible in versions older than `0.1.0`
+- Issues only reproducible in versions older than `1.4.0`
 - Misconfigurations in the **consuming application** (e.g., disabling default redact paths via `shouldDisableDefaultRedact: true`, passing secrets as log metadata) unless they reproduce with the documented default configuration
 - Issues in optional peer dependencies (`pino-pretty`, `@opentelemetry/api`) when the upstream maintainer has already accepted them or when the dependency is not exercised by the library
 - Self-XSS, social engineering, denial of service via legitimate authenticated load

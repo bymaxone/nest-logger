@@ -187,19 +187,20 @@ See the canonical file: [`src/server/constants/default-redact-paths.constants.ts
 (`REDACT_COMMON_FIELDS`, 32 names), matched case-insensitively down to 100 levels of nesting;
 past that a value is dropped rather than emitted. The path
 expansion below is what `DEFAULT_REDACT_PATHS` still produces for the legacy strategy —
-`fields × 5 + absolute`, derived rather than fixed:
+`fields × 5 + absolute` (the record root plus wildcard depths 1–4), derived rather than fixed:
 
 | Category            | Fields (count)                                                                  | Depth | Generated paths |
 | ------------------- | ------------------------------------------------------------------------------- | ----- | --------------- |
-| Passwords           | 5 (`password`, `passwordHash`, `passwordConfirm`, `newPassword`, `oldPassword`) | 1-4   | 20              |
-| Tokens              | 6 (`token`, `accessToken`, `refreshToken`, `idToken`, `apiKey`, `apiSecret`)    | 1-4   | 24              |
-| MFA                 | 3 (`mfaSecret`, `mfaRecoveryCodes`, `totpSecret`)                               | 1-4   | 12              |
-| Generic secrets     | 4 (`secret`, `clientSecret`, `signingSecret`, `privateKey`)                     | 1-4   | 16              |
-| Payment (PCI DSS)   | 5 (`cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`)                         | 1-4   | 20              |
-| BR documents (LGPD) | 3 (`cpf`, `cnpj`, `rg`)                                                         | 1-4   | 12              |
-| Email (PII)         | 1 (`email`)                                                                     | 1-4   | 4               |
-| HTTP headers        | 5 (absolute paths)                                                              | —     | 5               |
-| **Total**           | **27 fields via depth + 5 absolute**                                            | —     | **113**         |
+| Passwords           | 5 (`password`, `passwordHash`, `passwordConfirm`, `newPassword`, `oldPassword`) | 0-4   | 25              |
+| Tokens              | 6 (`token`, `accessToken`, `refreshToken`, `idToken`, `apiKey`, `apiSecret`)    | 0-4   | 30              |
+| MFA                 | 3 (`mfaSecret`, `mfaRecoveryCodes`, `totpSecret`)                               | 0-4   | 15              |
+| Generic secrets     | 4 (`secret`, `clientSecret`, `signingSecret`, `privateKey`)                     | 0-4   | 20              |
+| Payment (PCI DSS)   | 5 (`cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`)                         | 0-4   | 25              |
+| BR documents (LGPD) | 3 (`cpf`, `cnpj`, `rg`)                                                         | 0-4   | 15              |
+| Email (PII)         | 1 (`email`)                                                                     | 0-4   | 5               |
+| HTTP header names   | 5 (`authorization`, `cookie`, `set-cookie`, `x-api-key`, `x-auth-token`)        | 0-4   | 25              |
+| HTTP headers        | 5 (absolute `req.headers` / `res.headers` paths)                                | —     | 5               |
+| **Total**           | **32 fields via depth + 5 absolute**                                            | —     | **165**         |
 
 ### When the consumer SHOULD extend
 
@@ -347,7 +348,7 @@ history and the measured cost of each design.
 
 Every deployment must have tests ensuring:
 
-- [ ] `DEFAULT_REDACT_PATHS.length` matches the expected value (**113**)
+- [ ] `DEFAULT_REDACT_PATHS.length` matches `REDACT_COMMON_FIELDS.length × 5 + REDACT_ABSOLUTE_PATHS.length`
 - [ ] `compileRedactPaths(extras, false)` includes defaults AND extras, with no duplicates
 - [ ] `compileRedactPaths(extras, true)` returns only extras
 - [ ] A log with `{ password: 'x' }` produces JSON with `"password":"[REDACTED]"`

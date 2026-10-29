@@ -2458,9 +2458,9 @@ The lib is intentionally focused on logging. **Out of scope:**
 >
 > **Note about `@opentelemetry/sdk-node` and `pino-roll`**: neither is a declared peer, and neither should become one. The lib imports neither — `sdk-node` is initialized by the consumer in its own `main.ts`, and `pino-roll` belongs to the `RollingFileDestination` **adapter example** in §5.7, which a consumer copies and owns. Declaring a peer the package never imports buys nothing (an optional peer documents a requirement, it does not resolve one) and costs: pnpm's `autoInstallPeers` defaults to true, so optional peers are materialized into the lockfile and generate Dependabot alerts for code this library never runs. (The setting is `autoInstallPeers` in `pnpm-workspace.yaml` — since pnpm 10 every non-auth setting lives there, not in `.npmrc`, and pnpm 11 ships a codemod that moves the stragglers.)
 >
-> The constraint that mattered survives without the declaration: SDK Node 0.218.x pins `@opentelemetry/api` at `>=1.3.0 <1.10.0`, which is why the `api` range above stays at `^1.9.0`. Track pre-1.0 releases — breaking changes may occur (currently `experimental/v0.218.0`).
+> The constraint that mattered survives without the declaration: each `@opentelemetry/sdk-node` release pins `@opentelemetry/api` to a narrow window (on the npm registry, `0.218.0` accepts `>=1.3.0 <1.10.0` and `0.300.0` accepts `>=1.10.0 <1.11.0`), so no single `api` range satisfies every SDK release. That is why the `api` range above stays at `^1.9.0` instead of naming a window. Track pre-1.0 releases — breaking changes may occur.
 >
-> **Note about `@opentelemetry/api` version**: our peer dep declares `^1.9.0` (any 1.x ≥ 1.9.0). `@opentelemetry/sdk-node` 0.218.x caps `@opentelemetry/api` at `<1.10` — consumers pinning a newer `api` will break OTel SDK init. **Keep `^1.9.0` until SDK Node 1.0 ships.** The lib itself only consumes the `trace` API namespace, which has been stable since 1.3+, so the lib does not introduce its own ceiling — the ceiling is dictated by the SDK.
+> **Note about `@opentelemetry/api` version**: our peer dep declares `^1.9.0` (any 1.x ≥ 1.9.0). each `@opentelemetry/sdk-node` release accepts only a narrow `api` window, so a consumer that pins an `api` outside the window of its SDK breaks OTel SDK init. **Keep `^1.9.0` until SDK Node 1.0 ships.** The lib itself only consumes the `trace` API namespace, which has been stable since 1.3+, so the lib does not introduce its own floor or ceiling — the window is dictated by the SDK the consumer installs.
 
 ### 15.3 `"dependencies": {}`
 
@@ -2482,7 +2482,7 @@ The lib has **no direct dependencies**. The entire ecosystem comes via peer deps
   "@opentelemetry/sdk-trace-base": "^1.x",
   "@opentelemetry/context-async-hooks": "^1.x",
   "@types/jest": "^30",
-  "@types/node": "^24",
+  "@types/node": "^26",
   "@types/supertest": "^7",
   "@typescript-eslint/eslint-plugin": "^8",
   "@typescript-eslint/parser": "^8",
@@ -2497,7 +2497,7 @@ The lib has **no direct dependencies**. The entire ecosystem comes via peer deps
   "reflect-metadata": "^0.2",
   "supertest": "^7",
   "ts-jest": "^29",
-  "tsup": "^8.5",
+  "tsup": "^9.0",
   "typescript": "^5.9"
 }
 ```
