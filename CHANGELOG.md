@@ -1713,14 +1713,14 @@ correlation-id validation and the docs.
   exception filter now resolve the acting user as `sub ?? id`, so a JWT principal (every
   `@bymax-one/nest-auth` token) is attributed to its subject rather than an ORM `id` when a
   principal carries both.
-- **Inbound correlation and tenant ids are confined to an id-safe charset.** `x-request-id` and
-  `x-tenant-id` values are now accepted only when they match `[A-Za-z0-9._:/+=-]+` and fit the
-  length bound; anything else (control bytes, whitespace, `< > " '`) is rejected. A rejected
-  request id is replaced by a generated one (when `shouldGenerateRequestId` is on) and a
-  rejected tenant id is omitted. The value is echoed on the
-  `x-request-id` response header and stored in the log context, so this keeps a client from
-  planting a control byte or markup fragment in the logs and the header of every request it
-  makes.
+- **Inbound correlation and tenant ids are confined to an id-safe charset.** The inbound
+  `x-request-id` and tenant-id header values are now accepted only when they are drawn from an
+  id-safe character set and fit the length bound; anything else (control bytes, whitespace,
+  markup characters) is rejected. A rejected request id is replaced by a generated one (when
+  `shouldGenerateRequestId` is on) and a rejected tenant id is omitted. The request id is echoed
+  on the `x-request-id` response header and both ids are stored in the log context, so this keeps
+  a client from planting a control byte or markup fragment in the logs and the header of every
+  request it makes.
 
 ### Documentation
 
