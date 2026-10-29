@@ -1699,8 +1699,9 @@ identical to `1.0.8`, and nothing changed but the version number.
 
 ## [1.0.8] - 2026-08-10
 
-Remediation of a local audit's redaction, attribution and correlation-id findings. No API
-changed; the fixes are in the default redact set, the acting-user resolution and the docs.
+Remediation of a local audit's redaction, attribution and correlation-id findings. The public
+API is unchanged; the fixes are in the default redact set, the acting-user resolution, the
+correlation-id validation and the docs.
 
 ### Fixed
 
@@ -1712,6 +1713,14 @@ changed; the fixes are in the default redact set, the acting-user resolution and
   exception filter now resolve the acting user as `sub ?? id`, so a JWT principal (every
   `@bymax-one/nest-auth` token) is attributed to its subject rather than an ORM `id` when a
   principal carries both.
+- **Inbound correlation and tenant ids are confined to an id-safe charset.** `x-request-id` and
+  `x-tenant-id` values are now accepted only when they match `[A-Za-z0-9._:/+=-]+` and fit the
+  length bound; anything else (control bytes, whitespace, `< > " '`) is rejected. A rejected
+  request id is replaced by a generated one (when `shouldGenerateRequestId` is on) and a
+  rejected tenant id is omitted. The value is echoed on the
+  `x-request-id` response header and stored in the log context, so this keeps a client from
+  planting a control byte or markup fragment in the logs and the header of every request it
+  makes.
 
 ### Documentation
 
@@ -1956,11 +1965,11 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
   Dev-only: the published package has zero runtime dependencies.
 - Force `qs` to `^6.15.3` (via `pnpm.overrides`) to clear GHSA-q8mj-m7cp-5q26
   (`qs.stringify` DoS). `typed-rest-client`, pulled in by Stryker, pins `qs` at
-  the affected `6.15.1` exactly, so no dependency refresh could resolve it
+  the affected `6.15.1` exactly, so no dependency refresh could resolve it.
 - Pin every third-party and GitHub-owned action to a full commit SHA, with the
   release tag kept as a trailing comment so Dependabot can still bump them. The
   org's own `bymaxone/.github` reusable workflows and composite action stay on
-  the `@v1` moving tag by design, so shared-pipeline fixes keep propagating
+  the `@v1` moving tag by design, so shared-pipeline fixes keep propagating.
 
 ### Changed
 
