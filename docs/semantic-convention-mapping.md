@@ -23,17 +23,17 @@ propose a rename can see which fields were left alone on purpose.
 
 ## Errors
 
-| Field                  | Meaning                       | OTel equivalent        | Stability  | Action                                 |
-| ---------------------- | ----------------------------- | ---------------------- | ---------- | -------------------------------------- |
-| `err.type`             | Error class name              | `exception.type`       | **Stable** | Kept; dual-emitted under `errorFormat` |
-| `err.message`          | Error message                 | `exception.message`    | **Stable** | Kept; dual-emitted                     |
-| `err.stack`            | Scrubbed, escaped stack       | `exception.stacktrace` | **Stable** | Kept; dual-emitted                     |
-| `err.cause`            | `Error.cause` chain           | _(none)_               | —          | Custom, namespaced under `err`         |
-| `err.errors`           | `AggregateError` members      | _(none)_               | —          | Custom, namespaced under `err`         |
-| `exception.type`       | Error class name              | `exception.type`       | **Stable** | `errorFormat: 'semconv' \| 'both'`     |
-| `exception.message`    | Error message                 | `exception.message`    | **Stable** | `errorFormat: 'semconv' \| 'both'`     |
-| `exception.stacktrace` | Scrubbed, escaped stack       | `exception.stacktrace` | **Stable** | `errorFormat: 'semconv' \| 'both'`     |
-| `error.type`           | Low-cardinality failure class | `error.type`           | **Stable** | `errorFormat: 'semconv' \| 'both'`     |
+| Field                  | Meaning                       | OTel equivalent        | Stability  | Action                                                                |
+| ---------------------- | ----------------------------- | ---------------------- | ---------- | --------------------------------------------------------------------- |
+| `err.type`             | Error class name              | `exception.type`       | **Stable** | Kept under `errorFormat: 'pino' \| 'both'`; removed under `'semconv'` |
+| `err.message`          | Error message                 | `exception.message`    | **Stable** | Kept under `errorFormat: 'pino' \| 'both'`; removed under `'semconv'` |
+| `err.stack`            | Scrubbed, escaped stack       | `exception.stacktrace` | **Stable** | Kept under `errorFormat: 'pino' \| 'both'`; removed under `'semconv'` |
+| `err.cause`            | `Error.cause` chain           | _(none)_               | —          | Custom, namespaced under `err`; removed with it under `'semconv'`     |
+| `err.errors`           | `AggregateError` members      | _(none)_               | —          | Custom, namespaced under `err`; removed with it under `'semconv'`     |
+| `exception.type`       | Error class name              | `exception.type`       | **Stable** | `errorFormat: 'semconv' \| 'both'`                                    |
+| `exception.message`    | Error message                 | `exception.message`    | **Stable** | `errorFormat: 'semconv' \| 'both'`                                    |
+| `exception.stacktrace` | Scrubbed, escaped stack       | `exception.stacktrace` | **Stable** | `errorFormat: 'semconv' \| 'both'`                                    |
+| `error.type`           | Low-cardinality failure class | `error.type`           | **Stable** | `errorFormat: 'semconv' \| 'both'`                                    |
 
 The spec requires at least one of `exception.type` / `exception.message`; both are emitted because
 both derive from the same value. `error.type` carries the class name — bounded by how many

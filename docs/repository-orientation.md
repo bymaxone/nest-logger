@@ -53,7 +53,7 @@ Host App (NestJS)
 ```
 Request
   → RequestIdMiddleware (x-request-id → ALS store)
-  → HttpLoggingInterceptor (HTTP_REQUEST_START / HTTP_REQUEST_COMPLETED)
+  → HttpLoggingInterceptor (HTTP_REQUEST_START; then _SUCCESS for a 2xx or _REDIRECT for a 3xx completion, or _CLIENT_ERROR / _SERVER_ERROR when the handler throws)
   → Controller
   → HttpExceptionFilter (HTTP_EXCEPTION_HANDLED / HTTP_EXCEPTION_UNHANDLED)
 ```
@@ -77,13 +77,13 @@ tsup builds 2 entry points → `dist/{subpath}/index.{mjs,cjs,d.ts}`
 
 ```bash
 pnpm clean        # rm -rf dist coverage
-pnpm typecheck    # tsc --noEmit
-pnpm lint         # eslint src
+pnpm typecheck    # tsc --noEmit for the root, server and bench tsconfigs
+pnpm lint         # eslint over src, scripts, test, bench and the root config files
 pnpm test:cov     # jest --coverage (100% gate)
 pnpm build        # tsup
-pnpm size         # check brotli budgets (server <12.5KB, shared <1KB)
+pnpm size         # check the brotli budgets declared in scripts/check-size.mjs
 pnpm check:exports # attw: resolve every entrypoint per module resolution mode
-pnpm release      # pnpm publish --provenance
+pnpm release      # npm publish --provenance --access public
 ```
 
 Post-build checks: both exports resolve, CJS + ESM work, `.d.ts` present, no bundled peer deps.

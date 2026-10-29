@@ -80,15 +80,16 @@ const streams = destinations.map((dest) => ({
   // `safeMinLevel`, not a direct read: `minLevel` is consumer-defined and this runs
   // at provider construction, before any fail-soft path exists. The guard also pins
   // the answer so this level and the one the registry records cannot diverge.
-  level: safeMinLevel(dest) ?? 'trace',
+  // An unreadable or absent `minLevel` gives the module level.
+  level: safeMinLevel(dest) ?? options.level,
   // The adapter takes the shared health tracker — it gates every write on it.
   stream: destinationToStream(dest, health)
 }))
 
-const logger = pino({ level: 'trace' }, pino.multistream(streams))
+const logger = pino({ level: options.level }, pino.multistream(streams))
 ```
 
-> ⚠️ **Critical**: `pino.multistream` requires `pino.level` to be the **lowest** level across all streams. If you have `streams: [{ level: 'info', ... }, { level: 'error', ... }]`, `pino.level` must be `'info'` (not `'error'`) — otherwise the info-level stream **never receives anything**.
+> ⚠️ **Critical**: the Pino instance's own `level` is the module `level`, and Pino filters entries below it **before** the multistream sees them. A destination `minLevel` can therefore only narrow what that destination receives; a `minLevel` below the module `level` does not widen it. To receive `debug` entries, set the module `level` to `debug` as well.
 
 ### `destinationToStream` helper
 
@@ -109,7 +110,10 @@ import { writeStdoutSafely } from '../utils/safe-stdio.util'
 
 export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
   return new Writable({
-    write(chunk: Buffer, _encoding, callback) {
+    // String chunks stay strings: the default would re-encode them to Buffers only for
+    // `write()` below to decode them again.
+    decodeStrings: false,
+    write(chunk: string | Buffer, _encoding, callback) {
       // A failure is CONTAINED, never propagated. `callback(err)` makes the
       // `Writable` emit `'error'`, which with no listener terminates the host —
       // the opposite of the fail-soft contract in §3. RECORD the failure, report
@@ -144,7 +148,7 @@ export function destinationToStream(dest: ILogDestination, health: DestinationHe
         callback()
       }
       try {
-        const payload = chunk.toString('utf8')
+        const payload = typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
         // A sink that failed `onInit` never became live, so it is SKIPPED rather
         // than written to — its `write()` may assume resources it never acquired.
         // The fan-out holds a stream for every REGISTERED destination, so this
@@ -518,7 +522,7 @@ Throwing from `onInit` is a legitimate way to say "I cannot run" — it never ab
 
 That third guarantee exists because `destinations` **replaces** the default stdout sink (see §1). Before it, a single sink that failed `onInit` left the application booting, running, exiting `0` and writing nothing anywhere — with the diagnostic explaining why delivered into the dead sink.
 
-The fallback inherits your destination's effective level (`minLevel`, else the module `level`): the rescue delivers what a working sink would have delivered, never more. The `stderr` report is outside the fan-out, so no `minLevel` can hide it.
+The fallback inherits your destination's effective level (the stricter of `minLevel` and the module `level`): the rescue delivers what a working sink would have delivered, never more. The `stderr` report is outside the fan-out, so no `minLevel` can hide it.
 
 **Implication for your `onInit`:** validate config and fail loudly there rather than degrading silently inside `write()`. A destination that throws from `onInit` produces a named diagnostic; one that swallows the problem and drops entries in `write()` produces silence.
 
@@ -980,7 +984,7 @@ For EVERY published destination:
 - **No shared state between main and worker.** Connection pools, in-memory caches, and singletons must be re-initialized inside the worker. Pass config via the `target` options object (serialized to JSON).
 - **Crash semantics.** A throw in the worker terminates the worker thread; `thread-stream` reconnects but already-buffered logs are lost. Always pair worker destinations with shutdown hooks that drain main-thread queues first.
 
-**Recommendation:** keep built-in destinations (stdout, file, pretty) on the **main thread** — overhead is negligible. Reserve `pino.transport` for opt-in async sinks (Loki, S3, Kafka) where serialization + I/O cost justifies a separate event loop.
+**Recommendation:** keep built-in destinations (stdout, pretty) on the **main thread** — overhead is negligible. Reserve `pino.transport` for opt-in async sinks (Loki, S3, Kafka) where serialization + I/O cost justifies a separate event loop.
 
 ---
 
