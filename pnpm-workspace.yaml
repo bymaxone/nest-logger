@@ -89,8 +89,9 @@ overrides:
   #   GHSA-p8wg-vrv2-v86f  v4 9.2  own-property check bypass
   #   GHSA-xw65-4hp5-5hc7  v3 4.7  unsafe inline embedding of precompiled templates
   'handlebars': '^4.7.10'
-  # multer 2.5.0, reached through @nestjs/platform-express, which pins multer at exactly
-  # 2.2.0, so without an override nothing short of a Nest upgrade moves it. Five advisories:
+  # multer 2.5.0, reached through @nestjs/platform-express, which pins multer at an exact
+  # version below that, so without an override nothing short of a Nest upgrade moves it.
+  # Advisories, with the first patched version:
   #   GHSA-535w-7cp7-47q4  v3 7.5  DoS, oversized array index in field names     2.3.0
   #   GHSA-qfvm-cv95-jqjf  v3 7.5  DoS, file descriptor leak on aborted uploads  2.3.0
   #   GHSA-wc9g-mqfw-jrwm  v3 7.5  DoS, crafted multipart field names            2.3.0
