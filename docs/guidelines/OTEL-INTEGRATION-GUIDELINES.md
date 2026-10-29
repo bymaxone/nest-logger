@@ -2,7 +2,7 @@
 
 > **Version:** 1.0.0
 > **Last updated:** 2026-05-27
-> **Target:** OpenTelemetry SDK Node `>=0.218.0 <1.10.0` (pre-1.0; pins `@opentelemetry/api` to `^1.9.0 <1.10.0`). Track release cadence — current is experimental v0.218.0. `@opentelemetry/api` 1.9+, Pino 10.x
+> **Target:** OpenTelemetry SDK Node (pre-1.0; each release pins `@opentelemetry/api` to a narrow window — `0.218.0` accepts `>=1.3.0 <1.10.0`, `0.300.0` accepts `>=1.10.0 <1.11.0`). The library declares `@opentelemetry/api` as `^1.9.0` and imposes no window of its own. `@opentelemetry/api` 1.9+, Pino 10.x
 > **Related document:** `docs/technical_specification.md` §11
 
 ---
