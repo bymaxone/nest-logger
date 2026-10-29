@@ -53,7 +53,7 @@ Host App (NestJS)
 ```
 Request
   → RequestIdMiddleware (x-request-id → ALS store)
-  → HttpLoggingInterceptor (HTTP_REQUEST_START, then one of HTTP_REQUEST_SUCCESS / _REDIRECT / _CLIENT_ERROR / _SERVER_ERROR)
+  → HttpLoggingInterceptor (HTTP_REQUEST_START; then _SUCCESS for a 2xx or _REDIRECT for a 3xx completion, or _CLIENT_ERROR / _SERVER_ERROR when the handler throws)
   → Controller
   → HttpExceptionFilter (HTTP_EXCEPTION_HANDLED / HTTP_EXCEPTION_UNHANDLED)
 ```
