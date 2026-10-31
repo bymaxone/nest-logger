@@ -77,11 +77,21 @@ export {
   LOGGER_OPTIONS_TOKEN,
   LOGGER_PINO_INSTANCE_TOKEN,
   LOGGER_DESTINATIONS_TOKEN,
+  LOGGER_REDACTOR_TOKEN,
   LOG_CONTEXT_TOKEN
 } from './constants/injection-tokens.constants'
 
 // Constants
-export { DEFAULT_REDACT_PATHS } from './constants/default-redact-paths.constants'
+// `REDACT_COMMON_FIELDS` is the canonical NAME list the default redactor matches
+// at any depth; `DEFAULT_REDACT_PATHS` is its legacy path expansion. Exported so a
+// consumer extends the defaults by reference instead of copying the names.
+export {
+  DEFAULT_REDACT_PATHS,
+  REDACT_COMMON_FIELDS
+} from './constants/default-redact-paths.constants'
+// The same check the trace mixin applies before it injects an id, exported so a
+// consumer validating an id of its own (a header, a message) applies the same rule.
+export { isValidTraceId } from './utils/otel-detector'
 // Level maps: `LogEntry.level` is the Pino string LABEL, so a destination that
 // needs the numeric code (a database column, a downstream protocol) has to
 // convert. Exported so it does not have to hard-code the mapping.

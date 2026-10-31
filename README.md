@@ -254,6 +254,37 @@ export class AppModule {}
 > a library adding one from asynchronously resolved options would put it in the pipeline of every
 > consumer, including those with HTTP logging off or with their own filters.
 
+`useFactory` is one of three forms. When the options depend on a provider already in the DI graph, a class can produce them instead. It implements `BymaxLoggerModuleOptionsFactory`; pass it as `useClass` to have the module instantiate it, or as `useExisting` to reuse an instance another module already provides:
+
+```typescript
+// logger-options.factory.ts
+import { Injectable } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
+import type {
+  BymaxLoggerModuleOptions,
+  BymaxLoggerModuleOptionsFactory
+} from '@bymax-one/nest-logger'
+
+@Injectable()
+export class LoggerOptionsFactory implements BymaxLoggerModuleOptionsFactory {
+  constructor(private readonly cfg: ConfigService) {}
+
+  createLoggerOptions(): BymaxLoggerModuleOptions {
+    return {
+      service: {
+        name: this.cfg.getOrThrow<string>('OTEL_SERVICE_NAME'),
+        version: this.cfg.getOrThrow<string>('RELEASE_SHA')
+      }
+    }
+  }
+}
+
+// app.module.ts: imports: [BymaxLoggerModule.forRootAsync({ imports: [ConfigModule], useClass: LoggerOptionsFactory })]
+// or, to reuse an instance another module exports: { imports: [OptionsModule], useExisting: LoggerOptionsFactory }
+```
+
+`createLoggerOptions()` may return the options or a promise of them. An error thrown from it, or from `useFactory`, fails module initialisation, and the options it returns go through the same validation as `forRoot`.
+
 ### 4. Inject the logger in a service
 
 ```typescript
@@ -723,6 +754,17 @@ export class RequestIdMiddleware implements NestMiddleware {
 ```
 
 Any log emitted inside the `run()` scope — regardless of nesting depth — automatically includes `requestId` with no prop drilling.
+
+#### Inbound `x-request-id` and tenant header
+
+The bundled `RequestIdMiddleware` does not trust the headers it reads. A request id or tenant id is accepted only when it is a string of **at most 256 characters** drawn from `A-Z a-z 0-9 . _ : / + = -`. Anything else is rejected and replaced, not truncated or cleaned: an oversized value, an empty one, one carrying a space, a control character or any of `< > " '`,, and a value that is not a string.
+
+| Header                                    | Rejected value becomes                                                                                                             |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `x-request-id`                            | a fresh UUID, or none when `http.shouldGenerateRequestId` is `false` (an enclosing scope's `requestId`, if any, is then inherited) |
+| the tenant header (`http.tenantIdHeader`) | no `tenantId` from the header; a tenant is never minted                                                                            |
+
+An accepted id is echoed back on the response `x-request-id` header and written to every entry the request produces, which is why the set is narrow. The example above reads the header raw to stay short; use `RequestIdMiddleware` through `applyAccessLog(app)` or `applyRequestIdMiddleware(consumer)` unless you apply the same rule yourself.
 
 ---
 
@@ -1389,11 +1431,26 @@ There are **two** APIs on this class, and they do not share a signature shape.
 
 ### Decorators
 
-| Decorator                       | Target            | Description                                                                                                                                                        |
-| ------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `@InjectLogger(context?)`       | Constructor param | Injects `PinoLoggerService` pre-bound to the given context string                                                                                                  |
-| `@LogContext(name)`             | Class             | Records a context label as class metadata. ⚠️ Metadata only — it does NOT open a `logContext.run()` scope; use `@InjectLogger(MyClass.name)` for a per-class label |
-| `@LogPerformance(thresholdMs?)` | Method            | Logs `METHOD_EXECUTION` on completion; `METHOD_SLOW_EXECUTION` if duration exceeds threshold                                                                       |
+| Decorator                       | Target            | Description                                                                                                                                                                                                                           |
+| ------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@InjectLogger(context?)`       | Constructor param | Injects `PinoLoggerService` pre-bound to the given context string                                                                                                                                                                     |
+| `@LogContext(name)`             | Class             | **Deprecated.** Records a context label as class metadata that nothing in this package reads, so the label is never applied, and it does NOT open a `logContext.run()` scope. Use `@InjectLogger(MyClass.name)` for a per-class label |
+| `@LogPerformance(thresholdMs?)` | Method            | Logs `METHOD_EXECUTION` on completion; `METHOD_SLOW_EXECUTION` if duration exceeds threshold                                                                                                                                          |
+
+### Injection tokens and helpers
+
+Every token is a `Symbol`, never a string, so it cannot collide with one of yours. Inject with an explicit `@Inject(TOKEN)`: the package is built without decorator metadata, and so is any consumer built the same way.
+
+| Export                       | Provides                                                                               | Use it to                                                                                                   |
+| ---------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `LOGGER_OPTIONS_TOKEN`       | the resolved `ResolvedBymaxLoggerModuleOptions`                                        | read the effective configuration, defaults applied                                                          |
+| `LOGGER_PINO_INSTANCE_TOKEN` | the underlying Pino instance                                                           | hand it to a library that wants a Pino logger                                                               |
+| `LOGGER_DESTINATIONS_TOKEN`  | the destinations array, `readonly ILogDestination[]`                                   | inspect what is registered; do not mutate it                                                                |
+| `LOGGER_REDACTOR_TOKEN`      | the redaction function, `(value: unknown) => unknown`, built from the resolved options | redact a value with the module's own rules; also needed to construct `PinoLoggerService` yourself in a test |
+| `LOG_CONTEXT_TOKEN`          | the `LogContextService` instance (an alias of the class)                               | inject the context by token                                                                                 |
+| `REDACT_COMMON_FIELDS`       | the default sensitive field **names**, matched at any depth                            | extend the defaults by reference instead of copying the list                                                |
+| `DEFAULT_REDACT_PATHS`       | the legacy path expansion of those names                                               | only with `redactStrategy: 'paths'`                                                                         |
+| `isValidTraceId(id)`         | `true` for 32 lowercase hex characters that are not all zeros                          | apply the rule the trace mixin applies before it injects an id                                              |
 
 ### Level maps (from `@bymax-one/nest-logger`)
 
@@ -1514,19 +1571,31 @@ interface ILogDestination {
 
 ## 🚨 Error Code Catalog
 
-| Code                              | Surfaces as                  | When                                                              | Action                                                              |
-| --------------------------------- | ---------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `LOGGER_INVALID_OPTIONS`          | Thrown `Error` at init       | `service`, `service.name`, or `service.version` missing or empty  | Add the required fields                                             |
-| `LOGGER_INVALID_LEVEL`            | Thrown `Error` at init       | `level` is not a valid Pino value                                 | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`            |
-| `LOGGER_PRETTY_UNAVAILABLE`       | Thrown `Error` at `onInit()` | `PrettyDevDestination` registered but `pino-pretty` not installed | Install `pino-pretty` or drop the destination                       |
-| `LOGGER_OTEL_API_UNAVAILABLE`     | Nothing emitted              | `@opentelemetry/api` cannot be resolved                           | None — the trace mixin steps aside silently                         |
-| `LOGGER_DESTINATION_INIT_FAILED`  | NDJSON line on `stderr`      | `destination.onInit()` rejects                                    | Sink is removed from the write fan-out and shutdown; boot continues |
-| `LOGGER_DESTINATION_WRITE_FAILED` | NDJSON line on `stderr`      | `destination.write()` throws or rejects                           | Entry dropped for that destination; others continue                 |
-| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Thrown `Error`               | `LogContextService.set()` called outside `run()`                  | Wrap in `logContext.run({ ... }, () => ...)`                        |
-| `LOGGER_ENTRY_TRUNCATED`          | `_logKey` in the envelope    | A serialized field exceeds `maxEntrySizeBytes`                    | Reduce the payload or raise the ceiling                             |
+Two kinds of failure, and they surface differently. A **thrown `Error`** carries no code string: it carries a message prefixed with the emitting class, which is what you match on. A **log key** is a code you can filter on: it is written to `stderr` as a structured line, or into the envelope as `_logKey`.
 
-> [!NOTE]
-> The codes above name the condition, not a machine-readable field. Thrown errors carry a human-readable message prefixed with the emitting class (e.g. `[BymaxLoggerModule] options.service is required`), not the code string.
+### Thrown errors
+
+| Message starts with                                      | Thrown from                                 | When                                                                                    | Action                                                                    |
+| -------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `[BymaxLoggerModule] options.`                           | `forRoot` / `forRootAsync`, at module setup | any option fails validation: a missing `service`, a `level` outside the set, a bad type | Fix the option the message names; it prints the path and what it received |
+| `[BymaxLoggerModule] useNestLogger(app) called but`      | `BymaxLoggerModule.useNestLogger`           | the module was never imported into the application                                      | Import `BymaxLoggerModule` before calling it                              |
+| `[BymaxLoggerModule] applyAccessLog(app) called but`     | `applyAccessLog`                            | the module was never imported into the application                                      | Import `BymaxLoggerModule` before calling it                              |
+| `[PrettyDevDestination] pino-pretty is not installed`    | `PrettyDevDestination.onInit`               | the destination is registered and the optional peer is missing                          | Install `pino-pretty` or drop the destination                             |
+| `[PrettyDevDestination] refused in production`           | `PrettyDevDestination.onInit`               | `NODE_ENV` is exactly `production`                                                      | Use `DefaultStdoutDestination` in production                              |
+| `[LogContextService] set() called outside run() scope`   | `LogContextService.set`                     | called with no active `run()`                                                           | Wrap the work in `logContext.run({ ... }, () => ...)`                     |
+| `[LogContextService] Refusing to set unsafe context key` | `LogContextService.set`                     | the key is `__proto__`, `constructor` or `prototype`                                    | Use an ordinary key                                                       |
+
+The two `PrettyDevDestination` errors are thrown inside `onInit`, which the registry contains: the boot continues and the failure is reported as `LOGGER_DESTINATION_INIT_FAILED` below.
+
+### Log keys
+
+| Code                              | Surfaces as                                              | When                                                                                  | Action                                                                                                                      |
+| --------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `LOGGER_DESTINATION_INIT_FAILED`  | NDJSON line on `stderr`                                  | `destination.onInit()` throws or rejects                                              | Sink is removed from the write fan-out and shutdown; boot continues                                                         |
+| `LOGGER_DESTINATION_WRITE_FAILED` | NDJSON line on `stderr`                                  | `destination.write()` throws or rejects                                               | Entry dropped for that destination; others continue                                                                         |
+| `LOGGER_BOOTSTRAP_WARNING`        | log entry with `reason: 'OTEL_API_UNAVAILABLE'`          | `otel.shouldAutoInjectTraceContext` is on and `@opentelemetry/api` cannot be resolved | Install `@opentelemetry/api`, or turn the option off; until then `traceId` and `spanId` are absent                          |
+| `LOGGER_ENTRY_TRUNCATED`          | `_logKey` in the envelope                                | a serialized field exceeds `maxEntrySizeBytes`                                        | Reduce the payload or raise the ceiling                                                                                     |
+| `LOGGER_REDACTION_FAILED`         | `_logKey` in the envelope, with `_redactionFailed: true` | a record cannot be walked by the redactor (a throwing getter, a hostile proxy)        | The record is dropped whole, never partly emitted; the message and ambient context stay. Find the value that broke the walk |
 
 ---
 
@@ -1569,6 +1638,7 @@ By design, the following are out of scope:
 - ❌ **Sentry SDK** — install `@sentry/node` in the consumer if desired
 - ❌ **Immutable audit logs** — future `@bymax-one/nest-audit`
 - ❌ **File rotation built-in** — use the `RollingFileDestination` example above, built on `pino-roll`
+- ❌ **Fastify** — the HTTP integration targets the Express adapter (`@nestjs/platform-express`); a Fastify adapter is not supported
 - ❌ **`pino-http`** — the `HttpLoggingInterceptor` is a NestJS-native replacement; install `pino-http` independently if you prefer it (produces duplicate logs if both are active)
 
 ---
