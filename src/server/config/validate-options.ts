@@ -22,12 +22,12 @@ import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-optio
 
 /** Throw the `[BymaxLoggerModule]` error for one option, naming it by its path. */
 function reject(path: string, rule: string, got?: unknown): never {
-  const received = got === undefined ? '' : `. Got: ${describe(got)}`
+  const received = got === undefined ? '' : `. Got: ${describeValue(got)}`
   throw new Error(`[BymaxLoggerModule] options.${path} ${rule}${received}`)
 }
 
 /** What a rejected value was, in a form that never throws and never prints a secret. */
-function describe(value: unknown): string {
+function describeValue(value: unknown): string {
   if (value === null) return 'null'
   if (Array.isArray(value)) return 'an array'
   if (typeof value === 'object') return 'an object'

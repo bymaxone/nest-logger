@@ -33,6 +33,16 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-01 — server: 28.79 KiB real -> 30.2 KiB budget (~4.9% headroom).
+//     RE-DERIVED from the artifact, per the standing rule: `main` measured 27.68
+//     KiB against 27.8 KiB (0.12 KiB of headroom), and the change that follows
+//     added +1.11 KiB. The growth is `validateOptions` checking every option it used
+//     to skip — the switches, the customization hooks, `destinations` and its
+//     hooks, and the `http` and `otel` groups — with messages that name the option
+//     and the kind received. That is executable code and message strings, both of
+//     which ship; it is not comment weight, which the build drops. The message
+//     strings are the part worth keeping: they are what turns a config typo into
+//     a located bootstrap error instead of a per-entry failure far from its cause.
 //   - 2026-08-29 — server: 26.51 KiB real -> 27.8 KiB budget (~4.9% headroom).
 //     RE-DERIVED from the artifact, per the standing rule. The growth is
 //     `1.4.0`'s pre-routing access log: `applyAccessLog(app)`, the
@@ -168,7 +178,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 27.8 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 30.2 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 
