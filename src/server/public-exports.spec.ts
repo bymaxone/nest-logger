@@ -15,8 +15,8 @@ import { isValidTraceId } from './utils/otel-detector'
 
 describe('package root exports', () => {
   it(/*
-   * The redactor token is a constructor dependency of the exported PinoLoggerService, so a
-   * consumer building that service in a test has to be able to name it.
+   * The redactor token is the injection point of the exported PinoLoggerService's redactor, so a
+   * consumer composing its own providers has to be able to name the same symbol.
    */
   'exports LOGGER_REDACTOR_TOKEN as the same symbol the service injects', () => {
     expect(root.LOGGER_REDACTOR_TOKEN).toBe(LOGGER_REDACTOR_TOKEN)

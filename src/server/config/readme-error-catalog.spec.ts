@@ -65,7 +65,7 @@ describe('README error catalog', () => {
 
   it(/*
    * The reverse: a thrown-error row whose message no source file contains documents an error
-   * that no longer exists, which is how the previous table listed five codes nothing emitted.
+   * the library does not throw.
    */
   'lists no thrown error that src does not throw', () => {
     const source = sourceFiles(join(ROOT, 'src'))

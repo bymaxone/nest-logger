@@ -14,8 +14,8 @@ heading here.
 ### Added
 
 - `LOGGER_REDACTOR_TOKEN`, `REDACT_COMMON_FIELDS` and `isValidTraceId` are exported from the package
-  root. The token is a constructor dependency of the exported `PinoLoggerService`, so a consumer
-  constructing it needed a symbol it could not import. `REDACT_COMMON_FIELDS` is the name list the
+  root. The token is the injection point of `PinoLoggerService`'s redactor, so a consumer composing
+  its own providers can now name it. `REDACT_COMMON_FIELDS` is the name list the
   default redactor matches, and `DEFAULT_REDACT_PATHS` is built from it, so extending the defaults no
   longer means copying the names. `isValidTraceId` is the check the trace mixin already applies.
   `sanitizeError` stays internal: its output shape is not a contract this release commits to.
