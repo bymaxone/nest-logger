@@ -43,7 +43,6 @@ import { lookup } from 'node:dns/promises'
 import {
   copyFileSync,
   existsSync,
-  lstatSync,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -53,6 +52,8 @@ import {
 import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { writeShownModules } from './readme-snippet-modules.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PKG = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
@@ -625,32 +626,6 @@ function elisionPositions(code, ext) {
   return positions
 }
 
-/**
- * Where the module for a README file header goes, built from a plain name so that no
- * header can reach outside the gate directory or replace a file the gate wrote. The gate
- * directory holds a symlink to the repository itself, so a name that carried a path
- * would write into the repository. The name is one plain segment (a letter or digit
- * first, then at most 99 word characters, dots and hyphens), the target must not exist,
- * even as a dangling symlink (a snippet, the prelude), it must resolve inside the gate
- * directory, and the file system must be able to answer for it. Returns the path, or the
- * reason there is none.
- */
-function moduleFilePath(file) {
-  if (!/^[A-Za-z0-9][\w.-]{0,99}$/.test(file)) return { reason: 'is not a plain file name' }
-  const target = join(GATE_DIR, `${file}.ts`)
-  const inside = relative(GATE_DIR, target)
-  if (inside.startsWith('..') || inside.includes(sep))
-    return { reason: 'leaves the gate directory' }
-  try {
-    if (lstatSync(target, { throwIfNoEntry: false }) !== undefined) {
-      return { reason: 'is a file the gate writes itself' }
-    }
-  } catch {
-    return { reason: 'cannot be checked as a file name' }
-  }
-  return { path: target }
-}
-
 // ---------------------------------------------------------------------------
 // 3. The README's own snippets compile against the built package.
 // ---------------------------------------------------------------------------
@@ -692,28 +667,12 @@ function checkSnippets() {
     elisions.set(name, elisionPositions(code, ext))
     writeFileSync(join(GATE_DIR, name), code)
   })
-  // A relative import resolves to the README snippet that shows the file: its first line
-  // names it (`// app.module.ts`). The first snippet naming a file stands for it, and
-  // whatever that snippet exports is what an importer gets, so a wrong export name is an
-  // error instead of an `any`.
-  const shownFiles = new Map()
-  subjects.forEach(({ raw }, i) => {
-    const file = /^\/\/\s*([\w.-]+)\.tsx?\b/.exec(raw)?.[1]
-    if (file !== undefined && !shownFiles.has(file)) {
-      const snippet = `snippet-${String(i + 1).padStart(2, '0')}`
-      const target = moduleFilePath(file)
-      if (target.path === undefined) {
-        fail('snippets', `README header "// ${file}.ts" in ${snippet} ${target.reason}`)
-        return
-      }
-      shownFiles.set(file, snippet)
-      const tail = /^export\s+default\b/m.test(raw)
-        ? `export { default } from './${snippet}'\n`
-        : ''
-      // `wx`: create, never overwrite, whatever happened between the check and the write.
-      writeFileSync(target.path, `export * from './${snippet}'\n${tail}`, { flag: 'wx' })
-    }
-  })
+  // A relative import resolves to the README snippet whose first line names the file.
+  const modules = subjects.map(({ raw }, i) => ({
+    raw,
+    snippet: `snippet-${String(i + 1).padStart(2, '0')}`
+  }))
+  for (const problem of writeShownModules(GATE_DIR, modules)) fail('snippets', problem)
 
   // The names a snippet uses without introducing them are declared, typed, in
   // `readme-prelude.d.ts`, so a call through one of them is checked and an
