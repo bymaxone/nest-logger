@@ -15,6 +15,8 @@
  * `'false'` is truthy, an unknown `fieldFormat` behaves as `camelCase`, `null`
  * spreads to nothing.
  */
+import { types } from 'node:util'
+
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 
@@ -237,12 +239,17 @@ function validateHttp(options: BymaxLoggerModuleOptions): void {
   checkBoolean('http.shouldCaptureExceptions', http['shouldCaptureExceptions'])
   checkBoolean('http.shouldGenerateRequestId', http['shouldGenerateRequestId'])
   const excludePaths = http['excludePaths']
-  if (
-    excludePaths !== undefined &&
-    (!Array.isArray(excludePaths) ||
-      !excludePaths.every((pattern: unknown) => pattern instanceof RegExp))
-  ) {
-    reject('http.excludePaths', 'must be an array of RegExp', excludePaths)
+  if (excludePaths !== undefined) {
+    if (!Array.isArray(excludePaths)) {
+      reject('http.excludePaths', 'must be an array of RegExp', excludePaths)
+    }
+    // `types.isRegExp`, not `instanceof`: a pattern built in another realm (a `vm`
+    // context, a worker, a test sandbox) is a valid RegExp for which `instanceof` is false.
+    excludePaths.forEach((pattern: unknown, index) => {
+      if (!types.isRegExp(pattern)) {
+        reject(`http.excludePaths[${String(index)}]`, 'must be a RegExp', pattern)
+      }
+    })
   }
   checkNonEmptyString('http.tenantIdHeader', http['tenantIdHeader'])
 }

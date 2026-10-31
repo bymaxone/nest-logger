@@ -7,6 +7,8 @@
  * far from its cause or not at all; the validator is where a config typo surfaces at
  * bootstrap with the name of the option.
  */
+import { runInNewContext } from 'node:vm'
+
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { validateOptions } from './validate-options'
 
@@ -228,22 +230,43 @@ describe('validateOptions: http', () => {
     }
   )
 
+  it(/*
+   * Each entry is `.test()`-ed against every request path, so the list itself must be
+   * an array.
+   */
+  'rejects http.excludePaths that is not an array', () => {
+    expect(() => validateOptions(withOption('http', { excludePaths: /^\/health$/ }))).toThrow(
+      /options\.http\.excludePaths must be an array of RegExp/
+    )
+  })
+
   it.each([
-    ['not an array', /^\/health$/],
-    ['an array holding a string', ['/health']],
-    ['an array holding a non-regexp object', [{ test: () => true }]]
+    ['a string', '/health'],
+    ['an object that only has a test method', { test: () => true }]
   ])(
     /*
-     * Each entry is `.test()`-ed against every request path. A string has no `test`,
-     * and an object with one is not a pattern the ReDoS guidance covers.
+     * A string has no `test`, and an object with one is not a pattern the ReDoS
+     * guidance covers. The message names the entry's index.
      */
-    'rejects http.excludePaths that is %s',
-    (_label, value) => {
-      expect(() => validateOptions(withOption('http', { excludePaths: value }))).toThrow(
-        /options\.http\.excludePaths must be an array of RegExp/
-      )
+    'rejects an http.excludePaths entry that is %s',
+    (_label, entry) => {
+      expect(() =>
+        validateOptions(withOption('http', { excludePaths: [/^\/ok$/, entry] }))
+      ).toThrow(/options\.http\.excludePaths\[1\] must be a RegExp/)
     }
   )
+
+  it(/*
+   * `readonly RegExp[]` also admits a pattern built in another realm (a `vm`
+   * context, a worker, a test sandbox boundary), for which `instanceof RegExp` is
+   * false although `.test()` works. Rejecting it would turn a configuration that
+   * booted before into a bootstrap failure, so the check is realm-independent.
+   */
+  'accepts a RegExp built in another realm in http.excludePaths', () => {
+    const foreign = runInNewContext('/^\\/probe$/') as RegExp
+    expect(foreign instanceof RegExp).toBe(false)
+    expect(() => validateOptions(withOption('http', { excludePaths: [foreign] }))).not.toThrow()
+  })
 
   it.each([[''], [42], [null]])(
     /*

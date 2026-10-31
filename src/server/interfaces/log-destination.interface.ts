@@ -51,8 +51,10 @@ export interface ILogDestination {
    * Errors thrown here, and rejections of a returned promise, are caught by the
    * library: the entry is dropped for this destination only, and one failure line
    * is written to stderr per failed entry. There is no retry and no circuit
-   * breaker, so a destination that keeps failing keeps receiving entries and
-   * keeps being reported; a destination that needs to back off does so itself.
+   * breaker, so a destination that initialized and keeps failing keeps receiving
+   * entries and keeps being reported; one that needs to back off does so itself.
+   * (A destination whose `onInit()` failed is a different case: it receives no
+   * entries at all.)
    *
    * @param payload — Newline-terminated JSON entry, UTF-8 encoded.
    */

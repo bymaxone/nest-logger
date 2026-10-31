@@ -32,7 +32,8 @@ heading here.
   switches must be booleans (the string `'false'` is truthy); `redactCensor` a string; `timestamp` a
   function; `redactPaths` an array of non-empty strings; `serializers` an object of functions;
   `destinations` an array whose entries have a `write` method, a non-empty `name` and function hooks;
-  `http` and `otel` objects; `http.excludePaths` an array of `RegExp`; `http.tenantIdHeader` and the
+  `http` and `otel` objects; `http.excludePaths` an array of `RegExp` (a pattern from another realm,
+  such as a `vm` context, is accepted); `http.tenantIdHeader` and the
   three `otel.*Field` names non-empty strings; `otel.fieldFormat` `'camelCase'` or `'snake_case'`
   (an unknown value silently behaved as `camelCase`).
 
@@ -48,9 +49,9 @@ heading here.
 ### Documentation
 
 - `ILogDestination` JSDoc: `write` no longer says a failing destination "may be temporarily
-  skipped". Nothing skips it: every failed entry is dropped for that destination and reported, and
-  the destination keeps receiving entries. `minLevel` says it can only narrow what the module
-  `level` lets through.
+  skipped". Nothing skips a destination that initialized: every failed entry is dropped for it and
+  reported, and it keeps receiving entries. Only one whose `onInit()` failed receives none.
+  `minLevel` says it can only narrow what the module `level` lets through.
 - The README prose and tables are corrected against the code; that correction touches no source file.
   - The options table gave `level` a default of `'info'`. Outside `NODE_ENV=production` the default
     is `'debug'`. It now lists the options it omitted: `isGlobal`, `serializers`, `timestamp`, the
