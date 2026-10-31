@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { Test } from '@nestjs/testing'
 
+import type { ServiceMetadata } from '../../shared/types/service-metadata.type'
 import { LOGGER_DESTINATIONS_TOKEN } from '../constants/injection-tokens.constants'
 import { DefaultStdoutDestination } from '../destinations/default-stdout.destination'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
@@ -20,6 +21,18 @@ import { applyDefaults } from './default-options'
 const README = readFileSync(join(__dirname, '..', '..', '..', 'README.md'), 'utf-8')
 
 const service = { name: 'app', version: '1.0.0' } as const
+
+/**
+ * Every field `ServiceMetadata` has. `Required<>` makes a field added to the interface a
+ * compile error here, so the `service.*` rows cannot silently fall behind it.
+ */
+const everyServiceField: Required<ServiceMetadata> = {
+  name: 'app',
+  version: '1.0.0',
+  namespace: 'payments',
+  instanceId: 'pod-1',
+  environment: 'production'
+}
 const baseOptions: BymaxLoggerModuleOptions = { service }
 
 /** Stands in for an escaped pipe while a row is split; a private-use code point never occurs in the README. */
@@ -40,9 +53,12 @@ function unwrap(cell: string): string {
   return match?.[1] ?? cell
 }
 
-/** Option name to its Default cell, for the table under the given README heading. */
-function readOptionTable(heading: string): ReadonlyMap<string, string> {
-  const lines = README.split('\n')
+/**
+ * Option name to its Default cell, for the table under the given heading of a Markdown
+ * document. A repeated option name throws: a Map would keep the last row and hide the first.
+ */
+function parseOptionTable(markdown: string, heading: string): ReadonlyMap<string, string> {
+  const lines = markdown.split('\n')
   const start = lines.findIndex((line) => line.trim() === heading)
   if (start < 0) {
     throw new Error(`README has no "${heading}" heading`)
@@ -63,10 +79,19 @@ function readOptionTable(heading: string): ReadonlyMap<string, string> {
       if (name === undefined || defaultCell === undefined) {
         throw new Error(`Malformed row under "${heading}": ${line}`)
       }
-      rows.set(unwrap(name), defaultCell)
+      const option = unwrap(name)
+      if (rows.has(option)) {
+        throw new Error(`Duplicate row for "${option}" under "${heading}"`)
+      }
+      rows.set(option, defaultCell)
     }
   }
   return rows
+}
+
+/** The same, for the published README. */
+function readOptionTable(heading: string): ReadonlyMap<string, string> {
+  return parseOptionTable(README, heading)
 }
 
 /** The value a plain-literal Default cell documents, or `undefined` when it is not one. */
@@ -235,6 +260,33 @@ describe('README option tables', () => {
       const documented = [...TOP_LEVEL.keys()].filter((name) => !name.startsWith('service.'))
       const real = Object.keys(resolved).filter((key) => !['service', 'http', 'otel'].includes(key))
       expect(documented.sort()).toEqual(real.sort())
+    })
+
+    it(/*
+     * The `service.*` rows are exactly the fields of `ServiceMetadata`, which the
+     * top-level completeness case above leaves out because `service` is not defaulted.
+     */
+    'lists exactly the service fields', () => {
+      const documented = [...TOP_LEVEL.keys()]
+        .filter((name) => name.startsWith('service.'))
+        .map((name) => name.replace(/^service\./, ''))
+      expect(documented.sort()).toEqual(Object.keys(everyServiceField).sort())
+    })
+
+    it(/*
+     * A repeated option row must fail the parse instead of letting the last row stand in
+     * for the first, which could carry the stale default.
+     */
+    'rejects a table that documents one option twice', () => {
+      const table = [
+        '### T',
+        '',
+        '| Option | Type | Default | Description |',
+        '| --- | --- | --- | --- |',
+        "| `level` | `string` | `'info'` | first |",
+        "| `level` | `string` | `'debug'` | second |"
+      ].join('\n')
+      expect(() => parseOptionTable(table, '### T')).toThrow(/Duplicate row for "level"/)
     })
 
     it(/*
