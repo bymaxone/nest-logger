@@ -130,7 +130,7 @@ commonjs` is set with no explicit `moduleResolution`) cannot find the subpath's 
 ## 8. Pre-Task Checklist
 
 Before starting: read CLAUDE.md, load only 1-2 relevant guidelines, check
-`docs/development_tasks.md` for dependencies. Before finishing:
+`docs/development_tasks.md` for dependencies and status. Before finishing:
 
 - [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm build` — all pass
 - [ ] Barrel export (`src/server/index.ts`) updated if new public API added
