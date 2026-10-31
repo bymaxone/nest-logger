@@ -6,79 +6,43 @@
 
 Project overview, architecture, build and publish steps, and the guidelines index live in
 [docs/repository-orientation.md](./docs/repository-orientation.md). They are orientation, not
-rules, and they are kept out of this file because every byte here is charged against the
-reviewer's instruction budget on each turn. Codex does not follow that link — nothing behind
-it is normative, and nothing normative should be moved behind it.
+rules, and are kept out of this file because every byte here is charged against the reviewer's
+instruction budget. Codex does not follow that link — nothing normative belongs behind it.
 
 ## 3. Backend Patterns
 
-### Injection Tokens (4 Symbols)
+### Injection Tokens
 
-| Token                        | Type                       | Required |
-| ---------------------------- | -------------------------- | -------- |
-| `LOGGER_OPTIONS_TOKEN`       | `BymaxLoggerModuleOptions` | Always   |
-| `LOGGER_PINO_INSTANCE_TOKEN` | `pino.Logger`              | Always   |
-| `LOGGER_DESTINATIONS_TOKEN`  | `ILogDestination[]`        | Always   |
-| `LOG_CONTEXT_TOKEN`          | `LogContextService`        | Always   |
-
-All tokens must be injected with explicit `@Inject(TOKEN)` — tsup drops decorator metadata.
+Injection tokens are `Symbol()`s, always required, for example `LOGGER_OPTIONS_TOKEN` (`BymaxLoggerModuleOptions`),
+`LOGGER_PINO_INSTANCE_TOKEN` (`pino.Logger`), `LOGGER_DESTINATIONS_TOKEN` (`ILogDestination[]`),
+`LOG_CONTEXT_TOKEN` (`LogContextService`). Inject each with explicit `@Inject(TOKEN)` — tsup drops
+decorator metadata.
 
 ### Structured Log Method Pattern
 
-```typescript
-// Convention: MODULE_ACTION_RESULT
-logger.info('USER_PROFILE_FETCHED', 'Profile retrieved', userId, { plan: 'pro' })
-logger.warnStructured('AUTH_RATE_LIMIT_APPROACHING', 'Near limit', userId, { attempts: 8 })
-logger.errorStructured('PAYMENT_CHARGE_FAILED', error, userId, { amount: 99 })
-```
+Keys follow `MODULE_ACTION_RESULT`: `logger.info('USER_PROFILE_FETCHED', 'Profile retrieved', userId,
+{ plan: 'pro' })`, and `warnStructured(key, msg, userId, meta)` / `errorStructured(key, error, userId, meta)`.
 
 ### Destination Pattern
 
-```typescript
-class MyDestination implements ILogDestination {
-  readonly name = 'my-destination'
-  readonly minLevel: LogLevel = 'warn'
-
-  async onInit(): Promise<void> {
-    // open connection / allocate buffer
-    // throwing here is legitimate: the sink is dropped from the fan-out and the
-    // reason is reported to stderr — it never aborts application bootstrap
-  }
-
-  write(payload: string): void {
-    // non-blocking; errors are contained by destinationToStream
-    // not called at all if onInit() rejected
-  }
-
-  async onShutdown(): Promise<void> {
-    // flush pending writes, close connection
-  }
-}
-```
+An `ILogDestination` has `name`, `minLevel`, `write(payload: string)`, and optional `onInit()` /
+`onShutdown()`. `write` is non-blocking, and is never called if `onInit()` rejected. A throw from
+`onInit()` is legitimate: the sink is dropped from the fan-out and the reason goes to stderr, so it
+never aborts application bootstrap. `onShutdown()` flushes and closes.
 
 ### Error Handling — Never Crash the App
 
-Failures are contained in `destinationToStream`, the `Writable` wrapper each destination is given
-in the `pino.multistream` fan-out — NOT in `DestinationRegistry`, which owns only the
-`onInit`/`onShutdown` lifecycle.
+Failures are contained in `destinationToStream`, the `Writable` wrapper each destination gets in the
+`pino.multistream` fan-out — NOT in `DestinationRegistry`, which owns only the `onInit`/`onShutdown`
+lifecycle. It wraps every `write()` in try/catch and reports through `reportDestinationFailure`
+(`RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED`) to stderr, NEVER through the logger: a broken
+sink must not create a write → log → write loop, and `destinations` REPLACES the default stdout sink,
+so the logger's own sinks may be the broken ones. The stream callback is then invoked WITHOUT an
+error, since propagating it would emit an unhandled `'error'` event and crash the host.
 
-```typescript
-// destinationToStream wraps every write():
-try {
-  destination.write(payload)
-} catch (cause) {
-  // stderr, NEVER through the logger — a broken sink must not be able to create
-  // a write → log → write feedback loop, and `destinations` REPLACES the default
-  // stdout sink, so the logger's own sinks may be the ones that are broken.
-  reportDestinationFailure(RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED, name, cause, msg)
-}
-// The stream callback is then invoked WITHOUT an error: propagating it would make
-// the wrapper emit an unhandled 'error' event, which crashes the host.
-```
-
-The same reporting path serves `onInit` failures (`LOGGER_DESTINATION_INIT_FAILED`), so both stages
-share one wire shape. If **no** destination initializes, entries fall back to raw NDJSON on stdout
-rather than disappearing — see `DestinationHealth`.
+`onInit` failures use the same path (`LOGGER_DESTINATION_INIT_FAILED`), so both stages share one
+wire shape. If **no** destination initializes, entries fall back to raw NDJSON on stdout rather than
+disappearing — see `DestinationHealth`.
 
 ---
 
@@ -86,145 +50,91 @@ rather than disappearing — see `DestinationHealth`.
 
 ### PII Redaction
 
-| Category      | Fields (each redacted at depths 1-4 via `fast-redact` wildcard)             |
-| ------------- | --------------------------------------------------------------------------- |
-| Passwords     | `password`, `passwordHash`, `passwordConfirm`, `newPassword`, `oldPassword` |
-| Tokens        | `token`, `accessToken`, `refreshToken`, `idToken`, `apiKey`, `apiSecret`    |
-| MFA           | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret`                               |
-| Payment (PCI) | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                         |
-| BR documents  | `cpf`, `cnpj`, `rg`                                                         |
-| PII           | `email`                                                                     |
-| HTTP headers  | `authorization`, `cookie`, `x-api-key`, `x-auth-token`, `set-cookie`        |
-
-`DEFAULT_REDACT_PATHS` contains 97 entries total. See `src/server/constants/default-redact-paths.constants.ts`.
+The default `redactStrategy: 'names'` censors each name of `REDACT_COMMON_FIELDS` at any depth, down to 100 levels.
+`DEFAULT_REDACT_PATHS` is the legacy `fast-redact` expansion (root plus wildcard depths 1-4, plus
+absolute header paths, length derived) fed to Pino only under `redactStrategy: 'paths'`. It is public
+API and append-only. Both live in `src/server/constants/default-redact-paths.constants.ts`, and the
+field list is in `docs/guidelines/PINO-REDACTION-GUIDELINES.md`.
 
 ### Trace ID Validation
 
-`isValidTraceId(id)` enforces: 32 hex chars, non-zero (rejects `00000000000000000000000000000000`). Never inject trace context from user-controlled input without this check.
+`isValidTraceId(id)` enforces 32 hex chars, non-zero. Never inject trace context from
+user-controlled input without it.
 
 ### Error Serialization
 
-`sanitizeError(err)` strips sensitive fields from Error objects before logging. See `src/server/utils/sanitize-error.util.ts`.
+`sanitizeError(err)` (`src/server/utils/sanitize-error.util.ts`) strips sensitive fields from
+Error objects before logging.
 
 ### Log Text Escaping
 
 `toSingleLineMessage(text)` runs on EVERY string that becomes Pino's message argument, and
-`escapeControlCharacters(text)` runs on the scrubbed stack. Both live in
-`src/server/utils/escape-log-text.util.ts`.
+`escapeControlCharacters(text)` on the scrubbed stack, both in
+`src/server/utils/escape-log-text.util.ts`. The threat is log forging, through TWO sinks:
+`pino-pretty` (shipped as `PrettyDevDestination`) prints parsed text straight to the terminal, so
+a raw `\n` or an ANSI sequence such as `ESC E` forges an entry; and the raw NDJSON line, because
+JSON escaping covers only C0 — DEL, the C1 range (U+0085 included), U+2028 and U+2029 are
+serialized VERBATIM (measured). Do not repeat the "NDJSON is already safe" premise: it holds for
+LF and CR only. Line terminators become the literal `\n`; every other terminal-driving control
+character becomes `\uXXXX`. Two rules:
 
-The threat is log forging, and it has TWO sinks. `pino-pretty`, which this library ships as
-`PrettyDevDestination`, writes the parsed text straight to the terminal, so a raw `\n` **or** an
-ANSI sequence like `ESC E` (next line) prints something indistinguishable from a genuine entry.
-The raw NDJSON line is exposed too: JSON escaping covers only C0, so DEL, the C1 range (U+0085
-NEL included), U+2028 and U+2029 are serialized VERBATIM — measured. Do not repeat the
-"NDJSON is already safe" premise; it holds for LF and CR and for nothing else in this set. Line terminators
-become the literal `\n`; every other terminal-driving control character becomes `\uXXXX`.
-
-Two rules when touching this:
-
-- **Escape at the sink, never in the destination.** Sanitizing `PrettyDevDestination` would
-  protect only the destination this library ships and leave every third-party `ILogDestination`
-  that re-renders exposed.
-- **The stack needs it too.** `pino-pretty` prints `err.stack` RAW rather than as a JSON string,
-  and a stack's first line repeats the error message — escaping only `msg` leaves the identical
-  attack working through `err.stack` and `exception.stacktrace`. Its newlines stay: a stack is
-  legitimately multi-line, so only `msg` carries the one-line guarantee.
+- **Escape at the sink, never in the destination.** Sanitizing only `PrettyDevDestination` leaves
+  every third-party `ILogDestination` that re-renders exposed.
+- **The stack needs it too.** `pino-pretty` prints `err.stack` RAW, and its first line repeats
+  the message, so escaping only `msg` leaves the attack open through `err.stack` and
+  `exception.stacktrace`. Stack newlines stay (a stack is legitimately multi-line); only `msg`
+  carries the one-line guarantee.
 
 ---
 
 ## 5. Testing Strategy
 
-### Coverage Gate
+**100% statements / branches / functions / lines — every layer, no exceptions.** Enforced by
+`jest.config.ts` (`pnpm test:cov`) and `jest.coverage.config.ts` (`pnpm test:cov:all`), a hard
+pre-publish gate. Stryker (`break: 95`) is the deeper gate against weak tests.
 
-**100% statements / branches / functions / lines — every layer, no exceptions.**
-Enforced by `jest.config.ts` (`pnpm test:cov`) and `jest.coverage.config.ts`
-(`pnpm test:cov:all`); both fail below 100%. A hard pre-publish gate, not a
-target. Mutation testing (Stryker `break: 95`) is the deeper gate against weak tests.
+Mocks: Pino instance and destinations are `jest.fn()`; spy on `process.stdout.write` — never real
+I/O in unit tests; use real `AsyncLocalStorage` (no I/O; mock it only to test out-of-scope); OTel is optional, so spy on `detectOtelTraceApi()`.
 
-### Mocking Strategy
-
-| Dependency          | Approach                                                      |
-| ------------------- | ------------------------------------------------------------- |
-| Pino instance       | `jest.fn()` for all log methods                               |
-| Destinations        | `jest.fn()` implementing `ILogDestination`                    |
-| `process.stdout`    | Spy on `write` — never real I/O in unit tests                 |
-| `AsyncLocalStorage` | Real ALS — it has no I/O; mock only when testing out-of-scope |
-| OTel API            | Optional; spy on `detectOtelTraceApi()` return value          |
-
-### Mutation Testing (Stryker)
-
-Line coverage proves code _executes_; mutation testing proves the tests would _fail_ if the code regressed. Run `pnpm mutation` (Node 24) before tagging a release. Survivors are either real gaps (add a test) or equivalent mutants — document the latter in `docs/mutation_testing_results.md` (§Residual survivors), **not** with inline `// Stryker disable` comments, which ship in the unminified `.mjs` bundle and push the server subpath past its size budget. See [docs/mutation_testing_plan.md](./docs/mutation_testing_plan.md).
-
----
+Run `pnpm mutation` (Node 24) before tagging a release. A survivor is a real gap (add a test) or
+an equivalent mutant, documented in the source as
+`// Stryker disable next-line <Mutator>: <reason>` and enforced by `pnpm check:mutants`; a reason
+after `--` or on a second line is silently dropped. See
+[docs/mutation_testing_plan.md](./docs/mutation_testing_plan.md) §Suppression policy.
 
 ## 6. Packaging invariants
 
-`exports` declares `types` **per condition** — `import` -> `.d.ts`, `require` ->
-`.d.cts`. A single shared `types` key makes CommonJS consumers resolve ESM
-declarations, because `"type": "module"` marks plain `.d.ts` as ESM.
+`exports` declares `types` **per condition** — `import` -> `.d.ts`, `require` -> `.d.cts`. A single
+shared `types` key makes CommonJS consumers resolve ESM declarations, because `"type": "module"`
+marks plain `.d.ts` as ESM.
 
-Subpaths also need a `typesVersions` entry: the `moduleResolution: node`
-algorithm predates `exports` and ignores it, so without it a consumer on that
-setting (the Nest CLI default when `module: commonjs` is set with no explicit
-`moduleResolution`) cannot find the subpath's types. `pnpm check:exports` runs
-the strict `attw` profile, which covers that mode — never weaken it with
+Subpaths also need a `typesVersions` entry: the `moduleResolution: node` algorithm predates
+`exports` and ignores it, so a consumer on that setting (the Nest CLI default when `module:
+commonjs` is set with no explicit `moduleResolution`) cannot find the subpath's types.
+`pnpm check:exports` runs the strict `attw` profile, which covers that mode — never weaken it with
 `--profile` to silence a row.
 
 ## 7. Common Pitfalls
 
-### Security
-
-| Pitfall                                | Fix                                                                                         |
-| -------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Consumer disables default redact paths | Warn in JSDoc; require explicit `shouldDisableDefaultRedact: true`                          |
-| Raw OTel trace ID from HTTP headers    | Always validate with `isValidTraceId`                                                       |
-| Destination `write()` that throws      | Wrapped by `destinationToStream` — contained, reported to stderr                            |
-| Destination whose `onInit()` rejects   | Dropped from the fan-out, reported to stderr; if NONE init, raw NDJSON falls back to stdout |
-| Logging full Error objects             | Use `sanitizeError(err)` before passing to Pino                                             |
-| New sink that hands a string to Pino   | Route it through `toSingleLineMessage` — the escaping is per-sink                           |
-
-### Architecture
-
-| Pitfall                                                 | Fix                                                  |
-| ------------------------------------------------------- | ---------------------------------------------------- |
-| Missing `@Inject(TOKEN)` on provider                    | Always explicit — tsup drops decorator metadata      |
-| String injection tokens                                 | `Symbol()` only                                      |
-| Direct `pino.info()` instead of service                 | Use `PinoLoggerService` — ensures ALS + OTel context |
-| Cross-subpath import (server → shared OK; reverse → no) | Only `shared` can be imported by `server`            |
-
-### TypeScript
-
-| Pitfall                           | Fix                                   |
-| --------------------------------- | ------------------------------------- |
-| Using `any` outside LoggerService | `unknown`, generics, explicit types   |
-| Missing `export type`             | Separate `export type` for interfaces |
-| Barrel re-exporting internals     | Export only public API                |
-
-### Testing
-
-| Pitfall                        | Fix                                           |
-| ------------------------------ | --------------------------------------------- |
-| Real Pino I/O in unit tests    | Mock Pino instance via `jest.fn()`            |
-| Testing implementation details | Test behavior and output shape, not internals |
-| Shared mutable state           | Fresh mocks in `beforeEach`                   |
+- Consumer disables default redact paths: warn in JSDoc, require explicit `shouldDisableDefaultRedact: true`.
+- Logging full Error objects: `sanitizeError(err)` first.
+- New sink that hands a string to Pino: route it through `toSingleLineMessage` — escaping is per-sink.
+- String injection tokens or a missing `@Inject(TOKEN)`: `Symbol()` only, always explicit `@Inject`.
+- Direct `pino.info()` instead of `PinoLoggerService`: the service ensures ALS + OTel context.
+- Cross-subpath import: `server` may import `shared`, never the reverse.
+- `any` outside `LoggerService`, or a barrel leaking internals: `unknown`/generics, separate `export type`, export only the public API.
+- Real Pino I/O, implementation-detail tests or shared mutable state: mock Pino, test behavior and output shape, fresh mocks in `beforeEach`.
 
 ---
 
 ## 8. Pre-Task Checklist
 
-**Before starting:**
-
-- [ ] Read CLAUDE.md critical rules
-- [ ] Identify 1-2 relevant guidelines → load only those
-- [ ] Check `docs/development_tasks.md` for dependencies and status
-
-**Before finishing:**
+Before starting: read CLAUDE.md, load only 1-2 relevant guidelines, check
+`docs/development_tasks.md` for dependencies and status. Before finishing:
 
 - [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm build` — all pass
 - [ ] Barrel export (`src/server/index.ts`) updated if new public API added
-- [ ] JSDoc on new public exports
-- [ ] All text in English
-- [ ] `@Inject(TOKEN)` explicit on every new provider
+- [ ] JSDoc on new public exports, all text in English, `@Inject(TOKEN)` on every new provider
 
 ---
 
