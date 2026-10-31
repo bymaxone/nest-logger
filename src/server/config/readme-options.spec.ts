@@ -1,3 +1,12 @@
+/**
+ * Pins the README's option tables to the options the module really resolves.
+ *
+ * Layer: server/config, tests. The README is published to npm and is where the options are
+ * read. `check:published` compiles its code fences, but nothing reads its tables, which is
+ * where a stale default hides. These cases parse the three option tables, hold every row
+ * against what `applyDefaults`, `BymaxLoggerModule` and `resolveServiceMetadata` apply, and
+ * hold the tables against the option set.
+ */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -12,12 +21,7 @@ import { BymaxLoggerModule } from '../logger.module'
 import { resolveServiceMetadata } from '../utils/resolve-resource.util'
 import { applyDefaults } from './default-options'
 
-/**
- * The README is published to npm and is where the options are read. `check:published`
- * compiles its code fences, but nothing reads its tables, which is where a stale default
- * hides. These cases parse the three option tables and hold every row against the
- * defaults the module really applies, and hold the tables against the option set.
- */
+/** The published README: the document whose option tables these cases read. */
 const README = readFileSync(join(__dirname, '..', '..', '..', 'README.md'), 'utf-8')
 
 const service = { name: 'app', version: '1.0.0' } as const
