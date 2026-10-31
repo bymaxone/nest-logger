@@ -27,7 +27,9 @@
  *    checked instead of resolving to `any`.
  * 4. A relative import resolves to the README snippet whose first line names the file
  *    (`// app.module.ts`), so what it imports is checked against what that snippet
- *    exports. One that resolves to no snippet is an error.
+ *    exports. One that resolves to no snippet is an error. A header names a file as one
+ *    plain segment and never as one the gate wrote, because the gate directory holds a
+ *    symlink to the repository and a generated module must not replace a snippet.
  *
  * Portable between packages: everything here is generic except `readme-prelude.d.ts`,
  * the `SnippetContext` it declares, and the `dist/server/index.d.ts` entry that
@@ -41,6 +43,7 @@ import { lookup } from 'node:dns/promises'
 import {
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -622,6 +625,27 @@ function elisionPositions(code, ext) {
   return positions
 }
 
+/**
+ * Where the module for a README file header goes, built from a plain name so that no
+ * header can reach outside the gate directory or replace a file the gate wrote. The gate
+ * directory holds a symlink to the repository itself, so a name that carried a path
+ * would write into the repository. The name is one plain segment (a letter or digit
+ * first, then word characters, dots and hyphens), the target must not exist, even as a
+ * dangling symlink (a snippet, the prelude), and it must resolve inside the gate
+ * directory. Returns the path, or the reason there is none.
+ */
+function moduleFilePath(file) {
+  if (!/^[A-Za-z0-9][\w.-]*$/.test(file)) return { reason: 'is not a plain file name' }
+  const target = join(GATE_DIR, `${file}.ts`)
+  const inside = relative(GATE_DIR, target)
+  if (inside.startsWith('..') || inside.includes(sep))
+    return { reason: 'leaves the gate directory' }
+  if (lstatSync(target, { throwIfNoEntry: false }) !== undefined) {
+    return { reason: 'is a file the gate writes itself' }
+  }
+  return { path: target }
+}
+
 // ---------------------------------------------------------------------------
 // 3. The README's own snippets compile against the built package.
 // ---------------------------------------------------------------------------
@@ -671,14 +695,18 @@ function checkSnippets() {
   subjects.forEach(({ raw }, i) => {
     const file = /^\/\/\s*([\w.-]+)\.tsx?\b/.exec(raw)?.[1]
     if (file !== undefined && !shownFiles.has(file)) {
-      shownFiles.set(file, `snippet-${String(i + 1).padStart(2, '0')}`)
+      const snippet = `snippet-${String(i + 1).padStart(2, '0')}`
+      const target = moduleFilePath(file)
+      if (target.path === undefined) {
+        fail('snippets', `README header "// ${file}.ts" in ${snippet} ${target.reason}`)
+        return
+      }
+      shownFiles.set(file, snippet)
       const tail = /^export\s+default\b/m.test(raw)
-        ? `export { default } from './${shownFiles.get(file)}'\n`
+        ? `export { default } from './${snippet}'\n`
         : ''
-      writeFileSync(
-        join(GATE_DIR, `${file}.ts`),
-        `export * from './${shownFiles.get(file)}'\n${tail}`
-      )
+      // `wx`: create, never overwrite, whatever happened between the check and the write.
+      writeFileSync(target.path, `export * from './${snippet}'\n${tail}`, { flag: 'wx' })
     }
   })
 
