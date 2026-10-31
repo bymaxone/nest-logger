@@ -19,7 +19,7 @@ const DEFAULT_HTTP: Required<HttpOptions> = {
   isEnabled: false,
   shouldCaptureExceptions: true,
   shouldGenerateRequestId: true,
-  excludePaths: [/^\/health$/, /^\/metrics$/],
+  excludePaths: [/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/],
   tenantIdHeader: 'x-tenant-id'
 }
 

@@ -732,13 +732,13 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
 ### `http` options
 
-| Option                         | Type       | Default                         | Description                                                                           |
-| ------------------------------ | ---------- | ------------------------------- | ------------------------------------------------------------------------------------- |
-| `http.isEnabled`               | `boolean`  | `false`                         | Register `HttpLoggingInterceptor` (and, on `forRoot`, `HttpExceptionFilter`) globally |
-| `http.shouldCaptureExceptions` | `boolean`  | `true`                          | Capture unhandled HTTP exceptions and emit `HTTP_EXCEPTION_UNHANDLED`                 |
-| `http.shouldGenerateRequestId` | `boolean`  | `true`                          | Generate a `requestId` when the inbound request header is absent                      |
-| `http.excludePaths`            | `RegExp[]` | `[/^\/health$/, /^\/metrics$/]` | Paths that bypass HTTP logging. Use anchored, linear-time regexes (ReDoS-safe)        |
-| `http.tenantIdHeader`          | `string`   | `'x-tenant-id'`                 | Request header carrying the tenant identifier                                         |
+| Option                         | Type       | Default                                                                  | Description                                                                           |
+| ------------------------------ | ---------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `http.isEnabled`               | `boolean`  | `false`                                                                  | Register `HttpLoggingInterceptor` (and, on `forRoot`, `HttpExceptionFilter`) globally |
+| `http.shouldCaptureExceptions` | `boolean`  | `true`                                                                   | Capture unhandled HTTP exceptions and emit `HTTP_EXCEPTION_UNHANDLED`                 |
+| `http.shouldGenerateRequestId` | `boolean`  | `true`                                                                   | Generate a `requestId` when the inbound request header is absent                      |
+| `http.excludePaths`            | `RegExp[]` | `[/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/]` | Paths that bypass HTTP logging. Use anchored, linear-time regexes (ReDoS-safe)        |
+| `http.tenantIdHeader`          | `string`   | `'x-tenant-id'`                                                          | Request header carrying the tenant identifier                                         |
 
 ### `otel` options
 

@@ -33,7 +33,9 @@ export interface ILogDestination {
 
   /**
    * Minimum log level this destination accepts. Entries below this level
-   * are not written. Undefined means "accept everything".
+   * are not written. The effective level is the STRICTER of this and the module
+   * `level`, so it can only narrow what the logger emits, never widen it.
+   * Undefined means "every entry the module level lets through".
    */
   readonly minLevel?: LogLevel
 
@@ -46,8 +48,11 @@ export interface ILogDestination {
    *   - Buffer and flush periodically (e.g., HTTP batching)
    *   - Return a Promise for async I/O
    *
-   * Errors thrown here are caught by the library; the destination may be
-   * temporarily skipped if it consistently fails.
+   * Errors thrown here, and rejections of a returned promise, are caught by the
+   * library: the entry is dropped for this destination only, and one failure line
+   * is written to stderr per failed entry. There is no retry and no circuit
+   * breaker, so a destination that keeps failing keeps receiving entries and
+   * keeps being reported; a destination that needs to back off does so itself.
    *
    * @param payload — Newline-terminated JSON entry, UTF-8 encoded.
    */

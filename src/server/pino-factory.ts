@@ -511,8 +511,11 @@ export function buildPinoInstance(
       options.resourceFormat,
       extraServiceFields(options.service)
     ),
-    // Pino requires the timestamp fn to emit the `,"time":"..."` fragment.
-    timestamp: () => `,"time":"${options.timestamp()}"`,
+    // Pino requires the timestamp fn to emit the `,"time":<json>` fragment, and
+    // inserts it into the line verbatim. The value comes from consumer code, so it
+    // is encoded as a JSON string here: a quote, a backslash or a newline in it must
+    // neither break the line nor add fields to it.
+    timestamp: () => `,"time":${JSON.stringify(String(options.timestamp()))}`,
     formatters: {
       // Emit the level as a string label instead of the numeric code — easier
       // for log aggregators. Trace context is injected via `mixin`, never via

@@ -143,19 +143,32 @@ describe('applyDefaults', () => {
   })
 
   it(/*
-   * The default excludePaths must be ANCHORED to exactly `/health` and
-   * `/metrics` — not a substring/prefix match. Testing near-miss paths pins both
-   * the `^` and `$` anchors so a regression that drops either is caught.
+   * The default excludePaths cover the probe endpoints a stock service exposes:
+   * `/health`, the liveness and readiness probes `/health/live` and
+   * `/health/ready` of `@bymax-one/nest-core`, and `/metrics`. They are ANCHORED:
+   * near-miss paths (a longer segment, a deeper path, a prefix) must still be
+   * logged, so a regression that drops either anchor is caught.
    */
-  'should default excludePaths to anchored /health and /metrics', () => {
+  'should default excludePaths to the anchored probe and metrics paths', () => {
     const paths = applyDefaults(baseOptions).http.excludePaths
-    expect(paths).toHaveLength(2)
-    expect(paths[0]?.test('/health')).toBe(true)
-    expect(paths[0]?.test('/healthy')).toBe(false) // pins the `$` anchor
-    expect(paths[0]?.test('/api/health')).toBe(false) // pins the `^` anchor
-    expect(paths[1]?.test('/metrics')).toBe(true)
-    expect(paths[1]?.test('/metrics/v2')).toBe(false) // pins the `$` anchor
-    expect(paths[1]?.test('/v1/metrics')).toBe(false) // pins the `^` anchor
+    const excluded = (path: string): boolean => paths.some((pattern) => pattern.test(path))
+    for (const path of ['/health', '/health/live', '/health/ready', '/metrics']) {
+      expect(excluded(path)).toBe(true)
+    }
+    const logged = [
+      '/healthy',
+      '/api/health',
+      '/health/liveness',
+      '/health/live/extra',
+      '/health/ready/',
+      '/health/other',
+      '/api/health/live',
+      '/metrics/v2',
+      '/v1/metrics'
+    ]
+    for (const path of logged) {
+      expect(excluded(path)).toBe(false)
+    }
   })
 
   it(/*
