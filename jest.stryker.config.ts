@@ -18,7 +18,15 @@ import base from './jest.config.ts'
  */
 const config: Config = {
   ...base,
-  testEnvironment: '@stryker-mutator/jest-runner/jest-env/node'
+  testEnvironment: '@stryker-mutator/jest-runner/jest-env/node',
+  // This spec reads the TEXT of `src` to find every `throw new Error(...)`. Stryker's sandbox
+  // holds instrumented copies, where that scan finds none and the dry run fails before any mutant
+  // runs. It asserts about documentation, not behaviour, so it kills no mutant; `pnpm test` still
+  // runs it against the real source.
+  testPathIgnorePatterns: [
+    ...(base.testPathIgnorePatterns ?? ['/node_modules/']),
+    '/readme-error-catalog\\.spec\\.ts$'
+  ]
 }
 
 export default config
