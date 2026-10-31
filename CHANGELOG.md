@@ -11,6 +11,34 @@ heading here.
 
 ## [Unreleased]
 
+### Documentation
+
+- The README prose and tables are corrected against the code. No source file under `src/` changes.
+  - The options table gave `level` a default of `'info'`. Outside `NODE_ENV=production` the default
+    is `'debug'`. It now lists the options it omitted: `isGlobal`, `serializers`, `timestamp`, the
+    deprecated `shouldUseAsNestLogger`, and `otel.traceIdField`, `otel.spanIdField` and
+    `otel.traceFlagsField`.
+  - `DefaultStdoutDestination` was called "always active". It is the default sink only while
+    `destinations` is empty, as the Destinations section already said. A destination whose
+    `onInit()` rejects was described as staying in the write fan-out. It is removed from the fan-out
+    and from shutdown.
+  - The architecture diagram showed `info(logKey, msg, context, metadata)`; the third parameter is
+    `userId`. It named a `composedMixin()` that does not exist (the function is
+    `createTraceContextMixin`) and put `userId` in the scope `RequestIdMiddleware` opens, which holds
+    `requestId` and `tenantId`.
+  - The tech stack badges now read pnpm 11 and tsup 9. The URL normalization lists name ULID and
+    nanoid segments as well as UUID and numeric ones. The `LogContextService` table lists `get()`.
+    The last two HTTP log keys sit inside their table.
+  - The Pino throughput figures are attributed to Pino's own benchmarks, the `Scope.REQUEST` cost
+    to NestJS's estimate, and the EPIPE guard note names its one exception, `pino-pretty`'s own
+    stream.
+
+### Tests
+
+- `readme-options.spec.ts` parses the three option tables in the README and checks every default
+  against the defaults the module applies, and checks that the tables list exactly the options the
+  module resolves, so a default that drifts, or an option added without a row, fails the suite.
+
 ## [1.4.2] - 2026-10-30
 
 No breaking changes. Dependency and build-tooling maintenance only. No source file under `src/` changes and the
