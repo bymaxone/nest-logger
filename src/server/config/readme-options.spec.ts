@@ -126,7 +126,8 @@ const OTEL = readOptionTable('### `otel` options')
 
 /** The documented cell for a default that is a behaviour, not a literal. */
 const LEVEL_CELL = "`'info'` when `NODE_ENV=production`, else `'debug'`"
-const EXCLUDE_PATHS_CELL = '`[/^\\/health$/, /^\\/metrics$/]`'
+const EXCLUDE_PATHS_CELL =
+  '`[/^\\/health$/, /^\\/health\\/live$/, /^\\/health\\/ready$/, /^\\/metrics$/]`'
 const TIMESTAMP_CELL = '`() => new Date().toISOString()`'
 const DESTINATIONS_CELL = '`[new DefaultStdoutDestination()]`'
 

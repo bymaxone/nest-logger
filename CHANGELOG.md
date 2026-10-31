@@ -11,9 +11,48 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A custom `timestamp` can no longer break the log line or add fields to it.** Pino inserts the
+  value into the JSON line verbatim, and the library wrapped it in quotes without encoding it, so a
+  quote, a backslash or a newline in the returned string produced invalid JSON for every entry, and a
+  crafted value such as `","injected":"x` added a field. The value is now encoded as a JSON string,
+  and `time` carries exactly what the function returned.
+
+### Breaking
+
+- **`http.excludePaths` now excludes `/health/live` and `/health/ready` by default**, the probes of
+  `@bymax-one/nest-core`, so the defaults are `/health`, `/health/live`, `/health/ready` and
+  `/metrics`. A probe hit every few seconds drowned the record (8272 of 8274 entries on one
+  deployment). Each default is an exact, anchored path, so a route such as `/health/other` is still
+  logged.
+- **Options are validated more strictly at bootstrap**, each rejection naming the option and, where
+  there is a value to show, what was received. Added checks: `maxEntrySizeBytes` must be a finite number (a `NaN` or `Infinity`
+  made the size gate never trip); `isGlobal`, `shouldDisableDefaultRedact` and the `http` and `otel`
+  switches must be booleans (the string `'false'` is truthy); `redactCensor` a string; `timestamp` a
+  function; `redactPaths` an array of non-empty strings; `serializers` an object of functions;
+  `destinations` an array whose entries have a `write` method, a non-empty `name` and function hooks;
+  `http` and `otel` objects; `http.excludePaths` an array of `RegExp` (a pattern from another realm,
+  such as a `vm` context, is accepted); `http.tenantIdHeader` and the
+  three `otel.*Field` names non-empty strings; `otel.fieldFormat` `'camelCase'` or `'snake_case'`
+  (an unknown value silently behaved as `camelCase`).
+
+#### Apply to a consumer
+
+- A deployment whose own `/health/live` or `/health/ready` route should stay in the log now sets
+  `http.excludePaths` itself. A value replaces the defaults, and `[/^\/health$/, /^\/metrics$/]`
+  restores the previous list.
+- An application that passed a value of the wrong kind, such as `http: { isEnabled: 'false' }` or a
+  destination without a `name`, now fails at bootstrap with a message naming the option, where it
+  previously booted with that value ignored or misread. Correct the value.
+
 ### Documentation
 
-- The README prose and tables are corrected against the code. No source file under `src/` changes.
+- `ILogDestination` JSDoc: `write` no longer says a failing destination "may be temporarily
+  skipped". Nothing skips a destination that initialized: every failed entry is dropped for it and
+  reported, and it keeps receiving entries. Only one whose `onInit()` failed receives none.
+  `minLevel` says it can only narrow what the module `level` lets through.
+- The README prose and tables are corrected against the code; that correction touches no source file.
   - The options table gave `level` a default of `'info'`. Outside `NODE_ENV=production` the default
     is `'debug'`. It now lists the options it omitted: `isGlobal`, `serializers`, `timestamp`, the
     deprecated `shouldUseAsNestLogger`, and `otel.traceIdField`, `otel.spanIdField` and

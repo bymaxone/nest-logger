@@ -69,6 +69,28 @@ describe('buildPinoInstance', () => {
   })
 
   it(/*
+   * A custom `timestamp` is interpolated into the JSON line by Pino's contract
+   * (`,"time":<value>`), so a returned quote, backslash or newline would break
+   * the line, and a crafted value would add fields to it. Each value below must
+   * come out as the `time` string, byte for byte, and nothing else.
+   */
+  'JSON-escapes a custom timestamp so it cannot break or inject into the line', () => {
+    const hostile = ['a"b', 'line1\nline2', 'back\\slash', '","injected":"yes', '\u2028']
+    for (const raw of hostile) {
+      const capture = createCapture()
+      const logger = buildPinoInstance(
+        applyDefaults({ ...baseOptions, timestamp: () => raw }),
+        new LogContextService(),
+        [capture.destination]
+      )
+      logger.info('hello')
+      const [entry] = capture.entries()
+      expect(entry?.['time']).toBe(raw)
+      expect(entry).not.toHaveProperty('injected')
+    }
+  })
+
+  it(/*
    * The factory must always return a usable logger wired to the supplied
    * destinations — the branch the module uses at runtime.
    */
