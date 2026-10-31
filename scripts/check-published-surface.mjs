@@ -630,18 +630,23 @@ function elisionPositions(code, ext) {
  * header can reach outside the gate directory or replace a file the gate wrote. The gate
  * directory holds a symlink to the repository itself, so a name that carried a path
  * would write into the repository. The name is one plain segment (a letter or digit
- * first, then word characters, dots and hyphens), the target must not exist, even as a
- * dangling symlink (a snippet, the prelude), and it must resolve inside the gate
- * directory. Returns the path, or the reason there is none.
+ * first, then at most 99 word characters, dots and hyphens), the target must not exist,
+ * even as a dangling symlink (a snippet, the prelude), it must resolve inside the gate
+ * directory, and the file system must be able to answer for it. Returns the path, or the
+ * reason there is none.
  */
 function moduleFilePath(file) {
-  if (!/^[A-Za-z0-9][\w.-]*$/.test(file)) return { reason: 'is not a plain file name' }
+  if (!/^[A-Za-z0-9][\w.-]{0,99}$/.test(file)) return { reason: 'is not a plain file name' }
   const target = join(GATE_DIR, `${file}.ts`)
   const inside = relative(GATE_DIR, target)
   if (inside.startsWith('..') || inside.includes(sep))
     return { reason: 'leaves the gate directory' }
-  if (lstatSync(target, { throwIfNoEntry: false }) !== undefined) {
-    return { reason: 'is a file the gate writes itself' }
+  try {
+    if (lstatSync(target, { throwIfNoEntry: false }) !== undefined) {
+      return { reason: 'is a file the gate writes itself' }
+    }
+  } catch {
+    return { reason: 'cannot be checked as a file name' }
   }
   return { path: target }
 }
