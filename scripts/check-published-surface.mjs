@@ -621,33 +621,52 @@ function checkSnippets() {
   scaffoldConsumer()
   /** file name → its source, so a diagnostic can be traced back to the snippet. */
   const sources = new Map()
+  /** file name → the lines actually compiled, which is what a diagnostic's line number
+   * indexes. */
+  const compiled = new Map()
   subjects.forEach(({ ext, raw, code }, i) => {
     const name = `snippet-${String(i + 1).padStart(2, '0')}.${ext}`
     // The abbreviated-type check below reads what the author wrote, not the header
     // this script added, which names every public type.
     sources.set(name, raw)
+    compiled.set(name, code.split('\n'))
     writeFileSync(join(GATE_DIR, name), code)
   })
 
   // The names a snippet uses without introducing them are declared, typed, in
   // `readme-prelude.d.ts`, so a call through one of them is checked and an
-  // undeclared name is an error. Held against a snippet are neither a bare ellipsis
-  // elision nor a peer package the fixture does not install; those are counted and
-  // reported, never dropped silently.
+  // undeclared name is an error. Held against a snippet are neither a parse error on a
+  // bare `...` elision nor a peer package the fixture does not install; those are
+  // counted and reported, never dropped silently.
   const PARSE_ELISION = new Set(['TS1108', 'TS1109'])
+  /** The snippet file a diagnostic line points at, with its path split on either
+   * separator because paths may carry backslashes on Windows. */
+  const fileOf = (line) => (/^([^(]+)\(/.exec(line)?.[1] ?? '').split(/[\\/]/).pop() ?? ''
   /** What the author wrote in the snippet a diagnostic line points at. */
-  const authoredSource = (line) => {
-    const file = /^([^(]+)\(/.exec(line)?.[1]
-    // Paths may carry backslashes on Windows, so the basename is taken on either.
-    return sources.get(file?.split(/[\\/]/).pop() ?? '') ?? ''
+  const authoredSource = (line) => sources.get(fileOf(line)) ?? ''
+  /** A line with its strings and comments removed, so an ellipsis inside either is not
+   * mistaken for one in the code. */
+  const codeOnly = (text) =>
+    text
+      .replace(/(['"`]).*?\1/g, '')
+      .replace(/\/\*.*?\*\//g, '')
+      .replace(/\/\/.*$/, '')
+  /** A bare `...` is not followed by a name or an opening bracket, which is what tells
+   * it from a spread (`...items`, `{ ...opts }`). */
+  const BARE_ELISION = /\.\.\.(?![\w$([{])/
+  /** Whether the line a parse diagnostic is reported on is an elision. The parser reports
+   * the token AFTER the gap, so a call written over several lines is reported on its
+   * closing bracket; that line counts only when the line above is the bare ellipsis.
+   * Decided per diagnostic: an ellipsis elsewhere in the snippet says nothing about a
+   * missing expression somewhere else. */
+  const isParseElision = (line) => {
+    if (!PARSE_ELISION.has((/error (TS\d+)/.exec(line) ?? [])[1])) return false
+    const n = Number(/\((\d+),/.exec(line)?.[1])
+    const lines = compiled.get(fileOf(line)) ?? []
+    const here = codeOnly(lines[n - 1] ?? '')
+    const above = codeOnly(lines[n - 2] ?? '').trim()
+    return BARE_ELISION.test(here) || (/^[)\]}]/.test(here.trim()) && /^\.\.\.,?$/.test(above))
   }
-  /** A parse error is tolerated only in a snippet that still holds a bare `...` or
-   * `…` once the `{ ... }` placeholder, which `prepareSnippet` rewrites, is set aside.
-   * TS1109 is what the parser says for any missing expression, so a snippet with no
-   * ellipsis left has a real syntax error. */
-  const isParseElision = (line) =>
-    PARSE_ELISION.has((/error (TS\d+)/.exec(line) ?? [])[1]) &&
-    /\.\.\.|…/.test(authoredSource(line).replaceAll('{ ... }', ''))
   /** `Property 'x' does not exist on type 'Y'` is an API defect when `Y` comes
    * from the package, and snippet noise when `Y` is a class the snippet declares
    * itself and abbreviates — a README example routinely writes `this.repo`
