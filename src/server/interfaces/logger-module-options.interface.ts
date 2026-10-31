@@ -19,9 +19,17 @@ import type { ServiceMetadata } from '../../shared/types/service-metadata.type'
  * Every field is optional; defaults are applied by `applyDefaults`.
  */
 export interface HttpOptions {
-  /** Mount the HTTP interceptor + filter. Default: false. */
+  /**
+   * Mount the HTTP interceptor + filter. Default: false. The filter is registered by
+   * `forRoot` only: `forRootAsync` registers the interceptor and leaves the filter to
+   * the consumer (`{ provide: APP_FILTER, useClass: HttpExceptionFilter }`).
+   */
   isEnabled?: boolean
-  /** Capture unhandled HTTP exceptions and emit `HTTP_EXCEPTION_UNHANDLED`. Default: true. */
+  /**
+   * Capture unhandled HTTP exceptions and emit `HTTP_EXCEPTION_UNHANDLED`. Default: true.
+   * Read by `forRoot` only; it has no effect on `forRootAsync`, which never registers the
+   * filter.
+   */
   shouldCaptureExceptions?: boolean
   /** Generate `requestId` when the request header is absent. Default: true. */
   shouldGenerateRequestId?: boolean

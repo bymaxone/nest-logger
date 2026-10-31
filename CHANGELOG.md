@@ -36,6 +36,12 @@ heading here.
   such as a `vm` context, is accepted); `http.tenantIdHeader` and the
   three `otel.*Field` names non-empty strings; `otel.fieldFormat` `'camelCase'` or `'snake_case'`
   (an unknown value silently behaved as `camelCase`).
+- **`PrettyDevDestination` refuses to initialize when `NODE_ENV` is `production`.** The 0.1.0 entry
+  said it was auto-disabled in production, and nothing did that: registered there it rendered ANSI
+  colour through a main-thread transform into the log stream. It now fails at `onInit()` with a
+  message naming the cause; the registry reports `LOGGER_DESTINATION_INIT_FAILED` on stderr, later
+  writes to it are dropped, and when it is the only destination entries go to stdout as raw NDJSON.
+  Only the exact value `production` refuses.
 
 #### Apply to a consumer
 
@@ -45,9 +51,20 @@ heading here.
 - An application that passed a value of the wrong kind, such as `http: { isEnabled: 'false' }` or a
   destination without a `name`, now fails at bootstrap with a message naming the option, where it
   previously booted with that value ignored or misread. Correct the value.
+- A deployment that registers `PrettyDevDestination` with `NODE_ENV=production` now gets raw JSON on
+  stdout and one stderr line instead of coloured output. Register it only outside production, for
+  example `...(process.env.NODE_ENV === 'production' ? [] : [new PrettyDevDestination()])`, and keep
+  `DefaultStdoutDestination` in the list.
 
 ### Documentation
 
+- `forRootAsync` does not register the exception filter, which `forRoot` does, and the README now
+  says so under the async example, in the options table and in the `http` option JSDoc. Measured with
+  the same failing controller on both paths: with `http.isEnabled`, `forRootAsync` emits the access
+  log (`HTTP_REQUEST_START`, `_CLIENT_ERROR`, `_SERVER_ERROR`) and the real error reaches its terminal
+  entry, but not `HTTP_EXCEPTION_HANDLED` or `HTTP_EXCEPTION_UNHANDLED`; the 500 response is
+  identical. Registering `{ provide: APP_FILTER, useClass: HttpExceptionFilter }` yields them. The
+  difference is deliberate, and a spec pins the behaviour and the remedy.
 - `ILogDestination` JSDoc: `write` no longer says a failing destination "may be temporarily
   skipped". Nothing skips a destination that initialized: every failed entry is dropped for it and
   reported, and it keeps receiving entries. Only one whose `onInit()` failed receives none.

@@ -5,7 +5,8 @@
  * Layer: server/destinations — an opt-in sink the consumer adds to
  * `destinations` (or that a dev bootstrap wires) when readable local logs are
  * preferred over raw NDJSON. Production keeps the structured
- * `DefaultStdoutDestination`.
+ * `DefaultStdoutDestination`: this destination's `onInit` refuses when
+ * `NODE_ENV` is `production`.
  *
  * `pino-pretty` is an OPTIONAL peer dependency. The transform stream is built
  * lazily inside {@link PrettyDevDestination.onInit} so the library loads (and
@@ -257,10 +258,24 @@ export class PrettyDevDestination implements ILogDestination {
    * Lazily resolve `pino-pretty` and build the colorized transform that renders
    * each entry to `process.stdout`.
    *
+   * @throws Error When `NODE_ENV` is `production`: this sink is development
+   *   output, so it refuses rather than put ANSI colour into the log stream.
    * @throws Error When `pino-pretty` is not installed — with an actionable
    *   message telling the consumer to install it or drop this destination.
    */
   async onInit(): Promise<void> {
+    // Refused BEFORE the try below, so the failure is not reported as a missing
+    // package. The state it leaves is the one every init failure leaves: later
+    // writes are dropped, and the registry reports the refusal on stderr and, when
+    // this is the only destination, rescues entries to stdout as raw NDJSON.
+    if (process.env['NODE_ENV'] === 'production') {
+      this.initFailed = true
+      throw new Error(
+        '[PrettyDevDestination] refused in production (NODE_ENV=production): it renders ANSI ' +
+          'colour through a main-thread transform. Use DefaultStdoutDestination, or register ' +
+          'PrettyDevDestination only outside production.'
+      )
+    }
     // No stdout EPIPE guard is installed here, and that is a measured decision
     // rather than an oversight. pino-pretty writes to `process.stdout` itself, so
     // nothing in this library can wrap those writes — but `build({ destination:

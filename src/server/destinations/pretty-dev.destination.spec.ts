@@ -32,6 +32,63 @@ describe('PrettyDevDestination', () => {
     })
   })
 
+  describe('onInit in production', () => {
+    const originalNodeEnv = process.env['NODE_ENV']
+
+    afterEach(() => {
+      if (originalNodeEnv === undefined) {
+        delete process.env['NODE_ENV']
+      } else {
+        process.env['NODE_ENV'] = originalNodeEnv
+      }
+    })
+
+    it(/*
+     * The destination renders ANSI colour through a main-thread transform, which is
+     * development output: registered with `NODE_ENV=production` it would put escape
+     * sequences into the log stream and spend the logging thread on prettifying. It
+     * refuses at init, with a message that names the cause and the way out; the
+     * registry contains the failure, reports it on stderr and rescues to stdout when
+     * no other destination is live.
+     */
+    'refuses to initialize when NODE_ENV is production', async () => {
+      process.env['NODE_ENV'] = 'production'
+      const dest = new PrettyDevDestination()
+      await expect(dest.onInit()).rejects.toThrow(
+        /PrettyDevDestination.*refused.*NODE_ENV=production.*DefaultStdoutDestination/
+      )
+    })
+
+    it(/*
+     * After the refusal the destination is in the same state as after any other init
+     * failure: a later write is dropped, neither buffered nor printed, so it cannot
+     * duplicate an entry another sink already took.
+     */
+    'drops writes after refusing in production', async () => {
+      process.env['NODE_ENV'] = 'production'
+      const dest = new PrettyDevDestination()
+      await expect(dest.onInit()).rejects.toThrow()
+      const stdout = jest.spyOn(process.stdout, 'write').mockImplementation(() => true)
+      dest.write(VALID_NDJSON_LINE)
+      await dest.onShutdown()
+      expect(stdout).not.toHaveBeenCalled()
+    })
+
+    it.each(['development', 'test', 'staging', 'Production', ''])(
+      /*
+       * Only the exact value `production` refuses, the same test `applyDefaults` uses
+       * for the level default. Staging and an unset or odd value stay allowed.
+       */
+      'initializes when NODE_ENV is %p',
+      async (value) => {
+        process.env['NODE_ENV'] = value
+        const dest = new PrettyDevDestination()
+        await expect(dest.onInit()).resolves.toBeUndefined()
+        await dest.onShutdown()
+      }
+    )
+  })
+
   describe('onInit', () => {
     it(/*
      * When pino-pretty resolves, onInit must build the transform without

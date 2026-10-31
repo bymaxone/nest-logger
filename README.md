@@ -170,10 +170,13 @@ pnpm add @opentelemetry/api @opentelemetry/sdk-node
 >
 > Either way, the rule that survives both layouts: **"it is a devDependency, therefore this path
 > cannot run in production" is not a safe premise, because the premise is about someone else's
-> install command.** A `PrettyDevDestination` left registered in production will not crash and will
-> not warn — it renders ANSI colour into a log pipeline that has silently failed to parse every line
-> since the deploy, which is indistinguishable from a service that went quiet. Gate it on an explicit
-> configuration value you can see, not on the packaging.
+> install command.** `PrettyDevDestination` refuses to initialize when `NODE_ENV` is exactly
+> `production`: it reports `LOGGER_DESTINATION_INIT_FAILED` on stderr and, when it is the only
+> destination, entries go to stdout as raw NDJSON. In any other environment that ships to a log
+> pipeline (a staging stack with `NODE_ENV=staging`, an unset `NODE_ENV`) it still renders ANSI
+> colour into a pipeline that will fail to parse every line, which is indistinguishable from a
+> service that went quiet. Gate it on an explicit configuration value you can see, not on the
+> packaging.
 
 > [!NOTE]
 > `@opentelemetry/api` is resolved lazily when the Pino instance is built. When it is absent the trace mixin silently steps aside — the logger never fails to start, and never warns, over an optional peer.
@@ -229,6 +232,27 @@ import { BymaxLoggerModule } from '@bymax-one/nest-logger'
 })
 export class AppModule {}
 ```
+
+> [!IMPORTANT]
+> **`forRootAsync` does not register the exception filter.** With `http.isEnabled` it registers the
+> access log (`HTTP_REQUEST_START`, `_SUCCESS`, `_CLIENT_ERROR`, `_SERVER_ERROR`, `_ABORTED`), and the
+> failing request's error still reaches its terminal entry. The two entries the filter writes,
+> `HTTP_EXCEPTION_HANDLED` and `HTTP_EXCEPTION_UNHANDLED`, are not emitted, and
+> `http.shouldCaptureExceptions` has no effect on this path. `forRoot` registers the filter itself.
+> To get the same entries from `forRootAsync`, register it:
+>
+> ```typescript
+> import { Module } from '@nestjs/common'
+> import { APP_FILTER } from '@nestjs/core'
+> import { HttpExceptionFilter } from '@bymax-one/nest-logger'
+>
+> @Module({ providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }] })
+> export class LoggingFilterModule {}
+> ```
+>
+> It is left to you on purpose: the filter is a global catch-all that writes the response itself, and
+> a library adding one from asynchronously resolved options would put it in the pipeline of every
+> consumer, including those with HTTP logging off or with their own filters.
 
 ### 4. Inject the logger in a service
 
@@ -732,13 +756,13 @@ Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
 ### `http` options
 
-| Option                         | Type       | Default                                                                  | Description                                                                           |
-| ------------------------------ | ---------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `http.isEnabled`               | `boolean`  | `false`                                                                  | Register `HttpLoggingInterceptor` (and, on `forRoot`, `HttpExceptionFilter`) globally |
-| `http.shouldCaptureExceptions` | `boolean`  | `true`                                                                   | Capture unhandled HTTP exceptions and emit `HTTP_EXCEPTION_UNHANDLED`                 |
-| `http.shouldGenerateRequestId` | `boolean`  | `true`                                                                   | Generate a `requestId` when the inbound request header is absent                      |
-| `http.excludePaths`            | `RegExp[]` | `[/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/]` | Paths that bypass HTTP logging. Use anchored, linear-time regexes (ReDoS-safe)        |
-| `http.tenantIdHeader`          | `string`   | `'x-tenant-id'`                                                          | Request header carrying the tenant identifier                                         |
+| Option                         | Type       | Default                                                                  | Description                                                                                                                                                                |
+| ------------------------------ | ---------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http.isEnabled`               | `boolean`  | `false`                                                                  | Register `HttpLoggingInterceptor` (and, on `forRoot`, `HttpExceptionFilter`) globally                                                                                      |
+| `http.shouldCaptureExceptions` | `boolean`  | `true`                                                                   | Capture unhandled HTTP exceptions and emit `HTTP_EXCEPTION_UNHANDLED`. `forRoot` only: see the note under [Async configuration](#3-async-configuration-with-configservice) |
+| `http.shouldGenerateRequestId` | `boolean`  | `true`                                                                   | Generate a `requestId` when the inbound request header is absent                                                                                                           |
+| `http.excludePaths`            | `RegExp[]` | `[/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/]` | Paths that bypass HTTP logging. Use anchored, linear-time regexes (ReDoS-safe)                                                                                             |
+| `http.tenantIdHeader`          | `string`   | `'x-tenant-id'`                                                          | Request header carrying the tenant identifier                                                                                                                              |
 
 ### `otel` options
 
