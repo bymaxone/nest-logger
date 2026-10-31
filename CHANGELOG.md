@@ -11,6 +11,21 @@ heading here.
 
 ## [Unreleased]
 
+### Added
+
+- `LOGGER_REDACTOR_TOKEN`, `REDACT_COMMON_FIELDS` and `isValidTraceId` are exported from the package
+  root. The token is the injection point of `PinoLoggerService`'s redactor, so a consumer composing
+  its own providers can now name it. `REDACT_COMMON_FIELDS` is the name list the
+  default redactor matches, and `DEFAULT_REDACT_PATHS` is built from it, so extending the defaults no
+  longer means copying the names. `isValidTraceId` is the check the trace mixin already applies.
+  `sanitizeError` stays internal: its output shape is not a contract this release commits to.
+
+### Deprecated
+
+- `@LogContext(name)` is marked `@deprecated`. It records a label as class metadata and nothing in
+  the package reads it, so the label has never been applied. `@InjectLogger(MyClass.name)` is the
+  working equivalent. `shouldUseAsNestLogger` was already deprecated and is unchanged.
+
 ### Fixed
 
 - **A custom `timestamp` can no longer break the log line or add fields to it.** Pino inserts the
@@ -58,6 +73,18 @@ heading here.
 
 ### Documentation
 
+- The error catalog listed codes that nothing in the library emits (for example
+  `LOGGER_INVALID_OPTIONS` and `LOGGER_OTEL_API_UNAVAILABLE`), and described them as thrown. A thrown
+  error carries a message, not a code, so the catalog now separates the message each thrown error
+  starts with from the log keys the library writes. It also gains the errors it omitted and the real
+  surface of a missing `@opentelemetry/api`, a `LOGGER_BOOTSTRAP_WARNING` with
+  `reason: 'OTEL_API_UNAVAILABLE'`.
+  `readme-error-catalog.spec.ts` scans every throw site in `src` and fails when a row and the code
+  disagree in either direction.
+- The README documents the injection tokens and the exported helpers, the `useClass` and
+  `useExisting` forms of `forRootAsync`, the rules the request-id middleware applies to an inbound
+  `x-request-id` and tenant header (a value that fails them is replaced, not cleaned), and that a
+  Fastify adapter is not supported.
 - `forRootAsync` does not register the exception filter, which `forRoot` does, and the README now
   says so under the async example, in the options table and in the `http` option JSDoc. Measured with
   the same failing controller on both paths: with `http.isEnabled`, `forRootAsync` emits the access
