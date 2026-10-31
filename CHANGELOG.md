@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-10-31
+
 ### Added
 
 - `LOGGER_REDACTOR_TOKEN`, `REDACT_COMMON_FIELDS` and `isValidTraceId` are exported from the package
@@ -2190,7 +2192,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/bymaxone/nest-logger/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/bymaxone/nest-logger/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/bymaxone/nest-logger/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/bymaxone/nest-logger/compare/v1.3.1...v1.4.0
