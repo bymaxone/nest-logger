@@ -584,8 +584,11 @@ function scaffoldConsumer() {
     )}\n`
   )
   // The names a snippet uses without introducing them, typed for real so a call
-  // made through one is checked instead of resolving to `any`.
-  copyFileSync(join(ROOT, 'scripts', 'readme-prelude.d.ts'), join(GATE_DIR, 'prelude.d.ts'))
+  // made through one is checked instead of resolving to `any`. Copied with a `.ts`
+  // extension: the repository tsconfig sets `skipLibCheck`, a declaration file is
+  // never diagnosed, and a prelude type that stopped resolving would turn into `any`
+  // without a word.
+  copyFileSync(join(ROOT, 'scripts', 'readme-prelude.d.ts'), join(GATE_DIR, 'prelude.ts'))
 }
 
 // ---------------------------------------------------------------------------
@@ -628,10 +631,23 @@ function checkSnippets() {
 
   // The names a snippet uses without introducing them are declared, typed, in
   // `readme-prelude.d.ts`, so a call through one of them is checked and an
-  // undeclared name is an error. Held against a snippet are neither a parse-level
-  // elision (`…`, a bare `return`) nor a peer package the fixture does not install;
-  // those are counted and reported, never dropped silently.
-  const CONTEXT_ONLY = new Set(['TS1108', 'TS1109'])
+  // undeclared name is an error. Held against a snippet are neither a bare ellipsis
+  // elision nor a peer package the fixture does not install; those are counted and
+  // reported, never dropped silently.
+  const PARSE_ELISION = new Set(['TS1108', 'TS1109'])
+  /** What the author wrote in the snippet a diagnostic line points at. */
+  const authoredSource = (line) => {
+    const file = /^([^(]+)\(/.exec(line)?.[1]
+    // Paths may carry backslashes on Windows, so the basename is taken on either.
+    return sources.get(file?.split(/[\\/]/).pop() ?? '') ?? ''
+  }
+  /** A parse error is tolerated only in a snippet that still holds a bare `...` or
+   * `…` once the `{ ... }` placeholder, which `prepareSnippet` rewrites, is set aside.
+   * TS1109 is what the parser says for any missing expression, so a snippet with no
+   * ellipsis left has a real syntax error. */
+  const isParseElision = (line) =>
+    PARSE_ELISION.has((/error (TS\d+)/.exec(line) ?? [])[1]) &&
+    /\.\.\.|…/.test(authoredSource(line).replaceAll('{ ... }', ''))
   /** `Property 'x' does not exist on type 'Y'` is an API defect when `Y` comes
    * from the package, and snippet noise when `Y` is a class the snippet declares
    * itself and abbreviates — a README example routinely writes `this.repo`
@@ -640,10 +656,7 @@ function checkSnippets() {
   const isAbbreviatedLocalType = (line) => {
     const m = /Property '[^']+' does not exist on type '([^']+)'/.exec(line)
     if (!m) return false
-    const file = /^([^(]+)\(/.exec(line)?.[1]
-    // Paths may carry backslashes on Windows, so the basename is taken on either.
-    const own = sources.get(file?.split(/[\\/]/).pop() ?? '') ?? ''
-    return new RegExp(`\\b(class|interface|type)\\s+${m[1]}\\b`).test(own)
+    return new RegExp(`\\b(class|interface|type)\\s+${m[1]}\\b`).test(authoredSource(line))
   }
   /** An import of some OTHER package the fixture does not install — a documented
    * optional integration. Reported as uncovered, not as a failure. */
@@ -653,10 +666,7 @@ function checkSnippets() {
     const lines = compileGate()
     if (process.env['GATE_DEBUG']) console.log(lines.join('\n'))
     const real = lines.filter(
-      (l) =>
-        !CONTEXT_ONLY.has((/error (TS\d+)/.exec(l) ?? [])[1]) &&
-        !isForeignModule(l) &&
-        !isAbbreviatedLocalType(l)
+      (l) => !isParseElision(l) && !isForeignModule(l) && !isAbbreviatedLocalType(l)
     )
     const context = lines.length - real.length
     if (real.length > 0) {
@@ -668,7 +678,7 @@ function checkSnippets() {
     console.log(
       `  snippets: ${subjects.length} README snippets compiled against dist/` +
         (context > 0
-          ? ` (${context} diagnostic(s) ignored: a peer the fixture does not install, or a parse-level elision)`
+          ? ` (${context} diagnostic(s) ignored: a peer the fixture does not install, or a bare ellipsis)`
           : '')
     )
   } finally {
