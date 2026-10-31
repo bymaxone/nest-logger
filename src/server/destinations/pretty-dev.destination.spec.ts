@@ -55,7 +55,7 @@ describe('PrettyDevDestination', () => {
       process.env['NODE_ENV'] = 'production'
       const dest = new PrettyDevDestination()
       await expect(dest.onInit()).rejects.toThrow(
-        /PrettyDevDestination.*refused.*NODE_ENV=production.*DefaultStdoutDestination/
+        /PrettyDevDestination.*refused.*NODE_ENV=production.*DefaultStdoutDestination, or register PrettyDevDestination only outside production\./
       )
     })
 

@@ -132,7 +132,11 @@ describe('validateOptions: the rejection message', () => {
     ['an object', { a: 1 }, 'an object'],
     ['a function', () => 1, 'a function'],
     ['a string, quoted', 'secret-value', '"secret-value"'],
-    ['a number', 42, '42']
+    ['a number', 42, '42'],
+    ['NaN', Number.NaN, 'NaN'],
+    ['Infinity', Number.POSITIVE_INFINITY, 'Infinity'],
+    ['a bigint', 10n, '10'],
+    ['a symbol', Symbol('s'), 'Symbol(s)']
   ])(
     /*
      * The message says what was received so the typo can be located, in a form that
@@ -353,6 +357,79 @@ describe('validateOptions: otel', () => {
       expect(() => validateOptions(withOption('otel', { [key]: 7 }))).toThrow(
         new RegExp(`options\\.otel\\.${key} must be a non-empty string`)
       )
+    }
+  )
+})
+
+describe('validateOptions: the message of each destination, size and format rule', () => {
+  const write = (): void => {}
+
+  it.each([
+    [
+      'a destination that is not an object',
+      [null],
+      'destinations[0] must be an object implementing ILogDestination. Got: null'
+    ],
+    [
+      'a destination with no write',
+      [{ name: 'sink' }],
+      'destinations[0] must have a write(payload) method'
+    ],
+    [
+      'a destination with no name',
+      [{ write }],
+      'destinations[0] must have a non-empty string name'
+    ],
+    [
+      'a destination with an empty name',
+      [{ write, name: '' }],
+      'destinations[0] must have a non-empty string name. Got: ""'
+    ],
+    [
+      'a destination with a non-function hook',
+      [{ write, name: 'sink', onInit: 5 }],
+      'destinations[0].onInit must be a function. Got: 5'
+    ]
+  ])(
+    /*
+     * A rejection names the option and, when there is a value to show, what was received.
+     * The rule text is the part a consumer reads to fix the entry, so each is pinned whole,
+     * including that a missing member carries no `Got:` part (there is nothing to show).
+     */
+    'rejects %s with the message that names the rule',
+    (_label, destinations, message) => {
+      expect(() => validateOptions(withOption('destinations', destinations))).toThrow(
+        new Error(`[BymaxLoggerModule] options.${message}`)
+      )
+    }
+  )
+
+  it.each([
+    ['NaN', Number.NaN, 'NaN'],
+    ['Infinity', Number.POSITIVE_INFINITY, 'Infinity'],
+    ['a numeric string', '1024', '"1024"']
+  ])(
+    /*
+     * The size gate compares against this number, so a value that is not finite never trips it.
+     * The message shows the value as it was, not as JSON would print it (`NaN` is not `null`).
+     */
+    'rejects a maxEntrySizeBytes that is %s with the received value',
+    (_label, value, shown) => {
+      expect(() => validateOptions(withOption('maxEntrySizeBytes', value))).toThrow(
+        new Error(
+          `[BymaxLoggerModule] options.maxEntrySizeBytes must be a finite number. Got: ${shown}`
+        )
+      )
+    }
+  )
+
+  it.each(['camelCase', 'snake_case'])(
+    /*
+     * Both documented formats are valid. Only a value outside the pair is rejected.
+     */
+    'accepts otel.fieldFormat %s',
+    (value) => {
+      expect(() => validateOptions(withOption('otel', { fieldFormat: value }))).not.toThrow()
     }
   )
 })

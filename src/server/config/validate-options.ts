@@ -82,7 +82,7 @@ function validateCore(options: BymaxLoggerModuleOptions): void {
     )
   }
   const size: unknown = options.maxEntrySizeBytes
-  if (size !== undefined && (typeof size !== 'number' || !Number.isFinite(size))) {
+  if (size !== undefined && !Number.isFinite(size)) {
     reject('maxEntrySizeBytes', 'must be a finite number', size)
   }
   if (options.maxEntrySizeBytes !== undefined && options.maxEntrySizeBytes <= 0) {
