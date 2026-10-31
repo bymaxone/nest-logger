@@ -21,7 +21,12 @@
 # floor for the machines that run the protocol, and enforcement that must hold
 # for every contributor belongs in CI or in a branch protection rule, which is
 # where a hook the developer can edit could never provide it anyway.
+#
+# git also hands the hook the remote's name and URL as arguments. They are forwarded because
+# the check reads them to recognise a push of tags only, whose commits the remote's default
+# branch already holds: a release tag on the squash commit GitHub wrote when it merged a
+# reviewed pull request, for which no receipt can exist. Without them that case is refused.
 receipts="$HOME/.claude/bymax-review/review_prepush.py"
 if [ -f "$receipts" ]; then
-  python3 "$receipts" || exit $?
+  python3 "$receipts" "$@" || exit $?
 fi
