@@ -19,7 +19,7 @@ heading here.
   crafted value such as `","injected":"x` added a field. The value is now encoded as a JSON string,
   and `time` carries exactly what the function returned.
 
-### Changed
+### Breaking
 
 - **`http.excludePaths` now excludes `/health/live` and `/health/ready` by default**, the probes of
   `@bymax-one/nest-core`, so the defaults are `/health`, `/health/live`, `/health/ready` and

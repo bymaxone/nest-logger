@@ -177,13 +177,17 @@ function validateCustomization(options: BymaxLoggerModuleOptions): void {
   }
 }
 
-/** Marks a destination `name` that could not be read, which the registry tolerates. */
+/** Marks a destination member that could not be read, which the registry tolerates. */
 const UNREADABLE = Symbol('unreadable')
 
-/** A destination's `name`, which may be a getter that throws. */
-function readName(destination: Record<string, unknown>): unknown {
+/**
+ * A member of a destination, which may be a getter that throws. The registry and the
+ * fan-out read `name`, `write` and the hooks under a guard and contain a failure at its
+ * own stage, so the validator reads them the same way instead of aborting bootstrap.
+ */
+function readMember(destination: Record<string, unknown>, key: string): unknown {
   try {
-    return destination['name']
+    return Reflect.get(destination, key) as unknown
   } catch {
     return UNREADABLE
   }
@@ -195,27 +199,17 @@ function validateDestination(entry: unknown, index: number): void {
   if (!isRecord(entry)) {
     reject(path, 'must be an object implementing ILogDestination', entry)
   }
-  if (typeof entry['write'] !== 'function') {
+  const write = readMember(entry, 'write')
+  if (write !== UNREADABLE && typeof write !== 'function') {
     reject(path, 'must have a write(payload) method')
   }
-  // The registry reads `name` under a guard and reports 'unknown' when the read throws,
-  // so an unreadable name is tolerated here as well; a missing or empty one is not.
-  const name = readName(entry)
+  const name = readMember(entry, 'name')
   if (name !== UNREADABLE && !isNonEmptyString(name)) {
     reject(path, 'must have a non-empty string name', name)
   }
-  validateDestinationHooks(entry, path)
-}
-
-/** The optional lifecycle hooks of one destination must be functions when present. */
-function validateDestinationHooks(destination: Record<string, unknown>, path: string): void {
-  const hooks: [string, unknown][] = [
-    ['onInit', destination['onInit']],
-    ['onShutdown', destination['onShutdown']],
-    ['onRegistryReady', destination['onRegistryReady']]
-  ]
-  for (const [hook, value] of hooks) {
-    if (value !== undefined && typeof value !== 'function') {
+  for (const hook of ['onInit', 'onShutdown', 'onRegistryReady']) {
+    const value = readMember(entry, hook)
+    if (value !== UNREADABLE && value !== undefined && typeof value !== 'function') {
       reject(`${path}.${hook}`, 'must be a function', value)
     }
   }

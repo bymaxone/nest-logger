@@ -1,6 +1,6 @@
 /**
- * Validation of the options `validateOptions` did not check before: the customization
- * hooks, the destinations, the `http` and `otel` groups and the remaining scalars.
+ * Validation of the customization hooks, the destinations, the `http` and `otel` groups
+ * and the remaining scalars by `validateOptions`.
  *
  * Layer: server/config, tests. Each of these is read as a function, an array or a
  * string by code that runs later, per entry or per request, where a wrong type fails
@@ -190,6 +190,26 @@ describe('validateOptions: destinations', () => {
     }
     expect(() => validateOptions(withOption('destinations', [hostile]))).not.toThrow()
   })
+
+  it.each(['write', 'onInit', 'onShutdown', 'onRegistryReady'])(
+    /*
+     * The registry and the fan-out read `write` and the three hooks under a guard, so
+     * a getter that throws becomes a contained destination failure at its own stage.
+     * The validator must not read them unguarded and abort bootstrap before that
+     * isolation can apply.
+     */
+    'tolerates a destination whose %s getter throws',
+    (member) => {
+      const hostile = { name: 'external', write: (): void => {}, onInit: undefined }
+      Object.defineProperty(hostile, member, {
+        get(): never {
+          throw new Error('sink unavailable')
+        },
+        enumerable: true
+      })
+      expect(() => validateOptions(withOption('destinations', [hostile]))).not.toThrow()
+    }
+  )
 
   it(/*
    * An empty list is valid and means the stdout default, so it must not be rejected.

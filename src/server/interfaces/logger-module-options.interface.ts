@@ -38,8 +38,8 @@ export interface HttpOptions {
    * The prefixes are CONFIGURABLE in nest-core (`DEFAULT_HEALTH_PATH`,
    * `DEFAULT_METRICS_PATH`): when they are changed, or when the probes should be
    * logged, set `excludePaths` yourself. A value REPLACES the defaults rather than
-   * adding to them; `[/^\/health$/, /^\/metrics$/]` restores the list from before
-   * the two probe paths were added.
+   * adding to them; `[/^\/health$/, /^\/metrics$/]` excludes only `/health` and
+   * `/metrics`.
    *
    * SECURITY: each pattern is `.test()`-ed against the (attacker-controllable)
    * request path on every request. Supply only anchored, linear-time regexes
