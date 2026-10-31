@@ -13,7 +13,7 @@ instruction budget. Codex does not follow that link — nothing normative belong
 
 ### Injection Tokens
 
-Four `Symbol()` tokens, always required: `LOGGER_OPTIONS_TOKEN` (`BymaxLoggerModuleOptions`),
+Injection tokens are `Symbol()`s, always required, for example `LOGGER_OPTIONS_TOKEN` (`BymaxLoggerModuleOptions`),
 `LOGGER_PINO_INSTANCE_TOKEN` (`pino.Logger`), `LOGGER_DESTINATIONS_TOKEN` (`ILogDestination[]`),
 `LOG_CONTEXT_TOKEN` (`LogContextService`). Inject each with explicit `@Inject(TOKEN)` — tsup drops
 decorator metadata.
