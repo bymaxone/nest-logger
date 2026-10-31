@@ -26,8 +26,8 @@ heading here.
   `/metrics`. A probe hit every few seconds drowned the record (8272 of 8274 entries on one
   deployment). Each default is an exact, anchored path, so a route such as `/health/other` is still
   logged.
-- **Options are validated more strictly at bootstrap**, each rejection naming the option and what
-  was received. Added checks: `maxEntrySizeBytes` must be a finite number (a `NaN` or `Infinity`
+- **Options are validated more strictly at bootstrap**, each rejection naming the option and, where
+  there is a value to show, what was received. Added checks: `maxEntrySizeBytes` must be a finite number (a `NaN` or `Infinity`
   made the size gate never trip); `isGlobal`, `shouldDisableDefaultRedact` and the `http` and `otel`
   switches must be booleans (the string `'false'` is truthy); `redactCensor` a string; `timestamp` a
   function; `redactPaths` an array of non-empty strings; `serializers` an object of functions;
