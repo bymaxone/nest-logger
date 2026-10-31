@@ -25,6 +25,9 @@
  * 3. The names a snippet takes from the surrounding prose are typed in
  *    `scripts/readme-prelude.d.ts`. An undeclared name is an error, and a typed one is
  *    checked instead of resolving to `any`.
+ * 4. A relative import resolves to the README snippet whose first line names the file
+ *    (`// app.module.ts`), so what it imports is checked against what that snippet
+ *    exports. One that resolves to no snippet is an error.
  *
  * Portable between packages: everything here is generic except `readme-prelude.d.ts`,
  * the `SnippetContext` it declares, and the `dist/server/index.d.ts` entry that
@@ -592,7 +595,7 @@ function scaffoldConsumer() {
 }
 
 /**
- * Where a snippet leaves an argument, an element or a property out with a bare `...`, as
+ * Where a snippet leaves an argument, an element or a property out with `...`, as
  * the positions of the diagnostics the parser reports for it. The parse tree decides, not
  * the text: regular expressions, template literals, JSX text, comments and strings are
  * already resolved there, so none of them can pass for an elision. An elision is a spread
@@ -660,6 +663,24 @@ function checkSnippets() {
     elisions.set(name, elisionPositions(code, ext))
     writeFileSync(join(GATE_DIR, name), code)
   })
+  // A relative import resolves to the README snippet that shows the file: its first line
+  // names it (`// app.module.ts`). The first snippet naming a file stands for it, and
+  // whatever that snippet exports is what an importer gets, so a wrong export name is an
+  // error instead of an `any`.
+  const shownFiles = new Map()
+  subjects.forEach(({ raw }, i) => {
+    const file = /^\/\/\s*([\w.-]+)\.tsx?\b/.exec(raw)?.[1]
+    if (file !== undefined && !shownFiles.has(file)) {
+      shownFiles.set(file, `snippet-${String(i + 1).padStart(2, '0')}`)
+      const tail = /^export\s+default\b/m.test(raw)
+        ? `export { default } from './${shownFiles.get(file)}'\n`
+        : ''
+      writeFileSync(
+        join(GATE_DIR, `${file}.ts`),
+        `export * from './${shownFiles.get(file)}'\n${tail}`
+      )
+    }
+  })
 
   // The names a snippet uses without introducing them are declared, typed, in
   // `readme-prelude.d.ts`, so a call through one of them is checked and an
@@ -691,8 +712,13 @@ function checkSnippets() {
     return new RegExp(`\\b(class|interface|type)\\s+${m[1]}\\b`).test(authoredSource(line))
   }
   /** An import of some OTHER package the fixture does not install — a documented
-   * optional integration. Reported as uncovered, not as a failure. */
-  const isForeignModule = (line) => /error TS2307/.test(line) && !line.includes(PKG.name)
+   * optional integration. Reported as uncovered, not as a failure. A relative import
+   * that resolves to no README snippet is not one: it is an example importing a file
+   * the README never shows, which compiles against `any`. */
+  const isForeignModule = (line) => {
+    const specifier = /error TS2307: Cannot find module '([^']+)'/.exec(line)?.[1]
+    return specifier !== undefined && !specifier.startsWith('.') && !specifier.startsWith(PKG.name)
+  }
 
   try {
     const lines = compileGate()
@@ -710,7 +736,7 @@ function checkSnippets() {
     console.log(
       `  snippets: ${subjects.length} README snippets compiled against dist/` +
         (context > 0
-          ? ` (${context} diagnostic(s) ignored: a peer the fixture does not install, or a bare ellipsis)`
+          ? ` (${context} diagnostic(s) ignored: a peer the fixture does not install, or an elided argument, element or property)`
           : '')
     )
   } finally {
