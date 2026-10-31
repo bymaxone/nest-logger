@@ -528,7 +528,7 @@ BymaxLoggerModule.forRoot({
     name: 'checkout-api', // service.name
     version: '2.14.3', // service.version
     namespace: 'payments', // service.namespace
-    instanceId: process.env.POD_UID, // service.instance.id
+    instanceId: process.env.POD_UID!, // service.instance.id
     environment: 'production' // deployment.environment.name
   }
 })

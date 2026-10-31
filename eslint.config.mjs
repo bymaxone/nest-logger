@@ -20,7 +20,11 @@ export default [
       '**/dist/**',
       '**/coverage/**',
       '**/reports/**',
-      '**/.stryker-tmp/**'
+      '**/.stryker-tmp/**',
+      // A declaration file the README-snippet gate copies into its compile fixture. No
+      // block here gives `scripts/` a TypeScript parser, so the default parser would
+      // reject it; Prettier still checks its formatting.
+      '**/scripts/**/*.d.ts'
     ]
   },
 

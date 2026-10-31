@@ -32,6 +32,9 @@ heading here.
   - The Pino throughput figures are attributed to Pino's own benchmarks, the `Scope.REQUEST` cost
     to NestJS's estimate, and the EPIPE guard note names its one exception, `pino-pretty`'s own
     stream.
+  - The resource identity example passed `process.env.POD_UID` to `service.instanceId`, which does
+    not compile under `exactOptionalPropertyTypes` because the value can be `undefined`. It now reads
+    `process.env.POD_UID!`.
 
 ### Tests
 

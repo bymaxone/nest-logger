@@ -14,13 +14,38 @@
  * - A pull request deleted a `## [x.y.z]` heading while adding the next one,
  *   which silently turns the release notes into the generic fallback.
  *
+ * The README snippets are compiled under three constraints:
+ *
+ * 1. Syntactic and semantic diagnostics are collected together. The `tsc` command stops
+ *    after syntax errors, and a snippet that elides code with `...` has one, so the
+ *    project is compiled through the TypeScript API.
+ * 2. Every snippet is compiled. One that does not import the package has its public
+ *    names imported for it, so a `forRoot({ ... })` shown without its import is still
+ *    checked against the real options.
+ * 3. The names a snippet takes from the surrounding prose are typed in
+ *    `scripts/readme-prelude.d.ts`. An undeclared name is an error, and a typed one is
+ *    checked instead of resolving to `any`.
+ *
+ * Portable between packages: everything here is generic except `readme-prelude.d.ts`,
+ * the `SnippetContext` it declares, and the `dist/server/index.d.ts` entry that
+ * `publicNames` reads.
+ *
  * Run after `pnpm build` — the snippets compile against `dist/`.
  */
 
 import { execFileSync } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve, sep } from 'node:path'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -41,8 +66,77 @@ const GATE_DIR = join(ROOT, '.docs-gate')
  * library has none — the check then covers only the README snippets. */
 const TYPE_TESTS_GLOB = existsSync(join(ROOT, 'test', 'types')) ? '../test/types/**/*.ts' : '*.ts'
 
-/** The repository's pinned compiler. */
-const TSC = join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc')
+/** The repository's pinned compiler, loaded as a library: the `tsc` command stops
+ * after the syntax errors and never reports the semantic ones, so a single
+ * unparsable snippet would hide every wrong option name in every other snippet
+ * and in the type tests. */
+const ts = createRequire(join(ROOT, 'package.json'))('typescript')
+
+/** Every name the package exports, read from the built declaration file so it cannot
+ * drift from `dist/`, with whether it is a value or only a type. */
+function publicNames() {
+  const entry = join(ROOT, 'dist', 'server', 'index.d.ts')
+  const program = ts.createProgram({ rootNames: [entry], options: { skipLibCheck: true } })
+  const checker = program.getTypeChecker()
+  const source = program.getSourceFile(entry)
+  const moduleSymbol = source && checker.getSymbolAtLocation(source)
+  const symbols = moduleSymbol ? checker.getExportsOfModule(moduleSymbol) : []
+  return symbols.map((symbol) => {
+    const target = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol
+    return { name: symbol.name, isValue: Boolean(target.flags & ts.SymbolFlags.Value) }
+  })
+}
+
+/** `import { values, type Types } from '<pkg>'` for the public names a snippet does
+ * not declare itself: importing a name the snippet re-declares would be a conflict. */
+function publicImports(declared) {
+  const parts = publicNames()
+    .filter(({ name }) => !declared.has(name))
+    .map(({ name, isValue }) => (isValue ? name : `type ${name}`))
+  return `import { ${parts.join(', ')} } from '${PKG.name}'\n`
+}
+
+/** Names a snippet declares at its top level. */
+function declaredNames(code) {
+  const pattern =
+    /^(?:export\s+)?(?:abstract\s+)?(?:class|interface|type|enum|function|const)\s+(\w+)/gm
+  return new Set([...code.matchAll(pattern)].map((m) => m[1]))
+}
+
+/**
+ * Turns a README fragment into something a compiler can check without changing what
+ * it claims. A snippet that does not import the package gets the public names it does
+ * not declare imported. A block of statements is put in an async function whose `this`
+ * is `SnippetContext`, so `await` and `this.logger` mean what the prose means. Imports
+ * are hoisted out of the wrapper. A snippet that declares classes or types is left as
+ * written.
+ */
+function prepareSnippet(code, importsPkg) {
+  const importPattern = /^import\s[\s\S]*?from\s+['"][^'"]+['"]\s*;?\n/gm
+  const imports = code.match(importPattern) ?? []
+  // `{ ... }` is how a snippet says "the usual arguments". Left alone it is a parse
+  // error, and a parse error in a call hides every semantic error around it.
+  const body = code.replace(importPattern, '').replaceAll('{ ... }', '{} as never')
+  const header = `${importsPkg ? '' : publicImports(declaredNames(body))}${imports.join('')}`
+  const declares = /^(export\s+)?(abstract\s+)?(class|interface|type|enum|function)\s/m.test(body)
+  if (declares) return `${header}${body}`
+  return `${header}async function snippet(this: SnippetContext) {\n${body}}\n`
+}
+
+/** Compiles the consumer project and returns every diagnostic as a `tsc`-shaped
+ * line, syntactic and semantic together. */
+function compileGate() {
+  const config = ts.readConfigFile(join(GATE_DIR, 'tsconfig.json'), ts.sys.readFile)
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, GATE_DIR)
+  const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options })
+  return ts.getPreEmitDiagnostics(program).map((d) => {
+    const text = ts.flattenDiagnosticMessageText(d.messageText, ' ')
+    if (!d.file) return `error TS${String(d.code)}: ${text}`
+    const { line, character } = d.file.getLineAndCharacterOfPosition(d.start ?? 0)
+    const where = relative(ROOT, d.file.fileName).split(sep).join('/')
+    return `${where}(${String(line + 1)},${String(character + 1)}): error TS${String(d.code)}: ${text}`
+  })
+}
 
 const failures = []
 /** Record a failure without stopping, so one run reports every problem. */
@@ -489,6 +583,40 @@ function scaffoldConsumer() {
       2
     )}\n`
   )
+  // The names a snippet uses without introducing them, typed for real so a call
+  // made through one is checked instead of resolving to `any`. Copied with a `.ts`
+  // extension: the repository tsconfig sets `skipLibCheck`, a declaration file is
+  // never diagnosed, and a prelude type that stopped resolving would turn into `any`
+  // without a word.
+  copyFileSync(join(ROOT, 'scripts', 'readme-prelude.d.ts'), join(GATE_DIR, 'prelude.ts'))
+}
+
+/**
+ * Where a snippet leaves an argument, an element or a property out with a bare `...`, as
+ * the positions of the diagnostics the parser reports for it. The parse tree decides, not
+ * the text: regular expressions, template literals, JSX text, comments and strings are
+ * already resolved there, so none of them can pass for an elision. An elision is a spread
+ * whose expression is missing, and the parser reports the missing expression at the next
+ * token, which is where the position is taken. Returns `line:column` keys, both 1-based,
+ * in the numbering of the compiled text.
+ */
+function elisionPositions(code, ext) {
+  const kind = ext === 'tsx' ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  const file = ts.createSourceFile('snippet', code, ts.ScriptTarget.Latest, true, kind)
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, file.languageVariant, code)
+  const positions = new Set()
+  const visit = (node) => {
+    const spread = node.kind === ts.SyntaxKind.SpreadElement || ts.isSpreadAssignment(node)
+    if (spread && node.expression.pos === node.expression.end) {
+      scanner.resetTokenState(node.expression.pos)
+      scanner.scan()
+      const { line, character } = file.getLineAndCharacterOfPosition(scanner.getTokenStart())
+      positions.add(`${String(line + 1)}:${String(character + 1)}`)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(file)
+  return positions
 }
 
 // ---------------------------------------------------------------------------
@@ -503,72 +631,74 @@ function checkSnippets() {
     ext: m[1] === 'tsx' ? 'tsx' : 'ts',
     code: m[2]
   }))
-  // Only snippets that IMPORT the package: those are the ones making a claim
-  // about the public API. Merely naming it in a comment is not a claim.
-  const subjects = blocks.filter((b) => new RegExp(`from ['"]${PKG.name}`).test(b.code))
-  if (subjects.length === 0) {
+  const importsPackage = (code) => new RegExp(`from ['"]${PKG.name}`).test(code)
+  if (!blocks.some((b) => importsPackage(b.code))) {
     fail('snippets', 'no README snippet imports the package — the gate would be vacuous')
     return
   }
+  // Every snippet is compiled, not only the ones that import the package: a snippet
+  // that shows a `forRoot({ ... })` call without repeating the import still makes a
+  // claim about the options. One that does not import the package gets the public
+  // names imported for it, so it is checked against the real types.
+  const subjects = blocks.map((b) => ({
+    ...b,
+    raw: b.code,
+    code: prepareSnippet(b.code, importsPackage(b.code))
+  }))
 
   scaffoldConsumer()
   /** file name → its source, so a diagnostic can be traced back to the snippet. */
   const sources = new Map()
-  subjects.forEach(({ ext, code }, i) => {
+  /** file name → the positions of its elisions in the text actually compiled, which is
+   * what a diagnostic's line and column index. */
+  const elisions = new Map()
+  subjects.forEach(({ ext, raw, code }, i) => {
     const name = `snippet-${String(i + 1).padStart(2, '0')}.${ext}`
-    sources.set(name, code)
+    // The abbreviated-type check below reads what the author wrote, not the header
+    // this script added, which names every public type.
+    sources.set(name, raw)
+    elisions.set(name, elisionPositions(code, ext))
     writeFileSync(join(GATE_DIR, name), code)
   })
 
-  // A README snippet is written for a reader, not for a compiler: it may use a
-  // variable introduced by the paragraph above it. Those diagnostics say nothing
-  // about the published API, so they are counted and reported rather than
-  // failing the build — and never dropped silently.
-  const CONTEXT_ONLY = new Set([
-    'TS2304',
-    'TS2552',
-    'TS7006',
-    'TS18004',
-    'TS2531',
-    'TS2532',
-    // Parse-level: a snippet that elides code with `…` or shows a bare `return`
-    // is prose, not a program.
-    'TS1108',
-    'TS1109'
-  ])
+  // The names a snippet uses without introducing them are declared, typed, in
+  // `readme-prelude.d.ts`, so a call through one of them is checked and an
+  // undeclared name is an error. Held against a snippet are neither the parse error a
+  // `...` elision leaves in an argument, element or property position nor a peer package
+  // the fixture does not install; those are counted and reported, never dropped silently.
+  const PARSE_ELISION = new Set(['TS1108', 'TS1109'])
+  /** The snippet file a diagnostic line points at, with its path split on either
+   * separator because paths may carry backslashes on Windows. */
+  const fileOf = (line) => (/^([^(]+)\(/.exec(line)?.[1] ?? '').split(/[\\/]/).pop() ?? ''
+  /** What the author wrote in the snippet a diagnostic line points at. */
+  const authoredSource = (line) => sources.get(fileOf(line)) ?? ''
+  /** Whether a parse diagnostic is the one the parser reports for an elision. Decided by
+   * the diagnostic's own position, so an ellipsis elsewhere in the snippet, or on the same
+   * line, says nothing about a missing expression somewhere else. */
+  const isParseElision = (line) => {
+    if (!PARSE_ELISION.has((/error (TS\d+)/.exec(line) ?? [])[1])) return false
+    const at = /\((\d+),(\d+)\)/.exec(line)
+    return at !== null && (elisions.get(fileOf(line))?.has(`${at[1]}:${at[2]}`) ?? false)
+  }
   /** `Property 'x' does not exist on type 'Y'` is an API defect when `Y` comes
    * from the package, and snippet noise when `Y` is a class the snippet declares
    * itself and abbreviates — a README example routinely writes `this.repo`
    * without spelling out the constructor that injects it. Decided by looking for
    * the declaration in the same snippet rather than by guessing from the code. */
-  const isAbbreviatedLocalType = (line, sources) => {
+  const isAbbreviatedLocalType = (line) => {
     const m = /Property '[^']+' does not exist on type '([^']+)'/.exec(line)
     if (!m) return false
-    const file = /^([^(]+)\(/.exec(line)?.[1]
-    // `tsc` emits backslashes on Windows, so the basename is taken on either.
-    const own = sources.get(file?.split(/[\\/]/).pop() ?? '') ?? ''
-    return new RegExp(`\\b(class|interface|type)\\s+${m[1]}\\b`).test(own)
+    return new RegExp(`\\b(class|interface|type)\\s+${m[1]}\\b`).test(authoredSource(line))
   }
   /** An import of some OTHER package the fixture does not install — a documented
    * optional integration. Reported as uncovered, not as a failure. */
   const isForeignModule = (line) => /error TS2307/.test(line) && !line.includes(PKG.name)
 
   try {
-    // The repository's own TypeScript, not `npx tsc`: npx may fetch a different
-    // version, and a gate that compiles against a compiler the project does not
-    // use is measuring the wrong thing.
-    execFileSync(process.execPath, [TSC, '-p', GATE_DIR], { cwd: ROOT, stdio: 'pipe' })
-    console.log(`  snippets: ${subjects.length} README snippets compile against dist/`)
-  } catch (err) {
-    const lines = `${err.stdout ?? ''}${err.stderr ?? ''}`
-      .trim()
-      .split('\n')
-      .filter((l) => /error TS\d+/.test(l))
+    const lines = compileGate()
+    if (process.env['GATE_DEBUG']) console.log(lines.join('\n'))
     const real = lines.filter(
-      (l) =>
-        !CONTEXT_ONLY.has((/error (TS\d+)/.exec(l) ?? [])[1]) &&
-        !isForeignModule(l) &&
-        !isAbbreviatedLocalType(l, sources)
+      (l) => !isParseElision(l) && !isForeignModule(l) && !isAbbreviatedLocalType(l)
     )
     const context = lines.length - real.length
     if (real.length > 0) {
@@ -578,9 +708,9 @@ function checkSnippets() {
       )
     }
     console.log(
-      `  snippets: ${subjects.length} compiled against dist/` +
+      `  snippets: ${subjects.length} README snippets compiled against dist/` +
         (context > 0
-          ? ` (${context} diagnostic(s) ignored: undeclared context or a peer the fixture does not install)`
+          ? ` (${context} diagnostic(s) ignored: a peer the fixture does not install, or a bare ellipsis)`
           : '')
     )
   } finally {
@@ -599,7 +729,7 @@ function exportedNames() {
   for (const sub of ['server', 'shared']) {
     const dts = join(ROOT, 'dist', sub, 'index.d.ts')
     if (!existsSync(dts)) continue
-    for (const clause of readFileSync(dts, 'utf8').matchAll(/^export \{([^}]*)\};/gm)) {
+    for (const clause of readFileSync(dts, 'utf8').matchAll(/^export (?:type )?\{([^}]*)\};/gm)) {
       for (const raw of clause[1].split(',')) {
         const m = /(?:type\s+)?(\w+)(?:\s+as\s+(\w+))?\s*$/.exec(raw.trim())
         if (m) names.add(m[2] ?? m[1])
@@ -665,11 +795,9 @@ function declarationProbe(code, name, exported) {
 }
 
 /**
- * `checkSnippets` only compiles blocks that IMPORT the package, because merely
- * naming the API is not a claim about it. A block that RE-DECLARES an exported
- * interface is a claim, and it was invisible to that rule: the README's
- * `ILogDestination` reference sat on `Promise<void>` across several releases,
- * omitted `onRegistryReady` entirely, and every gate passed. It ships inside the
+ * A README block that RE-DECLARES an exported interface makes a claim compiling it cannot
+ * check: the block declares its own copy, which compiles whether or not it matches the
+ * shipped type. This compares the two member by member. The block ships inside the
  * package, so it is the copy consumers actually read.
  */
 function checkDeclaredTypes() {
@@ -701,21 +829,19 @@ function checkDeclaredTypes() {
         declarationProbe(code, name, exported)
       )
     })
-    execFileSync(process.execPath, [TSC, '-p', GATE_DIR], { cwd: ROOT, stdio: 'pipe' })
-    console.log(
-      `  declared types: ${subjects.map((s) => s.name).join(', ')} match the shipped type`
-    )
-  } catch (err) {
-    const lines = `${err.stdout ?? ''}${err.stderr ?? ''}`
-      .trim()
-      .split('\n')
-      .filter((l) => /error TS\d+/.test(l))
-    fail(
-      'declared types',
-      `a README type declaration disagrees with the shipped one:\n${lines
-        .map((l) => `      ${l}`)
-        .join('\n')}`
-    )
+    const lines = compileGate()
+    if (lines.length === 0) {
+      console.log(
+        `  declared types: ${subjects.map((s) => s.name).join(', ')} match the shipped type`
+      )
+    } else {
+      fail(
+        'declared types',
+        `a README type declaration disagrees with the shipped one:\n${lines
+          .map((l) => `      ${l}`)
+          .join('\n')}`
+      )
+    }
   } finally {
     rmSync(GATE_DIR, { recursive: true, force: true })
   }
