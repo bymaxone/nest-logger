@@ -592,40 +592,31 @@ function scaffoldConsumer() {
 }
 
 /**
- * Where a snippet leaves code out with a bare `...`, found by scanning its tokens with the
- * repository's TypeScript, so a comment or a string never yields one and whitespace does
- * not matter. An ellipsis is bare when what follows cannot be its operand: a spread is
- * followed by a name, a bracket or a parenthesis, an elision by `;`, `)`, `]`, `}`, `,` or
- * the end of the text. Returns the 1-based lines that hold a bare ellipsis, the lines that
- * hold nothing else (`...` or `...,`), and the first token of each line.
+ * Where a snippet leaves an argument, an element or a property out with a bare `...`, as
+ * the positions of the diagnostics the parser reports for it. The parse tree decides, not
+ * the text: regular expressions, template literals, JSX text, comments and strings are
+ * already resolved there, so none of them can pass for an elision. An elision is a spread
+ * whose expression is missing, and the parser reports the missing expression at the next
+ * token, which is where the position is taken. Returns `line:column` keys, both 1-based,
+ * in the numbering of the compiled text.
  */
-function elisionLines(code) {
-  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, code)
-  const lineStarts = [0]
-  for (let i = 0; i < code.length; i += 1) if (code[i] === '\n') lineStarts.push(i + 1)
-  const lineOf = (offset) => lineStarts.filter((start) => start <= offset).length
-  const tokens = []
-  for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
-    tokens.push({ kind, line: lineOf(scanner.getTokenStart()) })
+function elisionPositions(code, ext) {
+  const kind = ext === 'tsx' ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  const file = ts.createSourceFile('snippet', code, ts.ScriptTarget.Latest, true, kind)
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, file.languageVariant, code)
+  const positions = new Set()
+  const visit = (node) => {
+    const spread = node.kind === ts.SyntaxKind.SpreadElement || ts.isSpreadAssignment(node)
+    if (spread && node.expression.pos === node.expression.end) {
+      scanner.resetTokenState(node.expression.pos)
+      scanner.scan()
+      const { line, character } = file.getLineAndCharacterOfPosition(scanner.getTokenStart())
+      positions.add(`${String(line + 1)}:${String(character + 1)}`)
+    }
+    ts.forEachChild(node, visit)
   }
-  const SK = ts.SyntaxKind
-  const ends = new Set([SK.SemicolonToken, SK.CloseParenToken, SK.CloseBracketToken])
-  ends.add(SK.CloseBraceToken).add(SK.CommaToken)
-  const bare = new Set()
-  const alone = new Set()
-  const first = new Map()
-  tokens.forEach(({ kind, line }, i) => {
-    if (!first.has(line)) first.set(line, kind)
-    if (kind !== SK.DotDotDotToken) return
-    const next = tokens[i + 1]
-    if (next === undefined || ends.has(next.kind)) bare.add(line)
-  })
-  for (const line of bare) {
-    const onLine = tokens.filter((tok) => tok.line === line).map((tok) => tok.kind)
-    const only = onLine.length === 1 || (onLine.length === 2 && onLine[1] === SK.CommaToken)
-    if (only && onLine[0] === SK.DotDotDotToken) alone.add(line)
-  }
-  return { bare, alone, first }
+  visit(file)
+  return positions
 }
 
 // ---------------------------------------------------------------------------
@@ -658,42 +649,36 @@ function checkSnippets() {
   scaffoldConsumer()
   /** file name → its source, so a diagnostic can be traced back to the snippet. */
   const sources = new Map()
-  /** file name → the elisions in the lines actually compiled, which is what a
-   * diagnostic's line number indexes. */
+  /** file name → the positions of its elisions in the text actually compiled, which is
+   * what a diagnostic's line and column index. */
   const elisions = new Map()
   subjects.forEach(({ ext, raw, code }, i) => {
     const name = `snippet-${String(i + 1).padStart(2, '0')}.${ext}`
     // The abbreviated-type check below reads what the author wrote, not the header
     // this script added, which names every public type.
     sources.set(name, raw)
-    elisions.set(name, elisionLines(code))
+    elisions.set(name, elisionPositions(code, ext))
     writeFileSync(join(GATE_DIR, name), code)
   })
 
   // The names a snippet uses without introducing them are declared, typed, in
   // `readme-prelude.d.ts`, so a call through one of them is checked and an
-  // undeclared name is an error. Held against a snippet are neither a parse error on a
-  // bare `...` elision nor a peer package the fixture does not install; those are
-  // counted and reported, never dropped silently.
+  // undeclared name is an error. Held against a snippet are neither the parse error a
+  // `...` elision leaves in an argument, element or property position nor a peer package
+  // the fixture does not install; those are counted and reported, never dropped silently.
   const PARSE_ELISION = new Set(['TS1108', 'TS1109'])
   /** The snippet file a diagnostic line points at, with its path split on either
    * separator because paths may carry backslashes on Windows. */
   const fileOf = (line) => (/^([^(]+)\(/.exec(line)?.[1] ?? '').split(/[\\/]/).pop() ?? ''
   /** What the author wrote in the snippet a diagnostic line points at. */
   const authoredSource = (line) => sources.get(fileOf(line)) ?? ''
-  /** Whether a parse diagnostic is reported on a bare elision. The parser reports the
-   * token AFTER the gap, so a call written over several lines is reported on its closing
-   * bracket; that line counts only when the line above holds nothing but the ellipsis.
-   * Decided per diagnostic: an ellipsis elsewhere in the snippet says nothing about a
-   * missing expression somewhere else. */
+  /** Whether a parse diagnostic is the one the parser reports for an elision. Decided by
+   * the diagnostic's own position, so an ellipsis elsewhere in the snippet, or on the same
+   * line, says nothing about a missing expression somewhere else. */
   const isParseElision = (line) => {
     if (!PARSE_ELISION.has((/error (TS\d+)/.exec(line) ?? [])[1])) return false
-    const n = Number(/\((\d+),/.exec(line)?.[1])
-    const found = elisions.get(fileOf(line))
-    if (found === undefined) return false
-    const closer = new Set([ts.SyntaxKind.CloseParenToken, ts.SyntaxKind.CloseBracketToken])
-    closer.add(ts.SyntaxKind.CloseBraceToken)
-    return found.bare.has(n) || (closer.has(found.first.get(n)) && found.alone.has(n - 1))
+    const at = /\((\d+),(\d+)\)/.exec(line)
+    return at !== null && (elisions.get(fileOf(line))?.has(`${at[1]}:${at[2]}`) ?? false)
   }
   /** `Property 'x' does not exist on type 'Y'` is an API defect when `Y` comes
    * from the package, and snippet noise when `Y` is a class the snippet declares
