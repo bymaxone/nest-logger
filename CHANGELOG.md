@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.7] - 2026-11-01
+
 ### Fixed
 
 - **`errorStructured` keeps its `logKey` when the `Error` cannot be read.** A hostile `Error` (a Proxy whose
@@ -2309,7 +2311,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.6...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.7...HEAD
+[1.4.7]: https://github.com/bymaxone/nest-logger/compare/v1.4.6...v1.4.7
 [1.4.6]: https://github.com/bymaxone/nest-logger/compare/v1.4.5...v1.4.6
 [1.4.5]: https://github.com/bymaxone/nest-logger/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/bymaxone/nest-logger/compare/v1.4.3...v1.4.4
