@@ -261,6 +261,30 @@ describe('check-api-surface', () => {
     })
   })
 
+  it.each([
+    [
+      'dropping `export {}`',
+      'interface Options {\n    value: string;\n}\nexport {};\n',
+      'interface Options {\n    value: string;\n}\n'
+    ],
+    [
+      'adding `export {}`',
+      'interface Options {\n    value: string;\n}\n',
+      'interface Options {\n    value: string;\n}\nexport {};\n'
+    ]
+  ])(
+    'fails a patch %s, which turns the file from a module into a script or back',
+    (_name, before, after) => {
+      /*
+       * Scenario: with no import or export a declaration file is a script and its
+       * declarations are global; `export {}` makes it a module. Flattening the export lists
+       * leaves nothing behind for that marker, so the normalized text records the file's kind
+       * and the swap is a difference.
+       */
+      expect(checkPair(before, after).status).toBe(1)
+    }
+  )
+
   it('reports a declaration file that exists on one side only', () => {
     /*
      * Scenario: a new `.d.cts` or a removed `.d.ts` changes what a consumer resolves, so a

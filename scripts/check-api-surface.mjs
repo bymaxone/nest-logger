@@ -73,7 +73,10 @@ export function normalizeDeclarations(text) {
     }
   }
   const directives = referenceDirectives(text)
-  return `${directives.join('\n')}\n${kept.join('\n')}\nexports: ${specifiers.sort().join(', ')}\n`
+  // Flattening the export lists can leave nothing behind, and `export {}` is what makes a file
+  // a module instead of a script whose declarations are global, so that status is kept.
+  const kind = ts.isExternalModule(source) ? 'module' : 'script'
+  return `${directives.join('\n')}\n${kind}\n${kept.join('\n')}\nexports: ${specifiers.sort().join(', ')}\n`
 }
 
 /** `/// <tag name="value" … />`: the tag, then the attributes with either quote style. */
