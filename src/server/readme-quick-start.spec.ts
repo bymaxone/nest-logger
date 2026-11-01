@@ -47,10 +47,11 @@ describe('README Quick Start (sections 2 and 4)', () => {
    * logger in a service". It executes that flow as written (same forRoot options, same
    * @InjectLogger and logger.info calls) and captures stdout, because check:published only
    * type-checks the snippets and cannot see a wrong argument shape or a value that fails
-   * validation. It asserts the outcome the README states: one JSON line per call on stdout
-   * with level, ISO time, the configured service, logKey, msg, the injected context, the
-   * metadata, and the userId passed as the third argument. When the README's snippet or its
-   * "Output (JSON, production)" block changes, this test changes with it.
+   * validation. It asserts the JSON lines on stdout: the bootstrap and shutdown lines around
+   * one line per logger call, and on the success line the level, ISO time, the configured
+   * service, logKey, msg, the injected context, the metadata, and the userId passed as the
+   * third argument. Change this test in the same PR as any change to that README flow or to
+   * its "Output (JSON, production)" block.
    */
   'logs the README flow as structured JSON lines on stdout', async () => {
     const lines: string[] = []
