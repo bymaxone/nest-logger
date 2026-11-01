@@ -2,7 +2,7 @@
  * Throughput + allocation benchmark guarding the logger's hot path against
  * accidental regressions.
  *
- * Four scenarios, all writing to a no-op sink so only the logging PIPELINE cost
+ * Six scenarios, all writing to a no-op sink so only the logging PIPELINE cost
  * is measured (never disk/tty I/O):
  *
  *   A — bare Pino 10                       (baseline)
@@ -10,6 +10,8 @@
  *   C — THE SHIPPED CONFIGURATION: PinoLoggerService + default name-walk
  *       redaction + composed ALS/OTel mixin, inside an active request context
  *   D — the same, with the legacy `redactStrategy: 'paths'` escape hatch
+ *   E — C with a nested `Error` and its cause in the metadata (informational)
+ *   F — C through `errorStructured` with a healthy root `Error` (informational)
  *
  * Scenario C is what `BymaxLoggerModule.forRoot({ service })` actually builds,
  * with no option set — the point of this bench is that the gate measures what
@@ -147,6 +149,24 @@ function runLegacy(): void {
   )
 }
 
+/** A fixed nested error, built once so the scenarios measure the pipeline, not stack capture. */
+const NESTED_ERROR = new Error('nested', { cause: new Error('root cause') })
+const ROOT_ERROR = new Error('root')
+
+/** C with an `Error` and its cause nested in the metadata (E, informational). */
+function runNestedError(): void {
+  logContext.run({ requestId: 'r_1', tenantId: 't_1' }, () =>
+    prodLogger.info('BENCH_EVENT_OK', 'bench', 'u_1', { ...PAYLOAD, inner: NESTED_ERROR })
+  )
+}
+
+/** C through `errorStructured` with a healthy root `Error` (F, informational). */
+function runRootError(): void {
+  logContext.run({ requestId: 'r_1', tenantId: 't_1' }, () =>
+    prodLogger.errorStructured('BENCH_EVENT_FAILED', ROOT_ERROR, 'u_1', PAYLOAD)
+  )
+}
+
 /**
  * Approximate bytes allocated per call by sampling `heapUsed` deltas across a
  * fixed iteration count, forcing GC first when `--expose-gc` is available.
@@ -176,6 +196,8 @@ async function main(): Promise<void> {
     .add('B: PinoLoggerService', runWrapper)
     .add('C: shipped config', runProd)
     .add("D: legacy redactStrategy 'paths'", runLegacy)
+    .add('E: nested Error + cause', runNestedError)
+    .add('F: errorStructured root Error', runRootError)
   await bench.run()
 
   // tinybench v6 replaced the scalar `result.hz` with a `throughput` Statistics
@@ -189,11 +211,15 @@ async function main(): Promise<void> {
   const bOps = ops('B: PinoLoggerService')
   const cOps = ops('C: shipped config')
   const dOps = ops("D: legacy redactStrategy 'paths'")
+  const eOps = ops('E: nested Error + cause')
+  const fOps = ops('F: errorStructured root Error')
 
   const aAlloc = bytesPerOp(runBare)
   const bAlloc = bytesPerOp(runWrapper)
   const cAlloc = bytesPerOp(runProd)
   const dAlloc = bytesPerOp(runLegacy)
+  const eAlloc = bytesPerOp(runNestedError)
+  const fAlloc = bytesPerOp(runRootError)
 
   const allocRatio = aAlloc === 0 ? 0 : bAlloc / aAlloc
   const throughputRatio = bOps === 0 ? 0 : cOps / bOps
@@ -205,7 +231,13 @@ async function main(): Promise<void> {
   process.stdout.write(
     `| C: shipped config (name redact + mixin) | ${fmt(cOps)} | ${fmt(cAlloc)} |\n`
   )
-  process.stdout.write(`| D: legacy 'paths' strategy | ${fmt(dOps)} | ${fmt(dAlloc)} |\n\n`)
+  process.stdout.write(`| D: legacy 'paths' strategy | ${fmt(dOps)} | ${fmt(dAlloc)} |\n`)
+  process.stdout.write(
+    `| E: nested Error + cause (informational) | ${fmt(eOps)} | ${fmt(eAlloc)} |\n`
+  )
+  process.stdout.write(
+    `| F: errorStructured root Error (informational) | ${fmt(fOps)} | ${fmt(fAlloc)} |\n\n`
+  )
   process.stdout.write(
     `Allocation overhead (B/A): ${allocRatio.toFixed(3)}× (budget ≤ ${ALLOCATION_BUDGET}×)\n`
   )

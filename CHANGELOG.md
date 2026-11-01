@@ -20,6 +20,13 @@ heading here.
   nothing was logged. The call now returns and the entry is written: an unreadable `Error` arrives as
   the same `err` node `errorStructured` produces, with `err.type: 'SanitizeFailed'`, and a message with
   no text form is logged as `Unreadable log message`.
+- **An `Error` nested in the metadata is logged with its content.** `{ inner: new Error('x') }` was
+  written as `inner: {}`, because `JSON.stringify` skips an `Error`'s non-enumerable `message` and
+  `stack`; the same held inside arrays and inside another `Error`'s own fields, and a nested `cause` or
+  `AggregateError.errors` was lost with it. Every `Error` that is not at a record-root key with a
+  serializer now becomes the node the root `err` produces (`type`, `message`, `stack`, `cause`,
+  `errors` and its own fields), censored by name like the rest of the record. A root key that has a
+  serializer, `err` and any key in `serializers`, still hands the serializer the `Error` instance.
 
 #### Apply to a derived backend
 
@@ -29,12 +36,22 @@ Nothing to change in code. What can differ at run time:
   call, or an error handler that reacted to it) no longer sees it; one that relied on the throw to detect
   a hostile input should look for `err.type: 'SanitizeFailed'` (an `Error`) or the message
   `Unreadable log message` (a message) instead.
+- A nested `Error` that used to appear as `{}` now appears as `{ type, message, stack, ... }`. A filter
+  or alert that matched `inner: {}` stops matching, and a parser of nested errors gets new fields.
+  Nested `Error`s now carry their stack, so entries that hold one are larger (the line size cap still
+  applies), and a cause chain deeper than three levels is truncated with `_truncated: true`, as it is
+  at the root `err`. This applies where the name redaction runs on the record, which is the default
+  (`redactStrategy: 'names'` with at least one name covered).
 
 ### Tests
 
 - Each variadic position with an unreadable `name` or `message`, and each message with no text form on
   `error`, `warn` and `log`, has a failing-first spec through the real Pino pipeline, with a control that
   a readable error is logged as before.
+- A nested `Error` in each position (metadata key, array, own field of another `Error`), its cause
+  chain and `AggregateError.errors`, a secret on the `Error`, on its detail and on a link of its chain,
+  a cycle, the cause-depth and walk-depth limits, and the serializer-key exception, including through
+  `child()` bindings, have a failing-first spec through the real Pino pipeline.
 
 ## [1.4.7] - 2026-11-01
 

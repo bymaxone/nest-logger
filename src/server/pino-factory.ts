@@ -399,7 +399,12 @@ function buildNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor 
   if (names.length === 0) {
     return PASS_THROUGH
   }
-  return createNameRedactor(names, options.redactCensor)
+  return createNameRedactor(names, options.redactCensor, {
+    node: serializeErrorValue,
+    // The serializers run after this redactor and read the instance, so an `Error` at one of
+    // their keys must reach them as one.
+    serializedKeys: ['err', ...Object.keys(options.serializers)]
+  })
 }
 
 /**

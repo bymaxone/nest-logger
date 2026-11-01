@@ -262,20 +262,33 @@ function defineOwn(target: Record<string, unknown>, key: string, value: unknown)
 }
 
 /**
+ * What one walk needs to know besides the value: the names it censors and how it treats an
+ * `Error`.
+ */
+interface RedactRules {
+  /** Lower-cased field names whose values are censored. */
+  readonly sensitive: ReadonlySet<string>
+  /** Replacement written in place of a sensitive value. */
+  readonly censor: string
+  /** Builds the node that replaces an `Error` outside a serialized slot; none keeps the clone. */
+  readonly errorNode: ((error: Error) => unknown) | undefined
+  /** Record-root keys that have a serializer, whose `Error` stays an instance. */
+  readonly serializedKeys: ReadonlySet<string>
+}
+
+/**
  * Copy-on-write walk of an array's elements. Split out of {@link walk} to keep
  * both bodies within the project's nesting limit.
  *
  * @param value - The array to inspect.
- * @param sensitive - Field names whose values are censored.
- * @param censor - Replacement written in place of a sensitive value.
+ * @param rules - The names to censor and how an `Error` is handled.
  * @param depth - Depth of `value` itself; elements are one deeper.
  * @param ancestors - References on the current path (cycle guard).
  * @returns The array itself when no element changed, otherwise a copy.
  */
 function walkArray(
   value: readonly unknown[],
-  sensitive: ReadonlySet<string>,
-  censor: string,
+  rules: RedactRules,
   depth: number,
   ancestors: Set<object>
 ): unknown[] {
@@ -294,11 +307,7 @@ function walkArray(
   const copy: unknown[] = []
   for (let index = 0; index < length; index++) {
     // `Reflect` keeps the dynamic read/write off the object-injection sink list.
-    Reflect.set(
-      copy,
-      index,
-      walk(Reflect.get(value, index), sensitive, censor, depth + 1, ancestors)
-    )
+    Reflect.set(copy, index, walk(Reflect.get(value, index), rules, depth + 1, ancestors))
   }
   return copy
 }
@@ -308,19 +317,18 @@ function walkArray(
  * a fresh structure, so the result is guaranteed to equal what was inspected.
  *
  * @param value - The value to inspect.
- * @param sensitive - Field names whose values are censored.
- * @param censor - Replacement written in place of a sensitive value.
+ * @param rules - The names to censor and how an `Error` is handled.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
  * @param ancestors - References on the current path (cycle guard).
  * @returns The value, or a redacted copy of it.
  */
 function walk(
   value: unknown,
-  sensitive: ReadonlySet<string>,
-  censor: string,
+  rules: RedactRules,
   depth: number,
   ancestors: Set<object>,
-  honorToJson = true
+  honorToJson = true,
+  keepError = false
 ): unknown {
   // Callables are admitted, not skipped as primitives. `JSON.stringify` invokes a
   // callable `toJSON` on a FUNCTION object too — it applies that step before the
@@ -345,9 +353,57 @@ function walk(
   // An Error is the one value whose unreadable parts are isolated: it degrades on its own and
   // its siblings survive. See `walkError`.
   if (value instanceof Error) {
-    return walkError(value, sensitive, censor, depth, ancestors, honorToJson)
+    return keepError || rules.errorNode === undefined
+      ? walkError(value, rules, depth, ancestors, honorToJson)
+      : walkErrorNode(value, rules.errorNode, rules, depth, ancestors, honorToJson)
   }
-  return walkObject(value, sensitive, censor, depth, ancestors, honorToJson)
+  return walkObject(value, rules, depth, ancestors, honorToJson)
+}
+
+/**
+ * Walk an `Error` that is not handed to a serializer, as the node `errorNode` builds for it.
+ *
+ * `JSON.stringify` writes `{}` for an `Error` (its `message` and `stack` are not enumerable),
+ * so an `Error` outside a serialized slot would lose everything that identifies it, `cause`
+ * chain included. The node carries all of it, and walking the node censors it by name like the
+ * rest of the record. The original is on the path while its node is walked, so an `Error` that
+ * reaches itself through an own field ends at the cycle marker.
+ *
+ * @param error - The error to replace.
+ * @param errorNode - Builds the node that stands for `error`; it must not throw.
+ * @param rules - The names to censor and how an `Error` is handled.
+ * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
+ * @param ancestors - References on the current path (cycle guard).
+ * @param honorToJson - `false` only for the root of a log record.
+ * @returns The redacted node.
+ */
+function walkErrorNode(
+  error: Error,
+  errorNode: (error: Error) => unknown,
+  rules: RedactRules,
+  depth: number,
+  ancestors: Set<object>,
+  honorToJson: boolean
+): unknown {
+  ancestors.add(error)
+  try {
+    return walk(errorNode(error), rules, depth, ancestors, honorToJson)
+  } finally {
+    ancestors.delete(error)
+  }
+}
+
+/**
+ * Whether the value at `key` keeps its `Error` instance: only a key of the record root that has
+ * a serializer, because the serializer runs after the redactor and reads the instance.
+ *
+ * @param rules - The names to censor and how an `Error` is handled.
+ * @param key - The property being walked.
+ * @param honorToJson - `false` only for the root of a log record.
+ * @returns `true` when the value must stay an `Error`.
+ */
+function keepsErrorAt(rules: RedactRules, key: string, honorToJson: boolean): boolean {
+  return !honorToJson && rules.serializedKeys.has(key)
 }
 
 /**
@@ -365,8 +421,7 @@ function walk(
  * fails the whole record.
  *
  * @param error - The error to walk.
- * @param sensitive - Field names whose values are censored.
- * @param censor - Replacement written in place of a sensitive value.
+ * @param rules - The names to censor and how an `Error` is handled.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
  * @param ancestors - References on the current path (cycle guard).
  * @param honorToJson - `false` only for the root of a log record.
@@ -374,16 +429,15 @@ function walk(
  */
 function walkError(
   error: Error,
-  sensitive: ReadonlySet<string>,
-  censor: string,
+  rules: RedactRules,
   depth: number,
   ancestors: Set<object>,
   honorToJson: boolean
 ): unknown {
   try {
-    return walkObject(error, sensitive, censor, depth, ancestors, honorToJson)
+    return walkObject(error, rules, depth, ancestors, honorToJson)
   } catch {
-    return walk(sanitizeError(error), sensitive, censor, depth, ancestors, honorToJson)
+    return walk(sanitizeError(error), rules, depth, ancestors, honorToJson)
   }
 }
 
@@ -392,8 +446,7 @@ function walkError(
  * cleanly: the body of {@link walk} after its guards.
  *
  * @param value - The value to inspect.
- * @param sensitive - Field names whose values are censored.
- * @param censor - Replacement written in place of a sensitive value.
+ * @param rules - The names to censor and how an `Error` is handled.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
  * @param ancestors - References on the current path (cycle guard).
  * @param honorToJson - `false` only for the root of a log record.
@@ -401,8 +454,7 @@ function walkError(
  */
 function walkObject(
   value: object,
-  sensitive: ReadonlySet<string>,
-  censor: string,
+  rules: RedactRules,
   depth: number,
   ancestors: Set<object>,
   honorToJson: boolean
@@ -474,8 +526,8 @@ function walkObject(
       // cannot be — that is the same limitation as a caller writing
       // `{ renamed: obj.inner.password }` by hand, which no name matcher sees.
       // Documented in PINO-REDACTION-GUIDELINES.md under the engine's limits.
-      if (Object.keys(value).some((key) => sensitive.has(key.toLowerCase()))) {
-        return censor
+      if (Object.keys(value).some((key) => rules.sensitive.has(key.toLowerCase()))) {
+        return rules.censor
       }
       // The INSPECTED result is what gets returned, always — never the original
       // object. Returning the original when the probe came back clean left
@@ -490,7 +542,7 @@ function walkObject(
       // `toJSON`-bearing object recurse forever — nothing repeats, so the ancestor
       // set never matches and the ceiling was never reached. The stack exhausted
       // instead: contained by the root catch, but at the cost of the WHOLE record.
-      return walk(toJson.call(value), sensitive, censor, depth + 1, ancestors)
+      return walk(toJson.call(value), rules, depth + 1, ancestors)
     }
 
     // A callable with no `toJSON` reaches here. It must be handed back as-is:
@@ -501,7 +553,7 @@ function walkObject(
     }
 
     if (Array.isArray(value)) {
-      return walkArray(value, sensitive, censor, depth, ancestors)
+      return walkArray(value, rules, depth, ancestors)
     }
 
     const source = value as Record<string, unknown>
@@ -534,15 +586,23 @@ function walkObject(
       defineOwn(
         copy,
         key,
-        sensitive.has(key.toLowerCase())
-          ? censor
-          : walk(current, sensitive, censor, depth + 1, ancestors)
+        rules.sensitive.has(key.toLowerCase())
+          ? rules.censor
+          : walk(current, rules, depth + 1, ancestors, true, keepsErrorAt(rules, key, honorToJson))
       )
     }
     return copy
   } finally {
     ancestors.delete(value)
   }
+}
+
+/** How the redactor treats an `Error` it meets. */
+export interface ErrorHandling {
+  /** Builds the node that replaces an `Error` outside a serialized slot. Must not throw. */
+  readonly node: (error: Error) => unknown
+  /** Record-root keys that have a serializer, whose `Error` stays an instance. */
+  readonly serializedKeys: readonly string[]
 }
 
 /**
@@ -555,13 +615,20 @@ function walkObject(
  *   deeper than that is dropped rather than emitted, while a primitive leaf at
  *   the boundary is kept — its key was already matched one level up.
  * @param censor - Replacement written in place of a sensitive value.
+ * @param errors - How an `Error` is handled. Without it every `Error` stays an instance, which
+ *   `JSON.stringify` writes as `{}`; with it an `Error` outside a serialized root key is replaced
+ *   by the node `errors.node` builds, and walked like the rest of the record.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
  *   const redact = createNameRedactor(['password'], '[REDACTED]')
  *   redact({ user: { deep: { password: 's' } } })
  *   // → { user: { deep: { password: '[REDACTED]' } } }
  */
-export function createNameRedactor(fieldNames: readonly string[], censor: string): Redactor {
+export function createNameRedactor(
+  fieldNames: readonly string[],
+  censor: string,
+  errors?: ErrorHandling
+): Redactor {
   // Matched case-INSENSITIVELY. HTTP header names are case-insensitive by spec,
   // and only INBOUND Node headers arrive lower-cased — a hand-built or outbound
   // bag routinely carries `Authorization`, `Cookie`, `X-API-Key`, which a
@@ -569,10 +636,15 @@ export function createNameRedactor(fieldNames: readonly string[], censor: string
   // Applying it to every name rather than only to headers costs one
   // `toLowerCase()` per key (~4 % of an entry, measured) and errs toward
   // redacting `Password` / `Email` too, which is the safe direction.
-  const sensitive: ReadonlySet<string> = new Set(fieldNames.map((name) => name.toLowerCase()))
+  const rules: RedactRules = {
+    sensitive: new Set(fieldNames.map((name) => name.toLowerCase())),
+    censor,
+    errorNode: errors?.node,
+    serializedKeys: new Set(errors?.serializedKeys)
+  }
   return (value: unknown, isRecordRoot = false): unknown => {
     try {
-      return walk(value, sensitive, censor, 0, new Set<object>(), !isRecordRoot)
+      return walk(value, rules, 0, new Set<object>(), !isRecordRoot)
     } catch {
       // The record resisted traversal (a throwing getter, a hostile proxy). It
       // cannot be proven safe, so nothing from it is emitted — a redactor must
