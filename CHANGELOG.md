@@ -11,6 +11,11 @@ heading here.
 
 ## [Unreleased]
 
+### Tests
+
+- A unit test executes the README Quick Start (sections 2 and 4) as written and asserts the JSON
+  lines it logs. `check:published` only type-checks the snippets; this one runs them.
+
 ## [1.4.3] - 2026-10-31
 
 ### Added
