@@ -11,6 +11,31 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A logging call no longer throws because of what it was handed.** `error`, `warn`, `log`, `fatal`
+  and the other NestJS variadic methods threw out of the call when an `Error` had a `name` or `message`
+  getter that throws, and when the message had no text form (a null-prototype object, a throwing
+  `toString`). In `catch (e) { logger.error(e) }` that second throw replaced the original error and
+  nothing was logged. The call now returns and the entry is written: an unreadable `Error` arrives as
+  the same `err` node `errorStructured` produces, with `err.type: 'SanitizeFailed'`, and a message with
+  no text form is logged as `Unreadable log message`.
+
+#### Apply to a derived backend
+
+Nothing to change in code. What can differ at run time:
+
+- Entries that were never written now appear. A host that handled the throw (a `try` around the logging
+  call, or an error handler that reacted to it) no longer sees it; one that relied on the throw to detect
+  a hostile input should look for `err.type: 'SanitizeFailed'` (an `Error`) or the message
+  `Unreadable log message` (a message) instead.
+
+### Tests
+
+- Each variadic position with an unreadable `name` or `message`, and each message with no text form on
+  `error`, `warn` and `log`, has a failing-first spec through the real Pino pipeline, with a control that
+  a readable error is logged as before.
+
 ## [1.4.7] - 2026-11-01
 
 ### Fixed

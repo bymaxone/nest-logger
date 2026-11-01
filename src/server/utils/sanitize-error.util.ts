@@ -163,9 +163,25 @@ export function sanitizeError(err: unknown, options?: SanitizeErrorOptions): San
  *   lost cause, which is the defect that bridge exists to prevent. NOT re-exported
  *   by the package barrel.
  * @param value - The candidate value.
- * @returns `true` when the value carries a readable error shape.
+ * @returns `true` when the value carries a readable error shape, or is an `Error` whose
+ *   shape cannot be read. Never throws.
  */
 export function isErrorLike(value: unknown): value is Error {
+  try {
+    return readsAsError(value)
+  } catch {
+    // The shape could not be read, which is a property of a hostile `Error` and not a reason
+    // to throw out of a logging call. A real `Error` stays one, so its cause is not dropped.
+    return isErrorInstance(value)
+  }
+}
+
+/**
+ * The structural test behind {@link isErrorLike}, which lets a throwing getter propagate.
+ * `sanitizeError` relies on that: a value whose shape cannot be read at all degrades to the
+ * `SanitizeFailed` node, which says so, instead of passing for an unknown value.
+ */
+function readsAsError(value: unknown): value is Error {
   // No `instanceof Error` fast path. Every real `Error` carries string `name` and
   // `message` through its prototype, so the structural test below already
   // accepts one — the fast path decided nothing the structural test would not
@@ -175,6 +191,15 @@ export function isErrorLike(value: unknown): value is Error {
   }
   const candidate = value as { name?: unknown; message?: unknown }
   return typeof candidate.name === 'string' && typeof candidate.message === 'string'
+}
+
+/** `value instanceof Error`, which a Proxy `getPrototypeOf` trap can make throw. */
+function isErrorInstance(value: unknown): boolean {
+  try {
+    return value instanceof Error
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -195,7 +220,7 @@ function toSanitizedError(
   maxDepth: number
 ): SanitizedError {
   try {
-    if (!isErrorLike(value)) {
+    if (!readsAsError(value)) {
       return { name: 'UnknownError', message: String(value) }
     }
 
