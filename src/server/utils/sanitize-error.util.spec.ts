@@ -484,10 +484,10 @@ describe('sanitizeError — own fields that cannot be enumerated', () => {
     })
 
   it(/*
-   * REGRESSION — when the own-field loop aborted, the node kept the fields it had read
-   * and carried NO sign that the rest was missing, unlike the whole-value path, which
-   * degrades to a visible `SanitizeFailed` shape. An error entry without its `code`
-   * or payload looked complete. The node now says the field set is incomplete.
+   * A node whose own fields could not be read says so. The whole-value path degrades to a
+   * visible `SanitizeFailed` shape, and this one must be as visible: an error entry that
+   * lacks its `code` or payload with no sign would read as a complete one. The node carries
+   * a marker saying the field set is incomplete.
    */
   'marks the node when the own fields could not be read', () => {
     const node = sanitizeError(unenumerable())

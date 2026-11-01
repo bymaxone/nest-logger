@@ -73,11 +73,11 @@ describe('reportDestinationFailure', () => {
     ]
   ])('still reports the destination when the cause is %s', (_label, makeCause) => {
     /*
-     * REGRESSION — the report was dropped whole when the cause could not be turned into
-     * text, so a sink that stopped receiving entries left no trace anywhere: the health
-     * flag was set but no operator-visible line existed. The destination and the stage
-     * are what the operator needs, and neither depends on the cause being readable, so
-     * the line is written with a stand-in for the error. Exactly one line, never zero.
+     * A destination failure always leaves one operator-visible line. The destination and
+     * the stage are what the operator needs, and neither depends on the cause being
+     * readable, so an unreadable cause degrades to a stand-in for the error instead of
+     * dropping the line: a sink that stops receiving entries must never do so unannounced.
+     * Exactly one line, never zero.
      */
     reportDestinationFailure(
       RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,

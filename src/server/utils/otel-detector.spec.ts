@@ -185,11 +185,9 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     ]
   ])('warns once on stderr for %s, and still returns undefined', (_label, makeFailure) => {
     /*
-     * REGRESSION — every failure to load the optional peer was swallowed as "not
-     * installed", so an installed but broken @opentelemetry/api switched trace correlation
-     * off with no sign anywhere: the operator believed it was on and `traceId` was simply
-     * absent. Only a failure to find the peer ITSELF is silent; anything else is a broken
-     * install and says so once.
+     * Only a failure to find the peer ITSELF is silent. Anything else is a broken install
+     * and says so once, because trace correlation would otherwise be off with no sign: the
+     * operator would believe it was on while `traceId` was simply absent.
      */
     const failure = makeFailure()
     mockedCreateRequire.mockImplementation(requireThrows(failure))

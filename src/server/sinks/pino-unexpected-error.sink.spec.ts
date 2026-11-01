@@ -244,11 +244,10 @@ describe('PinoUnexpectedErrorSink — failure containment', () => {
   })
 
   it(/*
-   * REGRESSION — the entry is the only log record of an unhandled exception, and a
-   * failure to write it was swallowed with no trace at all: not on stdout, because
-   * the logger is the thing that failed, and not on stderr, because nothing wrote
-   * there. A dropped report must leave one line on stderr naming what was lost and
-   * why, outside the sink set, the way a destination failure does.
+   * The entry is the only log record of an unhandled exception, so a report that cannot
+   * be written must never vanish silently. Stdout is no place for the notice, because the
+   * logger is the thing that failed: a dropped report leaves one line on stderr naming
+   * what was lost and why, outside the sink set, the way a destination failure does.
    */
   'writes one stderr line when the logger throws and the report is dropped', () => {
     h.errorSpy.mockImplementation(() => {
