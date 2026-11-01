@@ -729,7 +729,7 @@ Pino's standard serializer did.
 
 When those properties cannot be read (a Proxy whose `ownKeys` throws, or a getter that throws), none of them is copied and the error node carries `_errorFieldsIncomplete: true`, so an entry without its `code` is never mistaken for a complete one.
 
-An `Error` that cannot be read at all does not cost the record its `logKey`, `userId` or metadata: the node is replaced by its sanitized form, which keeps `name` and `message` and carries the same marker. Filter on `err._errorFieldsIncomplete: true` to find these entries.
+An `Error` that cannot be read at all does not cost the record its `logKey`, `userId` or metadata: the node is replaced by its sanitized form, which keeps `name` and `message` and carries the same marker unless `name` or `message` itself is unreadable, in which case it is `{ type: 'SanitizeFailed' }`. Filter on `err._errorFieldsIncomplete: true` or `SanitizeFailed` to find these entries.
 
 ### 7. Context propagation with `LogContextService`
 

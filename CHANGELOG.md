@@ -31,7 +31,7 @@ Nothing to change in code. What can differ at run time:
 
 - An alert on `LOGGER_REDACTION_FAILED` that fired for an unreadable `Error` stops firing for it. The event
   now arrives under its own `logKey`, with the `err` node carrying `_errorFieldsIncomplete: true`. To find
-  these entries going forward, filter on `err._errorFieldsIncomplete: true`. `LOGGER_REDACTION_FAILED` is
+  these entries going forward, filter on `err._errorFieldsIncomplete: true` or `err.type: 'SanitizeFailed'`. `LOGGER_REDACTION_FAILED` is
   left for a record that really cannot be read, such as hostile metadata.
 - An error whose `stack` or `cause` getter throws used to reach the log as `{ type: 'SanitizeFailed' }`; it
   now keeps its `type` and `message` and carries the marker. Code that matched `SanitizeFailed` for that
