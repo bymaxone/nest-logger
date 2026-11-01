@@ -22,10 +22,12 @@ const config: Config = {
   // This spec reads the TEXT of `src` to find every `throw new Error(...)`. Stryker's sandbox
   // holds instrumented copies, where that scan finds none and the dry run fails before any mutant
   // runs. It asserts about documentation, not behaviour, so it kills no mutant; `pnpm test` still
-  // runs it against the real source.
+  // runs it against the real source. `check-api-surface.spec.ts` runs a repository script on
+  // fixture directories and touches no code in `src`, so it kills no mutant either.
   testPathIgnorePatterns: [
     ...(base.testPathIgnorePatterns ?? ['/node_modules/']),
-    '/readme-error-catalog\\.spec\\.ts$'
+    '/readme-error-catalog\\.spec\\.ts$',
+    '/check-api-surface\\.spec\\.ts$'
   ]
 }
 
