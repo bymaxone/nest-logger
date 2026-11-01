@@ -224,7 +224,11 @@ describe('createTraceContextMixin', () => {
       ...defaultFields,
       shouldAutoInjectTraceContext: true
     })
-    expect(mixin({}, 30, logger)).toEqual({ traceId: VALID_TRACE_ID, spanId: SPAN_ID })
+    const fields = mixin({}, 30, logger)
+
+    expect(fields).toEqual({ traceId: VALID_TRACE_ID, spanId: SPAN_ID })
+    // `toEqual` ignores a key whose value is undefined, so absence is asserted on its own.
+    expect(Object.keys(fields)).toEqual(['traceId', 'spanId'])
   })
 })
 
