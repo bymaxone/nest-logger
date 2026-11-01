@@ -1,3 +1,11 @@
+/**
+ * Runs the README Quick Start as written and holds its output sample to the real line.
+ *
+ * Layer: server, tests. The README is published to npm and `check:published` only compiles
+ * its code fences, so a wrong argument shape or a value that fails validation would
+ * type-check and still throw. This spec executes sections 2 and 4 and compares the
+ * "Output (JSON, production)" sample's keys with what the flow prints.
+ */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
