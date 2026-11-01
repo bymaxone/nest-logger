@@ -261,7 +261,8 @@ describe('PinoUnexpectedErrorSink — failure containment', () => {
       level: 'error',
       logKey: 'HTTP_UNEXPECTED_ERROR_DROPPED',
       destination: 'PinoUnexpectedErrorSink',
-      err: { type: 'Error', message: 'serializer exploded' }
+      err: { type: 'Error', message: 'serializer exploded' },
+      msg: 'An unexpected-error report could not be logged and was dropped.'
     })
   })
 
@@ -299,7 +300,8 @@ describe('PinoUnexpectedErrorSink — failure containment', () => {
     expect(h.errorSpy).not.toHaveBeenCalled()
     expect(droppedLine()).toMatchObject({
       logKey: 'HTTP_UNEXPECTED_ERROR_DROPPED',
-      err: { type: 'Error', message: 'hostile getter' }
+      err: { type: 'Error', message: 'hostile getter' },
+      msg: 'An unexpected-error report could not be logged and was dropped.'
     })
   })
 

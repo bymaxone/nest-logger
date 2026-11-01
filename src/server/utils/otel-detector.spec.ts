@@ -172,6 +172,16 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     [
       'a resolution error that carries no code',
       () => new Error("Cannot find module '@opentelemetry/api'")
+    ],
+    [
+      'a message that names the module only after other text',
+      () =>
+        Object.assign(
+          new Error(
+            "Cannot find module 'other'\nCannot find module '@opentelemetry/api' is mentioned later"
+          ),
+          { code: 'MODULE_NOT_FOUND' }
+        )
     ]
   ])('warns once on stderr for %s, and still returns undefined', (_label, makeFailure) => {
     /*
@@ -193,6 +203,12 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
       // The report pins the message to one line, escaping the newline.
       err: { type: failure.name, message: failure.message.replaceAll('\n', '\\n') }
     })
+    // The line says what to do about it, and is newline-terminated like every stderr record.
+    expect(lines()[0]?.['msg']).toBe(
+      '@opentelemetry/api is installed but could not be loaded, so traceId and spanId are ' +
+        'absent from every entry. Reinstall it, or set otel.shouldAutoInjectTraceContext to false.'
+    )
+    expect(String(stderrSpy.mock.calls[0]?.[0]).endsWith('\n')).toBe(true)
   })
 
   it(/*

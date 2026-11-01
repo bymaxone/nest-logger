@@ -1,5 +1,6 @@
 import { PrettyDevDestination } from './pretty-dev.destination'
 import type { PrettyViewOptions } from './pretty-dev.destination'
+import * as escapeLogText from '../utils/escape-log-text.util'
 
 /** A syntactically valid Pino NDJSON line `pino-pretty` can parse and format. */
 const VALID_NDJSON_LINE =
@@ -11,6 +12,19 @@ function flushIo(): Promise<void> {
 }
 
 describe('PrettyDevDestination', () => {
+  // Every isolated import of the destination below evaluates its imports again. For the
+  // escaping helpers that re-evaluation would run inside a test, and a mutation run then
+  // attributes their module-level constants to these tests, which assert nothing about
+  // them. Handing the isolated registry the module already loaded keeps those constants
+  // evaluated once, outside any test, where the helpers' own spec judges them.
+  beforeEach(() => {
+    jest.doMock('../utils/escape-log-text.util', () => escapeLogText)
+  })
+
+  afterEach(() => {
+    jest.dontMock('../utils/escape-log-text.util')
+  })
+
   describe('constructor', () => {
     it(/*
      * With no options the destination must accept every level (minLevel
@@ -792,6 +806,15 @@ describe('PrettyDevDestination', () => {
         'plain string failure',
         true,
         /failed to start: plain string failure/
+      ],
+      [
+        'a message that names pino-pretty only after its first line',
+        resolutionError(
+          'MODULE_NOT_FOUND',
+          "Cannot find module 'dateformat'\nCannot find module 'pino-pretty' is mentioned later"
+        ),
+        false,
+        /failed to start: Cannot find module 'dateformat'/
       ]
     ])(
       'reports the real failure for %s, not a false "not installed"',

@@ -494,6 +494,9 @@ describe('sanitizeError — own fields that cannot be enumerated', () => {
 
     expect(node).toMatchObject({ name: 'Error', message: 'boom', _errorFieldsIncomplete: true })
     expect(node).not.toHaveProperty('code')
+    // Enumerable, so the marker survives a copy or a serialization of the node.
+    expect(Object.keys(node)).toContain('_errorFieldsIncomplete')
+    expect(JSON.parse(JSON.stringify(node))).toMatchObject({ _errorFieldsIncomplete: true })
   })
 
   it(/*
