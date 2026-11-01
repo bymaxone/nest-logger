@@ -323,6 +323,11 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * @example
    *   logger.info('USER_CREATED', 'New user registered', userId, { plan: 'pro' })
    */
+  /** Planted by the api-surface proof PR; never merge. */
+  plantedMethod(): void {
+    return undefined
+  }
+
   info(logKey: string, message: string, userId?: string, metadata?: Record<string, unknown>): void {
     this.emitStructured('info', logKey, message, userId, metadata)
   }
