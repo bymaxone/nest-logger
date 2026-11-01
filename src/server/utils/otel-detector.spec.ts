@@ -232,29 +232,36 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     ['true', true],
     ['a non-empty string', 'api'],
     ['an object with no trace', {}],
-    ['an object whose trace is undefined', { trace: undefined }]
-  ])('warns once when the module resolves to %s, an export with no trace', (_label, exported) => {
-    /*
-     * A module that resolves but exports no `trace` is a broken install, whatever shape
-     * the export has: reading `trace` off `undefined` or `null` throws, and off `false`,
-     * `0`, `''` or any other value that is not an object simply yields `undefined`, so the
-     * check has to look at the export itself instead of relying on the read to fail.
-     */
-    mockedCreateRequire.mockImplementation(
-      (() => () => exported) as unknown as typeof createRequire
-    )
+    ['an object whose trace is undefined', { trace: undefined }],
+    ['an object whose trace is null', { trace: null }],
+    ['an object whose trace is a string', { trace: 'trace' }],
+    ['an object whose trace has no getActiveSpan', { trace: {} }],
+    ['an object whose getActiveSpan is not a function', { trace: { getActiveSpan: 1 } }]
+  ])(
+    'warns once when the module resolves to %s, an export with no usable trace',
+    (_label, exported) => {
+      /*
+       * A module that resolves but exports no `trace` is a broken install, whatever shape
+       * the export has: reading `trace` off `undefined` or `null` throws, and off `false`,
+       * `0`, `''` or any other value that is not an object simply yields `undefined`, so the
+       * check has to look at the export itself instead of relying on the read to fail.
+       */
+      mockedCreateRequire.mockImplementation(
+        (() => () => exported) as unknown as typeof createRequire
+      )
 
-    expect(detectOtelTraceApi()).toBeUndefined()
-    expect(lines()).toHaveLength(1)
-    expect(lines()[0]).toMatchObject({
-      level: 'warn',
-      logKey: 'LOGGER_OTEL_API_BROKEN',
-      err: {
-        type: 'TypeError',
-        message: '@opentelemetry/api resolved but exports no `trace` namespace'
-      }
-    })
-  })
+      expect(detectOtelTraceApi()).toBeUndefined()
+      expect(lines()).toHaveLength(1)
+      expect(lines()[0]).toMatchObject({
+        level: 'warn',
+        logKey: 'LOGGER_OTEL_API_BROKEN',
+        err: {
+          type: 'TypeError',
+          message: '@opentelemetry/api resolved but exports no usable `trace` namespace'
+        }
+      })
+    }
+  )
 
   it(/*
    * The control for the table above: an export that carries a `trace` namespace is used as

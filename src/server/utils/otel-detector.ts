@@ -81,7 +81,7 @@ function isOtelApiMissing(cause: unknown): boolean {
  * property of the environment, and the working-directory fallback covers it.
  *
  * Only the peer being ABSENT is silent. A peer that is found but throws while loading, or
- * exports no `trace` namespace, is a broken install: it is reported through `broken` so the
+ * exports no usable `trace` namespace, is a broken install: it is reported through `broken` so the
  * caller can say so, rather than being folded into "not installed".
  *
  * @param anchor - Produces the absolute path resolution walks up from.
@@ -96,17 +96,19 @@ function loadTraceApiFrom(anchor: () => string): Attempt {
   }
   try {
     const mod: unknown = createRequire(from)('@opentelemetry/api')
-    // The export is checked itself. Reading `trace` off `undefined` or `null` throws, but off
-    // `false`, `0`, `''` or any other non-object it just yields `undefined`, and a module
-    // that carries no `trace` is a broken install either way, not an absent one.
+    // The export is checked itself, down to the one method the mixin calls on every entry.
+    // Reading `trace` off `undefined` or `null` throws, but off `false`, `0`, `''` or any
+    // other non-object it just yields `undefined`, and a `trace` that is not an object with
+    // a `getActiveSpan` function would throw inside the mixin on every log call. A module
+    // like that is a broken install, not an absent one.
     const trace =
       (typeof mod === 'object' && mod !== null) || typeof mod === 'function'
-        ? (mod as { trace?: OtelTraceApi }).trace
+        ? (mod as { trace?: Partial<OtelTraceApi> | null }).trace
         : undefined
-    if (trace === undefined) {
-      throw new TypeError('@opentelemetry/api resolved but exports no `trace` namespace')
+    if (typeof trace?.getActiveSpan !== 'function') {
+      throw new TypeError('@opentelemetry/api resolved but exports no usable `trace` namespace')
     }
-    return { api: trace }
+    return { api: trace as OtelTraceApi }
   } catch (cause) {
     return isOtelApiMissing(cause) ? { api: undefined } : { api: undefined, broken: { cause } }
   }

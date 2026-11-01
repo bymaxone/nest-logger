@@ -34,7 +34,7 @@ Five places swallowed a failed side effect with no trace. Each now leaves one.
   node now carries `_errorFieldsIncomplete: true`.
 - **A broken `@opentelemetry/api` install is reported once.** Every failure to load it was folded into
   "not installed", so correlation could be off with no sign. A missing module stays silent, as
-  designed; one that is installed but throws while loading, or exports no `trace` namespace, writes one
+  designed; one that is installed but throws while loading, or exports no usable `trace` namespace, writes one
   `LOGGER_OTEL_API_BROKEN` line to `stderr`.
 
 #### Apply to a derived backend
