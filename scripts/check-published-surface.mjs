@@ -12,7 +12,7 @@
  *   sees what a consumer resolving through `exports` sees, and the consumer
  *   fixture happened to use a workaround form.
  * - A pull request deleted a `## [x.y.z]` heading while adding the next one,
- *   which silently turns the release notes into the generic fallback.
+ *   which leaves the release workflow with no section to publish and stops it.
  *
  * The README snippets are compiled under three constraints:
  *
@@ -439,11 +439,12 @@ async function checkLinks() {
 // ---------------------------------------------------------------------------
 
 /** Mirrors the awk in `release.yml`: everything between this version's heading
- * and the next one. Kept deliberately identical — a check that reads the file
- * differently from the workflow proves nothing about the workflow. */
+ * (matched as a literal prefix, as the workflow does) and the next one. Kept
+ * deliberately identical — a check that reads the file differently from the
+ * workflow proves nothing about the workflow. */
 function releaseNotes(version) {
   const lines = CHANGELOG.split('\n')
-  const start = lines.findIndex((l) => /^## \[/.test(l) && l.includes(`[${version}]`))
+  const start = lines.findIndex((l) => l.startsWith(`## [${version}]`))
   if (start === -1) return null
   const rest = lines.slice(start + 1)
   const end = rest.findIndex((l) => /^## \[/.test(l))
@@ -458,7 +459,7 @@ function checkChangelog() {
   if (notes === null) {
     fail(
       'changelog',
-      `no "## [${PKG.version}]" heading — the release would publish the generic fallback`
+      `no "## [${PKG.version}]" heading — the release workflow would stop at its notes step`
     )
     return
   }
@@ -544,7 +545,7 @@ function checkChangelog() {
   for (const v of missing) {
     fail(
       'changelog',
-      `v${v} is tagged but has no "## [${v}]" section — its release notes would be the generic fallback`
+      `v${v} is tagged but has no "## [${v}]" section — its release notes could not be extracted`
     )
   }
   console.log(
