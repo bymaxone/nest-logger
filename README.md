@@ -325,31 +325,30 @@ export class PaymentsService {
 }
 ```
 
-Output (JSON, production):
+Output (JSON, production) for the `PAYMENT_REFUND_SUCCESS` call above, with the options from step 2:
 
 ```json
 {
   "level": "info",
   "time": "2026-05-28T10:12:44.512Z",
-  "service": { "name": "my-app", "version": "abc123" },
-  "logKey": "PAYMENT_REFUND_SUCCESS",
-  "msg": "Refund processed",
+  "service": { "name": "my-app", "version": "1.0.0" },
+  "deployment": { "environment": { "name": "production" } },
   "context": "PaymentsService",
-  "requestId": "r_7f3a9b",
-  "tenantId": "t_acme",
-  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
-  "spanId": "00f067aa0ba902b7",
   "paymentId": "pi_xyz",
-  "stripeRefundId": "re_abc"
+  "stripeRefundId": "re_abc",
+  "logKey": "PAYMENT_REFUND_SUCCESS",
+  "userId": "u_42",
+  "event.name": "payment.refund.success",
+  "msg": "Refund processed"
 }
 ```
+
+`requestId` and `tenantId` are added when the call runs inside an HTTP request that passed through the request-ID middleware (`tenantId` only when the request carries the tenant header), and `traceId` and `spanId` when an OpenTelemetry span is active (see [OpenTelemetry correlation](#6-opentelemetry-correlation)). Outside a request, as in the flow above, they are absent.
 
 Output (pretty-print, development):
 
 ```
 [10:12:44.512] INFO (my-app): PAYMENT_REFUND_SUCCESS
-    requestId: "r_7f3a9b"
-    tenantId: "t_acme"
     paymentId: "pi_xyz"
     stripeRefundId: "re_abc"
 ```

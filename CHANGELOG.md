@@ -11,6 +11,19 @@ heading here.
 
 ## [Unreleased]
 
+### Documentation
+
+- The Quick Start's "Output (JSON, production)" sample is now exactly what the flow prints:
+  it gains `deployment`, `userId` and `event.name`, and its version matches the snippet. The
+  request and trace fields (`requestId`, `tenantId`, `traceId`, `spanId`) are no longer in it, since
+  they are absent outside an HTTP request and an active span; a sentence says when they appear.
+
+### Tests
+
+- A unit test executes the README Quick Start (sections 2 and 4) as written and asserts the JSON
+  lines it logs. `check:published` only type-checks the snippets; this one runs them. It also
+  requires the README's "Output (JSON, production)" sample to have the same keys as the real line.
+
 ## [1.4.3] - 2026-10-31
 
 ### Added
