@@ -2,9 +2,11 @@ name: API surface
 
 # An early signal for the check the release workflow runs before it publishes. When a pull
 # request moves the version in package.json, this builds the package and compares its public
-# declarations with the previous published version, so a patch that changes the API fails here,
-# before the tag, instead of at the publish. A pull request that leaves the version alone is
-# skipped: there is no bump to hold the declarations to.
+# declarations with the previous published version. A change passes only when the CHANGELOG
+# section of the new version, in this pull request, holds an "Apply to a derived backend" note,
+# so a release that changes the API without saying so fails here, before the tag, instead of at
+# the publish. A pull request that leaves the version alone is skipped: there is no release to
+# hold the declarations to.
 on:
   pull_request:
     branches: [main]
@@ -21,7 +23,7 @@ permissions:
 
 jobs:
   declarations:
-    name: Public declarations match the bump
+    name: Public declaration changes carry their note
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -67,6 +69,6 @@ jobs:
         if: steps.bump.outputs.bumped == 'true'
         run: pnpm build
 
-      - name: Compare the public declarations with the previous version
+      - name: Compare the public declarations and read the CHANGELOG note
         if: steps.bump.outputs.bumped == 'true'
         run: node scripts/check-api-surface.mjs

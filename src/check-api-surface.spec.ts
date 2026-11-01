@@ -32,13 +32,14 @@ interface Result {
 const roots: string[] = []
 
 /** Lays out `{ package.json, dist/index.d.ts, dist/index.d.cts }` and returns its root. */
-function layout(version: string, declarations: string): string {
+function layout(version: string, declarations: string, changelog?: string): string {
   const root = mkdtempSync(join(tmpdir(), 'api-surface-spec-'))
   roots.push(root)
   mkdirSync(join(root, 'dist'))
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'fixture-lib', version }))
   writeFileSync(join(root, 'dist', 'index.d.ts'), declarations)
   writeFileSync(join(root, 'dist', 'index.d.cts'), declarations)
+  if (changelog !== undefined) writeFileSync(join(root, 'CHANGELOG.md'), changelog)
   return root
 }
 
@@ -51,9 +52,9 @@ function checkPair(before: string, after: string): Result {
 }
 
 /** Runs the gate for `declarations` as version `next`, against `BASE` published as 1.4.4. */
-function check(declarations: string, next = '1.4.5'): Result {
+function check(declarations: string, next = '1.4.5', changelog?: string): Result {
   const previous = layout('1.4.4', BASE)
-  const current = layout(next, declarations)
+  const current = layout(next, declarations, changelog)
   const run = spawnSync('node', [SCRIPT, '--against', previous], { cwd: current, encoding: 'utf8' })
   return { status: run.status, output: `${run.stdout}${run.stderr}` }
 }
@@ -63,7 +64,7 @@ afterAll(() => {
 })
 
 describe('check-api-surface', () => {
-  describe('a patch that changes the public declarations fails', () => {
+  describe('a change to the public declarations with no CHANGELOG note fails', () => {
     it.each([
       [
         'an added public method',
@@ -107,17 +108,17 @@ describe('check-api-surface', () => {
     ])('%s', (_name, declarations) => {
       /*
        * Scenario: each row is a change a reader could take for "nothing changed" and that
-       * alters the type surface of a published patch. The gate must exit 1, print the
-       * differing file, and say why a patch may not do this.
+       * alters the type surface of a published release. With no CHANGELOG note the gate must
+       * exit 1, print the differing file, and say the note is required.
        */
       const { status, output } = check(declarations)
       expect(status).toBe(1)
       expect(output).toContain('index.d.ts')
-      expect(output).toContain('A patch must not change the public declarations')
+      expect(output).toContain('Apply to a derived backend')
     })
   })
 
-  describe('a patch that changes no declaration passes', () => {
+  describe('a release that changes no declaration passes', () => {
     it.each([
       [
         'a JSDoc-only change',
@@ -151,26 +152,100 @@ describe('check-api-surface', () => {
     })
   })
 
-  it.each(['1.5.0', '2.0.0'])(
-    'lets a changed declaration through when the version moves to %s',
-    (next) => {
+  describe('the compatibility note', () => {
+    const ADDED = BASE.replace(
+      'info(message: string): void;',
+      'info(message: string): void;\n    warn(message: string): void;'
+    )
+    const section = (version: string, body: string): string =>
+      `# Changelog\n\n## [Unreleased]\n\n## [${version}] - 2026-11-02\n\n### Added\n\n- A method.\n\n${body}\n`
+
+    it.each([
+      [
+        'a heading',
+        '#### Apply to a derived backend\n\nCall `warn` where you used to wrap `info`.'
+      ],
+      ['a heading with an emoji', '### ⚠️ Apply to a derived backend\n\nNew method.'],
+      ['a bold lead-in', '- **Apply to a derived backend:** a new method.'],
+      ['the older consumer spelling', '#### Apply to a consumer\n\nA new method.'],
+      ['any letter case', '#### APPLY TO A DERIVED BACKEND\n\nA new method.'],
+      ['a placeholder under the heading', '#### Apply to a derived backend\n\nNothing to apply.']
+    ])('passes a changed declaration whose section carries the note as %s', (_name, note) => {
       /*
-       * Scenario: the same added method that fails as a patch is the expected content of a
-       * minor or a major, so the differences are printed for the reader and the exit is 0.
+       * Scenario: the version number carries no compatibility information in this family, so a
+       * declaration change is allowed in any release that says so in its own CHANGELOG
+       * section. Every spelling the sibling changelogs use must be recognised.
        */
-      const { status, output } = check(
-        BASE.replace(
-          'info(message: string): void;',
-          'info(message: string): void;\n    warn(message: string): void;'
-        ),
-        next
-      )
+      const { status, output } = check(ADDED, '1.4.5', section('1.4.5', note))
       expect(status).toBe(0)
       expect(output).toContain('+     warn(message: string): void;')
-    }
-  )
+      expect(output).toContain('carries the "Apply to a derived backend" note')
+    })
 
-  it('fails a patch that only reorders its reference directives', () => {
+    it.each(['1.4.5', '1.5.0', '2.0.0'])(
+      'fails a changed declaration with no note in a %s release and names it',
+      (version) => {
+        /*
+         * Scenario: a declaration change needs the note whatever the bump level. A patch, a
+         * minor and a major that change the declarations without it all fail, and the message
+         * names the declaration that changed so the author knows what to describe.
+         */
+        const { status, output } = check(ADDED, version, section(version, 'No migration text.'))
+        expect(status).toBe(1)
+        expect(output).toContain('Logger')
+        expect(output).toContain('has no "Apply to a derived backend" note')
+      }
+    )
+
+    it('does not count the note when it sits under another version', () => {
+      /*
+       * Scenario: the note must be in the section of the version being released. One under
+       * the previous version's heading, or under Unreleased, belongs to another release.
+       */
+      const changelog = `${section('1.4.5', 'No migration text.')}\n## [1.4.4] - 2026-10-31\n\n#### Apply to a derived backend\n\nOld note.\n`
+      expect(check(ADDED, '1.4.5', changelog).status).toBe(1)
+    })
+
+    it('does not take the section of a version that merely starts the same', () => {
+      /*
+       * Scenario: 1.4.50 is not 1.4.5. The heading is matched through its closing bracket,
+       * so the section of a longer version number never stands in for the one released.
+       */
+      const { status, output } = check(
+        ADDED,
+        '1.4.5',
+        section('1.4.50', '#### Apply to a derived backend\n\nx')
+      )
+      expect(status).toBe(1)
+      expect(output).toContain('does not exist')
+    })
+
+    it('fails when the CHANGELOG has no section for the version or no file at all', () => {
+      /*
+       * Scenario: a declaration change needs a section to carry its note, so a missing
+       * section and a missing CHANGELOG.md both fail, and say that the section does not exist.
+       */
+      const noSection = check(
+        ADDED,
+        '1.4.5',
+        section('1.4.4', '#### Apply to a derived backend\n\nx')
+      )
+      expect(noSection.status).toBe(1)
+      expect(noSection.output).toContain('does not exist')
+      expect(check(ADDED, '1.4.5').status).toBe(1)
+    })
+
+    it('passes an unchanged declaration with no CHANGELOG note or file', () => {
+      /*
+       * Scenario: the note is required only when something changed, so a release with the
+       * same declarations passes with a bare CHANGELOG or none.
+       */
+      expect(check(BASE, '1.4.5').status).toBe(0)
+      expect(check(BASE, '1.4.5', section('1.4.5', 'Nothing.')).status).toBe(0)
+    })
+  })
+
+  it('fails a release that only reorders its reference directives', () => {
     /*
      * Scenario: the files a declaration file references are pulled into the consumer's
      * compilation in order, and the order can decide how overloads and merged declarations
@@ -234,7 +309,7 @@ describe('check-api-surface', () => {
         `${path}\n${BASE}`,
         `/// <reference path="./other.d.ts" />\n${BASE}`
       ]
-    ])('fails a patch with %s', (_name, before, after) => {
+    ])('fails a release with %s', (_name, before, after) => {
       /*
        * Scenario: every triple-slash directive decides what the file type-checks against,
        * whatever its kind or attributes, so each of these changes the consumer's view
@@ -246,7 +321,7 @@ describe('check-api-surface', () => {
     it('ignores the quote style and spacing of a directive', () => {
       /*
        * Scenario: `path='x'` and `path="x"` with other spacing are the same directive, so
-       * re-emitting one in another style must not fail a patch.
+       * re-emitting one in another style must not fail a release.
        */
       const restyled = "///   <reference   path='./ambient.d.ts'   />"
       expect(checkPair(`${path}\n${BASE}`, `${restyled}\n${BASE}`).status).toBe(0)
@@ -255,7 +330,7 @@ describe('check-api-surface', () => {
     it('ignores a plain comment above the directives', () => {
       /*
        * Scenario: a plain `//` comment is not a directive, so adding one above them is
-       * documentation and must not fail a patch.
+       * documentation and must not fail a release.
        */
       expect(checkPair(`${path}\n${BASE}`, `// bundled output\n${path}\n${BASE}`).status).toBe(0)
     })
@@ -273,7 +348,7 @@ describe('check-api-surface', () => {
       'interface Options {\n    value: string;\n}\nexport {};\n'
     ]
   ])(
-    'fails a patch %s, which turns the file from a module into a script or back',
+    'fails a release %s, which turns the file from a module into a script or back',
     (_name, before, after) => {
       /*
        * Scenario: with no import or export a declaration file is a script and its
@@ -311,7 +386,7 @@ describe('check-api-surface', () => {
       'declare const x: 1;\nexport { x as "type y" };\n',
       'declare const x: 1;\nexport { type x as y };\n'
     ]
-  ])('fails a patch that turns %s into different exports', (_name, before, after) => {
+  ])('fails a release that turns %s into different exports', (_name, before, after) => {
     /*
      * Scenario: the flattened export records must not depend on how a name is spelled. A
      * string-literal export name can hold the characters a joined list would use as its
