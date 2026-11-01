@@ -10,7 +10,7 @@ applyTo: '**/*.spec.ts,**/*.e2e.spec.ts'
 
 ## Mutation testing threshold
 
-Break gate: **95%** (`thresholds.break: 95`). Current score is **97.42%** — the theoretical maximum given 10 documented equivalent mutants (see `docs/mutation_testing_results.md §Residual survivors`). The aspirational `high: 99` is not reachable without `// Stryker disable` comments, which are prohibited in this project (see below). Flag tests that use generic matchers (`toBeDefined()`, `toBeTruthy()`) where a value assertion is possible — they survive Stryker mutants.
+Break gate: **100%** (`thresholds.break: 100`), and the cold run scores 100 with no survivor. A mutant no test can kill carries a `// Stryker disable next-line <Mutator>: <reason>` on its line, which `pnpm check:mutants` validates (see `docs/mutation_testing_plan.md`). Flag tests that use generic matchers (`toBeDefined()`, `toBeTruthy()`) where a value assertion is possible — they survive Stryker mutants.
 
 ## Test structure and naming
 
@@ -56,11 +56,9 @@ expect(err?.message).toBe('logKey is required') // kills path mutant and message
 // ✅ also test: expect(isValidLogKey('HTTP_REQUEST_START')).toBe(true)
 ```
 
-## Stryker disable comments — PROHIBITED in this project
+## Stryker disable comments
 
-Do **not** add `// Stryker disable` inline comments. They ship verbatim in the unminified `.mjs` bundle (tsup `minify: false`) and push the server subpath past its 13.5 KiB brotli budget.
-
-Equivalent mutants must be **documented in `docs/mutation_testing_results.md §Residual survivors`** instead, with an explanation of why the mutant is semantically equivalent. This is the canonical approach for this project.
+An equivalent mutant is suppressed on its own line with `// Stryker disable next-line <Mutator>: <reason>`, and the reason goes after the colon on that one line. `pnpm check:mutants` enforces the grammar; the full policy is in `docs/mutation_testing_plan.md` (Suppression policy). Prefer a test that kills the mutant; add a directive only when no test can.
 
 ## Log key assertions
 
