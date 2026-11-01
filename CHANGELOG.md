@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.6] - 2026-11-01
+
 ### Fixed
 
 Five places swallowed a failed side effect with no trace. Each now leaves one.
@@ -45,6 +47,11 @@ Nothing to change in code. What can differ at run time:
   `LOGGER_OTEL_API_BROKEN`, both NDJSON like the destination-failure lines. Add them to whatever
   alerts on the library's `stderr` codes. `RESERVED_LOG_KEYS` gains these two keys, so an application
   event must not reuse them.
+- A host that already logs an event under `HTTP_UNEXPECTED_ERROR_DROPPED` or `LOGGER_OTEL_API_BROKEN`
+  sees no change in that entry: nothing is renamed, rejected or dropped, and its `event.name` is
+  derived from the key as for any other (`http.unexpected.error.dropped`, `logger.otel.api.broken`).
+  What changes is that, where stdout and stderr reach the same place, an alert or filter on either
+  key now matches the library's `stderr` line and the host's own entries alike. Rename the host event.
 - `LOGGER_DESTINATION_INIT_FAILED`, `LOGGER_DESTINATION_WRITE_FAILED` and the hook-failure line now
   appear for failures that were silent before. A deployment that saw none was either healthy or
   losing entries without knowing.
@@ -2269,7 +2276,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.5...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.6...HEAD
+[1.4.6]: https://github.com/bymaxone/nest-logger/compare/v1.4.5...v1.4.6
 [1.4.5]: https://github.com/bymaxone/nest-logger/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/bymaxone/nest-logger/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/bymaxone/nest-logger/compare/v1.4.2...v1.4.3
