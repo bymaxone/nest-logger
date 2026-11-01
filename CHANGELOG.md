@@ -27,8 +27,8 @@ Nothing to change in code. What can differ at run time:
 
 - Entries that were never written now appear. A host that handled the throw (a `try` around the logging
   call, or an error handler that reacted to it) no longer sees it; one that relied on the throw to detect
-  a hostile error should look for `err.type: 'SanitizeFailed'` or the message `Unreadable log message`
-  instead.
+  a hostile input should look for `err.type: 'SanitizeFailed'` (an `Error`) or the message
+  `Unreadable log message` (a message) instead.
 
 ### Tests
 
