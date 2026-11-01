@@ -383,12 +383,14 @@ describe('sanitizeError', () => {
   })
 
   it(/*
-   * A hostile getter on the error must NOT crash serialization — it degrades to
-   * SanitizeFailed. This is the last line of the never-throw defense.
+   * A hostile getter on what identifies the error (its message) must NOT crash
+   * serialization — it degrades to SanitizeFailed. This is the last line of the
+   * never-throw defense. An unreadable stack or cause is a smaller loss and is pinned in
+   * its own describe below.
    */
-  'should degrade to SanitizeFailed when a getter throws', () => {
+  'should degrade to SanitizeFailed when the message getter throws', () => {
     const error = new Error('x')
-    Object.defineProperty(error, 'stack', {
+    Object.defineProperty(error, 'message', {
       get() {
         throw new Error('getter boom')
       }
@@ -529,5 +531,50 @@ describe('sanitizeError — own fields that cannot be enumerated', () => {
 
     expect(node).toMatchObject({ code: 'E_CODE' })
     expect(node).not.toHaveProperty('_errorFieldsIncomplete')
+  })
+})
+
+describe('sanitizeError — a stack or a cause that cannot be read', () => {
+  /** An `Error` whose `property` getter throws when read. */
+  const withThrowingProperty = (property: string): Error =>
+    Object.defineProperty(new Error('boom'), property, {
+      get(): never {
+        throw new Error(`${property} exploded`)
+      }
+    })
+
+  it.each(['stack', 'cause'])(
+    'keeps the name and message when the %s getter throws',
+    (property) => {
+      /*
+       * One unreadable optional property costs the node that property and no more. The name and
+       * the message identify the error, so they survive, and the node says it is incomplete the
+       * way a node whose own fields could not be read does.
+       */
+      const node = sanitizeError(withThrowingProperty(property))
+
+      expect(node).toMatchObject({ name: 'Error', message: 'boom', _errorFieldsIncomplete: true })
+      expect(node).not.toHaveProperty(property)
+    }
+  )
+
+  it(/*
+   * The marker is for an unreadable property only: a readable stack and cause carry none.
+   */
+  'adds no marker when the stack and the cause are readable', () => {
+    const node = sanitizeError(new Error('outer', { cause: new Error('inner') }))
+
+    expect(node).toMatchObject({ name: 'Error', message: 'outer', cause: { message: 'inner' } })
+    expect(node).not.toHaveProperty('_errorFieldsIncomplete')
+  })
+
+  it(/*
+   * A name or a message that cannot be read leaves nothing to identify the error by, so that
+   * case stays the visible SanitizeFailed shape.
+   */
+  'still degrades to the SanitizeFailed shape when the message getter throws', () => {
+    expect(sanitizeError(withThrowingProperty('message'))).toMatchObject({
+      name: 'SanitizeFailed'
+    })
   })
 })

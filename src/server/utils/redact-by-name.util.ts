@@ -57,6 +57,7 @@
  *
  * @see {@link createNameRedactor}
  */
+import { sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 /**
@@ -341,6 +342,71 @@ function walk(
   if (ancestors.has(value)) {
     return REDACT_CIRCULAR
   }
+  // An Error is the one value whose unreadable parts are isolated: it degrades on its own and
+  // its siblings survive. See `walkError`.
+  if (value instanceof Error) {
+    return walkError(value, sensitive, censor, depth, ancestors, honorToJson)
+  }
+  return walkObject(value, sensitive, censor, depth, ancestors, honorToJson)
+}
+
+/**
+ * Walk an `Error`, degrading it alone when it cannot be read.
+ *
+ * `formatters.log` runs BEFORE the `err` serializer, so this walk is the first code to touch
+ * a raw `Error`. An `Error` whose own keys, getters, `stack` or `toJSON` throw must degrade
+ * on its own and leave the record's `logKey`, `userId` and metadata intact: the record-level
+ * `LOGGER_REDACTION_FAILED` envelope is reserved for a hostile RECORD, whose siblings cannot
+ * be vouched for, and an unreadable `Error` is not one, because its siblings were each read
+ * and walked fine. So the node is replaced by `sanitizeError` of it, which never throws, copies no field it could
+ * not read and marks what it lost, and THAT node goes through the walk again: a field the
+ * sanitizer could still copy is censored by name like any other, and a field it could not
+ * read is never copied. A hostile value that is not an `Error` is not isolated and still
+ * fails the whole record.
+ *
+ * @param error - The error to walk.
+ * @param sensitive - Field names whose values are censored.
+ * @param censor - Replacement written in place of a sensitive value.
+ * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
+ * @param ancestors - References on the current path (cycle guard).
+ * @param honorToJson - `false` only for the root of a log record.
+ * @returns The redacted error, or the redacted sanitized node when it could not be read.
+ */
+function walkError(
+  error: Error,
+  sensitive: ReadonlySet<string>,
+  censor: string,
+  depth: number,
+  ancestors: Set<object>,
+  honorToJson: boolean
+): unknown {
+  try {
+    return walkObject(error, sensitive, censor, depth, ancestors, honorToJson)
+  } catch {
+    return walk(sanitizeError(error), sensitive, censor, depth, ancestors, honorToJson)
+  }
+}
+
+/**
+ * The inspection of an object or callable that is not an `Error`, or an `Error` that reads
+ * cleanly: the body of {@link walk} after its guards.
+ *
+ * @param value - The value to inspect.
+ * @param sensitive - Field names whose values are censored.
+ * @param censor - Replacement written in place of a sensitive value.
+ * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
+ * @param ancestors - References on the current path (cycle guard).
+ * @param honorToJson - `false` only for the root of a log record.
+ * @returns The value, or a redacted copy of it.
+ */
+function walkObject(
+  value: object,
+  sensitive: ReadonlySet<string>,
+  censor: string,
+  depth: number,
+  ancestors: Set<object>,
+  honorToJson: boolean
+): unknown {
   // `ArrayBuffer` views (`Buffer`, typed arrays) are indexed byte containers: a
   // key-name match is meaningless and a copy would be enormous. Checked BEFORE
   // `toJSON` because `Buffer` has one.

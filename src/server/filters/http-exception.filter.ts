@@ -71,10 +71,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const metadata = { method: req.method, url, status }
       if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
         // sanitizeError guarantees (1) no-throw on a hostile exception and (2)
-        // node_modules/ stack scrubbing. Note: errorStructured re-serializes to
-        // name/message/stack only, so the cause chain / AggregateError.errors
-        // sanitizeError can produce are dropped at that boundary (full cause-chain
-        // logging lands when errorStructured is extended — roadmap).
+        // node_modules/ stack scrubbing. The node it produces keeps the cause chain,
+        // `AggregateError.errors` and the exception's own fields, such as the
+        // response body, all the way to the entry: `errorStructured` hands it to the
+        // `err` serializer, and the name redaction walks it like the rest of the
+        // record.
         this.logger.errorStructured(
           RESERVED_LOG_KEYS.HTTP_EXCEPTION_UNHANDLED,
           sanitizeError(exception),
