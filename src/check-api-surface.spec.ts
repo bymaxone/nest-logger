@@ -285,6 +285,37 @@ describe('check-api-surface', () => {
     }
   )
 
+  it.each([
+    [
+      'one export whose name holds a comma and a keyword',
+      'declare const x: 1;\nexport { x as "a, x as b" };\n',
+      'declare const x: 1;\nexport { x as a, x as b };\n'
+    ],
+    [
+      'an alias named like a type-only specifier',
+      'declare const x: 1;\nexport { x as "type y" };\n',
+      'declare const x: 1;\nexport { type x as y };\n'
+    ]
+  ])('fails a patch that turns %s into different exports', (_name, before, after) => {
+    /*
+     * Scenario: the flattened export records must not depend on how a name is spelled. A
+     * string-literal export name can hold the characters a joined list would use as its
+     * delimiters, so each record is encoded structurally and two different export sets
+     * never normalize to the same text.
+     */
+    expect(checkPair(before, after).status).toBe(1)
+  })
+
+  it('treats an export written with and without a redundant alias as the same', () => {
+    /*
+     * Scenario: `export { x as x }` and `export { x }` and a string-literal name that is a
+     * plain identifier export the same name, so re-emitting one as the other is no change.
+     */
+    const before = 'declare const x: 1;\nexport { x };\n'
+    expect(checkPair(before, 'declare const x: 1;\nexport { x as x };\n').status).toBe(0)
+    expect(checkPair(before, 'declare const x: 1;\nexport { x as "x" };\n').status).toBe(0)
+  })
+
   it('reports a declaration file that exists on one side only', () => {
     /*
      * Scenario: a new `.d.cts` or a removed `.d.ts` changes what a consumer resolves, so a

@@ -64,9 +64,10 @@ export function normalizeDeclarations(text) {
     if (isLocalNamedExport(statement)) {
       for (const element of statement.exportClause.elements) {
         const local = (element.propertyName ?? element.name).text
-        const alias = element.propertyName ? ` as ${element.name.text}` : ''
-        const typeOnly = statement.isTypeOnly || element.isTypeOnly ? 'type ' : ''
-        specifiers.push(`${typeOnly}${local}${alias}`)
+        const typeOnly = statement.isTypeOnly || element.isTypeOnly
+        // One JSON record per specifier, so no name, however it is spelled, can run into the
+        // next record or into a keyword the way a space- or comma-joined string could.
+        specifiers.push(JSON.stringify([typeOnly, local, element.name.text]))
       }
     } else {
       kept.push(printer.printNode(ts.EmitHint.Unspecified, statement, source))
@@ -76,7 +77,7 @@ export function normalizeDeclarations(text) {
   // Flattening the export lists can leave nothing behind, and `export {}` is what makes a file
   // a module instead of a script whose declarations are global, so that status is kept.
   const kind = ts.isExternalModule(source) ? 'module' : 'script'
-  return `${directives.join('\n')}\n${kind}\n${kept.join('\n')}\nexports: ${specifiers.sort().join(', ')}\n`
+  return `${directives.join('\n')}\n${kind}\n${kept.join('\n')}\nexports:\n${specifiers.sort().join('\n')}\n`
 }
 
 /** `/// <tag name="value" … />`: the tag, then the attributes with either quote style. */
