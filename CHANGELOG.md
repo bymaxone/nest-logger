@@ -42,6 +42,10 @@ Nothing to change in code. What can differ at run time:
   applies), and a cause chain deeper than three levels is truncated with `_truncated: true`, as it is
   at the root `err`. This applies where the name redaction runs on the record, which is the default
   (`redactStrategy: 'names'` with at least one name covered).
+- A custom serializer on a root key still receives an `Error` held directly at that key. An `Error`
+  nested inside an array or an object under that key now arrives as the node and no longer as an
+  `Error` instance, so a serializer that tests `instanceof Error` on such nested values takes its other
+  branch.
 
 ### Tests
 

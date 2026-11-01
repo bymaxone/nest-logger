@@ -731,7 +731,7 @@ When those properties cannot be read (a Proxy whose `ownKeys` throws, or a gette
 
 An `Error` that cannot be read at all does not cost the record its `logKey`, `userId` or metadata: the node is replaced by its sanitized form, which keeps `name` and `message` and carries the same marker unless `name` or `message` itself is unreadable, in which case it is `{ type: 'SanitizeFailed' }`. Filter on `err._errorFieldsIncomplete: true` or `SanitizeFailed` to find these entries.
 
-An `Error` nested in the metadata (under a key, inside an array, or inside another `Error`) is logged as the same node, with its `cause` chain, censored by name. Only a record-root key that has a serializer, `err` and the keys of `serializers`, hands the serializer the `Error` instance.
+An `Error` nested in the metadata (under a key, inside an array, or inside another `Error`) is logged as the same node, with its `cause` chain, censored by name. Only an `Error` held directly at a record-root key that has a serializer, `err` or a key of `serializers`, reaches that serializer as an instance.
 
 ### 7. Context propagation with `LogContextService`
 
