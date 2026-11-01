@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.8] - 2026-11-01
+
 ### Fixed
 
 - **A logging call no longer throws because of what it was handed.** `error`, `warn`, `log`, `fatal`
@@ -2336,7 +2338,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.7...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.8...HEAD
+[1.4.8]: https://github.com/bymaxone/nest-logger/compare/v1.4.7...v1.4.8
 [1.4.7]: https://github.com/bymaxone/nest-logger/compare/v1.4.6...v1.4.7
 [1.4.6]: https://github.com/bymaxone/nest-logger/compare/v1.4.5...v1.4.6
 [1.4.5]: https://github.com/bymaxone/nest-logger/compare/v1.4.4...v1.4.5
