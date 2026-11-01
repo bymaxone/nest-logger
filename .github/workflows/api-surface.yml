@@ -32,6 +32,9 @@ jobs:
         with:
           # The base commit is read to tell whether the version moved.
           fetch-depth: 0
+          # The install step below runs the pull request's own scripts; the read-only token must
+          # not stay in the repository's git configuration for them to read.
+          persist-credentials: false
 
       - name: Did this pull request bump the version
         id: bump
