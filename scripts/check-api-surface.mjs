@@ -72,23 +72,29 @@ export function normalizeDeclarations(text) {
       kept.push(printer.printNode(ts.EmitHint.Unspecified, statement, source))
     }
   }
-  const directives = referenceDirectives(source).sort()
+  const directives = referenceDirectives(source)
   return `${directives.join('\n')}\n${kept.join('\n')}\nexports: ${specifiers.sort().join(', ')}\n`
 }
 
 /**
- * The triple-slash directives of a file, one normalized line each. They are comments to the
- * printer yet they decide which ambient declarations the file type-checks against, so
- * removing one changes what a consumer sees even when no statement changes.
+ * The triple-slash directives of a file, one normalized line each, in source order. They are
+ * comments to the printer yet they decide which ambient declarations the file type-checks
+ * against, and the order of the files they pull in can decide how declarations merge, so
+ * removing, adding or reordering one counts.
  */
 function referenceDirectives(source) {
-  const lines = [
-    ...source.referencedFiles.map((ref) => `/// path ${ref.fileName}`),
-    ...source.typeReferenceDirectives.map(
-      (ref) => `/// types ${ref.fileName}${ref.resolutionMode ? ` (${ref.resolutionMode})` : ''}`
-    ),
-    ...source.libReferenceDirectives.map((ref) => `/// lib ${ref.fileName}`)
+  const found = [
+    ...source.referencedFiles.map((ref) => ({ pos: ref.pos, line: `/// path ${ref.fileName}` })),
+    ...source.typeReferenceDirectives.map((ref) => ({
+      pos: ref.pos,
+      line: `/// types ${ref.fileName}${ref.resolutionMode ? ` (${ref.resolutionMode})` : ''}`
+    })),
+    ...source.libReferenceDirectives.map((ref) => ({
+      pos: ref.pos,
+      line: `/// lib ${ref.fileName}`
+    }))
   ]
+  const lines = found.sort((a, b) => a.pos - b.pos).map((entry) => entry.line)
   if (source.hasNoDefaultLib) lines.push('/// no-default-lib')
   return lines
 }

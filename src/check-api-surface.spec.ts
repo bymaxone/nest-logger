@@ -162,20 +162,35 @@ describe('check-api-surface', () => {
     }
   )
 
-  it('treats the same reference directives in another order as no difference', () => {
+  it('fails a patch that only reorders its reference directives', () => {
     /*
-     * Scenario: the order of triple-slash directives carries no meaning, so the bundler
-     * emitting them in another order must not fail a patch, while removing one must.
+     * Scenario: the files a declaration file references are pulled into the consumer's
+     * compilation in order, and the order can decide how overloads and merged declarations
+     * resolve. Swapping two directives, of the same kind or of different kinds, is an API
+     * change a gate that sorted them would report as no difference.
      */
-    const directives = ['/// <reference types="node" />', '/// <reference path="./a.d.ts" />']
-    const previous = layout('1.4.4', `${directives.join('\n')}\n${BASE}`)
-    const current = layout('1.4.5', `${[...directives].reverse().join('\n')}\n${BASE}`)
-    const run = spawnSync('node', [SCRIPT, '--against', previous], {
-      cwd: current,
-      encoding: 'utf8'
-    })
-    expect(run.status).toBe(0)
-    expect(run.stdout).toContain('no difference')
+    const path = '/// <reference path="./a.d.ts" />'
+    const types = '/// <reference types="node" />'
+    const otherPath = '/// <reference path="./b.d.ts" />'
+    const swaps: [string[], string[]][] = [
+      [
+        [path, otherPath],
+        [otherPath, path]
+      ],
+      [
+        [types, path],
+        [path, types]
+      ]
+    ]
+    for (const [before, after] of swaps) {
+      const previous = layout('1.4.4', `${before.join('\n')}\n${BASE}`)
+      const current = layout('1.4.5', `${after.join('\n')}\n${BASE}`)
+      const run = spawnSync('node', [SCRIPT, '--against', previous], {
+        cwd: current,
+        encoding: 'utf8'
+      })
+      expect(run.status).toBe(1)
+    }
   })
 
   it('reports a declaration file that exists on one side only', () => {
