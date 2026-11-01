@@ -141,6 +141,19 @@ describe('an Error outside a serialized root key', () => {
     expect(entry['inner']).toMatchObject({ message: 'cyc', self: '[Circular]' })
   })
 
+  it('logs an Error that is shared by two keys in full under both, because it is not a cycle', () => {
+    /*
+     * The Error is on the cycle-guard path only while its own node is walked. Left there, the
+     * second key that holds the same instance would be reported as a cycle it is not.
+     */
+    const shared = new Error('shared boom')
+
+    const { entry } = logWith({ first: shared, second: shared })
+
+    expect(entry['first']).toMatchObject({ type: 'Error', message: 'shared boom' })
+    expect(entry['second']).toMatchObject({ type: 'Error', message: 'shared boom' })
+  })
+
   it('truncates a cause chain past the same depth the root err does', () => {
     /*
      * The node is built by the same sanitizer as the root `err`, so its cause limit is that
