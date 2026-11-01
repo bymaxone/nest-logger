@@ -91,7 +91,7 @@ character becomes `\uXXXX`. Two rules:
 
 **100% statements / branches / functions / lines — every layer, no exceptions.** Enforced by
 `jest.config.ts` (`pnpm test:cov`) and `jest.coverage.config.ts` (`pnpm test:cov:all`), a hard
-pre-publish gate. Stryker (`break: 95`) is the deeper gate against weak tests.
+pre-publish gate. Stryker (`break: 100`) is the deeper gate against weak tests.
 
 Mocks: Pino instance and destinations are `jest.fn()`; spy on `process.stdout.write` — never real
 I/O in unit tests; use real `AsyncLocalStorage` (no I/O; mock it only to test out-of-scope); OTel is optional, so spy on `detectOtelTraceApi()`.

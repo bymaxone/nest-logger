@@ -11,7 +11,7 @@ pnpm lint             # ESLint on src/
 pnpm test             # Jest unit tests
 pnpm test:e2e         # Jest E2E tests (real NestJS bootstrap)
 pnpm test:cov:all     # all tests with coverage — 100% gate (pre-publish enforced)
-pnpm mutation         # Stryker mutation tests — break: 95, current: 97.42% (theoretical maximum)
+pnpm mutation         # Stryker mutation tests — break: 100, current: 100%
 pnpm build            # clean + tsup → dist/ (ESM + CJS + .d.ts for both subpaths)
 pnpm size             # zero-dep brotli bundle-size gate
 ```

@@ -11,6 +11,18 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.5] - 2026-11-01
+
+### Documentation
+
+- The README's testing section and command list now state the mutation gate as 100, to match
+  `stryker.config.json`. The live contributor docs that named 95, or called 97.42 % the
+  theoretical maximum, say 100 and describe the in-source suppressions.
+
+### Tooling
+
+- Stryker's `thresholds.break` is 100, so `pnpm mutation` and the cold run fail below a score of 100. `high` and `low` are 100 too.
+
 ## [1.4.4] - 2026-11-01
 
 ### Documentation
@@ -2207,7 +2219,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.4...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.5...HEAD
+[1.4.5]: https://github.com/bymaxone/nest-logger/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/bymaxone/nest-logger/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/bymaxone/nest-logger/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/bymaxone/nest-logger/compare/v1.4.1...v1.4.2

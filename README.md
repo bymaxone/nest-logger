@@ -1339,7 +1339,7 @@ A logger runs on every request of every service that installs it, so the suite i
 
 - ✅ **100% line coverage** — statements, branches, functions, and lines, enforced as a release gate across unit + e2e
 - ✅ **100% mutation score** — verified with [Stryker](https://stryker-mutator.io/) on a cold run
-  against a `break` threshold of 95, with **zero** surviving mutants. The handful that no test can
+  against a `break` threshold of 100, with **zero** surviving mutants. The handful that no test can
   kill are suppressed on the line they apply to and each carries its reason; a rule against those
   comments was retired once their cost was measured at **+0.10 kB brotli**, roughly a tenth of
   what it had been assumed to be (see the [report](./docs/mutation_testing_results.md))
@@ -1351,7 +1351,7 @@ pnpm test              # unit tests (Jest)
 pnpm test:cov          # coverage report
 pnpm test:e2e          # end-to-end tests (supertest)
 pnpm test:cov:all      # full coverage gate (100% statements/branches/functions/lines)
-pnpm mutation          # Stryker mutation testing (95% break gate)
+pnpm mutation          # Stryker mutation testing (100% break gate)
 pnpm typecheck         # tsc strict check (all tsconfig variants)
 pnpm lint              # ESLint
 ```

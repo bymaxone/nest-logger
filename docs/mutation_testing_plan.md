@@ -1,7 +1,7 @@
 # Mutation Testing Plan — @bymax-one/nest-logger
 
 > **Status:** Stryker installed, configured, and already run (first baseline: 2026-05-29).
-> **Current score:** 97.42 % — passes `break: 95` gate ✅. Theoretical maximum given 10 documented equivalent mutants.
+> **Current score:** 100 % on a cold run — passes the `break: 100` gate ✅. The score history below is kept as it was recorded.
 > **Full results:** [`docs/mutation_testing_results.md`](./mutation_testing_results.md)
 
 ---
@@ -38,14 +38,14 @@ Open `reports/mutation/mutation.html` after a run for the full per-file breakdow
 ## Current thresholds (`stryker.config.json`)
 
 ```json
-"thresholds": { "high": 99, "low": 95, "break": 95 }
+"thresholds": { "high": 100, "low": 100, "break": 100 }
 ```
 
-| Threshold   | Meaning                                                       |
-| ----------- | ------------------------------------------------------------- |
-| `break: 95` | `pnpm mutation` exits 1 if score < 95 % — hard gate           |
-| `low: 95`   | Score between low and high → yellow in the HTML report        |
-| `high: 99`  | Aspirational target — score ≥ 99 % → green in the HTML report |
+| Threshold    | Meaning                                              |
+| ------------ | ---------------------------------------------------- |
+| `break: 100` | `pnpm mutation` exits 1 if score < 100 % — hard gate |
+| `low: 100`   | Score below low → red in the HTML report             |
+| `high: 100`  | Score ≥ 100 % → green in the HTML report             |
 
 ---
 
@@ -58,11 +58,11 @@ Open `reports/mutation/mutation.html` after a run for the full per-file breakdow
 | Intermediate (inline comments) | 2026-05-29 | 97.5 %  | `// Stryker disable` comments removed — exceeded 12 KiB server budget (now 13.5 KiB) |
 | Genuine survivors eliminated   | 2026-06-18 | 97.42 % | 7 more survivors killed via targeted assertions; 10 equivalents left                 |
 
-Current production score: **97.42 %** (exit 0, break gate passes). Theoretical maximum — see `mutation_testing_results.md §Residual survivors`.
+Current production score: **100 %** on a cold run (exit 0, break gate passes). The rows above are the history as recorded.
 
 ---
 
-## Theoretical maximum — 97.42 %
+## Survivors killed on 2026-06-18
 
 All 7 previously-identified `perTest` attribution artifacts have been killed (2026-06-18):
 
@@ -76,9 +76,7 @@ All 7 previously-identified `perTest` attribution artifacts have been killed (20
 3. **`logger.module`** — added assertions on bootstrap message content and `error.cause` in
    `useNestLogger` error path.
 
-The 10 remaining survivors are all documented equivalent mutants (see `mutation_testing_results.md
-§Residual survivors`). **97.42 % is the theoretical maximum** for this codebase without
-`// Stryker disable` inline comments (which would inflate the bundle past the 13.5 kB budget).
+The equivalent mutants that remained are now suppressed in the source, as the policy below describes.
 
 ---
 
@@ -140,7 +138,7 @@ reserved for release candidates.
 **Release checklist (LOG-063 / future releases):**
 
 1. `pnpm test:cov:all` → 100 % across all metrics
-2. `pnpm mutation` → score ≥ 95 % (break gate); aim for ≥ 99 % before v1.0
+2. `pnpm mutation` → score 100 % (break gate)
 3. `pnpm prepublishOnly` → clean
 4. `node scripts/dogfood-smoke-test.mjs` → all assertions green
 5. Tag + publish
