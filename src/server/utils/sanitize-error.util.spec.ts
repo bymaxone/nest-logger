@@ -1,4 +1,4 @@
-import { sanitizeError } from './sanitize-error.util'
+import { isErrorLike, sanitizeError } from './sanitize-error.util'
 
 describe('sanitizeError', () => {
   it(/*
@@ -576,5 +576,46 @@ describe('sanitizeError — a stack or a cause that cannot be read', () => {
     expect(sanitizeError(withThrowingProperty('message'))).toMatchObject({
       name: 'SanitizeFailed'
     })
+  })
+})
+
+describe('isErrorLike — a value whose shape cannot be read', () => {
+  const throwing = (label: string): never => {
+    throw new Error(label)
+  }
+
+  it.each(['name', 'message'])('still recognizes an Error whose %s getter throws', (property) => {
+    /*
+     * A hostile `Error` is still an `Error`: the variadic bridge must route it to the
+     * sanitizer, not drop its cause and not throw out of the logging call.
+     */
+    const hostile = Object.defineProperty(new Error('boom'), property, {
+      get: () => throwing(`${property} exploded`)
+    })
+
+    expect(isErrorLike(hostile)).toBe(true)
+  })
+
+  it('does not mistake a non-Error with a throwing getter for an error', () => {
+    // No evidence it is an error, so it keeps going down the non-Error path.
+    const hostile = {
+      get name(): string {
+        return throwing('name exploded')
+      }
+    }
+
+    expect(isErrorLike(hostile)).toBe(false)
+  })
+
+  it('answers false, and does not throw, when even the prototype check throws', () => {
+    const hostile = new Proxy(
+      {},
+      {
+        get: () => throwing('get exploded'),
+        getPrototypeOf: () => throwing('getPrototypeOf exploded')
+      }
+    )
+
+    expect(isErrorLike(hostile)).toBe(false)
   })
 })

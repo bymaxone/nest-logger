@@ -107,6 +107,22 @@ function safeErrorMessage(error: Error): string {
 }
 
 /**
+ * The log line for a caller-supplied `message`. A value with no text form (a null-prototype
+ * object, a throwing `toString`) must not take the logging call down, so it becomes a fixed
+ * stand-in.
+ *
+ * @param message - The value the caller passed as the message.
+ * @returns A single-line message.
+ */
+function safeLogMessage(message: unknown): string {
+  try {
+    return toSingleLineMessage(typeof message === 'string' ? message : String(message))
+  } catch {
+    return 'Unreadable log message'
+  }
+}
+
+/**
  * The first `Error` among a NestJS variadic call's trailing parameters.
  *
  * NestJS types that slot as `stack?: string`, so this library read it as a string
@@ -263,10 +279,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     // string case: the `err` serializer derives the stack from the Error itself,
     // so writing both would emit the same trace under two names.
     assignIfDefined(payload, 'err', findErrorParam(optionalParams))
-    this.pino.error(
-      payload,
-      toSingleLineMessage(typeof message === 'string' ? message : String(message))
-    )
+    this.pino.error(payload, safeLogMessage(message))
   }
 
   /**
@@ -479,10 +492,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     assignIfDefined(payload, 'err', leading ?? findErrorParam(optionalParams))
     // A leading `Error` becomes the message, matching what `error(err)` emits —
     // `String(error)` would have produced the `"Error: …"` prefix instead.
-    const msg =
-      leading === undefined
-        ? toSingleLineMessage(typeof message === 'string' ? message : String(message))
-        : safeErrorMessage(leading)
+    const msg = leading === undefined ? safeLogMessage(message) : safeErrorMessage(leading)
     switch (level) {
       case 'info':
         this.pino.info(payload, msg)

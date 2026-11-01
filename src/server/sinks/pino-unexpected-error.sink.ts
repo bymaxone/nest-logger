@@ -108,12 +108,7 @@ export class PinoUnexpectedErrorSink implements IUnexpectedErrorSink {
  * @returns The value itself when it reads as an error, else its sanitized form.
  */
 function toLoggableError(value: unknown): Error {
-  try {
-    return isErrorLike(value) ? value : sanitizeError(value)
-  } catch {
-    // `isErrorLike` reads `name` and `message`, and a getter that throws there
-    // would otherwise cost the whole entry. `sanitizeError` never throws: it
-    // degrades such a value to its `SanitizeFailed` shape.
-    return sanitizeError(value)
-  }
+  // Neither call throws: `isErrorLike` answers for a value whose `name` or `message` cannot
+  // be read, and `sanitizeError` degrades such a value to its `SanitizeFailed` node.
+  return isErrorLike(value) ? value : sanitizeError(value)
 }
