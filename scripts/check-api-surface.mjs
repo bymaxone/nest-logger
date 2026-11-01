@@ -76,19 +76,35 @@ export function normalizeDeclarations(text) {
   return `${directives.join('\n')}\n${kept.join('\n')}\nexports: ${specifiers.sort().join(', ')}\n`
 }
 
+/** `/// <tag name="value" … />`: the tag, then the attributes with either quote style. */
+const DIRECTIVE_RE = /^\/\/\/\s*<\s*([\w-]+)((?:\s+[\w:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*\/?>\s*$/
+const ATTRIBUTE_RE = /([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
+
 /**
  * The triple-slash directives at the top of a file, one normalized line each, in source order.
  * They are comments to the printer yet they decide which ambient declarations the file
  * type-checks against, and the order of the files they pull in can decide how declarations
  * merge. Every `/// <…>` line counts, whatever its kind or attributes (`path`, `types`, `lib`,
  * `no-default-lib`, `amd-module`, `amd-dependency`, `resolution-mode`, `preserve`), so adding,
- * removing, reordering or changing one differs. Only whitespace and quote style are normalized.
+ * removing, reordering or changing one differs. Only the spacing and the quote style around
+ * the attributes are normalized; an attribute's value is kept exactly as written, and a
+ * directive that does not parse is kept verbatim.
  */
 function referenceDirectives(text) {
   return (ts.getLeadingCommentRanges(text, 0) ?? [])
     .map((range) => text.slice(range.pos, range.end))
     .filter((comment) => /^\/\/\/\s*</.test(comment))
-    .map((comment) => comment.replace(/'/g, '"').replace(/\s+/g, ' ').trim())
+    .map(normalizeDirective)
+}
+
+/** One directive as `/// <tag name="value" … />`, with each value JSON-quoted and untouched. */
+function normalizeDirective(comment) {
+  const match = DIRECTIVE_RE.exec(comment)
+  if (match === null) return comment.trim()
+  const attributes = [...match[2].matchAll(ATTRIBUTE_RE)].map(
+    (attribute) => `${attribute[1]}=${JSON.stringify(attribute[2] ?? attribute[3])}`
+  )
+  return `/// <${[match[1], ...attributes].join(' ')} />`
 }
 
 /** A top-level `export { … }` that re-exports local names, with no `from`. */

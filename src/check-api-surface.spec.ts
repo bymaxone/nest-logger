@@ -215,6 +215,21 @@ describe('check-api-surface', () => {
         `/// <reference types="node" resolution-mode="import" />\n${BASE}`
       ],
       [
+        'a changed space inside an attribute value',
+        `/// <reference path="./a  b.d.ts" />\n${BASE}`,
+        `/// <reference path="./a b.d.ts" />\n${BASE}`
+      ],
+      [
+        'an apostrophe turned into a quote inside an attribute value',
+        `/// <reference path="./it's.d.ts" />\n${BASE}`,
+        `/// <reference path='./it"s.d.ts' />\n${BASE}`
+      ],
+      [
+        'a changed directive that does not parse',
+        `/// <unknown thing here\n${BASE}`,
+        `/// <unknown thing there\n${BASE}`
+      ],
+      [
         'a changed directive target',
         `${path}\n${BASE}`,
         `/// <reference path="./other.d.ts" />\n${BASE}`
