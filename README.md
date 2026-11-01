@@ -343,7 +343,7 @@ Output (JSON, production) for the `PAYMENT_REFUND_SUCCESS` call above, with the 
 }
 ```
 
-`requestId` and `tenantId` are added when the call runs inside an HTTP request (`tenantId` only when the request carries the tenant header), and `traceId` and `spanId` when an OpenTelemetry span is active (see [OpenTelemetry correlation](#6-opentelemetry-correlation)). Outside a request, as in the flow above, they are absent.
+`requestId` and `tenantId` are added when the call runs inside an HTTP request that passed through the request-ID middleware (`tenantId` only when the request carries the tenant header), and `traceId` and `spanId` when an OpenTelemetry span is active (see [OpenTelemetry correlation](#6-opentelemetry-correlation)). Outside a request, as in the flow above, they are absent.
 
 Output (pretty-print, development):
 
