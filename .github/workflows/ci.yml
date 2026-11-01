@@ -62,6 +62,9 @@ jobs:
           # check would find nothing and pass — the silent no-op it exists to
           # prevent.
           fetch-depth: 0
+          # The steps below run the pull request's own scripts; the read-only token must
+          # not stay in the repository's git configuration for them to read.
+          persist-credentials: false
       - uses: bymaxone/.github/.github/actions/setup-node-pnpm@v1
       - name: Mutation directives parse and carry their reason
         run: pnpm check:mutants
