@@ -81,7 +81,7 @@ function isOtelApiMissing(cause: unknown): boolean {
  * property of the environment, and the working-directory fallback covers it.
  *
  * Only the peer being ABSENT is silent. A peer that is found but throws while loading, or
- * resolves to a falsy export, is a broken install: it is reported through `broken` so the
+ * exports no `trace` namespace, is a broken install: it is reported through `broken` so the
  * caller can say so, rather than being folded into "not installed".
  *
  * @param anchor - Produces the absolute path resolution walks up from.
@@ -95,10 +95,18 @@ function loadTraceApiFrom(anchor: () => string): Attempt {
     return { api: undefined }
   }
   try {
-    const mod = createRequire(from)('@opentelemetry/api')
-    // No optional chaining: a falsy module makes `mod.trace` throw into the catch
-    // below, and a falsy export is a broken install, not an absent one.
-    return { api: mod.trace as OtelTraceApi | undefined }
+    const mod: unknown = createRequire(from)('@opentelemetry/api')
+    // The export is checked itself. Reading `trace` off `undefined` or `null` throws, but off
+    // `false`, `0`, `''` or any other non-object it just yields `undefined`, and a module
+    // that carries no `trace` is a broken install either way, not an absent one.
+    const trace =
+      (typeof mod === 'object' && mod !== null) || typeof mod === 'function'
+        ? (mod as { trace?: OtelTraceApi }).trace
+        : undefined
+    if (trace === undefined) {
+      throw new TypeError('@opentelemetry/api resolved but exports no `trace` namespace')
+    }
+    return { api: trace }
   } catch (cause) {
     return isOtelApiMissing(cause) ? { api: undefined } : { api: undefined, broken: { cause } }
   }

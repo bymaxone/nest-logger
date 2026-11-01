@@ -223,21 +223,66 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     expect(lines()).toHaveLength(1)
   })
 
-  it(/*
-   * A module that resolves but exports nothing usable is broken too: reading `trace` off a
-   * falsy export throws, and that is a failure of the install, not an absence.
-   */
-  'warns when the module resolves to a falsy export', () => {
+  it.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['false', false],
+    ['zero', 0],
+    ['an empty string', ''],
+    ['true', true],
+    ['a non-empty string', 'api'],
+    ['an object with no trace', {}],
+    ['an object whose trace is undefined', { trace: undefined }]
+  ])('warns once when the module resolves to %s, an export with no trace', (_label, exported) => {
+    /*
+     * A module that resolves but exports no `trace` is a broken install, whatever shape
+     * the export has: reading `trace` off `undefined` or `null` throws, and off `false`,
+     * `0`, `''` or any other value that is not an object simply yields `undefined`, so the
+     * check has to look at the export itself instead of relying on the read to fail.
+     */
     mockedCreateRequire.mockImplementation(
-      (() => () => undefined) as unknown as typeof createRequire
+      (() => () => exported) as unknown as typeof createRequire
     )
 
     expect(detectOtelTraceApi()).toBeUndefined()
     expect(lines()).toHaveLength(1)
     expect(lines()[0]).toMatchObject({
+      level: 'warn',
       logKey: 'LOGGER_OTEL_API_BROKEN',
-      err: { type: 'TypeError' }
+      err: {
+        type: 'TypeError',
+        message: '@opentelemetry/api resolved but exports no `trace` namespace'
+      }
     })
+  })
+
+  it(/*
+   * The control for the table above: an export that carries a `trace` namespace is used as
+   * it is, with nothing written to stderr, whatever else the module holds.
+   */
+  'returns the trace namespace of a usable export without a warning', () => {
+    const trace = { getActiveSpan: () => undefined }
+    mockedCreateRequire.mockImplementation((() => () => ({
+      trace
+    })) as unknown as typeof createRequire)
+
+    expect(detectOtelTraceApi()).toBe(trace)
+    expect(stderrSpy).not.toHaveBeenCalled()
+  })
+
+  it(/*
+   * A CommonJS module may be a function that carries its namespaces as properties, and that
+   * is as usable as an object: only an export with no `trace` is broken.
+   */
+  'returns the trace namespace of an export that is a function', () => {
+    const trace = { getActiveSpan: () => undefined }
+    const exported = Object.assign(() => undefined, { trace })
+    mockedCreateRequire.mockImplementation(
+      (() => () => exported) as unknown as typeof createRequire
+    )
+
+    expect(detectOtelTraceApi()).toBe(trace)
+    expect(stderrSpy).not.toHaveBeenCalled()
   })
 
   it(/*
