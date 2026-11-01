@@ -72,31 +72,23 @@ export function normalizeDeclarations(text) {
       kept.push(printer.printNode(ts.EmitHint.Unspecified, statement, source))
     }
   }
-  const directives = referenceDirectives(source)
+  const directives = referenceDirectives(text)
   return `${directives.join('\n')}\n${kept.join('\n')}\nexports: ${specifiers.sort().join(', ')}\n`
 }
 
 /**
- * The triple-slash directives of a file, one normalized line each, in source order. They are
- * comments to the printer yet they decide which ambient declarations the file type-checks
- * against, and the order of the files they pull in can decide how declarations merge, so
- * removing, adding or reordering one counts.
+ * The triple-slash directives at the top of a file, one normalized line each, in source order.
+ * They are comments to the printer yet they decide which ambient declarations the file
+ * type-checks against, and the order of the files they pull in can decide how declarations
+ * merge. Every `/// <…>` line counts, whatever its kind or attributes (`path`, `types`, `lib`,
+ * `no-default-lib`, `amd-module`, `amd-dependency`, `resolution-mode`, `preserve`), so adding,
+ * removing, reordering or changing one differs. Only whitespace and quote style are normalized.
  */
-function referenceDirectives(source) {
-  const found = [
-    ...source.referencedFiles.map((ref) => ({ pos: ref.pos, line: `/// path ${ref.fileName}` })),
-    ...source.typeReferenceDirectives.map((ref) => ({
-      pos: ref.pos,
-      line: `/// types ${ref.fileName}${ref.resolutionMode ? ` (${ref.resolutionMode})` : ''}`
-    })),
-    ...source.libReferenceDirectives.map((ref) => ({
-      pos: ref.pos,
-      line: `/// lib ${ref.fileName}`
-    }))
-  ]
-  const lines = found.sort((a, b) => a.pos - b.pos).map((entry) => entry.line)
-  if (source.hasNoDefaultLib) lines.push('/// no-default-lib')
-  return lines
+function referenceDirectives(text) {
+  return (ts.getLeadingCommentRanges(text, 0) ?? [])
+    .map((range) => text.slice(range.pos, range.end))
+    .filter((comment) => /^\/\/\/\s*</.test(comment))
+    .map((comment) => comment.replace(/'/g, '"').replace(/\s+/g, ' ').trim())
 }
 
 /** A top-level `export { … }` that re-exports local names, with no `from`. */

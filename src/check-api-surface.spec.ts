@@ -42,6 +42,14 @@ function layout(version: string, declarations: string): string {
   return root
 }
 
+/** Runs the gate for `after` as 1.4.5 against `before` published as 1.4.4. */
+function checkPair(before: string, after: string): Result {
+  const previous = layout('1.4.4', before)
+  const current = layout('1.4.5', after)
+  const run = spawnSync('node', [SCRIPT, '--against', previous], { cwd: current, encoding: 'utf8' })
+  return { status: run.status, output: `${run.stdout}${run.stderr}` }
+}
+
 /** Runs the gate for `declarations` as version `next`, against `BASE` published as 1.4.4. */
 function check(declarations: string, next = '1.4.5'): Result {
   const previous = layout('1.4.4', BASE)
@@ -191,6 +199,51 @@ describe('check-api-surface', () => {
       })
       expect(run.status).toBe(1)
     }
+  })
+
+  describe('reference directives', () => {
+    const path = '/// <reference path="./ambient.d.ts" />'
+    const types = '/// <reference types="node" />'
+
+    it.each([
+      ['a removed directive', `${path}\n${BASE}`, BASE],
+      ['an added amd-module directive', BASE, `/// <amd-module name="lib" />\n${BASE}`],
+      ['an added amd-dependency directive', BASE, `/// <amd-dependency path="dep" />\n${BASE}`],
+      [
+        'a changed directive attribute',
+        `${types}\n${BASE}`,
+        `/// <reference types="node" resolution-mode="import" />\n${BASE}`
+      ],
+      [
+        'a changed directive target',
+        `${path}\n${BASE}`,
+        `/// <reference path="./other.d.ts" />\n${BASE}`
+      ]
+    ])('fails a patch with %s', (_name, before, after) => {
+      /*
+       * Scenario: every triple-slash directive decides what the file type-checks against,
+       * whatever its kind or attributes, so each of these changes the consumer's view
+       * while no statement of the file changes.
+       */
+      expect(checkPair(before, after).status).toBe(1)
+    })
+
+    it('ignores the quote style and spacing of a directive', () => {
+      /*
+       * Scenario: `path='x'` and `path="x"` with other spacing are the same directive, so
+       * re-emitting one in another style must not fail a patch.
+       */
+      const restyled = "///   <reference   path='./ambient.d.ts'   />"
+      expect(checkPair(`${path}\n${BASE}`, `${restyled}\n${BASE}`).status).toBe(0)
+    })
+
+    it('ignores a plain comment above the directives', () => {
+      /*
+       * Scenario: a plain `//` comment is not a directive, so adding one above them is
+       * documentation and must not fail a patch.
+       */
+      expect(checkPair(`${path}\n${BASE}`, `// bundled output\n${path}\n${BASE}`).status).toBe(0)
+    })
   })
 
   it('reports a declaration file that exists on one side only', () => {
