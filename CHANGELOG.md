@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-11-01
+
 ### Documentation
 
 - The Quick Start's "Output (JSON, production)" sample is now exactly what the flow prints:
@@ -2205,7 +2207,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.3...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.4...HEAD
+[1.4.4]: https://github.com/bymaxone/nest-logger/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/bymaxone/nest-logger/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/bymaxone/nest-logger/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/bymaxone/nest-logger/compare/v1.4.0...v1.4.1
