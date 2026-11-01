@@ -292,6 +292,21 @@ describe('check-api-surface', () => {
       'declare const x: 1;\nexport { x as a, x as b };\n'
     ],
     [
+      'one export whose name holds a line break',
+      'declare const x: 1;\nexport { x as "a\\nx as b" };\n',
+      'declare const x: 1;\nexport { x as a, x as b };\n'
+    ],
+    [
+      'an export renamed to another exported name',
+      'declare const x: 1;\nexport { x as a };\n',
+      'declare const x: 1;\nexport { x as b };\n'
+    ],
+    [
+      'an export of another declaration under the same exported name',
+      'declare const x: 1;\ndeclare const y: 2;\nexport { x as a };\n',
+      'declare const x: 1;\ndeclare const y: 2;\nexport { y as a };\n'
+    ],
+    [
       'an alias named like a type-only specifier',
       'declare const x: 1;\nexport { x as "type y" };\n',
       'declare const x: 1;\nexport { type x as y };\n'
