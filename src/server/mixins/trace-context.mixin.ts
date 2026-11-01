@@ -11,7 +11,12 @@
 import type { Logger as PinoLogger } from 'pino'
 
 import type { LogContextService } from '../services/log-context.service'
-import { detectOtelTraceApi, isValidSpanId, isValidTraceId } from '../utils/otel-detector'
+import {
+  detectOtelTraceApi,
+  isValidSpanId,
+  isValidTraceId,
+  warnBrokenInstallOnce
+} from '../utils/otel-detector'
 import type { OtelTraceApi } from '../utils/otel-detector'
 
 /** Field-name targets and the auto-inject toggle for {@link createTraceContextMixin}. */
@@ -66,24 +71,37 @@ export function createTraceContextMixin(
     }
 
     // 2. OTel trace context — overrides store values when both are present.
+    //
+    // Everything the resolved module hands back is untrusted on this path: `getActiveSpan`,
+    // the span it returns, `spanContext()` and each field of the context are all called or
+    // read on every entry, and a throw from any of them would take the log call down with
+    // it. The block therefore cannot throw: each value is read once, all of them are
+    // computed before any is written (an entry never carries half of the trace fields), and
+    // a failure leaves the entry without trace fields, announced once like any broken install.
     if (traceApi) {
-      const span = traceApi.getActiveSpan()
-      if (span) {
-        const ctx = span.spanContext()
-        // Both IDs must be valid W3C values, otherwise the correlation is
-        // incoherent and a malformed value could be injected into logs.
-        if (isValidTraceId(ctx.traceId) && isValidSpanId(ctx.spanId)) {
-          Reflect.set(merged, opts.traceIdField, ctx.traceId)
-          Reflect.set(merged, opts.spanIdField, ctx.spanId)
-          // Defensive: a malformed span may omit traceFlags. Guarding keeps the
-          // logger from throwing on the hot path.
-          if (typeof ctx.traceFlags === 'number') {
-            // W3C trace-flags is a single byte; mask to it so a malformed span
-            // can never emit more than 2 lowercase hex digits (e.g. 256 -> "00").
-            const flagsByte = ctx.traceFlags & 0xff
-            Reflect.set(merged, opts.traceFlagsField, flagsByte.toString(16).padStart(2, '0'))
+      try {
+        const span = traceApi.getActiveSpan()
+        if (span) {
+          const { traceId, spanId, traceFlags } = span.spanContext()
+          // Both IDs must be valid W3C values, otherwise the correlation is
+          // incoherent and a malformed value could be injected into logs.
+          if (isValidTraceId(traceId) && isValidSpanId(spanId)) {
+            // Defensive: a malformed span may omit traceFlags. W3C trace-flags is a single
+            // byte; mask to it so a malformed span can never emit more than 2 lowercase
+            // hex digits (e.g. 256 -> "00").
+            const flags =
+              typeof traceFlags === 'number'
+                ? (traceFlags & 0xff).toString(16).padStart(2, '0')
+                : undefined
+            Reflect.set(merged, opts.traceIdField, traceId)
+            Reflect.set(merged, opts.spanIdField, spanId)
+            if (flags !== undefined) {
+              Reflect.set(merged, opts.traceFlagsField, flags)
+            }
           }
         }
+      } catch (cause) {
+        warnBrokenInstallOnce(cause)
       }
     }
 

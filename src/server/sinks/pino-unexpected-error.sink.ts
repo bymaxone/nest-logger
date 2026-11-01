@@ -32,6 +32,7 @@ import type {
   UnexpectedErrorReport
 } from '../interfaces/unexpected-error-sink.interface'
 import { PinoLoggerService } from '../services/pino-logger.service'
+import { reportDestinationFailure } from '../utils/report-destination-failure.util'
 import { isErrorLike, sanitizeError } from '../utils/sanitize-error.util'
 
 /**
@@ -80,10 +81,18 @@ export class PinoUnexpectedErrorSink implements IUnexpectedErrorSink {
         undefined,
         metadata
       )
-    } catch {
+    } catch (cause) {
       // This runs on nest-core's response path. nest-core contains a throw from
       // the sink as well, but the guarantee belongs here too: a hostile report
-      // or a failing destination must never change the response.
+      // or a failing destination must never change the response. The report is
+      // the only log record of an unhandled exception, so its loss is announced on
+      // stderr, outside the sink set that may be what failed, and never swallowed.
+      reportDestinationFailure(
+        RESERVED_LOG_KEYS.HTTP_UNEXPECTED_ERROR_DROPPED,
+        'PinoUnexpectedErrorSink',
+        cause,
+        'An unexpected-error report could not be logged and was dropped.'
+      )
     }
   }
 }

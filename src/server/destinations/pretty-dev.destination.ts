@@ -17,6 +17,7 @@ import type { Transform } from 'node:stream'
 
 import type { LogLevel } from '../../shared/types/log-level.type'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
+import { toSingleLineMessage } from '../utils/escape-log-text.util'
 import { writeStdoutSafely } from '../utils/safe-stdio.util'
 
 /**
@@ -172,6 +173,44 @@ function writeRawToStdout(payload: string): void {
   writeStdoutSafely(payload)
 }
 
+/** The error codes Node attaches to a failed module resolution, CommonJS and ESM. */
+const RESOLUTION_FAILURE_CODES: readonly unknown[] = ['MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND']
+
+/**
+ * Whether a failure is the resolution of `pino-pretty` ITSELF failing.
+ *
+ * A resolution code alone is not enough: a package installed without one of ITS OWN
+ * dependencies fails with the same code and a message that names that dependency, and
+ * the require stack then lists pino-pretty's path. So the first line of the message has
+ * to name `pino-pretty` as the module that could not be found.
+ *
+ * @param cause - The value thrown by the import or by `build()`.
+ */
+function isPinoPrettyMissing(cause: unknown): boolean {
+  try {
+    const { code, message } = cause as { code?: unknown; message?: unknown }
+    return (
+      RESOLUTION_FAILURE_CODES.includes(code) &&
+      /^Cannot find (?:module|package) 'pino-pretty'/.test(String(message))
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * A failure as one line of text, whatever it is and however hostile its getters.
+ *
+ * @param cause - The value thrown by the import or by `build()`.
+ */
+function describeFailure(cause: unknown): string {
+  try {
+    return toSingleLineMessage(cause instanceof Error ? cause.message : String(cause))
+  } catch {
+    return 'unreadable value'
+  }
+}
+
 /**
  * Pretty-print destination backed by `pino-pretty`.
  *
@@ -313,7 +352,7 @@ export class PrettyDevDestination implements ILogDestination {
         // and the last-resort rescue.
         destination: process.stdout
       })
-    } catch {
+    } catch (cause) {
       // Mark as failed so subsequent writes are dropped rather than falling back
       // to raw stdout here: with a stdout sink also registered, a fallback would
       // print every entry twice. Dropping is safe because it is no longer the last
@@ -334,9 +373,18 @@ export class PrettyDevDestination implements ILogDestination {
       // cannot see. Nothing is lost by waiting: `onShutdown` still drains raw for
       // a destination that was never registered, so the hook never running is
       // also covered.
+      //
+      // The diagnosis is the cause's, not an assumption: only a failure to resolve
+      // pino-pretty ITSELF means the peer is missing. Any other failure of the import
+      // or of `build()` is reported as what it is, because telling an operator whose
+      // package is present to install it sends them away from the real problem. The
+      // original error is the `cause` either way.
       throw new Error(
-        '[PrettyDevDestination] pino-pretty is not installed. Install it as a peer ' +
-          'dependency (`pnpm add -D pino-pretty`) or remove PrettyDevDestination from `destinations`.'
+        isPinoPrettyMissing(cause)
+          ? '[PrettyDevDestination] pino-pretty is not installed. Install it as a peer ' +
+              'dependency (`pnpm add -D pino-pretty`) or remove PrettyDevDestination from `destinations`.'
+          : `[PrettyDevDestination] pino-pretty failed to start: ${describeFailure(cause)}`,
+        { cause }
       )
     }
 

@@ -9,6 +9,10 @@
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
+import { describeCause } from './report-destination-failure.util'
+import { writeStderrSafely } from './safe-stdio.util'
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+
 /**
  * Minimal structural subset of `@opentelemetry/api`'s `trace` namespace that
  * the mixin depends on. Typed locally so the library never needs
@@ -23,30 +27,131 @@ export interface OtelTraceApi {
     | undefined
 }
 
+/** Whether the broken-install warning has been written; it is written once per process. */
+let brokenInstallWarned = false
+
+/**
+ * Forget that the broken-install warning was written.
+ *
+ * @internal A test seam: it lets a spec observe the once-per-process rule from a clean
+ * state. Not re-exported by the package barrel.
+ */
+export function resetBrokenInstallWarning(): void {
+  brokenInstallWarned = false
+}
+
+/** One attempt to load the optional peer: what it gave, and the failure that is not an absence. */
+interface Attempt {
+  readonly api: OtelTraceApi | undefined
+  /** Set only when the peer was found but could not be used. */
+  readonly broken?: { readonly cause: unknown }
+}
+
+/**
+ * Whether a failure is `@opentelemetry/api` ITSELF failing to resolve, which is the one
+ * outcome that means "not installed".
+ *
+ * A resolution code alone is not enough: an installed package that lacks one of ITS OWN
+ * dependencies fails with the same code and a message naming that dependency, and Node
+ * lists the package's path in the require stack. So the first line of the message has to
+ * name `@opentelemetry/api` as the module that could not be found.
+ *
+ * @param cause - The value thrown by the resolver.
+ */
+function isOtelApiMissing(cause: unknown): boolean {
+  try {
+    const { code, message } = cause as { code?: unknown; message?: unknown }
+    return (
+      code === 'MODULE_NOT_FOUND' &&
+      /^Cannot find module '@opentelemetry\/api'/.test(String(message))
+    )
+  } catch {
+    return false
+  }
+}
+
 /**
  * Load `@opentelemetry/api` through a resolver anchored at `anchor()`.
  *
- * The anchor is a THUNK, not a string, so it is evaluated inside this try. A
- * bundler that emits neither `__filename` nor a shim makes that reference throw
- * `ReferenceError`, and evaluating it at module scope would throw at LOAD time —
- * before any caller could catch it, taking the application down over an optional
- * peer dependency. Deferring it turns that case into the same "unresolvable"
- * outcome as a missing module.
+ * The anchor is a THUNK, not a string, so it is evaluated inside a guard. A bundler that
+ * emits neither `__filename` nor a shim makes that reference throw `ReferenceError`, and
+ * evaluating it at module scope would throw at LOAD time — before any caller could catch
+ * it, taking the application down over an optional peer dependency. Deferring it turns
+ * that case into the same "nothing to resolve from" outcome as a missing module: it is a
+ * property of the environment, and the working-directory fallback covers it.
+ *
+ * Only the peer being ABSENT is silent. A peer that is found but throws while loading, or
+ * exports no usable `trace` namespace, is a broken install: it is reported through `broken` so the
+ * caller can say so, rather than being folded into "not installed".
  *
  * @param anchor - Produces the absolute path resolution walks up from.
- * @returns The OTel `trace` namespace, or `undefined` when unresolvable.
+ * @returns The OTel `trace` namespace when usable, and the failure when the install is broken.
  */
-function loadTraceApiFrom(anchor: () => string): OtelTraceApi | undefined {
+function loadTraceApiFrom(anchor: () => string): Attempt {
+  let from: string
   try {
-    const requireFrom = createRequire(anchor())
-    const mod = requireFrom('@opentelemetry/api')
-    // No optional chaining: a missing module throws (caught below) and a falsy
-    // module makes `mod.trace` throw into the same catch — both yield undefined.
-    return mod.trace as OtelTraceApi | undefined
+    from = anchor()
   } catch {
-    return undefined
+    return { api: undefined }
+  }
+  try {
+    const mod: unknown = createRequire(from)('@opentelemetry/api')
+    // The export is checked itself, down to the one method the mixin calls on every entry.
+    // Reading `trace` off `undefined` or `null` throws, but off `false`, `0`, `''` or any
+    // other non-object it just yields `undefined`, and a `trace` that is not an object with
+    // a `getActiveSpan` function would throw inside the mixin on every log call. A module
+    // like that is a broken install, not an absent one.
+    const trace =
+      (typeof mod === 'object' && mod !== null) || typeof mod === 'function'
+        ? (mod as { trace?: Partial<OtelTraceApi> | null }).trace
+        : undefined
+    if (typeof trace?.getActiveSpan !== 'function') {
+      throw new TypeError('@opentelemetry/api resolved but exports no usable `trace` namespace')
+    }
+    return { api: trace as OtelTraceApi }
+  } catch (cause) {
+    return isOtelApiMissing(cause) ? { api: undefined } : { api: undefined, broken: { cause } }
   }
 }
+
+/**
+ * Say once, on stderr, that `@opentelemetry/api` is installed but unusable.
+ *
+ * Written to stderr and not through the logger: it can run while the logger is being
+ * built, before any destination exists, and a logger that fails is no place for the notice.
+ * Once per process, shared by every place a broken install can show itself (the detector at
+ * the Pino build and again at bootstrap, and the mixin on the first entry it cannot stamp),
+ * because one broken install is one warning.
+ *
+ * @internal Shared with `trace-context.mixin`. NOT re-exported by the package barrel.
+ * @param cause - The failure that made the install unusable.
+ */
+export function warnBrokenInstallOnce(cause: unknown): void {
+  if (brokenInstallWarned) {
+    return
+  }
+  brokenInstallWarned = true
+  writeStderrSafely(
+    JSON.stringify({
+      level: 'warn',
+      logKey: RESERVED_LOG_KEYS.LOGGER_OTEL_API_BROKEN,
+      msg:
+        '@opentelemetry/api is installed but could not be loaded, so traceId and spanId are ' +
+        'absent from every entry. Reinstall it, or set otel.shouldAutoInjectTraceContext to false.',
+      err: describeCause(cause)
+    }) + '\n'
+  )
+}
+
+/**
+ * Where resolution starts, in order: this module's own location, then the working directory.
+ * Thunks, so each is evaluated inside the guard that treats a failing one as "nothing to
+ * resolve from" rather than at module load.
+ */
+const DEFAULT_ANCHORS: readonly (() => string)[] = [
+  (): string => __filename,
+  (): string => join(process.cwd(), 'noop.cjs')
+]
 
 /**
  * Lazily resolve the `@opentelemetry/api` `trace` namespace.
@@ -76,12 +181,26 @@ function loadTraceApiFrom(anchor: () => string): OtelTraceApi | undefined {
  * transform — and tsup's `shims` option injects an `import.meta.url`-derived
  * equivalent into the `.mjs` bundle.
  *
- * @returns The OTel `trace` API when installed, otherwise `undefined`.
+ * @param anchors - Where resolution starts, tried in order; the default is this module's
+ *   location and then the working directory. Injectable so a spec can make an anchor fail.
+ * @returns The OTel `trace` API when installed and usable, otherwise `undefined`. A broken
+ *   install also warns once on stderr, which a missing one deliberately does not.
  */
-export function detectOtelTraceApi(): OtelTraceApi | undefined {
-  return (
-    loadTraceApiFrom(() => __filename) ?? loadTraceApiFrom(() => join(process.cwd(), 'noop.cjs'))
-  )
+export function detectOtelTraceApi(
+  anchors: readonly (() => string)[] = DEFAULT_ANCHORS
+): OtelTraceApi | undefined {
+  let broken: Attempt['broken']
+  for (const anchor of anchors) {
+    const attempt = loadTraceApiFrom(anchor)
+    if (attempt.api !== undefined) {
+      return attempt.api
+    }
+    broken ??= attempt.broken
+  }
+  if (broken !== undefined) {
+    warnBrokenInstallOnce(broken.cause)
+  }
+  return undefined
 }
 
 /**

@@ -1,5 +1,6 @@
 import { PrettyDevDestination } from './pretty-dev.destination'
 import type { PrettyViewOptions } from './pretty-dev.destination'
+import * as escapeLogText from '../utils/escape-log-text.util'
 
 /** A syntactically valid Pino NDJSON line `pino-pretty` can parse and format. */
 const VALID_NDJSON_LINE =
@@ -11,6 +12,19 @@ function flushIo(): Promise<void> {
 }
 
 describe('PrettyDevDestination', () => {
+  // Every isolated import of the destination below evaluates its imports again. For the
+  // escaping helpers that re-evaluation would run inside a test, and a mutation run then
+  // attributes their module-level constants to these tests, which assert nothing about
+  // them. Handing the isolated registry the module already loaded keeps those constants
+  // evaluated once, outside any test, where the helpers' own spec judges them.
+  beforeEach(() => {
+    jest.doMock('../utils/escape-log-text.util', () => escapeLogText)
+  })
+
+  afterEach(() => {
+    jest.dontMock('../utils/escape-log-text.util')
+  })
+
   describe('constructor', () => {
     it(/*
      * With no options the destination must accept every level (minLevel
@@ -135,7 +149,9 @@ describe('PrettyDevDestination', () => {
     'throws an actionable error when pino-pretty is missing', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         // Assert the FULL actionable message (both concatenated halves) so a
@@ -290,7 +306,9 @@ describe('PrettyDevDestination', () => {
     'drops writes after a failed init instead of duplicating to stdout', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -436,7 +454,9 @@ describe('PrettyDevDestination', () => {
     'flushes the buffer raw when init fails and no sink survived', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -462,7 +482,9 @@ describe('PrettyDevDestination', () => {
     'drains raw when the only live sink sits above its level', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -490,7 +512,9 @@ describe('PrettyDevDestination', () => {
     'drains when delivery is not proven, accepting a possible duplicate', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -514,7 +538,9 @@ describe('PrettyDevDestination', () => {
     'discards the buffer when another sink initialized', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -665,7 +691,9 @@ describe('PrettyDevDestination', () => {
     'emits nothing on a second flush', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()

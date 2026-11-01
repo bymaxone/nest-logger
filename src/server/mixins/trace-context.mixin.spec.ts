@@ -5,7 +5,7 @@ jest.mock('../utils/otel-detector', () => ({
 
 import pino from 'pino'
 
-import { detectOtelTraceApi } from '../utils/otel-detector'
+import { detectOtelTraceApi, resetBrokenInstallWarning } from '../utils/otel-detector'
 import type { OtelTraceApi } from '../utils/otel-detector'
 
 import { LogContextService } from '../services/log-context.service'
@@ -224,7 +224,141 @@ describe('createTraceContextMixin', () => {
       ...defaultFields,
       shouldAutoInjectTraceContext: true
     })
-    expect(mixin({}, 30, logger)).toEqual({ traceId: VALID_TRACE_ID, spanId: SPAN_ID })
+    const fields = mixin({}, 30, logger)
+
+    expect(fields).toEqual({ traceId: VALID_TRACE_ID, spanId: SPAN_ID })
+    // `toEqual` ignores a key whose value is undefined, so absence is asserted on its own.
+    expect(Object.keys(fields)).toEqual(['traceId', 'spanId'])
+  })
+})
+
+describe('createTraceContextMixin — a trace API that misbehaves on a call', () => {
+  const logger = pino({ enabled: false })
+  let stderrSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    resetBrokenInstallWarning()
+    stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+  })
+
+  afterEach(() => {
+    stderrSpy.mockRestore()
+  })
+
+  /** A mixin over `api`, as the factory builds it with auto-injection on. */
+  const mixinOver = (api: unknown): ReturnType<typeof createTraceContextMixin> => {
+    mockedDetect.mockReturnValue(api as OtelTraceApi)
+    return createTraceContextMixin(new LogContextService(), {
+      ...defaultFields,
+      shouldAutoInjectTraceContext: true
+    })
+  }
+
+  /** Every stderr line written so far, parsed. */
+  const lines = (): Record<string, unknown>[] =>
+    stderrSpy.mock.calls.map((call) => JSON.parse(String(call[0])) as Record<string, unknown>)
+
+  const validContext = { traceId: VALID_TRACE_ID, spanId: SPAN_ID, traceFlags: 1 }
+  const throwing = (): never => {
+    throw new Error('hostile trace API')
+  }
+
+  const misbehaving: [string, unknown][] = [
+    [
+      'getActiveSpan throws',
+      {
+        getActiveSpan: throwing
+      }
+    ],
+    ['the span has no spanContext', { getActiveSpan: () => ({}) }],
+    ['spanContext throws', { getActiveSpan: () => ({ spanContext: throwing }) }],
+    ['spanContext returns null', { getActiveSpan: () => ({ spanContext: () => null }) }],
+    [
+      'a trace id getter throws',
+      {
+        getActiveSpan: () => ({
+          spanContext: () => ({
+            get traceId(): string {
+              return throwing()
+            },
+            spanId: SPAN_ID,
+            traceFlags: 1
+          })
+        })
+      }
+    ],
+    [
+      'the trace flags getter throws after both ids were valid',
+      {
+        getActiveSpan: () => ({
+          spanContext: () => ({
+            traceId: VALID_TRACE_ID,
+            spanId: SPAN_ID,
+            get traceFlags(): number {
+              return throwing()
+            }
+          })
+        })
+      }
+    ]
+  ]
+
+  it.each(misbehaving)('never throws, injects nothing and warns once when %s', (_label, api) => {
+    /*
+     * The mixin runs on every log entry, so whatever the resolved module does when called
+     * must never reach the caller. A failure leaves the entry without trace fields, and not
+     * half of them: the ids are computed before any is written. It is announced once on
+     * stderr like any other broken install, however many entries follow.
+     */
+    const mixin = mixinOver(api)
+
+    // Strict, because toEqual treats a key holding undefined as missing and would pass
+    // an entry that carries a trace field with no value.
+    expect(mixin({}, 30, logger)).toStrictEqual({})
+    expect(mixin({}, 30, logger)).toStrictEqual({})
+
+    expect(lines()).toHaveLength(1)
+    expect(lines()[0]).toMatchObject({ level: 'warn', logKey: 'LOGGER_OTEL_API_BROKEN' })
+  })
+
+  it.each(misbehaving)(
+    'still writes the log entry, without trace fields, when %s',
+    (_label, api) => {
+      /*
+       * The loss this guards against is the line itself: a log call whose trace block
+       * fails must still produce its entry. Driven through a real Pino instance so the
+       * assertion is about the line that reaches the destination, not the mixin's return.
+       */
+      const lines: string[] = []
+      const logged = pino(
+        { mixin: mixinOver(api) },
+        { write: (chunk: string): void => void lines.push(chunk) }
+      )
+
+      logged.info('entry that must survive')
+
+      expect(lines).toHaveLength(1)
+      const entry = JSON.parse(lines[0] ?? '{}') as Record<string, unknown>
+      expect(entry['msg']).toBe('entry that must survive')
+      expect(entry).not.toHaveProperty('traceId')
+      expect(entry).not.toHaveProperty('spanId')
+      expect(entry).not.toHaveProperty('traceFlags')
+    }
+  )
+
+  it(/*
+   * The control for the table above: a well-behaved API still stamps all three fields and
+   * writes nothing to stderr.
+   */
+  'stamps the trace fields and stays silent when the span is well formed', () => {
+    const mixin = mixinOver(apiWith(validContext))
+
+    expect(mixin({}, 30, logger)).toEqual({
+      traceId: VALID_TRACE_ID,
+      spanId: SPAN_ID,
+      traceFlags: '01'
+    })
+    expect(stderrSpy).not.toHaveBeenCalled()
   })
 })
 

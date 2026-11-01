@@ -211,10 +211,22 @@ describe('PinoUnexpectedErrorSink — arbitrary thrown values', () => {
 
 describe('PinoUnexpectedErrorSink — failure containment', () => {
   let h: Harness
+  let stderrSpy: jest.SpyInstance
 
   beforeEach(() => {
     h = createHarness()
+    stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
   })
+
+  afterEach(() => {
+    stderrSpy.mockRestore()
+  })
+
+  /** The single stderr line the sink wrote when it dropped a report, parsed. */
+  const droppedLine = (): Record<string, unknown> => {
+    expect(stderrSpy).toHaveBeenCalledTimes(1)
+    return JSON.parse(String(stderrSpy.mock.calls[0]?.[0])) as Record<string, unknown>
+  }
 
   it(/*
    * The sink runs on nest-core's response path. A failing logger (a throwing
@@ -232,6 +244,28 @@ describe('PinoUnexpectedErrorSink — failure containment', () => {
   })
 
   it(/*
+   * The entry is the only log record of an unhandled exception, so a report that cannot
+   * be written must never vanish silently. Stdout is no place for the notice, because the
+   * logger is the thing that failed: a dropped report leaves one line on stderr naming
+   * what was lost and why, outside the sink set, the way a destination failure does.
+   */
+  'writes one stderr line when the logger throws and the report is dropped', () => {
+    h.errorSpy.mockImplementation(() => {
+      throw new Error('serializer exploded')
+    })
+
+    h.sink.record({ error: new Error('boom'), method: 'GET', route: '/x' })
+
+    expect(droppedLine()).toMatchObject({
+      level: 'error',
+      logKey: 'HTTP_UNEXPECTED_ERROR_DROPPED',
+      destination: 'PinoUnexpectedErrorSink',
+      err: { type: 'Error', message: 'serializer exploded' },
+      msg: 'An unexpected-error report could not be logged and was dropped.'
+    })
+  })
+
+  it(/*
    * A hostile report — a getter that throws — must not escape either.
    */
   'never throws on a report whose fields throw when read', () => {
@@ -246,5 +280,36 @@ describe('PinoUnexpectedErrorSink — failure containment', () => {
       h.sink.record(report)
     }).not.toThrow()
     expect(h.errorSpy).not.toHaveBeenCalled()
+  })
+
+  it(/*
+   * The same contract for a report that cannot be read: nothing reaches the logger,
+   * and the drop is still announced on stderr instead of vanishing.
+   */
+  'writes one stderr line when the report cannot be read', () => {
+    const report: UnexpectedErrorReport = { error: new Error('boom'), method: 'GET', route: '/x' }
+    Object.defineProperty(report, 'route', {
+      get(): string {
+        throw new Error('hostile getter')
+      }
+    })
+
+    h.sink.record(report)
+
+    expect(h.errorSpy).not.toHaveBeenCalled()
+    expect(droppedLine()).toMatchObject({
+      logKey: 'HTTP_UNEXPECTED_ERROR_DROPPED',
+      err: { type: 'Error', message: 'hostile getter' },
+      msg: 'An unexpected-error report could not be logged and was dropped.'
+    })
+  })
+
+  it(/*
+   * A well-formed report writes nothing to stderr: the new line is for a drop only.
+   */
+  'writes nothing to stderr when the report is logged', () => {
+    h.sink.record({ error: new Error('boom'), method: 'GET', route: '/x' })
+
+    expect(stderrSpy).not.toHaveBeenCalled()
   })
 })

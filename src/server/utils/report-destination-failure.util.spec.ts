@@ -1,5 +1,99 @@
-import { safeDestinationName, safeMinLevel } from './report-destination-failure.util'
+import {
+  reportDestinationFailure,
+  safeDestinationName,
+  safeMinLevel
+} from './report-destination-failure.util'
+import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { LogLevel } from '../../shared/types/log-level.type'
+
+describe('reportDestinationFailure', () => {
+  let stderrSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+  })
+
+  afterEach(() => {
+    stderrSpy.mockRestore()
+  })
+
+  /** The single line the reporter wrote, parsed; fails when it wrote none or several. */
+  const reported = (): Record<string, unknown> => {
+    expect(stderrSpy).toHaveBeenCalledTimes(1)
+    return JSON.parse(String(stderrSpy.mock.calls[0]?.[0])) as Record<string, unknown>
+  }
+
+  it(/*
+   * The ordinary case: an Error keeps its own name and message, so the stand-in
+   * below is only for a value that cannot be read.
+   */
+  'reports an Error with its own type and message', () => {
+    reportDestinationFailure(
+      RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+      'audit-sink',
+      new TypeError('disk full'),
+      'entry dropped'
+    )
+
+    expect(reported()).toMatchObject({
+      logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+      destination: 'audit-sink',
+      err: { type: 'TypeError', message: 'disk full' },
+      msg: 'entry dropped'
+    })
+  })
+
+  it.each([
+    ['a null-prototype object, which has no toString', () => Object.create(null) as unknown],
+    [
+      'a value whose toString throws',
+      () => ({
+        toString(): string {
+          throw new Error('hostile toString')
+        }
+      })
+    ],
+    [
+      'an Error whose message getter throws',
+      () =>
+        Object.defineProperty(new Error('x'), 'message', {
+          get(): string {
+            throw new Error('hostile message getter')
+          }
+        })
+    ],
+    [
+      'an Error whose name getter throws',
+      () =>
+        Object.defineProperty(new Error('x'), 'name', {
+          get(): string {
+            throw new Error('hostile name getter')
+          }
+        })
+    ]
+  ])('still reports the destination when the cause is %s', (_label, makeCause) => {
+    /*
+     * A destination failure always leaves one operator-visible line. The destination and
+     * the stage are what the operator needs, and neither depends on the cause being
+     * readable, so an unreadable cause degrades to a stand-in for the error instead of
+     * dropping the line: a sink that stops receiving entries must never do so unannounced.
+     * Exactly one line, never zero.
+     */
+    reportDestinationFailure(
+      RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+      'audit-sink',
+      makeCause(),
+      'entry dropped'
+    )
+
+    expect(reported()).toMatchObject({
+      logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+      destination: 'audit-sink',
+      err: { type: 'UnknownError', message: 'unreadable value' },
+      msg: 'entry dropped'
+    })
+  })
+})
 
 describe('safeMinLevel', () => {
   it(/*
