@@ -100,6 +100,15 @@ jobs:
       - name: Verify (typecheck · lint · test · build)
         run: pnpm prepublishOnly
 
+      - name: Verify the public declarations match the bump
+        # Runs after the build inside prepublishOnly, so `dist/` exists, and before the
+        # publish. For a patch it fails on any difference in the built `.d.ts` and `.d.cts`
+        # against the previous published version, ignoring comments; a minor or a major is
+        # let through with the differences printed. It reads the previous version from the
+        # public registry, so it needs no credential. There is no override: a failing patch
+        # is resolved by changing the code or the version.
+        run: node scripts/check-api-surface.mjs
+
       - name: Verify published type resolution
         # Runs after the build inside prepublishOnly and before the publish, so
         # a tag cannot ship a tarball whose `exports` map resolves to
