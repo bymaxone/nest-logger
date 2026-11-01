@@ -9,7 +9,8 @@
  * version, after both are normalized, and fails when a patch differs.
  *
  * Normalization is the TypeScript printer with comments removed, so whitespace and JSDoc
- * never count, while every member, signature, modifier and the order of declarations,
+ * never count, while the triple-slash reference directives (which decide what the file
+ * type-checks against) and every member, signature, modifier and the order of declarations,
  * members and overloads does. One bundler artifact is normalized away on purpose: the
  * top-level `export { … }` lists with no `from`. Between two releases the bundler
  * re-emitted the same names as `export { A, type B }` and as `export { A }; export type { B }`.
@@ -71,7 +72,25 @@ export function normalizeDeclarations(text) {
       kept.push(printer.printNode(ts.EmitHint.Unspecified, statement, source))
     }
   }
-  return `${kept.join('\n')}\nexports: ${specifiers.sort().join(', ')}\n`
+  const directives = referenceDirectives(source).sort()
+  return `${directives.join('\n')}\n${kept.join('\n')}\nexports: ${specifiers.sort().join(', ')}\n`
+}
+
+/**
+ * The triple-slash directives of a file, one normalized line each. They are comments to the
+ * printer yet they decide which ambient declarations the file type-checks against, so
+ * removing one changes what a consumer sees even when no statement changes.
+ */
+function referenceDirectives(source) {
+  const lines = [
+    ...source.referencedFiles.map((ref) => `/// path ${ref.fileName}`),
+    ...source.typeReferenceDirectives.map(
+      (ref) => `/// types ${ref.fileName}${ref.resolutionMode ? ` (${ref.resolutionMode})` : ''}`
+    ),
+    ...source.libReferenceDirectives.map((ref) => `/// lib ${ref.fileName}`)
+  ]
+  if (source.hasNoDefaultLib) lines.push('/// no-default-lib')
+  return lines
 }
 
 /** A top-level `export { … }` that re-exports local names, with no `from`. */

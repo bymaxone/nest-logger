@@ -81,6 +81,10 @@ describe('check-api-surface', () => {
         BASE.replace('readonly name: string;', 'readonly name: string;\n    private buffer;')
       ],
       ['a removed member', BASE.replace('    readonly name: string;\n', '')],
+      ['an added path reference directive', `/// <reference path="./ambient.d.ts" />\n${BASE}`],
+      ['an added types reference directive', `/// <reference types="node" />\n${BASE}`],
+      ['an added lib reference directive', `/// <reference lib="es2022" />\n${BASE}`],
+      ['an added no-default-lib directive', `/// <reference no-default-lib="true"/>\n${BASE}`],
       [
         'an added exported name',
         BASE.replace(
@@ -157,6 +161,22 @@ describe('check-api-surface', () => {
       expect(output).toContain('+     warn(message: string): void;')
     }
   )
+
+  it('treats the same reference directives in another order as no difference', () => {
+    /*
+     * Scenario: the order of triple-slash directives carries no meaning, so the bundler
+     * emitting them in another order must not fail a patch, while removing one must.
+     */
+    const directives = ['/// <reference types="node" />', '/// <reference path="./a.d.ts" />']
+    const previous = layout('1.4.4', `${directives.join('\n')}\n${BASE}`)
+    const current = layout('1.4.5', `${[...directives].reverse().join('\n')}\n${BASE}`)
+    const run = spawnSync('node', [SCRIPT, '--against', previous], {
+      cwd: current,
+      encoding: 'utf8'
+    })
+    expect(run.status).toBe(0)
+    expect(run.stdout).toContain('no difference')
+  })
 
   it('reports a declaration file that exists on one side only', () => {
     /*
