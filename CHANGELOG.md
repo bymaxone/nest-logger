@@ -11,6 +11,39 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`errorStructured` keeps its `logKey` when the `Error` cannot be read.** A hostile `Error` (a Proxy whose
+  `ownKeys` throws, an own getter that throws, a `stack` or `message` getter that throws) made the whole
+  record fail the name redaction, so the entry arrived as `LOGGER_REDACTION_FAILED` and lost the caller's
+  `logKey`, `userId` and metadata. The `Error` node is now isolated: when it cannot be walked it is replaced
+  by its sanitized form and walked again, so the name redaction still applies to whatever can be read. An
+  unreadable `stack` or `cause` no longer degrades the node to `SanitizeFailed`; it keeps `name` and
+  `message` and carries `_errorFieldsIncomplete: true`. A hostile value that is not an `Error` still fails
+  the whole record, as before.
+- **A stale comment in `HttpExceptionFilter` is corrected.** It said the cause chain was dropped at
+  `errorStructured`; the entry keeps the cause chain and `AggregateError.errors`, and the response body
+  that rides along as an own field is name-redacted. A new spec pins both.
+
+#### Apply to a derived backend
+
+Nothing to change in code. What can differ at run time:
+
+- An alert on `LOGGER_REDACTION_FAILED` that fired for an unreadable `Error` stops firing for it. The event
+  now arrives under its own `logKey`, with the `err` node carrying `_errorFieldsIncomplete: true`. To find
+  these entries going forward, filter on `err._errorFieldsIncomplete: true`. `LOGGER_REDACTION_FAILED` is
+  left for a record that really cannot be read, such as hostile metadata.
+- An error whose `stack` or `cause` getter throws used to reach the log as `{ type: 'SanitizeFailed' }`; it
+  now keeps its `type` and `message` and carries the marker. Code that matched `SanitizeFailed` for that
+  case should match the marker instead.
+
+### Tests
+
+- An `Error` that cannot be read has a failing-first spec at the redactor and through the real Pino
+  pipeline, including a readable `password` next to a throwing getter and a hostile `message` getter, with
+  no clear secret in the line. Two existing cases that pinned the old degradation (`SanitizeFailed` for a
+  throwing `stack` getter, the record-level envelope for a hostile `Error`) now pin the new behavior.
+
 ## [1.4.6] - 2026-11-01
 
 ### Fixed

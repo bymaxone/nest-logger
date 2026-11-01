@@ -201,15 +201,21 @@ function toSanitizedError(
 
     seen.add(value)
     const result: SanitizedError = { name: value.name, message: value.message }
-    if (value.stack !== undefined) {
-      result.stack = scrubStack(value.stack)
+    // `stack` and `cause` are optional, so each is read in its own guard: an unreadable one
+    // costs the node that property and marks it incomplete, instead of costing the node its
+    // name and message. The name and message identify the error; if THEY cannot be read the
+    // outer catch still degrades the node to the visible `SanitizeFailed` shape.
+    const stack = readOptional(() => value.stack, result)
+    if (stack !== undefined) {
+      result.stack = scrubStack(stack)
     }
 
     const isAtDepthLimit = depth >= maxDepth
-    if (value.cause !== undefined) {
+    const cause = readOptional(() => value.cause as unknown, result)
+    if (cause !== undefined) {
       result.cause = isAtDepthLimit
         ? createDepthMarker()
-        : toSanitizedChild(value.cause, seen, depth + 1, maxDepth)
+        : toSanitizedChild(cause, seen, depth + 1, maxDepth)
     }
 
     const aggregated = readAggregatedErrors(value)
@@ -316,12 +322,39 @@ export function assignOwnErrorFields(target: Record<string, unknown>, source: ob
     // A hostile own-property enumeration degrades to a node without its own fields
     // rather than failing the entry: `Object.entries` reads every value before the
     // loop copies one, so nothing is half-copied, and the never-throw contract on
-    // this path is absolute. The node SAYS it is incomplete,
-    // as the whole-value path does with its `SanitizeFailed` shape: an error entry
-    // that silently lacks its `code` or payload would read as a complete one.
-    // `Reflect.defineProperty` reports a refusal instead of throwing, which keeps
-    // the never-throw contract on a node that cannot take the marker.
-    Reflect.defineProperty(target, '_errorFieldsIncomplete', { value: true, enumerable: true })
+    // this path is absolute. The node SAYS it is incomplete.
+    markIncomplete(target)
+  }
+}
+
+/**
+ * Say, on a node, that some of what it should carry could not be read.
+ *
+ * The whole-value path degrades to a visible `SanitizeFailed` shape; this is the same
+ * visibility for a node that kept its identity but lost a property: an error entry that
+ * silently lacks its `code`, its stack or its cause would read as a complete one.
+ * `Reflect.defineProperty` reports a refusal instead of throwing, which keeps the
+ * never-throw contract on a node that cannot take the marker.
+ *
+ * @param target - The node being built; mutated in place.
+ */
+function markIncomplete(target: Record<string, unknown>): void {
+  Reflect.defineProperty(target, '_errorFieldsIncomplete', { value: true, enumerable: true })
+}
+
+/**
+ * Read one optional property of an error, or mark the node incomplete when the read throws.
+ *
+ * @param read - Reads the property; may throw on a hostile getter.
+ * @param node - The node being built; marked incomplete on a throw.
+ * @returns The value, or `undefined` when it is absent or could not be read.
+ */
+function readOptional<T>(read: () => T, node: Record<string, unknown>): T | undefined {
+  try {
+    return read()
+  } catch {
+    markIncomplete(node)
+    return undefined
   }
 }
 

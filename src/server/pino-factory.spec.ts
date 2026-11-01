@@ -1089,16 +1089,16 @@ describe('err serializer', () => {
   it(/*
    * `name`, `message` and `stack` are ordinary properties a caller can redefine
    * as throwing accessors — V8 already exposes `stack` as one. The record must
-   * degrade rather than take the process down.
+   * degrade rather than take the process down, and only the error node degrades:
+   * the caller's `logKey` and metadata keep reaching the destination, because an
+   * alert is keyed on the `logKey` and an unreadable error is no reason to lose it.
    *
    * The degradation happens at the REDACTION hook, which runs before the
-   * serializer: a value that cannot be read cannot be proven safe, so the whole
-   * record is dropped and marked rather than partially emitted. Asserting the
-   * serializer's own `SanitizeFailed` envelope here would assert a path this
-   * input never reaches — the fail-closed guard gets there first, which is the
-   * stronger outcome.
+   * serializer, so the node is the sanitizer's visible `SanitizeFailed` shape, not
+   * the record-level envelope. That envelope stays for a record that really cannot
+   * be read, pinned in `error-node-isolation.spec.ts`.
    */
-  'degrades a hostile error to a marked record instead of throwing', () => {
+  'degrades a hostile error to a marked error node and keeps the record', () => {
     const hostile = new Error('boom')
     Object.defineProperty(hostile, 'message', {
       get(): never {
@@ -1119,26 +1119,26 @@ describe('err serializer', () => {
     }).not.toThrow()
 
     const entry = capture.entries()[0]
-    expect(entry?.['_redactionFailed']).toBe(true)
-    expect(entry?.['_logKey']).toBe('LOGGER_REDACTION_FAILED')
+    expect(entry).not.toHaveProperty('_redactionFailed')
+    expect(entry?.['logKey']).toBe('OPERATION_FAILED')
+    expect(entry?.['err']).toMatchObject({ type: 'SanitizeFailed' })
   })
 
   it(/*
    * The serializer's own never-throw guard, asserted where it actually runs.
    *
-   * Going through the sink did NOT exercise this: a non-enumerable `stack` is
-   * dropped by the redaction snapshot before the serializer ever reads it, so
-   * the previous version of this test asserted `not.toThrow()` on a path that
-   * never had a chance to throw — green while proving nothing. Calling the
-   * serializer directly reaches the guard, and the envelope is asserted on its
-   * exact content rather than its type, because an empty stand-in would be
-   * indistinguishable from a genuinely empty error.
+   * Going through the sink does not exercise this: the redaction hook reads the error
+   * first. Calling the serializer directly reaches the guard, and the envelope is
+   * asserted on its exact content rather than its type, because an empty stand-in would
+   * be indistinguishable from a genuinely empty error. The unreadable property is the
+   * one that identifies the error (its message): a missing stack or cause is a smaller
+   * loss, which keeps the node and marks it, and is pinned in `sanitize-error.util.spec.ts`.
    */
   'degrades to the SanitizeFailed envelope when reading the value throws', () => {
-    const hostile = { name: 'Weird', message: 'readable' }
-    Object.defineProperty(hostile, 'stack', {
+    const hostile = { name: 'Weird' }
+    Object.defineProperty(hostile, 'message', {
       get(): never {
-        throw new Error('hostile stack')
+        throw new Error('hostile message')
       },
       enumerable: false
     })
