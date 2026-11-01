@@ -354,14 +354,11 @@ function walk(
  * Walk an `Error`, degrading it alone when it cannot be read.
  *
  * `formatters.log` runs BEFORE the `err` serializer, so this walk is the first code to touch
- * a raw `Error`, and an `Error` whose own keys, getters, `stack` or `toJSON` throw used to
- * take the whole record down with it: the root catch returned the record-level
- * `LOGGER_REDACTION_FAILED` envelope in place of the caller's `logKey`, `userId` and
- * metadata, and an alert keyed on that `logKey` missed the event.
- *
- * The record-level rule is right for a hostile RECORD, whose siblings cannot be vouched for.
- * It is wrong for one unreadable `Error`, whose siblings were each read and walked fine. So
- * the node is replaced by `sanitizeError` of it, which never throws, copies no field it could
+ * a raw `Error`. An `Error` whose own keys, getters, `stack` or `toJSON` throw must degrade
+ * on its own and leave the record's `logKey`, `userId` and metadata intact: the record-level
+ * `LOGGER_REDACTION_FAILED` envelope is reserved for a hostile RECORD, whose siblings cannot
+ * be vouched for, and an unreadable `Error` is not one, because its siblings were each read
+ * and walked fine. So the node is replaced by `sanitizeError` of it, which never throws, copies no field it could
  * not read and marks what it lost, and THAT node goes through the walk again: a field the
  * sanitizer could still copy is censored by name like any other, and a field it could not
  * read is never copied. A hostile value that is not an `Error` is not isolated and still
