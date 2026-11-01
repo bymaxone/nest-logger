@@ -312,8 +312,10 @@ describe('createTraceContextMixin — a trace API that misbehaves on a call', ()
      */
     const mixin = mixinOver(api)
 
-    expect(mixin({}, 30, logger)).toEqual({})
-    expect(mixin({}, 30, logger)).toEqual({})
+    // Strict, because toEqual treats a key holding undefined as missing and would pass
+    // an entry that carries a trace field with no value.
+    expect(mixin({}, 30, logger)).toStrictEqual({})
+    expect(mixin({}, 30, logger)).toStrictEqual({})
 
     expect(lines()).toHaveLength(1)
     expect(lines()[0]).toMatchObject({ level: 'warn', logKey: 'LOGGER_OTEL_API_BROKEN' })
