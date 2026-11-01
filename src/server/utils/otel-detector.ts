@@ -117,13 +117,16 @@ function loadTraceApiFrom(anchor: () => string): Attempt {
 /**
  * Say once, on stderr, that `@opentelemetry/api` is installed but unusable.
  *
- * Written to stderr and not through the logger: this runs while the logger is being
- * built, before any destination exists. Once per process, because the detector runs at
- * the Pino build and again at bootstrap and a broken install does not change in between.
+ * Written to stderr and not through the logger: it can run while the logger is being
+ * built, before any destination exists, and a logger that fails is no place for the notice.
+ * Once per process, shared by every place a broken install can show itself (the detector at
+ * the Pino build and again at bootstrap, and the mixin on the first entry it cannot stamp),
+ * because one broken install is one warning.
  *
+ * @internal Shared with `trace-context.mixin`. NOT re-exported by the package barrel.
  * @param cause - The failure that made the install unusable.
  */
-function warnBrokenInstallOnce(cause: unknown): void {
+export function warnBrokenInstallOnce(cause: unknown): void {
   if (brokenInstallWarned) {
     return
   }
