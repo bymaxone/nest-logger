@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { Injectable, Module } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 
@@ -41,6 +44,23 @@ class PaymentsService {
 })
 class AppModule {}
 
+/** Dotted paths of every leaf of a parsed JSON value; `event.name` stays one key, as written. */
+function keyPaths(value: Record<string, unknown>, prefix = ''): string[] {
+  return Object.entries(value).flatMap(([key, child]) =>
+    typeof child === 'object' && child !== null
+      ? keyPaths(child as Record<string, unknown>, `${prefix}${key}/`)
+      : [`${prefix}${key}`]
+  )
+}
+
+/** The JSON block that follows the "Output (JSON, production)" line in the README. */
+function readmeSampleLine(): Record<string, unknown> {
+  const readme = readFileSync(join(__dirname, '../../README.md'), 'utf8')
+  const afterLabel = readme.slice(readme.indexOf('Output (JSON, production)'))
+  const block = /```json\n([\s\S]*?)\n```/.exec(afterLabel)
+  return JSON.parse(String(block?.[1])) as Record<string, unknown>
+}
+
 describe('README Quick Start (sections 2 and 4)', () => {
   it(/*
    * Scenario: guards README "Quick Start > 2. Register the module" and "4. Inject the
@@ -50,8 +70,9 @@ describe('README Quick Start (sections 2 and 4)', () => {
    * validation. It asserts the JSON lines on stdout: the bootstrap and shutdown lines around
    * one line per logger call, and on the success line the level, ISO time, the configured
    * service, logKey, msg, the injected context, the metadata, and the userId passed as the
-   * third argument. Change this test in the same PR as any change to that README flow or to
-   * its "Output (JSON, production)" block.
+   * third argument. The test also parses the README's "Output (JSON, production)" sample and requires
+   * the same key set as the real line. Change this test in the same PR as any change to that
+   * README flow or sample.
    */
   'logs the README flow as structured JSON lines on stdout', async () => {
     const lines: string[] = []
@@ -89,5 +110,19 @@ describe('README Quick Start (sections 2 and 4)', () => {
       stripeRefundId: 're_abc'
     })
     expect(new Date(String(success?.['time'])).toISOString()).toBe(success?.['time'])
+
+    // The README's sample must have exactly the keys this flow prints, nested ones included.
+    const sample = readmeSampleLine()
+    expect(keyPaths(sample).sort()).toEqual(keyPaths(success ?? {}).sort())
+    expect(sample).toMatchObject({
+      level: success?.['level'],
+      service: success?.['service'],
+      logKey: success?.['logKey'],
+      msg: success?.['msg'],
+      context: success?.['context'],
+      paymentId: success?.['paymentId'],
+      stripeRefundId: success?.['stripeRefundId'],
+      'event.name': success?.['event.name']
+    })
   })
 })
