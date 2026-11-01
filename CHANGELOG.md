@@ -11,6 +11,56 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+Five places swallowed a failed side effect with no trace. Each now leaves one.
+
+- **A destination failure whose cause cannot be read is no longer dropped.** When a sink's `onInit`,
+  `onRegistryReady` or `write` failed with a value that has no text form (a null-prototype object, a
+  throwing `toString`, an `Error` with throwing `name` or `message` getters), the `stderr` line was not
+  written at all and the sink stopped receiving entries unannounced. The line is now written with
+  `err: { type: 'UnknownError', message: 'unreadable value' }`, like the shutdown report.
+- **`PinoUnexpectedErrorSink` announces a report it had to drop.** When logging the report threw, or
+  the report could not be read, the `HTTP_UNEXPECTED_ERROR` entry, the only record of an unhandled
+  exception, vanished silently. One `HTTP_UNEXPECTED_ERROR_DROPPED` line now goes to `stderr`, outside
+  the sink set that may be what failed. The response is unaffected.
+- **`PrettyDevDestination` reports the real failure.** Every failure of `import('pino-pretty')` or of
+  `build()` was rethrown as "pino-pretty is not installed" with the original error discarded. Only a
+  failure to resolve `pino-pretty` itself keeps that message; anything else throws
+  `[PrettyDevDestination] pino-pretty failed to start: <message>`, and the original error is the
+  `cause` in both cases.
+- **An error node says when its own fields are missing.** When an error's own properties could not be
+  read (a Proxy whose `ownKeys` throws, a getter that throws), none was copied and nothing said so. The
+  node now carries `_errorFieldsIncomplete: true`.
+- **A broken `@opentelemetry/api` install is reported once.** Every failure to load it was folded into
+  "not installed", so correlation could be off with no sign. A missing module stays silent, as
+  designed; one that is installed but throws while loading, or exports nothing usable, writes one
+  `LOGGER_OTEL_API_BROKEN` line to `stderr`.
+
+#### Apply to a derived backend
+
+Nothing to change in code. What can differ at run time:
+
+- `stderr` can carry two lines it never carried: `HTTP_UNEXPECTED_ERROR_DROPPED` and
+  `LOGGER_OTEL_API_BROKEN`, both NDJSON like the destination-failure lines. Add them to whatever
+  alerts on the library's `stderr` codes. `RESERVED_LOG_KEYS` gains these two keys, so an application
+  event must not reuse them.
+- `LOGGER_DESTINATION_INIT_FAILED`, `LOGGER_DESTINATION_WRITE_FAILED` and the hook-failure line now
+  appear for failures that were silent before. A deployment that saw none was either healthy or
+  losing entries without knowing.
+- Code that matches the text "pino-pretty is not installed" on a `PrettyDevDestination` init error now
+  matches only a genuine resolution failure; match `failed to start` for the rest, or read `cause`.
+- Log processing that reads error nodes can meet `_errorFieldsIncomplete: true`, on an error whose own
+  fields could not be read.
+
+### Tests
+
+- A failure whose cause cannot be read, a dropped unexpected-error report, a `pino-pretty` failure of
+  each kind, an error whose own fields cannot be enumerated and a broken `@opentelemetry/api` each have
+  a failing-first spec. The fixtures that simulated a missing `pino-pretty` or `@opentelemetry/api` now
+  carry the resolution code Node attaches to the real error, because the code is what tells an absent
+  module from a broken one.
+
 ## [1.4.5] - 2026-11-01
 
 ### Documentation

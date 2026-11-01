@@ -179,7 +179,7 @@ pnpm add @opentelemetry/api @opentelemetry/sdk-node
 > packaging.
 
 > [!NOTE]
-> `@opentelemetry/api` is resolved lazily when the Pino instance is built. When it is absent the trace mixin silently steps aside — the logger never fails to start, and never warns, over an optional peer.
+> `@opentelemetry/api` is resolved lazily when the Pino instance is built. When it is absent the trace mixin silently steps aside — the logger never fails to start, and never warns, over an optional peer. A copy that is installed but broken is different: it is reported once on `stderr` as `LOGGER_OTEL_API_BROKEN`, because correlation would otherwise be off with no sign.
 
 > [!NOTE]
 > The published declarations depend on no HTTP framework's types. The HTTP interceptor, the exception filter and the request-id middleware are typed by structural contracts (`LoggableRequest`, `LoggableResponse`, `NextHandler`) that an Express request and response satisfy as-is, so nothing extra is needed even when you compile with `skipLibCheck: false`. The emitted `.d.ts` imports only `@nestjs/common`, `pino` and `rxjs`.
@@ -727,6 +727,8 @@ any other serializer output.
 An error's own enumerable properties (`code`, `statusCode`, domain fields) are carried through, as
 Pino's standard serializer did.
 
+When those properties cannot be read (a Proxy whose `ownKeys` throws, or a getter that throws), none of them is copied and the error node carries `_errorFieldsIncomplete: true`, so an entry without its `code` is never mistaken for a complete one.
+
 ### 7. Context propagation with `LogContextService`
 
 ```typescript
@@ -843,7 +845,7 @@ function assertValidLogKey(key: string) {
 
 The following keys are used internally by the library — do not reuse them in application code:
 
-`LOGGER_BOOTSTRAP_OK` · `LOGGER_BOOTSTRAP_WARNING` · `LOGGER_SHUTDOWN_OK` · `HTTP_REQUEST_START` · `HTTP_REQUEST_SUCCESS` · `HTTP_REQUEST_REDIRECT` · `HTTP_REQUEST_CLIENT_ERROR` · `HTTP_REQUEST_SERVER_ERROR` · `HTTP_REQUEST_ABORTED` · `HTTP_REQUEST_COMPLETED` · `HTTP_EXCEPTION_HANDLED` · `HTTP_EXCEPTION_UNHANDLED` · `HTTP_UNEXPECTED_ERROR` · `METHOD_EXECUTION` · `METHOD_SLOW_EXECUTION` · `LOGGER_DESTINATION_INIT_FAILED` · `LOGGER_DESTINATION_WRITE_FAILED` · `LOGGER_ENTRY_TRUNCATED` · `LOGGER_REDACTION_FAILED`
+`LOGGER_BOOTSTRAP_OK` · `LOGGER_BOOTSTRAP_WARNING` · `LOGGER_SHUTDOWN_OK` · `HTTP_REQUEST_START` · `HTTP_REQUEST_SUCCESS` · `HTTP_REQUEST_REDIRECT` · `HTTP_REQUEST_CLIENT_ERROR` · `HTTP_REQUEST_SERVER_ERROR` · `HTTP_REQUEST_ABORTED` · `HTTP_REQUEST_COMPLETED` · `HTTP_EXCEPTION_HANDLED` · `HTTP_EXCEPTION_UNHANDLED` · `HTTP_UNEXPECTED_ERROR` · `HTTP_UNEXPECTED_ERROR_DROPPED` · `METHOD_EXECUTION` · `METHOD_SLOW_EXECUTION` · `LOGGER_DESTINATION_INIT_FAILED` · `LOGGER_DESTINATION_WRITE_FAILED` · `LOGGER_ENTRY_TRUNCATED` · `LOGGER_REDACTION_FAILED` · `LOGGER_OTEL_API_BROKEN`
 
 All reserved keys are exported as the `RESERVED_LOG_KEYS` constant from `@bymax-one/nest-logger/shared`.
 
@@ -1579,22 +1581,25 @@ Two kinds of failure, and they surface differently. A **thrown `Error`** carries
 | `[BymaxLoggerModule] options.`                           | `forRoot` / `forRootAsync`, at module setup | any option fails validation: a missing `service`, a `level` outside the set, a bad type | Fix the option the message names; it prints the path and what it received |
 | `[BymaxLoggerModule] useNestLogger(app) called but`      | `BymaxLoggerModule.useNestLogger`           | the module was never imported into the application                                      | Import `BymaxLoggerModule` before calling it                              |
 | `[BymaxLoggerModule] applyAccessLog(app) called but`     | `applyAccessLog`                            | the module was never imported into the application                                      | Import `BymaxLoggerModule` before calling it                              |
-| `[PrettyDevDestination] pino-pretty is not installed`    | `PrettyDevDestination.onInit`               | the destination is registered and the optional peer is missing                          | Install `pino-pretty` or drop the destination                             |
+| `[PrettyDevDestination] pino-pretty is not installed`    | `PrettyDevDestination.onInit`               | the destination is registered and resolving `pino-pretty` itself fails                  | Install `pino-pretty` or drop the destination                             |
+| `[PrettyDevDestination] pino-pretty failed to start`     | `PrettyDevDestination.onInit`               | `pino-pretty` is found but importing it or building the transform throws                | Read the message and the error's `cause`: it is the real failure          |
 | `[PrettyDevDestination] refused in production`           | `PrettyDevDestination.onInit`               | `NODE_ENV` is exactly `production`                                                      | Use `DefaultStdoutDestination` in production                              |
 | `[LogContextService] set() called outside run() scope`   | `LogContextService.set`                     | called with no active `run()`                                                           | Wrap the work in `logContext.run({ ... }, () => ...)`                     |
 | `[LogContextService] Refusing to set unsafe context key` | `LogContextService.set`                     | the key is `__proto__`, `constructor` or `prototype`                                    | Use an ordinary key                                                       |
 
-The two `PrettyDevDestination` errors are thrown inside `onInit`, which the registry contains: the boot continues and the failure is reported as `LOGGER_DESTINATION_INIT_FAILED` below.
+The `PrettyDevDestination` errors are thrown inside `onInit`, which the registry contains: the boot continues and the failure is reported as `LOGGER_DESTINATION_INIT_FAILED` below.
 
 ### Log keys
 
-| Code                              | Surfaces as                                              | When                                                                                  | Action                                                                                                                      |
-| --------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `LOGGER_DESTINATION_INIT_FAILED`  | NDJSON line on `stderr`                                  | `destination.onInit()` throws or rejects                                              | Sink is removed from the write fan-out and shutdown; boot continues                                                         |
-| `LOGGER_DESTINATION_WRITE_FAILED` | NDJSON line on `stderr`                                  | `destination.write()` throws or rejects                                               | Entry dropped for that destination; others continue                                                                         |
-| `LOGGER_BOOTSTRAP_WARNING`        | log entry with `reason: 'OTEL_API_UNAVAILABLE'`          | `otel.shouldAutoInjectTraceContext` is on and `@opentelemetry/api` cannot be resolved | Install `@opentelemetry/api`, or turn the option off; until then `traceId` and `spanId` are absent                          |
-| `LOGGER_ENTRY_TRUNCATED`          | `_logKey` in the envelope                                | a serialized field exceeds `maxEntrySizeBytes`                                        | Reduce the payload or raise the ceiling                                                                                     |
-| `LOGGER_REDACTION_FAILED`         | `_logKey` in the envelope, with `_redactionFailed: true` | a record cannot be walked by the redactor (a throwing getter, a hostile proxy)        | The record is dropped whole, never partly emitted; the message and ambient context stay. Find the value that broke the walk |
+| Code                              | Surfaces as                                              | When                                                                                                 | Action                                                                                                                      |
+| --------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `LOGGER_DESTINATION_INIT_FAILED`  | NDJSON line on `stderr`                                  | `destination.onInit()` throws or rejects                                                             | Sink is removed from the write fan-out and shutdown; boot continues                                                         |
+| `LOGGER_DESTINATION_WRITE_FAILED` | NDJSON line on `stderr`                                  | `destination.write()` throws or rejects                                                              | Entry dropped for that destination; others continue                                                                         |
+| `HTTP_UNEXPECTED_ERROR_DROPPED`   | NDJSON line on `stderr`                                  | `PinoUnexpectedErrorSink` could not log a report (the logger threw, or the report could not be read) | The report is dropped; the line names why. The response is unaffected                                                       |
+| `LOGGER_OTEL_API_BROKEN`          | NDJSON line on `stderr`, once                            | `@opentelemetry/api` is installed but throws while loading, or exports nothing usable                | Reinstall it, or turn `otel.shouldAutoInjectTraceContext` off; until then `traceId` and `spanId` are absent                 |
+| `LOGGER_BOOTSTRAP_WARNING`        | log entry with `reason: 'OTEL_API_UNAVAILABLE'`          | `otel.shouldAutoInjectTraceContext` is on and `@opentelemetry/api` cannot be resolved                | Install `@opentelemetry/api`, or turn the option off; until then `traceId` and `spanId` are absent                          |
+| `LOGGER_ENTRY_TRUNCATED`          | `_logKey` in the envelope                                | a serialized field exceeds `maxEntrySizeBytes`                                                       | Reduce the payload or raise the ceiling                                                                                     |
+| `LOGGER_REDACTION_FAILED`         | `_logKey` in the envelope, with `_redactionFailed: true` | a record cannot be walked by the redactor (a throwing getter, a hostile proxy)                       | The record is dropped whole, never partly emitted; the message and ambient context stay. Find the value that broke the walk |
 
 ---
 

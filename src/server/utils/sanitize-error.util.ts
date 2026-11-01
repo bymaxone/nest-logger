@@ -313,9 +313,15 @@ export function assignOwnErrorFields(target: Record<string, unknown>, source: ob
       }
     }
   } catch {
-    // A hostile own-property enumeration degrades to the fields already read
-    // rather than failing the entry: something is better than nothing, and the
-    // never-throw contract on this path is absolute.
+    // A hostile own-property enumeration degrades to a node without its own fields
+    // rather than failing the entry: `Object.entries` reads every value before the
+    // loop copies one, so nothing is half-copied, and the never-throw contract on
+    // this path is absolute. The node SAYS it is incomplete,
+    // as the whole-value path does with its `SanitizeFailed` shape: an error entry
+    // that silently lacks its `code` or payload would read as a complete one.
+    // `Reflect.defineProperty` reports a refusal instead of throwing, which keeps
+    // the never-throw contract on a node that cannot take the marker.
+    Reflect.defineProperty(target, '_errorFieldsIncomplete', { value: true, enumerable: true })
   }
 }
 

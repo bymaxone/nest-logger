@@ -135,7 +135,9 @@ describe('PrettyDevDestination', () => {
     'throws an actionable error when pino-pretty is missing', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         // Assert the FULL actionable message (both concatenated halves) so a
@@ -290,7 +292,9 @@ describe('PrettyDevDestination', () => {
     'drops writes after a failed init instead of duplicating to stdout', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -436,7 +440,9 @@ describe('PrettyDevDestination', () => {
     'flushes the buffer raw when init fails and no sink survived', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -462,7 +468,9 @@ describe('PrettyDevDestination', () => {
     'drains raw when the only live sink sits above its level', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -490,7 +498,9 @@ describe('PrettyDevDestination', () => {
     'drains when delivery is not proven, accepting a possible duplicate', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -514,7 +524,9 @@ describe('PrettyDevDestination', () => {
     'discards the buffer when another sink initialized', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -665,7 +677,9 @@ describe('PrettyDevDestination', () => {
     'emits nothing on a second flush', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
-          throw new Error("Cannot find module 'pino-pretty'")
+          throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
+            code: 'MODULE_NOT_FOUND'
+          })
         })
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -697,6 +711,140 @@ describe('PrettyDevDestination', () => {
 
         await expect(dest.onShutdown()).resolves.toBeUndefined()
       })
+    })
+  })
+  describe('onInit failure diagnosis', () => {
+    /** An error shaped the way Node shapes a resolution failure: a `code` and a message. */
+    const resolutionError = (code: string, message: string): Error =>
+      Object.assign(new Error(message), { code })
+
+    /** Runs `onInit` against a pino-pretty whose import or `build` fails with `failure`. */
+    const initFailure = async (failure: unknown, onBuild = false): Promise<unknown> => {
+      let caught: unknown
+      await jest.isolateModulesAsync(async () => {
+        if (onBuild) {
+          jest.doMock('pino-pretty', () => ({
+            build: () => {
+              throw failure
+            }
+          }))
+        } else {
+          jest.doMock('pino-pretty', () => {
+            throw failure
+          })
+        }
+        const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
+        try {
+          await new Fresh().onInit()
+        } catch (error) {
+          caught = error
+        }
+      })
+      jest.dontMock('pino-pretty')
+      return caught
+    }
+
+    it.each([
+      [
+        'a CommonJS resolution failure',
+        resolutionError(
+          'MODULE_NOT_FOUND',
+          "Cannot find module 'pino-pretty'\nRequire stack:\n- /a.js"
+        )
+      ],
+      [
+        'an ESM resolution failure',
+        resolutionError(
+          'ERR_MODULE_NOT_FOUND',
+          "Cannot find package 'pino-pretty' imported from /app/main.mjs"
+        )
+      ]
+    ])('says pino-pretty is not installed for %s, and keeps the cause', async (_label, failure) => {
+      /*
+       * Only a failure to resolve pino-pretty ITSELF means the peer is missing, so only
+       * that earns the install advice. The original error rides along as `cause` so the
+       * resolution detail is not thrown away with the diagnosis.
+       */
+      const error = (await initFailure(failure)) as Error
+
+      expect(error.message).toMatch(/pino-pretty is not installed/)
+      expect(error.cause).toBe(failure)
+    })
+
+    it.each([
+      [
+        'build() throwing a RangeError',
+        new RangeError('bad option'),
+        true,
+        /failed to start: bad option/
+      ],
+      [
+        'a missing module INSIDE pino-pretty',
+        resolutionError(
+          'MODULE_NOT_FOUND',
+          "Cannot find module 'dateformat'\nRequire stack:\n- /app/node_modules/pino-pretty/index.js"
+        ),
+        false,
+        /failed to start: Cannot find module 'dateformat'/
+      ],
+      [
+        'a non-Error value thrown by build()',
+        'plain string failure',
+        true,
+        /failed to start: plain string failure/
+      ]
+    ])(
+      'reports the real failure for %s, not a false "not installed"',
+      async (_label, failure, onBuild, expected) => {
+        /*
+         * REGRESSION — every failure of the import or of `build()` was rethrown as
+         * "pino-pretty is not installed" with the original error dropped, so an operator
+         * whose package was present, and whose real problem was a bad option or a broken
+         * transitive dependency, was told to install what they already had. The message
+         * now carries the real failure and the original error is the `cause`.
+         */
+        const error = (await initFailure(failure, onBuild)) as Error
+
+        expect(error.message).toMatch(expected)
+        expect(error.message).not.toMatch(/is not installed/)
+        expect(error.cause).toBe(failure)
+      }
+    )
+
+    it(/*
+     * A thrown value whose fields cannot be read is still reported, with a stand-in for
+     * what it said, instead of escaping the diagnosis: a `code` getter that throws cannot
+     * be classified as "pino-pretty is missing", and a value with no text form has no
+     * message to quote.
+     */
+    'still reports a failure whose fields or text form cannot be read', async () => {
+      const hostileCode = {
+        get code(): never {
+          throw new Error('code getter exploded')
+        }
+      }
+      const noTextForm = Object.create(null) as unknown
+
+      const first = (await initFailure(hostileCode, true)) as Error
+      const second = (await initFailure(noTextForm, true)) as Error
+
+      expect(first.message).toMatch(/pino-pretty failed to start: /)
+      expect(first.cause).toBe(hostileCode)
+      expect(second.message).toBe(
+        '[PrettyDevDestination] pino-pretty failed to start: unreadable value'
+      )
+      expect(second.cause).toBe(noTextForm)
+    })
+
+    it(/*
+     * The failure line is one line whatever the real error holds: the message is
+     * routed through the same single-line escaper as every other terminal-bound
+     * string, so a message with a newline cannot forge a second record.
+     */
+    'keeps the failure message on one line', async () => {
+      const error = (await initFailure(new Error('first\n[forged entry]'), true)) as Error
+
+      expect(error.message).not.toContain('\n')
     })
   })
 })

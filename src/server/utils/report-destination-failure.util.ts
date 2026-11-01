@@ -2,8 +2,9 @@
  * Structured failure reporting for log destinations, written to `process.stderr`.
  *
  * Layer: server/utils — the one place that formats a destination failure, shared
- * by the two stages that can produce one: `DestinationRegistry` (a sink that
- * failed `onInit`) and `destinationToStream` (a sink that failed a `write`).
+ * by every stage that reports one: `DestinationRegistry` (a sink that failed `onInit`
+ * or a lifecycle hook), `destinationToStream` (a sink that failed a `write`) and the
+ * unexpected-error sink (a report it had to drop).
  *
  * Why stderr and never the logger: `destinations` REPLACES the default stdout
  * sink, so the sinks that just failed may be the only ones there are. Reporting a
@@ -38,39 +39,53 @@ export function reportDestinationFailure(
   cause: unknown,
   msg: string
 ): void {
+  // Escaped per sink, like every other path that can reach a terminal.
+  // `JSON.stringify` escapes C0 and nothing else, so DEL, the C1 range
+  // (U+0085 NEL included), U+2028 and U+2029 survive verbatim into a line an
+  // operator reads in a terminal — enough to drive it or to forge a rendered
+  // entry. `destination` is consumer-named and `cause` is often remote-derived.
+  writeStderrSafely(
+    JSON.stringify({
+      level: 'error',
+      logKey,
+      destination: toSingleLineMessage(name),
+      err: describeCause(cause),
+      msg: toSingleLineMessage(msg)
+    }) + '\n'
+  )
+}
+
+/** What the report says about a cause it cannot read: the stage and the sink still print. */
+const UNREADABLE_CAUSE = { type: 'UnknownError', message: 'unreadable value' } as const
+
+/**
+ * The cause as a `{ type, message }` pair, or {@link UNREADABLE_CAUSE} when reading it throws.
+ *
+ * Coercion is INSIDE the guard, not above it. `String(cause)` on a value with a throwing
+ * `toString`/`Symbol.toPrimitive` or none at all (a null-prototype object), and the
+ * `name`/`message` reads on an `Error` with hostile getters, all throw — and from
+ * `DestinationRegistry` this runs inside the catch that is supposed to keep a bad sink
+ * from mattering, so an escape there would abort application bootstrap. The never-throw
+ * contract has to cover reading the value, not just writing it.
+ *
+ * The failure of reading degrades the DETAIL and never the report: dropping the line
+ * would leave a sink that stopped receiving entries with no trace anywhere, since the
+ * destination and the stage do not depend on the cause being readable.
+ *
+ * @internal Shared with the OpenTelemetry detector's broken-install warning. NOT
+ * re-exported by the package barrel.
+ * @param cause - The thrown or rejected value, in whatever shape it arrived.
+ */
+export function describeCause(cause: unknown): { type: string; message: string } {
   try {
-    // Coercion is INSIDE the guard, not above it. `String(cause)` on a value
-    // with a throwing `toString`/`Symbol.toPrimitive`, and the `name`/`message`
-    // reads on an `Error` with hostile getters, both throw — and from
-    // `DestinationRegistry` this runs inside the catch that is supposed to keep
-    // a bad sink from mattering, so an escape there would abort application
-    // bootstrap. The never-throw contract has to cover reading the value, not
-    // just writing it.
-    const err =
-      cause instanceof Error
-        ? {
-            type: toSingleLineMessage(String(cause.name)),
-            message: toSingleLineMessage(String(cause.message))
-          }
-        : { type: 'UnknownError', message: toSingleLineMessage(String(cause)) }
-    // Escaped per sink, like every other path that can reach a terminal.
-    // `JSON.stringify` escapes C0 and nothing else, so DEL, the C1 range
-    // (U+0085 NEL included), U+2028 and U+2029 survive verbatim into a line an
-    // operator reads in a terminal — enough to drive it or to forge a rendered
-    // entry. `destination` is consumer-named and `cause` is often remote-derived.
-    writeStderrSafely(
-      JSON.stringify({
-        level: 'error',
-        logKey,
-        destination: toSingleLineMessage(name),
-        err,
-        msg: toSingleLineMessage(msg)
-      }) + '\n'
-    )
+    return cause instanceof Error
+      ? {
+          type: toSingleLineMessage(String(cause.name)),
+          message: toSingleLineMessage(String(cause.message))
+        }
+      : { type: 'UnknownError', message: toSingleLineMessage(String(cause)) }
   } catch {
-    // The value resisted being read — a hostile `toString` or getter. Nothing is
-    // reported rather than anything thrown. A broken stderr is handled one layer
-    // down by `writeStderrSafely`, which covers the ASYNC half a try/catch cannot.
+    return UNREADABLE_CAUSE
   }
 }
 

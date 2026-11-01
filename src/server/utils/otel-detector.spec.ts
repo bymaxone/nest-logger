@@ -5,9 +5,21 @@ jest.mock('node:module', () => {
 
 import { createRequire } from 'node:module'
 
-import { detectOtelTraceApi, isValidSpanId, isValidTraceId } from './otel-detector'
+import {
+  detectOtelTraceApi,
+  isValidSpanId,
+  isValidTraceId,
+  resetBrokenInstallWarning
+} from './otel-detector'
 
 const mockedCreateRequire = jest.mocked(createRequire)
+
+/** The error Node throws when `@opentelemetry/api` itself cannot be resolved. */
+const notFound = (): Error =>
+  Object.assign(
+    new Error("Cannot find module '@opentelemetry/api'\nRequire stack:\n- /app/index.js"),
+    { code: 'MODULE_NOT_FOUND' }
+  )
 
 describe('detectOtelTraceApi', () => {
   it(/*
@@ -39,7 +51,7 @@ describe('detectOtelTraceApi', () => {
    */
   'returns undefined when every anchor fails to resolve', () => {
     mockedCreateRequire.mockImplementation(() => {
-      throw new Error('Cannot find module @opentelemetry/api')
+      throw notFound()
     })
     expect(detectOtelTraceApi()).toBeUndefined()
   })
@@ -59,7 +71,7 @@ describe('detectOtelTraceApi', () => {
     const anchors: string[] = []
     mockedCreateRequire.mockImplementation((from) => {
       anchors.push(String(from))
-      throw new Error('Cannot find module @opentelemetry/api')
+      throw notFound()
     })
 
     detectOtelTraceApi()
@@ -78,7 +90,7 @@ describe('detectOtelTraceApi', () => {
     const anchors: string[] = []
     mockedCreateRequire.mockImplementation((from) => {
       anchors.push(String(from))
-      throw new Error('Cannot find module @opentelemetry/api')
+      throw notFound()
     })
 
     detectOtelTraceApi()
@@ -105,6 +117,197 @@ describe('detectOtelTraceApi', () => {
     expect(api).toBeDefined()
     expect(typeof api?.getActiveSpan).toBe('function')
     cwdSpy.mockRestore()
+  })
+})
+
+describe('detectOtelTraceApi — a failure that is not a missing module', () => {
+  let stderrSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    resetBrokenInstallWarning()
+    stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+  })
+
+  afterEach(() => {
+    stderrSpy.mockRestore()
+    mockedCreateRequire.mockReset()
+    mockedCreateRequire.mockImplementation(
+      jest.requireActual<typeof import('node:module')>('node:module').createRequire
+    )
+  })
+
+  /** Every stderr line written so far, parsed. */
+  const lines = (): Record<string, unknown>[] =>
+    stderrSpy.mock.calls.map((call) => JSON.parse(String(call[0])) as Record<string, unknown>)
+
+  /** A resolver whose `require` throws `failure` for the optional peer. */
+  const requireThrows = (failure: unknown) => (): NodeJS.Require =>
+    (() => {
+      throw failure
+    }) as unknown as NodeJS.Require
+
+  it(/*
+   * The designed outcome stays silent: the optional peer is simply not installed, and a
+   * logger never warns over an optional peer. Both anchors fail to find it.
+   */
+  'stays silent when @opentelemetry/api is not installed', () => {
+    mockedCreateRequire.mockImplementation(requireThrows(notFound()))
+
+    expect(detectOtelTraceApi()).toBeUndefined()
+    expect(stderrSpy).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a module that throws while loading', () => new SyntaxError('Unexpected token')],
+    [
+      'a missing module INSIDE @opentelemetry/api',
+      () =>
+        Object.assign(
+          new Error(
+            "Cannot find module 'some-dependency'\nRequire stack:\n- /app/node_modules/@opentelemetry/api/index.js"
+          ),
+          { code: 'MODULE_NOT_FOUND' }
+        )
+    ],
+    [
+      'a resolution error that carries no code',
+      () => new Error("Cannot find module '@opentelemetry/api'")
+    ]
+  ])('warns once on stderr for %s, and still returns undefined', (_label, makeFailure) => {
+    /*
+     * REGRESSION — every failure to load the optional peer was swallowed as "not
+     * installed", so an installed but broken @opentelemetry/api switched trace correlation
+     * off with no sign anywhere: the operator believed it was on and `traceId` was simply
+     * absent. Only a failure to find the peer ITSELF is silent; anything else is a broken
+     * install and says so once.
+     */
+    const failure = makeFailure()
+    mockedCreateRequire.mockImplementation(requireThrows(failure))
+
+    expect(detectOtelTraceApi()).toBeUndefined()
+
+    expect(lines()).toHaveLength(1)
+    expect(lines()[0]).toMatchObject({
+      level: 'warn',
+      logKey: 'LOGGER_OTEL_API_BROKEN',
+      // The report pins the message to one line, escaping the newline.
+      err: { type: failure.name, message: failure.message.replaceAll('\n', '\\n') }
+    })
+  })
+
+  it(/*
+   * Once per process: the detector runs at the Pino build and again at bootstrap, and a
+   * broken install must not repeat itself on every call.
+   */
+  'writes the broken-install warning only once', () => {
+    mockedCreateRequire.mockImplementation(requireThrows(new SyntaxError('Unexpected token')))
+
+    detectOtelTraceApi()
+    detectOtelTraceApi()
+    detectOtelTraceApi()
+
+    expect(lines()).toHaveLength(1)
+  })
+
+  it(/*
+   * A module that resolves but exports nothing usable is broken too: reading `trace` off a
+   * falsy export throws, and that is a failure of the install, not an absence.
+   */
+  'warns when the module resolves to a falsy export', () => {
+    mockedCreateRequire.mockImplementation(
+      (() => () => undefined) as unknown as typeof createRequire
+    )
+
+    expect(detectOtelTraceApi()).toBeUndefined()
+    expect(lines()).toHaveLength(1)
+    expect(lines()[0]).toMatchObject({
+      logKey: 'LOGGER_OTEL_API_BROKEN',
+      err: { type: 'TypeError' }
+    })
+  })
+
+  it(/*
+   * A failure on the FIRST anchor that the second anchor recovers from is not worth a
+   * warning: correlation works.
+   */
+  'does not warn when the second anchor resolves the module', () => {
+    const real = jest
+      .requireActual<typeof import('node:module')>('node:module')
+      .createRequire(__filename)
+    mockedCreateRequire
+      .mockImplementationOnce(requireThrows(new SyntaxError('first anchor is broken')))
+      .mockImplementationOnce(() => real)
+
+    expect(detectOtelTraceApi()).toBeDefined()
+    expect(stderrSpy).not.toHaveBeenCalled()
+  })
+
+  it(/*
+   * A broken first anchor followed by a missing second one still leaves correlation off,
+   * and the break is the part worth reporting.
+   */
+  'warns when the first anchor is broken and the second finds nothing', () => {
+    mockedCreateRequire
+      .mockImplementationOnce(requireThrows(new SyntaxError('first anchor is broken')))
+      .mockImplementationOnce(requireThrows(notFound()))
+
+    expect(detectOtelTraceApi()).toBeUndefined()
+    expect(lines()).toHaveLength(1)
+    expect(lines()[0]).toMatchObject({ err: { message: 'first anchor is broken' } })
+  })
+
+  it(/*
+   * A bundler that provides no `__filename` makes the first anchor itself throw. That is a
+   * property of the environment, not a broken install: with the module absent it stays
+   * silent (a bundled application without OpenTelemetry must not be warned at every
+   * start), and with the module present the next anchor still finds it.
+   */
+  'treats an anchor that cannot be computed as nothing to resolve from', () => {
+    const real = jest
+      .requireActual<typeof import('node:module')>('node:module')
+      .createRequire(__filename)
+    const unavailable = (): string => {
+      throw new ReferenceError('__filename is not defined')
+    }
+
+    mockedCreateRequire.mockImplementation(() => real)
+    expect(detectOtelTraceApi([unavailable, () => __filename])).toBeDefined()
+
+    mockedCreateRequire.mockImplementation(requireThrows(notFound()))
+    expect(detectOtelTraceApi([unavailable, () => __filename])).toBeUndefined()
+    expect(stderrSpy).not.toHaveBeenCalled()
+  })
+
+  it(/*
+   * A thrown value whose `code` getter throws cannot be classified as "not found", so it
+   * is treated as a broken install and still reported once, with the stand-in error.
+   */
+  'treats a failure whose fields cannot be read as a broken install', () => {
+    const hostile = {
+      get code(): never {
+        throw new Error('code getter exploded')
+      }
+    }
+    mockedCreateRequire.mockImplementation(requireThrows(hostile))
+
+    expect(detectOtelTraceApi()).toBeUndefined()
+    expect(lines()).toHaveLength(1)
+    expect(lines()[0]).toMatchObject({ logKey: 'LOGGER_OTEL_API_BROKEN' })
+  })
+
+  it(/*
+   * A cause whose fields cannot be read still produces the one line: the report degrades
+   * to the stand-in for the error instead of throwing out of the detector.
+   */
+  'reports an unreadable failure with the stand-in error', () => {
+    mockedCreateRequire.mockImplementation(requireThrows(Object.create(null)))
+
+    expect(detectOtelTraceApi()).toBeUndefined()
+    expect(lines()).toHaveLength(1)
+    expect(lines()[0]).toMatchObject({
+      logKey: 'LOGGER_OTEL_API_BROKEN',
+      err: { type: 'UnknownError', message: 'unreadable value' }
+    })
   })
 })
 

@@ -473,3 +473,58 @@ describe('sanitizeError — terminal control characters in the stack', () => {
     expect(stack).toContain('\n')
   })
 })
+
+describe('sanitizeError — own fields that cannot be enumerated', () => {
+  /** An error whose own-property enumeration throws, as a hostile Proxy's `ownKeys` does. */
+  const unenumerable = (): Error =>
+    new Proxy(Object.assign(new Error('boom'), { code: 'E_CODE' }), {
+      ownKeys(): never {
+        throw new Error('ownKeys trap exploded')
+      }
+    })
+
+  it(/*
+   * REGRESSION — when the own-field loop aborted, the node kept the fields it had read
+   * and carried NO sign that the rest was missing, unlike the whole-value path, which
+   * degrades to a visible `SanitizeFailed` shape. An error entry without its `code`
+   * or payload looked complete. The node now says the field set is incomplete.
+   */
+  'marks the node when the own fields could not be read', () => {
+    const node = sanitizeError(unenumerable())
+
+    expect(node).toMatchObject({ name: 'Error', message: 'boom', _errorFieldsIncomplete: true })
+    expect(node).not.toHaveProperty('code')
+  })
+
+  it(/*
+   * `Object.entries` reads every own value before the loop copies one, so a getter that
+   * throws costs ALL the own fields, not only the tail after it. The node is marked
+   * all the same, and the fields the getter's siblings held are not half-copied.
+   */
+  'marks the node and copies no own field when a getter throws', () => {
+    const error = Object.assign(new Error('boom'), { first: 'not copied' })
+    Object.defineProperty(error, 'second', {
+      enumerable: true,
+      get(): never {
+        throw new Error('getter exploded')
+      }
+    })
+
+    const node = sanitizeError(error)
+
+    expect(node).toMatchObject({ name: 'Error', message: 'boom', _errorFieldsIncomplete: true })
+    expect(node).not.toHaveProperty('first')
+    expect(node).not.toHaveProperty('second')
+  })
+
+  it(/*
+   * The marker is for an abort only: an ordinary error carries none, so existing
+   * entries keep their shape.
+   */
+  'adds no marker when every own field is read', () => {
+    const node = sanitizeError(Object.assign(new Error('boom'), { code: 'E_CODE' }))
+
+    expect(node).toMatchObject({ code: 'E_CODE' })
+    expect(node).not.toHaveProperty('_errorFieldsIncomplete')
+  })
+})
