@@ -19,7 +19,7 @@ Five places swallowed a failed side effect with no trace. Each now leaves one.
   `onRegistryReady` or `write` failed with a value that has no text form (a null-prototype object, a
   throwing `toString`, an `Error` with throwing `name` or `message` getters), the `stderr` line was not
   written at all and the sink stopped receiving entries unannounced. The line is now written with
-  `err: { type: 'UnknownError', message: 'unreadable value' }`, like the shutdown report.
+  `err: { type: 'UnknownError', message: 'unreadable value' }`.
 - **`PinoUnexpectedErrorSink` announces a report it had to drop.** When logging the report threw, or
   the report could not be read, the `HTTP_UNEXPECTED_ERROR` entry, the only record of an unhandled
   exception, vanished silently. One `HTTP_UNEXPECTED_ERROR_DROPPED` line now goes to `stderr`, outside
@@ -34,7 +34,7 @@ Five places swallowed a failed side effect with no trace. Each now leaves one.
   node now carries `_errorFieldsIncomplete: true`.
 - **A broken `@opentelemetry/api` install is reported once.** Every failure to load it was folded into
   "not installed", so correlation could be off with no sign. A missing module stays silent, as
-  designed; one that is installed but throws while loading, or exports nothing usable, writes one
+  designed; one that is installed but throws while loading, or resolves to a falsy export, writes one
   `LOGGER_OTEL_API_BROKEN` line to `stderr`.
 
 #### Apply to a derived backend
