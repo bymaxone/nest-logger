@@ -186,9 +186,9 @@ describe('check-api-surface', () => {
       'fails a changed declaration with no note in a %s release and names it',
       (version) => {
         /*
-         * Scenario: the bump level no longer decides anything. A patch, a minor and a major
-         * that change the declarations without the note all fail, and the message names the
-         * declaration that changed so the author knows what to describe.
+         * Scenario: a declaration change needs the note whatever the bump level. A patch, a
+         * minor and a major that change the declarations without it all fail, and the message
+         * names the declaration that changed so the author knows what to describe.
          */
         const { status, output } = check(ADDED, version, section(version, 'No migration text.'))
         expect(status).toBe(1)
