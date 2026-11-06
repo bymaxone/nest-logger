@@ -176,3 +176,50 @@ describe('the row values a database error quotes', () => {
     expect(entry.err.detail).toBe('Key (email)=(person@example.com) already exists.')
   })
 })
+
+describe('a driver error held as a field of another error', () => {
+  /** A TypeORM-shaped error: the pg error rides on it and its fields are copied onto it. */
+  const wrapper = (): Error => {
+    const driverError = uniqueViolation()
+    return Object.assign(new Error('query failed'), {
+      name: 'QueryFailedError',
+      query: 'INSERT INTO users(email) VALUES ($1)',
+      parameters: ['person@example.com'],
+      driverError,
+      severity: 'ERROR',
+      code: '23505',
+      routine: '_bt_check_unique',
+      detail: 'Key (email)=(person@example.com) already exists.'
+    })
+  }
+
+  it.each([
+    ['the root error', (e: Error) => log(e)],
+    ['a cause', (e: Error) => log(new Error('wrapped', { cause: e }))],
+    ['the metadata', (e: Error) => log(new Error('root'), { failed: e })]
+  ])('writes neither the row nor the arguments when it is held by %s', (_label, run) => {
+    const { line } = run(wrapper())
+
+    expect(line).not.toContain('person@example.com')
+  })
+
+  it('does the same for a reply error held as the parent of another error', () => {
+    const { line, entry } = log(Object.assign(new Error('sequelize'), { parent: replyError() }))
+
+    expect(entry.err.parent.command).toStrictEqual({ name: 'set' })
+    expect(line).not.toContain('person@example.com')
+  })
+
+  it.each(['Args', 'ARGS', 'Parameters', 'PARAMETERS'])(
+    'drops the field %s whatever its case',
+    (field) => {
+      const { entry, line } = log(
+        Object.assign(new Error('x'), { [field]: [SESSION], code: 'E_X' })
+      )
+
+      expect(entry.err).toMatchObject({ code: 'E_X' })
+      expect(entry.err).not.toHaveProperty(field)
+      expect(line).not.toContain('person@example.com')
+    }
+  )
+})

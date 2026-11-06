@@ -20,8 +20,10 @@ heading here.
   entry. The `args` and `parameters` own fields of an error are now omitted, a `command` object is
   reduced to its `name`, and an error that PostgreSQL raised (recognised by its `severity`, a SQLSTATE
   `code` and its `routine`) loses `detail`, `where` and `internalQuery` while its other fields
-  stay. This holds for the root `err`, for every `cause` and
-  `errors` link, and for an `Error` nested in the metadata. A field of those names that you attach
+  stay. This holds for the root `err`, for every `cause` and `errors` link, for an `Error` nested
+  in the metadata, and for a driver error held as a field of another error (TypeORM `driverError`,
+  Sequelize `parent`). `args` and `parameters` match in any case. A field of those names that you
+  attach
   yourself to an error is no longer logged either; put it under a different name, or in the
   metadata, where name-based redaction applies.
 

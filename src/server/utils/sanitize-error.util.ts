@@ -319,7 +319,7 @@ function isDatabaseError(source: object): boolean {
  * @returns The value to write, or {@link OMIT_OWN_FIELD} when the field is not written.
  */
 export function ownFieldForLog(source: object, key: string, value: unknown): unknown {
-  if (ARGUMENT_FIELDS.has(key)) return OMIT_OWN_FIELD
+  if (ARGUMENT_FIELDS.has(key.toLowerCase())) return OMIT_OWN_FIELD
   if (DATABASE_VALUE_FIELDS.has(key) && isDatabaseError(source)) return OMIT_OWN_FIELD
   if (key !== 'command' || typeof value !== 'object' || value === null) return value
   const name: unknown = Object.getOwnPropertyDescriptor(value, 'name')?.value
