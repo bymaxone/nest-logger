@@ -11,6 +11,54 @@ heading here.
 
 ## [Unreleased]
 
+### Changed
+
+- **An `Error` nested in the metadata is logged with its content.** `{ inner: new Error('x') }` was
+  written as `inner: {}`, because `JSON.stringify` skips an `Error`'s non-enumerable `message` and
+  `stack`; the same held inside arrays and inside another `Error`'s own fields, and a nested `cause` or
+  `AggregateError.errors` was lost with it. Outside a record-root key that has a serializer, such an
+  `Error` is now written as what it was written as before (its own enumerable fields, censored by name,
+  or the output of its `toJSON`) with `type`, `message`, `stack`, `cause` and `errors` added. A part is
+  added only where the node has no key of that name, so nothing written before is replaced or removed,
+  and a part that cannot be read is left out and the node carries `_errorFieldsIncomplete: true`. A
+  `cause` or `errors` value that is not an `Error` is written as data and censored by name; it is never
+  turned into text. The added chain and `errors` are bounded as the root `err`'s are, each ending in a
+  `_truncated` marker; these limits apply to the added parts only.
+
+#### Apply to a derived backend
+
+Nothing to change in code. What can differ at run time:
+
+- A nested `Error` that was written as `{}` is now written with its content, so a filter or alert that
+  matched `inner: {}` stops matching, and a parser of nested errors gets new fields. Entries that hold
+  one are larger, because the stack is included.
+- A string `cause` is now logged exactly as a `message` is, and the root `err` already did so. Do not
+  put secrets in an `Error`'s `message` or `cause`: the redaction works on field names and cannot see
+  a secret inside a string.
+- An own enumerable field of an `Error` named `type`, `message`, `stack`, `cause` or `errors` is kept
+  as it was written, and the added part of that name is not written.
+- The added `type` is censored when `type` or `name` is a covered name, and the added `stack` when
+  `stack`, `name` or `message` is: both carry that text. Without such a covered name they are written.
+- A custom serializer on a record-root key receives the same value it received before, censored as
+  before and with any `Error` inside it still an instance. What a serializer returns is written as
+  the serializer returned it, so an `Error` in its output is still `{}`: the added parts are for the
+  metadata walk only.
+- This applies where the name redaction runs on the record, which is the default
+  (`redactStrategy: 'names'` with at least one name covered). Under `'paths'`, or with no name covered,
+  the record is not walked and a nested `Error` is written as before.
+
+### Internal
+
+- The server bundle budget (`scripts/check-size.mjs`) is 30.4 KiB, up from 30.2 KiB: the nested `Error`
+  node adds 0.70 KiB of executable code (`main` was 29.64 KiB, this tree is 30.34 KiB), and trimming
+  comments was measured to move the artifact by 0.00 KiB.
+
+### Tests
+
+- The shapes of a nested `Error` are judged against the output recorded
+  from 1.4.8: none may throw or fail the record where 1.4.8 did not, show a secret marker 1.4.8 did not,
+  or drop a value 1.4.8 emitted.
+
 ## [1.4.8] - 2026-11-01
 
 ### Fixed

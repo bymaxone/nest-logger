@@ -57,7 +57,14 @@
  *
  * @see {@link createNameRedactor}
  */
-import { sanitizeError } from './sanitize-error.util'
+import {
+  createDepthMarker,
+  createWidthMarker,
+  DEFAULT_MAX_CAUSE_DEPTH,
+  MAX_AGGREGATE_ERRORS,
+  sanitizeError,
+  scrubStack
+} from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 /**
@@ -261,23 +268,34 @@ function defineOwn(target: Record<string, unknown>, key: string, value: unknown)
   Reflect.defineProperty(target, key, { value, enumerable: true })
 }
 
+/** What one walk needs besides the value. */
+interface RedactRules {
+  /** Lower-cased field names whose values are censored. */
+  readonly sensitive: ReadonlySet<string>
+  /** Replacement written in place of a sensitive value. */
+  readonly censor: string
+  /** Record-root keys that have a serializer: what sits under them is read as it is. */
+  readonly serializedKeys: ReadonlySet<string>
+  /** Whether an `Error` outside those keys is written as data; off, it stays an `Error`. */
+  readonly errorsAsData: boolean
+}
+
 /**
  * Copy-on-write walk of an array's elements. Split out of {@link walk} to keep
  * both bodies within the project's nesting limit.
  *
  * @param value - The array to inspect.
- * @param sensitive - Field names whose values are censored.
- * @param censor - Replacement written in place of a sensitive value.
+ * @param rules - The names to censor and the root keys that have a serializer.
  * @param depth - Depth of `value` itself; elements are one deeper.
  * @param ancestors - References on the current path (cycle guard).
  * @returns The array itself when no element changed, otherwise a copy.
  */
 function walkArray(
   value: readonly unknown[],
-  sensitive: ReadonlySet<string>,
-  censor: string,
+  rules: RedactRules,
   depth: number,
-  ancestors: Set<object>
+  ancestors: Set<object>,
+  inSerialized: boolean
 ): unknown[] {
   // Indexed by NUMBER, not iterated. `for...of` runs the array's
   // `Symbol.iterator`, which a caller can override — whereas `JSON.stringify`
@@ -297,7 +315,7 @@ function walkArray(
     Reflect.set(
       copy,
       index,
-      walk(Reflect.get(value, index), sensitive, censor, depth + 1, ancestors)
+      walk(Reflect.get(value, index), rules, depth + 1, ancestors, true, inSerialized)
     )
   }
   return copy
@@ -308,19 +326,18 @@ function walkArray(
  * a fresh structure, so the result is guaranteed to equal what was inspected.
  *
  * @param value - The value to inspect.
- * @param sensitive - Field names whose values are censored.
- * @param censor - Replacement written in place of a sensitive value.
+ * @param rules - The names to censor and the root keys that have a serializer.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
  * @param ancestors - References on the current path (cycle guard).
  * @returns The value, or a redacted copy of it.
  */
 function walk(
   value: unknown,
-  sensitive: ReadonlySet<string>,
-  censor: string,
+  rules: RedactRules,
   depth: number,
   ancestors: Set<object>,
-  honorToJson = true
+  honorToJson = true,
+  inSerialized = false
 ): unknown {
   // Callables are admitted, not skipped as primitives. `JSON.stringify` invokes a
   // callable `toJSON` on a FUNCTION object too — it applies that step before the
@@ -345,9 +362,9 @@ function walk(
   // An Error is the one value whose unreadable parts are isolated: it degrades on its own and
   // its siblings survive. See `walkError`.
   if (value instanceof Error) {
-    return walkError(value, sensitive, censor, depth, ancestors, honorToJson)
+    return walkError(value, rules, depth, ancestors, honorToJson, inSerialized)
   }
-  return walkObject(value, sensitive, censor, depth, ancestors, honorToJson)
+  return walkObject(value, rules, depth, ancestors, honorToJson, inSerialized)
 }
 
 /**
@@ -365,8 +382,7 @@ function walk(
  * fails the whole record.
  *
  * @param error - The error to walk.
- * @param sensitive - Field names whose values are censored.
- * @param censor - Replacement written in place of a sensitive value.
+ * @param rules - The names to censor and the root keys that have a serializer.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
  * @param ancestors - References on the current path (cycle guard).
  * @param honorToJson - `false` only for the root of a log record.
@@ -374,16 +390,19 @@ function walk(
  */
 function walkError(
   error: Error,
-  sensitive: ReadonlySet<string>,
-  censor: string,
+  rules: RedactRules,
   depth: number,
   ancestors: Set<object>,
-  honorToJson: boolean
+  honorToJson: boolean,
+  inSerialized: boolean
 ): unknown {
   try {
-    return walkObject(error, sensitive, censor, depth, ancestors, honorToJson)
+    return walkObject(error, rules, depth, ancestors, honorToJson, inSerialized)
   } catch {
-    return walk(sanitizeError(error), sensitive, censor, depth, ancestors, honorToJson)
+    // The sanitized node replaces an `Error` that cannot be read: it never throws, copies no
+    // field it could not read and marks what it lost. Under a serialized key the same node is
+    // what the serializer receives.
+    return walk(sanitizeError(error), rules, depth, ancestors, honorToJson, inSerialized)
   }
 }
 
@@ -392,8 +411,7 @@ function walkError(
  * cleanly: the body of {@link walk} after its guards.
  *
  * @param value - The value to inspect.
- * @param sensitive - Field names whose values are censored.
- * @param censor - Replacement written in place of a sensitive value.
+ * @param rules - The names to censor and the root keys that have a serializer.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
  * @param ancestors - References on the current path (cycle guard).
  * @param honorToJson - `false` only for the root of a log record.
@@ -401,11 +419,11 @@ function walkError(
  */
 function walkObject(
   value: object,
-  sensitive: ReadonlySet<string>,
-  censor: string,
+  rules: RedactRules,
   depth: number,
   ancestors: Set<object>,
-  honorToJson: boolean
+  honorToJson: boolean,
+  inSerialized: boolean
 ): unknown {
   // `ArrayBuffer` views (`Buffer`, typed arrays) are indexed byte containers: a
   // key-name match is meaningless and a copy would be enormous. Checked BEFORE
@@ -474,8 +492,8 @@ function walkObject(
       // cannot be — that is the same limitation as a caller writing
       // `{ renamed: obj.inner.password }` by hand, which no name matcher sees.
       // Documented in PINO-REDACTION-GUIDELINES.md under the engine's limits.
-      if (Object.keys(value).some((key) => sensitive.has(key.toLowerCase()))) {
-        return censor
+      if (Object.keys(value).some((key) => rules.sensitive.has(key.toLowerCase()))) {
+        return rules.censor
       }
       // The INSPECTED result is what gets returned, always — never the original
       // object. Returning the original when the probe came back clean left
@@ -490,7 +508,7 @@ function walkObject(
       // `toJSON`-bearing object recurse forever — nothing repeats, so the ancestor
       // set never matches and the ceiling was never reached. The stack exhausted
       // instead: contained by the root catch, but at the cost of the WHOLE record.
-      return walk(toJson.call(value), sensitive, censor, depth + 1, ancestors)
+      return walk(toJson.call(value), rules, depth + 1, ancestors, true, inSerialized)
     }
 
     // A callable with no `toJSON` reaches here. It must be handed back as-is:
@@ -501,9 +519,10 @@ function walkObject(
     }
 
     if (Array.isArray(value)) {
-      return walkArray(value, sensitive, censor, depth, ancestors)
+      return walkArray(value, rules, depth, ancestors, inSerialized)
     }
 
+    // No `toJSON` decides its form (that branch returned), and `JSON.stringify` writes `{}`.
     const source = value as Record<string, unknown>
     // No fast path for an empty key list. Returning the original would reopen the
     // very window the snapshot closes: a Proxy can answer `[]` to this
@@ -525,24 +544,142 @@ function walkObject(
     // An Error is cloned through its prototype and descriptors so it stays an
     // Error; anything else becomes a plain object carrying the same own
     // enumerable properties — exactly what `JSON.stringify` would have emitted.
-    const copy =
-      value instanceof Error
-        ? (cloneError(value as Error) as unknown as Record<string, unknown>)
-        : {}
+    // Outside a serializer's keys an `Error` is written as data: its own fields below plus the
+    // head and chain, which are only ever added.
+    const asData = value instanceof Error && rules.errorsAsData && !inSerialized
+    // The clone is made even when discarded: an `Error` it cannot read must reach the fallback in
+    // `walkError`, which is the same node with or without the data form.
+    const clone = value instanceof Error ? cloneError(value) : undefined
+    const copy = clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
     for (const key of keys) {
       const current = Reflect.get(source, key)
       defineOwn(
         copy,
         key,
-        sensitive.has(key.toLowerCase())
-          ? censor
-          : walk(current, sensitive, censor, depth + 1, ancestors)
+        rules.sensitive.has(key.toLowerCase())
+          ? rules.censor
+          : walk(
+              current,
+              rules,
+              depth + 1,
+              ancestors,
+              true,
+              inSerialized || (!honorToJson && rules.serializedKeys.has(key))
+            )
       )
     }
+    if (asData) addErrorParts(copy, value as Error, keys, rules, depth, ancestors)
     return copy
   } finally {
     ancestors.delete(value)
   }
+}
+
+/** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */
+const linkDepths = new WeakMap<object, number>()
+
+/** The marker key of a node that lost a part while it was being written. */
+const INCOMPLETE_KEY = '_errorFieldsIncomplete'
+
+/** The first `MAX_AGGREGATE_ERRORS` members of `errors` and one marker for the rest. */
+function capErrors(errors: unknown): unknown {
+  if (!Array.isArray(errors) || errors.length <= MAX_AGGREGATE_ERRORS) return errors
+  // A list with a `toJSON` is left to that method.
+  if (resolveToJson(errors).method !== undefined) return errors
+  const kept: unknown[] = []
+  for (let index = 0; index < MAX_AGGREGATE_ERRORS; index++) kept.push(Reflect.get(errors, index))
+  kept.push(createWidthMarker(errors.length - MAX_AGGREGATE_ERRORS))
+  return kept
+}
+
+/** The objects a `cause` or `errors` holds, read by index. */
+function linkTargets(value: unknown): object[] {
+  const targets: object[] = []
+  const take = (link: unknown): void => {
+    if (typeof link === 'object' && link !== null) targets.push(link)
+  }
+  if (!Array.isArray(value)) take(value)
+  else for (let index = 0; index < value.length; index++) take(Reflect.get(value, index))
+  return targets
+}
+
+/** Walk an added `cause` or `errors`: its `Error`s are links one level deeper; past the budget, a marker. */
+function walkChainPart(
+  value: unknown,
+  level: number,
+  rules: RedactRules,
+  depth: number,
+  ancestors: Set<object>
+): unknown {
+  const targets = linkTargets(value)
+  if (targets.length > 0 && level + 1 > DEFAULT_MAX_CAUSE_DEPTH) return createDepthMarker()
+  const before = new Map(targets.map((target) => [target, linkDepths.get(target)]))
+  for (const target of targets) linkDepths.set(target, level + 1)
+  try {
+    return walk(value, rules, depth + 1, ancestors)
+  } finally {
+    before.forEach((earlier, target) => {
+      if (earlier === undefined) linkDepths.delete(target)
+      else linkDepths.set(target, earlier)
+    })
+  }
+}
+
+/**
+ * Add the non-enumerable `type`, `message`, `stack`, `cause` and `errors`, each only where the copy
+ * has no such key and each read and walked alone: a part that cannot be costs only itself.
+ */
+function addErrorParts(
+  copy: Record<string, unknown>,
+  error: Error,
+  ownKeys: readonly string[],
+  rules: RedactRules,
+  depth: number,
+  ancestors: Set<object>
+): void {
+  const taken = new Set(ownKeys)
+  const level = linkDepths.get(error) ?? 0
+  let incomplete = false
+  // `covers` names every field whose text the part carries, its own included: covering any of
+  // them covers the part. `type` is the `name`; the first line of `stack` is the `name` and the
+  // `message`.
+  const add = (
+    key: string,
+    covers: readonly string[],
+    read: () => unknown,
+    write = (value: unknown): unknown => walk(value, rules, depth + 1, ancestors)
+  ): void => {
+    if (taken.has(key)) return
+    try {
+      const written = write(read())
+      if (written === undefined) return
+      const covered = covers.some((name) => rules.sensitive.has(name))
+      defineOwn(copy, key, covered ? rules.censor : written)
+    } catch {
+      incomplete = true
+    }
+  }
+  add('type', ['type', 'name'], () => error.name)
+  add('message', ['message'], () => error.message)
+  add(
+    'stack',
+    ['stack', 'name', 'message'],
+    (): unknown => error.stack,
+    (stack) => (typeof stack === 'string' ? scrubStack(stack) : undefined)
+  )
+  add(
+    'cause',
+    ['cause'],
+    (): unknown => error.cause,
+    (cause) => walkChainPart(cause, level, rules, depth, ancestors)
+  )
+  add(
+    'errors',
+    ['errors'],
+    (): unknown => capErrors((error as { errors?: unknown }).errors),
+    (errors) => walkChainPart(errors, level, rules, depth, ancestors)
+  )
+  if (incomplete && !taken.has(INCOMPLETE_KEY)) defineOwn(copy, INCOMPLETE_KEY, true)
 }
 
 /**
@@ -561,7 +698,11 @@ function walkObject(
  *   redact({ user: { deep: { password: 's' } } })
  *   // → { user: { deep: { password: '[REDACTED]' } } }
  */
-export function createNameRedactor(fieldNames: readonly string[], censor: string): Redactor {
+export function createNameRedactor(
+  fieldNames: readonly string[],
+  censor: string,
+  serializedKeys?: readonly string[]
+): Redactor {
   // Matched case-INSENSITIVELY. HTTP header names are case-insensitive by spec,
   // and only INBOUND Node headers arrive lower-cased — a hand-built or outbound
   // bag routinely carries `Authorization`, `Cookie`, `X-API-Key`, which a
@@ -569,10 +710,15 @@ export function createNameRedactor(fieldNames: readonly string[], censor: string
   // Applying it to every name rather than only to headers costs one
   // `toLowerCase()` per key (~4 % of an entry, measured) and errs toward
   // redacting `Password` / `Email` too, which is the safe direction.
-  const sensitive: ReadonlySet<string> = new Set(fieldNames.map((name) => name.toLowerCase()))
+  const rules: RedactRules = {
+    sensitive: new Set(fieldNames.map((name) => name.toLowerCase())),
+    censor,
+    serializedKeys: new Set(serializedKeys),
+    errorsAsData: serializedKeys !== undefined
+  }
   return (value: unknown, isRecordRoot = false): unknown => {
     try {
-      return walk(value, sensitive, censor, 0, new Set<object>(), !isRecordRoot)
+      return walk(value, rules, 0, new Set<object>(), !isRecordRoot)
     } catch {
       // The record resisted traversal (a throwing getter, a hostile proxy). It
       // cannot be proven safe, so nothing from it is emitted — a redactor must

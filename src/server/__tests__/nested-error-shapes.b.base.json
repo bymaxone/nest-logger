@@ -1,0 +1,1178 @@
+{
+  "classfield-cause": {
+    "inner": {
+      "cause": {}
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "classfield-held": {
+    "inner": {
+      "held": {}
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "classfield-under-serializer": {
+    "thing": {
+      "isE": true,
+      "cause": true,
+      "held": true,
+      "errs": true,
+      "held2": {}
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "realm-nested": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "realm-root": {
+    "err": {
+      "type": "UnknownError",
+      "message": "[object Object]"
+    }
+  },
+  "realm-cause": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "realm-errors": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "realm-field": {
+    "inner": {
+      "w": {
+        "password": "[REDACTED]",
+        "leak": "LEAKR"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "realm-toJSON": {
+    "inner": {
+      "a": 1
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "ser-err-identity": {
+    "err": {}
+  },
+  "ser-err-reads-cause": {
+    "err": {
+      "ci": false,
+      "m": "root"
+    }
+  },
+  "ser-err-returns-error": {
+    "err": {}
+  },
+  "ser-err-throws": "THROW s",
+  "ser-custom-returns-error": {
+    "thing": {
+      "password": "[REDACTED]"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "ser-custom-throws": "THROW s",
+  "ser-custom-nested-error": {
+    "thing": {
+      "i": true,
+      "l": true,
+      "v": {
+        "inner": {},
+        "list": [{}]
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "ser-custom-child": {
+    "thing": {
+      "i": true,
+      "c": true
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "ser-custom-child-nested-key": {
+    "wrap": {
+      "thing": {}
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "child-err-key": {
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "child-plain": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "child-toJSON": {
+    "inner": {
+      "message": "connect refused",
+      "name": "AxiosLike",
+      "code": "E"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "accessor-name": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "accessor-throw": {
+    "inner": {
+      "name": "SanitizeFailed",
+      "message": "Failed to sanitize the thrown value"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "frozen": {
+    "inner": {
+      "list": [
+        1,
+        {
+          "a": 2
+        }
+      ],
+      "password": "[REDACTED]"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "sealed": {
+    "inner": {
+      "list": [1],
+      "cause": {}
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "shared": {
+    "a": {},
+    "b": {},
+    "c": [{}, {}],
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cycle-cause": {
+    "inner": {
+      "cause": {}
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cycle-errors": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cycle-field": {
+    "inner": {
+      "self": "[Circular]",
+      "o": {
+        "back": "[Circular]"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cycle-toJSON-out": {
+    "inner": {
+      "me": "[Circular]"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cycle-toJSON-out2": {
+    "inner": {
+      "list": ["[Circular]"]
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cycle-under-ser": {
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "depth-ceiling": {
+    "o": {
+      "o": {
+        "o": {
+          "o": {
+            "o": {
+              "o": {
+                "o": {
+                  "o": {
+                    "o": {
+                      "o": {
+                        "o": {
+                          "o": {
+                            "o": {
+                              "o": {
+                                "o": {
+                                  "o": {
+                                    "o": {
+                                      "o": {
+                                        "o": {
+                                          "o": {
+                                            "o": {
+                                              "o": {
+                                                "o": {
+                                                  "o": {
+                                                    "o": {
+                                                      "o": {
+                                                        "o": {
+                                                          "o": {
+                                                            "o": {
+                                                              "o": {
+                                                                "o": {
+                                                                  "o": {
+                                                                    "o": {
+                                                                      "o": {
+                                                                        "o": {
+                                                                          "o": {
+                                                                            "o": {
+                                                                              "o": {
+                                                                                "o": {
+                                                                                  "o": {
+                                                                                    "o": {
+                                                                                      "o": {
+                                                                                        "o": {
+                                                                                          "o": {
+                                                                                            "o": {
+                                                                                              "o": {
+                                                                                                "o": {
+                                                                                                  "o": {
+                                                                                                    "o": {
+                                                                                                      "o": {
+                                                                                                        "o": {
+                                                                                                          "o": {
+                                                                                                            "o": {
+                                                                                                              "o": {
+                                                                                                                "o": {
+                                                                                                                  "o": {
+                                                                                                                    "o": {
+                                                                                                                      "o": {
+                                                                                                                        "o": {
+                                                                                                                          "o": {
+                                                                                                                            "o": {
+                                                                                                                              "o": {
+                                                                                                                                "o": {
+                                                                                                                                  "o": {
+                                                                                                                                    "o": {
+                                                                                                                                      "o": {
+                                                                                                                                        "o": {
+                                                                                                                                          "o": {
+                                                                                                                                            "o": {
+                                                                                                                                              "o": {
+                                                                                                                                                "o": {
+                                                                                                                                                  "o": {
+                                                                                                                                                    "o": {
+                                                                                                                                                      "o": {
+                                                                                                                                                        "o": {
+                                                                                                                                                          "o": {
+                                                                                                                                                            "o": {
+                                                                                                                                                              "o": {
+                                                                                                                                                                "o": {
+                                                                                                                                                                  "o": {
+                                                                                                                                                                    "o": {
+                                                                                                                                                                      "o": {
+                                                                                                                                                                        "o": {
+                                                                                                                                                                          "o": {
+                                                                                                                                                                            "o": {
+                                                                                                                                                                              "o": {
+                                                                                                                                                                                "o": {
+                                                                                                                                                                                  "o": {
+                                                                                                                                                                                    "o": {
+                                                                                                                                                                                      "o": {
+                                                                                                                                                                                        "o": {
+                                                                                                                                                                                          "o": {
+                                                                                                                                                                                            "o": {
+                                                                                                                                                                                              "o": {
+                                                                                                                                                                                                "o": {
+                                                                                                                                                                                                  "o": {
+                                                                                                                                                                                                    "o": {
+                                                                                                                                                                                                      "o": {
+                                                                                                                                                                                                        "o": {}
+                                                                                                                                                                                                      }
+                                                                                                                                                                                                    }
+                                                                                                                                                                                                  }
+                                                                                                                                                                                                }
+                                                                                                                                                                                              }
+                                                                                                                                                                                            }
+                                                                                                                                                                                          }
+                                                                                                                                                                                        }
+                                                                                                                                                                                      }
+                                                                                                                                                                                    }
+                                                                                                                                                                                  }
+                                                                                                                                                                                }
+                                                                                                                                                                              }
+                                                                                                                                                                            }
+                                                                                                                                                                          }
+                                                                                                                                                                        }
+                                                                                                                                                                      }
+                                                                                                                                                                    }
+                                                                                                                                                                  }
+                                                                                                                                                                }
+                                                                                                                                                              }
+                                                                                                                                                            }
+                                                                                                                                                          }
+                                                                                                                                                        }
+                                                                                                                                                      }
+                                                                                                                                                    }
+                                                                                                                                                  }
+                                                                                                                                                }
+                                                                                                                                              }
+                                                                                                                                            }
+                                                                                                                                          }
+                                                                                                                                        }
+                                                                                                                                      }
+                                                                                                                                    }
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "depth-ceiling2": {
+    "o": {
+      "o": {
+        "o": {
+          "o": {
+            "o": {
+              "o": {
+                "o": {
+                  "o": {
+                    "o": {
+                      "o": {
+                        "o": {
+                          "o": {
+                            "o": {
+                              "o": {
+                                "o": {
+                                  "o": {
+                                    "o": {
+                                      "o": {
+                                        "o": {
+                                          "o": {
+                                            "o": {
+                                              "o": {
+                                                "o": {
+                                                  "o": {
+                                                    "o": {
+                                                      "o": {
+                                                        "o": {
+                                                          "o": {
+                                                            "o": {
+                                                              "o": {
+                                                                "o": {
+                                                                  "o": {
+                                                                    "o": {
+                                                                      "o": {
+                                                                        "o": {
+                                                                          "o": {
+                                                                            "o": {
+                                                                              "o": {
+                                                                                "o": {
+                                                                                  "o": {
+                                                                                    "o": {
+                                                                                      "o": {
+                                                                                        "o": {
+                                                                                          "o": {
+                                                                                            "o": {
+                                                                                              "o": {
+                                                                                                "o": {
+                                                                                                  "o": {
+                                                                                                    "o": {
+                                                                                                      "o": {
+                                                                                                        "o": {
+                                                                                                          "o": {
+                                                                                                            "o": {
+                                                                                                              "o": {
+                                                                                                                "o": {
+                                                                                                                  "o": {
+                                                                                                                    "o": {
+                                                                                                                      "o": {
+                                                                                                                        "o": {
+                                                                                                                          "o": {
+                                                                                                                            "o": {
+                                                                                                                              "o": {
+                                                                                                                                "o": {
+                                                                                                                                  "o": {
+                                                                                                                                    "o": {
+                                                                                                                                      "o": {
+                                                                                                                                        "o": {
+                                                                                                                                          "o": {
+                                                                                                                                            "o": {
+                                                                                                                                              "o": {
+                                                                                                                                                "o": {
+                                                                                                                                                  "o": {
+                                                                                                                                                    "o": {
+                                                                                                                                                      "o": {
+                                                                                                                                                        "o": {
+                                                                                                                                                          "o": {
+                                                                                                                                                            "o": {
+                                                                                                                                                              "o": {
+                                                                                                                                                                "o": {
+                                                                                                                                                                  "o": {
+                                                                                                                                                                    "o": {
+                                                                                                                                                                      "o": {
+                                                                                                                                                                        "o": {
+                                                                                                                                                                          "o": {
+                                                                                                                                                                            "o": {
+                                                                                                                                                                              "o": {
+                                                                                                                                                                                "o": {
+                                                                                                                                                                                  "o": {
+                                                                                                                                                                                    "o": {
+                                                                                                                                                                                      "o": {
+                                                                                                                                                                                        "o": {
+                                                                                                                                                                                          "o": {
+                                                                                                                                                                                            "o": {
+                                                                                                                                                                                              "o": {
+                                                                                                                                                                                                "o": {
+                                                                                                                                                                                                  "o": {
+                                                                                                                                                                                                    "o": {
+                                                                                                                                                                                                      "o": {
+                                                                                                                                                                                                        "o": {
+                                                                                                                                                                                                          "o": {}
+                                                                                                                                                                                                        }
+                                                                                                                                                                                                      }
+                                                                                                                                                                                                    }
+                                                                                                                                                                                                  }
+                                                                                                                                                                                                }
+                                                                                                                                                                                              }
+                                                                                                                                                                                            }
+                                                                                                                                                                                          }
+                                                                                                                                                                                        }
+                                                                                                                                                                                      }
+                                                                                                                                                                                    }
+                                                                                                                                                                                  }
+                                                                                                                                                                                }
+                                                                                                                                                                              }
+                                                                                                                                                                            }
+                                                                                                                                                                          }
+                                                                                                                                                                        }
+                                                                                                                                                                      }
+                                                                                                                                                                    }
+                                                                                                                                                                  }
+                                                                                                                                                                }
+                                                                                                                                                              }
+                                                                                                                                                            }
+                                                                                                                                                          }
+                                                                                                                                                        }
+                                                                                                                                                      }
+                                                                                                                                                    }
+                                                                                                                                                  }
+                                                                                                                                                }
+                                                                                                                                              }
+                                                                                                                                            }
+                                                                                                                                          }
+                                                                                                                                        }
+                                                                                                                                      }
+                                                                                                                                    }
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "depth-ceiling3": {
+    "o": {
+      "o": {
+        "o": {
+          "o": {
+            "o": {
+              "o": {
+                "o": {
+                  "o": {
+                    "o": {
+                      "o": {
+                        "o": {
+                          "o": {
+                            "o": {
+                              "o": {
+                                "o": {
+                                  "o": {
+                                    "o": {
+                                      "o": {
+                                        "o": {
+                                          "o": {
+                                            "o": {
+                                              "o": {
+                                                "o": {
+                                                  "o": {
+                                                    "o": {
+                                                      "o": {
+                                                        "o": {
+                                                          "o": {
+                                                            "o": {
+                                                              "o": {
+                                                                "o": {
+                                                                  "o": {
+                                                                    "o": {
+                                                                      "o": {
+                                                                        "o": {
+                                                                          "o": {
+                                                                            "o": {
+                                                                              "o": {
+                                                                                "o": {
+                                                                                  "o": {
+                                                                                    "o": {
+                                                                                      "o": {
+                                                                                        "o": {
+                                                                                          "o": {
+                                                                                            "o": {
+                                                                                              "o": {
+                                                                                                "o": {
+                                                                                                  "o": {
+                                                                                                    "o": {
+                                                                                                      "o": {
+                                                                                                        "o": {
+                                                                                                          "o": {
+                                                                                                            "o": {
+                                                                                                              "o": {
+                                                                                                                "o": {
+                                                                                                                  "o": {
+                                                                                                                    "o": {
+                                                                                                                      "o": {
+                                                                                                                        "o": {
+                                                                                                                          "o": {
+                                                                                                                            "o": {
+                                                                                                                              "o": {
+                                                                                                                                "o": {
+                                                                                                                                  "o": {
+                                                                                                                                    "o": {
+                                                                                                                                      "o": {
+                                                                                                                                        "o": {
+                                                                                                                                          "o": {
+                                                                                                                                            "o": {
+                                                                                                                                              "o": {
+                                                                                                                                                "o": {
+                                                                                                                                                  "o": {
+                                                                                                                                                    "o": {
+                                                                                                                                                      "o": {
+                                                                                                                                                        "o": {
+                                                                                                                                                          "o": {
+                                                                                                                                                            "o": {
+                                                                                                                                                              "o": {
+                                                                                                                                                                "o": {
+                                                                                                                                                                  "o": {
+                                                                                                                                                                    "o": {
+                                                                                                                                                                      "o": {
+                                                                                                                                                                        "o": {
+                                                                                                                                                                          "o": {
+                                                                                                                                                                            "o": {
+                                                                                                                                                                              "o": {
+                                                                                                                                                                                "o": {
+                                                                                                                                                                                  "o": {
+                                                                                                                                                                                    "o": {
+                                                                                                                                                                                      "o": {
+                                                                                                                                                                                        "o": {
+                                                                                                                                                                                          "o": {
+                                                                                                                                                                                            "o": {
+                                                                                                                                                                                              "o": {
+                                                                                                                                                                                                "o": {
+                                                                                                                                                                                                  "o": {
+                                                                                                                                                                                                    "o": {
+                                                                                                                                                                                                      "o": {
+                                                                                                                                                                                                        "f": {
+                                                                                                                                                                                                          "g": 1
+                                                                                                                                                                                                        }
+                                                                                                                                                                                                      }
+                                                                                                                                                                                                    }
+                                                                                                                                                                                                  }
+                                                                                                                                                                                                }
+                                                                                                                                                                                              }
+                                                                                                                                                                                            }
+                                                                                                                                                                                          }
+                                                                                                                                                                                        }
+                                                                                                                                                                                      }
+                                                                                                                                                                                    }
+                                                                                                                                                                                  }
+                                                                                                                                                                                }
+                                                                                                                                                                              }
+                                                                                                                                                                            }
+                                                                                                                                                                          }
+                                                                                                                                                                        }
+                                                                                                                                                                      }
+                                                                                                                                                                    }
+                                                                                                                                                                  }
+                                                                                                                                                                }
+                                                                                                                                                              }
+                                                                                                                                                            }
+                                                                                                                                                          }
+                                                                                                                                                        }
+                                                                                                                                                      }
+                                                                                                                                                    }
+                                                                                                                                                  }
+                                                                                                                                                }
+                                                                                                                                              }
+                                                                                                                                            }
+                                                                                                                                          }
+                                                                                                                                        }
+                                                                                                                                      }
+                                                                                                                                    }
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "chain-12": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "chain-cause-nonenum-secret": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "arr-holes-error": {
+    "inner": [{}, null, {}],
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "error-subclass-ownenum-array": {
+    "inner": {
+      "items": [
+        1,
+        2,
+        {
+          "password": "[REDACTED]"
+        }
+      ]
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toJSON-fn-on-field": {
+    "inner": {
+      "field": {
+        "password": "[REDACTED]",
+        "y": 1
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "bindings-sym": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toJSON-nonerror-w-error-field": {
+    "inner": {
+      "e": {
+        "message": "connect refused",
+        "name": "AxiosLike",
+        "code": "E"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "string-cause-toString-hostile": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "own-enum-cause-undefined": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cmp-symbol-keyed-field": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cmp-proxy-passthrough": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cmp-getter-field-ok": {
+    "inner": {
+      "ok": "fine"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cmp-toJSON-prototype": {
+    "inner": {
+      "m": "p"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cmp-toJSON-returns-error": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cmp-root-toJSON-prototype": {
+    "err": {
+      "type": "UnknownError",
+      "message": "[object Object]"
+    }
+  },
+  "cmp-class-field-cause": {
+    "err": {
+      "type": "Error",
+      "message": "c",
+      "stack": "Error: c",
+      "cause": {
+        "name": "Error",
+        "message": "cf",
+        "stack": "Error: cf"
+      }
+    }
+  },
+  "cmp-class-field-held-secret": {
+    "err": {
+      "type": "Error",
+      "message": "c",
+      "stack": "Error: c",
+      "password": "[REDACTED]",
+      "held": {}
+    }
+  },
+  "cmp-aggregate": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cmp-host-serializer-err-identity": {
+    "err": {
+      "seen": true,
+      "m": "hs"
+    }
+  },
+  "cmp-host-serializer-err-shadow-key": {
+    "err": {
+      "seen": true,
+      "m": "hs2"
+    }
+  },
+  "cmp-key-error-without-serializer": {
+    "error": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cmp-array-of-errors": {
+    "list": [{}, {}],
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cmp-enumerable-accessToken": {
+    "inner": {
+      "accessToken": "[REDACTED]"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "r5-enumerable-cause-axios": {
+    "inner": {
+      "cause": {
+        "message": "connect refused",
+        "name": "AxiosLike",
+        "code": "E"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "r5-aggregate-axios": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "r5-own-errors-map": {
+    "inner": {
+      "errors": {
+        "email": "[REDACTED]"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "r5-own-errors-list": {
+    "inner": {
+      "errors": [
+        {
+          "path": "a",
+          "message": "bad"
+        }
+      ]
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "r5-own-cause-object": {
+    "inner": {
+      "cause": {
+        "status": 500,
+        "detail": {
+          "x": 1
+        }
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  }
+}

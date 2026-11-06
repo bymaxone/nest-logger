@@ -1,0 +1,744 @@
+{
+  "cause-std-axios": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cause-enum-axios": {
+    "inner": {
+      "cause": {
+        "message": "connect refused",
+        "name": "AxiosLike",
+        "code": "E"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "agg-axios": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "root-cause-axios": {
+    "err": {
+      "type": "Error",
+      "message": "o",
+      "stack": "Error: o",
+      "cause": {
+        "name": "AxiosLike",
+        "message": "connect refused",
+        "stack": "AxiosLike: connect refused",
+        "config": {
+          "url": "/x",
+          "headers": {
+            "Authorization": "[REDACTED]"
+          }
+        },
+        "request": {
+          "_header": "GET / HTTP/1.1\r\nAuthorization: Bearer LEAKHDR"
+        }
+      }
+    }
+  },
+  "own-field-axios": {
+    "inner": {
+      "wrapped": {
+        "message": "connect refused",
+        "name": "AxiosLike",
+        "code": "E"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cause-string": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cause-obj-toString": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cause-plain-toJSON": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "enum-cause-plain-secret": {
+    "inner": {
+      "cause": {
+        "name": "n",
+        "message": "m",
+        "password": "[REDACTED]"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "enum-cause-plain-nonerror": {
+    "inner": {
+      "cause": {
+        "a": 1,
+        "b": {
+          "password": "[REDACTED]"
+        }
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "enum-cause-string": {
+    "inner": {
+      "cause": "plain string"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "enum-cause-obj-info": {
+    "inner": {
+      "cause": {
+        "status": 500,
+        "detail": {
+          "x": 1
+        }
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "enum-errors-nonerror": {
+    "inner": {
+      "errors": [
+        {
+          "a": 1
+        },
+        "str"
+      ]
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "enum-errors-notarray": {
+    "inner": {
+      "errors": {
+        "a": 1
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "own-name-field": {
+    "inner": {
+      "name": "Custom",
+      "extra": 1
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "own-message-enumerable": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "own-stack-enum": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "type-field": {
+    "inner": {
+      "type": "mine"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "field-date-buffer-bigint": {
+    "inner": {
+      "d": "1970-01-01T00:00:00.000Z",
+      "b": {
+        "type": "Buffer",
+        "data": [104, 105]
+      },
+      "m": {},
+      "n": null
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "field-depth": {
+    "inner": {
+      "deep": {
+        "o": {
+          "o": {
+            "o": {
+              "o": {
+                "o": {
+                  "o": {
+                    "o": {
+                      "o": {
+                        "o": {
+                          "o": {
+                            "o": {
+                              "o": {
+                                "o": {
+                                  "o": {
+                                    "o": {
+                                      "o": {
+                                        "o": {
+                                          "o": {
+                                            "o": {
+                                              "o": {
+                                                "o": {
+                                                  "o": {
+                                                    "o": {
+                                                      "o": {
+                                                        "o": {
+                                                          "o": {
+                                                            "o": {
+                                                              "o": {
+                                                                "o": {
+                                                                  "o": {
+                                                                    "o": {
+                                                                      "o": {
+                                                                        "o": {
+                                                                          "o": {
+                                                                            "o": {
+                                                                              "o": {
+                                                                                "o": {
+                                                                                  "o": {
+                                                                                    "o": {
+                                                                                      "o": {
+                                                                                        "o": {
+                                                                                          "o": {
+                                                                                            "o": {
+                                                                                              "o": {
+                                                                                                "o": {
+                                                                                                  "o": {
+                                                                                                    "o": {
+                                                                                                      "o": {
+                                                                                                        "o": {
+                                                                                                          "o": {
+                                                                                                            "o": {
+                                                                                                              "o": {
+                                                                                                                "o": {
+                                                                                                                  "o": {
+                                                                                                                    "o": {
+                                                                                                                      "o": {
+                                                                                                                        "o": {
+                                                                                                                          "o": {
+                                                                                                                            "o": {
+                                                                                                                              "o": {
+                                                                                                                                "v": 1
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "field-array-error": {
+    "inner": {
+      "list": [{}, {}]
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "stack-undefined": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "stack-nonstring": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "stack-node_modules": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "message-nonstring": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "name-nonstring": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "name-prototype-obj": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "proto-null-error": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "sym-secret": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "sym-error": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toPrimitive": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toStringTag": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toJSON-proto": {
+    "inner": {
+      "z": 1
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toJSON-own": {
+    "inner": {
+      "z": 1
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toJSON-getter": {
+    "inner": {
+      "z": 2
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toJSON-getter-throw": {
+    "inner": {
+      "name": "Error",
+      "message": "x",
+      "stack": "Error: x"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toJSON-throws": {
+    "_redactionFailed": true,
+    "_logKey": "LOGGER_REDACTION_FAILED"
+  },
+  "toJSON-returns-error": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toJSON-returns-self": {
+    "inner": "[Circular]",
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toJSON-returns-error-w-secret": {
+    "inner": {
+      "password": "[REDACTED]",
+      "cause": {
+        "message": "connect refused",
+        "name": "AxiosLike",
+        "code": "E"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toJSON-under-err-key": {
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "toJSON-root-err": {
+    "err": {
+      "type": "UnknownError",
+      "message": "[object Object]"
+    }
+  },
+  "toJSON-sensitive-key-src": {
+    "inner": "[REDACTED]",
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "proxy-pass": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "proxy-get-throw": {
+    "inner": {
+      "name": "SanitizeFailed",
+      "message": "Failed to sanitize the thrown value"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "proxy-has": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "proxy-ownKeys": {
+    "inner": {
+      "name": "Error",
+      "message": "px",
+      "_errorFieldsIncomplete": true
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "proxy-ownKeys-secret": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "proxy-getProto": {
+    "_redactionFailed": true,
+    "_logKey": "LOGGER_REDACTION_FAILED"
+  },
+  "proxy-gopd": {
+    "inner": {
+      "name": "Error",
+      "message": "px",
+      "_errorFieldsIncomplete": true
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "proxy-get-secret-diff": {
+    "inner": {
+      "a": "ok"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "proxy-root-err": {
+    "err": {
+      "type": "SanitizeFailed",
+      "message": "Failed to sanitize the thrown value"
+    }
+  },
+  "proxy-cause": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "proxy-in-bindings": {
+    "inner": {
+      "name": "SanitizeFailed",
+      "message": "Failed to sanitize the thrown value"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "getter-diff": {
+    "inner": {
+      "g": "first"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "getter-error": {
+    "inner": {
+      "g": {}
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "getter-throw": {
+    "inner": {
+      "name": "Error",
+      "message": "o",
+      "stack": "Error: o",
+      "_errorFieldsIncomplete": true
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "getter-throw-root": {
+    "err": {
+      "type": "Error",
+      "message": "o",
+      "stack": "Error: o",
+      "_errorFieldsIncomplete": true
+    }
+  },
+  "getter-cause": {
+    "inner": {
+      "name": "Error",
+      "message": "o",
+      "stack": "Error: o",
+      "_errorFieldsIncomplete": true
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "getter-cause-diff": {
+    "inner": {
+      "cause": {}
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "classfield-errors": {
+    "inner": {
+      "errors": [{}]
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "classfield-errors-root": {
+    "err": {
+      "type": "Error",
+      "message": "x",
+      "stack": "Error: x",
+      "errors": [
+        {
+          "name": "Error",
+          "message": "e1",
+          "stack": "Error: e1",
+          "cause": {
+            "name": "Error",
+            "message": "e1c",
+            "stack": "Error: e1c"
+          }
+        }
+      ]
+    }
+  }
+}

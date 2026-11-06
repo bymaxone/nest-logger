@@ -1,0 +1,250 @@
+{
+  "errors-list-whose-species-throws": {
+    "inner": {
+      "errors": [
+        {
+          "code": "KEEPmember"
+        }
+      ],
+      "sibling": "KEEPsibling"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "cause-with-own-toJSON-that-throws": {
+    "inner": {
+      "code": "KEEPouter"
+    },
+    "sibling": "KEEPtop",
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "errors-member-with-own-toJSON-that-throws": {
+    "inner": {
+      "code": "KEEPouter2"
+    },
+    "sibling": "KEEPtop2",
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "enumerable-stack-object": {
+    "inner": {
+      "stack": {
+        "v": "KEEPstack"
+      },
+      "z": "KEEPz"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "enumerable-stack-number": {
+    "inner": {
+      "stack": 12345,
+      "z": "KEEPz2"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "enumerable-stack-text": {
+    "inner": {
+      "stack": "KEEPline1",
+      "z": "KEEPz3"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "redaction-leaf-type-with-own-name": {
+    "inner": {
+      "name": "ValidationError"
+    },
+    "err": {
+      "type": "[REDACTED]",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "redaction-leaf-fields-with-own-type": {
+    "inner": {
+      "type": "KEEPtype",
+      "fields": "[REDACTED]"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "null-and-falsy-leaves": {
+    "inner": {
+      "cause": null,
+      "errors": [null],
+      "n": null,
+      "zero": 0,
+      "off": false,
+      "empty": ""
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "own-toJSON-that-throws-with-sibling": {
+    "_redactionFailed": true,
+    "_logKey": "LOGGER_REDACTION_FAILED"
+  },
+  "field-with-toJSON-that-throws-with-sibling": {
+    "_redactionFailed": true,
+    "_logKey": "LOGGER_REDACTION_FAILED"
+  },
+  "proxy-whose-prototype-read-throws-with-sibling": {
+    "_redactionFailed": true,
+    "_logKey": "LOGGER_REDACTION_FAILED"
+  },
+  "serializer-output-with-error-under-a-small-size-cap": {
+    "thing": {
+      "status": 500,
+      "code": "E_X",
+      "inner": {}
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "message-holding-an-object-non-enumerable": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "message-holding-an-object-enumerable": {
+    "inner": {
+      "message": {
+        "password": "[REDACTED]",
+        "keep": "KEEPobj"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "message-whose-getter-throws-with-sibling": {
+    "inner": {
+      "name": "SanitizeFailed",
+      "message": "Failed to sanitize the thrown value"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "name-holding-an-object-non-enumerable": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "name-holding-an-object-enumerable": {
+    "inner": {
+      "name": {
+        "password": "[REDACTED]",
+        "keep": "KEEPobj"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "name-whose-getter-throws-with-sibling": {
+    "inner": {
+      "name": "SanitizeFailed",
+      "message": "Failed to sanitize the thrown value"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "stack-holding-an-object-non-enumerable": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "redaction-leaf-name-with-own-name": {
+    "inner": {
+      "name": "[REDACTED]"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "redaction-leaf-name-with-prototype-name": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "redaction-leaf-name-with-own-name-in-the-stack-header": {
+    "inner": {
+      "name": "[REDACTED]"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "redaction-leaf-name-with-prototype-name-in-the-stack-header": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "redaction-leaf-message-with-message-in-the-stack-header": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "[REDACTED]",
+      "stack": "Error: root"
+    }
+  }
+}
