@@ -62,6 +62,8 @@ import {
   createWidthMarker,
   DEFAULT_MAX_CAUSE_DEPTH,
   MAX_AGGREGATE_ERRORS,
+  OMIT_OWN_FIELD,
+  ownFieldForLog,
   sanitizeError,
   scrubStack
 } from './sanitize-error.util'
@@ -552,7 +554,11 @@ function walkObject(
     const clone = value instanceof Error ? cloneError(value) : undefined
     const copy = clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
     for (const key of keys) {
-      const current = Reflect.get(source, key)
+      // The arguments of a failed driver call are not written, as for the root `err`.
+      const current = asData
+        ? ownFieldForLog(key, Reflect.get(source, key))
+        : Reflect.get(source, key)
+      if (current === OMIT_OWN_FIELD) continue
       defineOwn(
         copy,
         key,

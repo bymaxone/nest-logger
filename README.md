@@ -725,7 +725,9 @@ field the serializer derives, and they pass through the same name-based redactio
 any other serializer output.
 
 An error's own enumerable properties (`code`, `statusCode`, domain fields) are carried through, as
-Pino's standard serializer did.
+Pino's standard serializer did, with one exception: the arguments of a failed driver call are not
+written. The fields `args` and `parameters` are omitted, and a `command` object is reduced to its
+`name`, because the redaction matches key names and cannot see a value inside a string argument.
 
 When those properties cannot be read (a Proxy whose `ownKeys` throws, or a getter that throws), none of them is copied and the error node carries `_errorFieldsIncomplete: true`, so an entry without its `code` is never mistaken for a complete one.
 

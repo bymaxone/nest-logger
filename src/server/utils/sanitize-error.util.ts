@@ -274,6 +274,32 @@ function toSanitizedError(
   }
 }
 
+/** Own error fields that hold the arguments of the call that failed, such as a query's `parameters`. */
+const ARGUMENT_FIELDS: ReadonlySet<string> = new Set(['args', 'parameters'])
+
+/** Returned by {@link ownFieldForLog} for a field that must not be written. */
+export const OMIT_OWN_FIELD: unique symbol = Symbol('omit-own-field')
+
+/**
+ * What an error's own field may be written as. A driver puts the arguments of the failed call on
+ * its error (a Redis reply error carries `command: { name, args }`, a query error `parameters`),
+ * and the redaction matches key names only, so a value inside a string argument would reach the
+ * line. These are dropped by structure, not by value: `args` and `parameters` go, and a `command`
+ * object keeps only its `name`. Reading the name takes the property descriptor, so no getter of the
+ * driver's runs.
+ *
+ * @internal Shared with the redaction walk. NOT re-exported by the package barrel.
+ * @param key - The own field's name.
+ * @param value - The own field's value.
+ * @returns The value to write, or {@link OMIT_OWN_FIELD} when the field is not written.
+ */
+export function ownFieldForLog(key: string, value: unknown): unknown {
+  if (ARGUMENT_FIELDS.has(key)) return OMIT_OWN_FIELD
+  if (key !== 'command' || typeof value !== 'object' || value === null) return value
+  const name: unknown = Object.getOwnPropertyDescriptor(value, 'name')?.value
+  return typeof name === 'string' ? { name } : OMIT_OWN_FIELD
+}
+
 /**
  * Copy a source error's OWN enumerable properties onto a serialized node.
  *
@@ -308,7 +334,9 @@ function toSanitizedError(
 export function assignOwnErrorFields(target: Record<string, unknown>, source: object): void {
   try {
     const own = Array.isArray(source) ? {} : (source as Record<string, unknown>)
-    for (const [key, value] of Object.entries(own)) {
+    for (const [key, field] of Object.entries(own)) {
+      const value = ownFieldForLog(key, field)
+      if (value === OMIT_OWN_FIELD) continue
       if (!Object.hasOwn(target, key) && !DERIVED_ERROR_FIELDS.has(key)) {
         // `defineProperty` rather than `Reflect.set`, and `__proto__` is the whole
         // reason. It is an accessor inherited from `Object.prototype`, so a SET

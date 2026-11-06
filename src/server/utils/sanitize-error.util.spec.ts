@@ -1,4 +1,4 @@
-import { isErrorLike, sanitizeError } from './sanitize-error.util'
+import { isErrorLike, OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 
 describe('sanitizeError', () => {
   it(/*
@@ -617,5 +617,32 @@ describe('isErrorLike — a value whose shape cannot be read', () => {
     )
 
     expect(isErrorLike(hostile)).toBe(false)
+  })
+})
+
+describe('ownFieldForLog', () => {
+  it('omits the argument fields and keeps every other field as it is', () => {
+    expect(ownFieldForLog('args', ['a'])).toBe(OMIT_OWN_FIELD)
+    expect(ownFieldForLog('parameters', { a: 1 })).toBe(OMIT_OWN_FIELD)
+    expect(ownFieldForLog('code', 'E_X')).toBe('E_X')
+    expect(ownFieldForLog('command', 'ls -la')).toBe('ls -la')
+    expect(ownFieldForLog('command', null)).toBeNull()
+  })
+
+  it('keeps only the name of a command object, read without running a getter', () => {
+    let reads = 0
+    const command = Object.defineProperty({ args: ['secret'] }, 'name', {
+      get: () => {
+        reads++
+        return 'set'
+      }
+    })
+
+    expect(ownFieldForLog('command', { name: 'set', args: ['secret'] })).toStrictEqual({
+      name: 'set'
+    })
+    expect(ownFieldForLog('command', command)).toBe(OMIT_OWN_FIELD)
+    expect(ownFieldForLog('command', { args: ['secret'] })).toBe(OMIT_OWN_FIELD)
+    expect(reads).toBe(0)
   })
 })

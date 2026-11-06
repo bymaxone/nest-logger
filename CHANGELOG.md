@@ -11,6 +11,17 @@ heading here.
 
 ## [Unreleased]
 
+### Security
+
+- **Error entries no longer carry the arguments of a failed driver call.** A driver puts the call
+  that failed on its error (a Redis reply error carries `command: { name, args }`, a query error
+  `parameters`), and the key-name redaction cannot see a value inside a string argument, so such a
+  value reached the entry. The `args` and `parameters` own fields of an error are now omitted, and a
+  `command` object is reduced to its `name`. This holds for the root `err`, for every `cause` and
+  `errors` link, and for an `Error` nested in the metadata. A field of those names that you attach
+  yourself to an error is no longer logged either; put it under a different name, or in the
+  metadata, where name-based redaction applies.
+
 ### Changed
 
 - **An `Error` nested in the metadata is logged with its content.** `{ inner: new Error('x') }` was
@@ -49,9 +60,10 @@ Nothing to change in code. What can differ at run time:
 
 ### Internal
 
-- The server bundle budget (`scripts/check-size.mjs`) is 30.4 KiB, up from 30.2 KiB: the nested `Error`
-  node adds 0.70 KiB of executable code (`main` was 29.64 KiB, this tree is 30.34 KiB), and trimming
-  comments was measured to move the artifact by 0.00 KiB.
+- The server bundle budget (`scripts/check-size.mjs`) is 32 KiB, up from 30.2 KiB, re-derived from
+  the 30.50 KiB artifact with the usual headroom. The growth is executable code: the nested `Error`
+  node (+0.70 KiB over the 29.64 KiB of `main`) and the omission of failed-call arguments from an
+  error's fields (+0.16 KiB). Trimming comments was measured to move the artifact by 0.00 KiB.
 
 ### Tests
 
