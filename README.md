@@ -1248,7 +1248,7 @@ Every `write()` runs inside a try/catch. A destination that throws or rejects pr
 
 ### What redaction covers, and what it cannot
 
-Redaction here matches **field names**, not values. Under the default `redactStrategy: 'names'` a secret stored under a covered name is censored at any depth — under the legacy `'paths'` strategy the four-level `fast-redact` ceiling applies instead, and a deeper field is not covered. Either way, the same secret **embedded inside a string** under an uncovered name travels intact. Measured: The walk is bounded: a container nested more than 100 levels deep is written as `[REDACTION_DEPTH_EXCEEDED]`, and a call that visits more than 200000 containers writes `[REDACTION_BUDGET_EXCEEDED]` in place of each further one. Nothing past either bound is passed through unwalked.
+Redaction here matches **field names**, not values. Under the default `redactStrategy: 'names'` a secret stored under a covered name is censored at any depth — under the legacy `'paths'` strategy the four-level `fast-redact` ceiling applies instead, and a deeper field is not covered. Either way, the same secret **embedded inside a string** under an uncovered name travels intact. Measured: The walk is bounded: a container nested more than 100 levels deep is written as `[REDACTION_DEPTH_EXCEEDED]`, and a call that visits more than 200000 containers writes `[REDACTION_BUDGET_EXCEEDED]` in place of each further one. Nothing past either bound is passed through unwalked. A stack is written at most 16384 characters long and ends with `…[truncated]` when it was cut.
 
 ```json
 {

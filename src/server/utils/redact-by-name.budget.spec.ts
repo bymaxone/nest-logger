@@ -152,4 +152,29 @@ describe('the visit budget through the real pipeline', () => {
     expect(lines[0]).toContain(REDACT_BUDGET_EXCEEDED)
     expect(entry).not.toHaveProperty('_redactionFailed')
   })
+
+  it('bounds the line when the stack of a nested Error is megabytes long', () => {
+    // V8 builds the stack header of such a chain by stringifying the links: it doubles per link.
+    const held = linkedByNameAndMessage(20)
+    expect(held.stack?.length).toBeGreaterThan(1_000_000)
+    const lines: string[] = []
+    const options = applyDefaults({ service: { name: 'app', version: '1.0.0' } })
+    const pino = buildPinoInstance(
+      options,
+      new LogContextService(),
+      [{ name: 'capture', write: (line: string): void => void lines.push(line) }],
+      new DestinationHealth()
+    )
+    const service = new PinoLoggerService(pino, resolveNameRedactor(options))
+
+    service.errorStructured('KEY', new Error('root'), 'u1', { held })
+    service.errorStructured('KEY', held, 'u1', {})
+
+    // Three links with two branches each is 15 nodes, and each stack is cut at 16 KiB: a few hundred
+    // kilobytes at most, where the stacks alone were tens of megabytes.
+    expect(lines[0]?.length).toBeLessThan(400_000)
+    // The root error's own slot, not the log message: that is the caller's text, written as given.
+    expect(JSON.stringify(JSON.parse(lines[1] ?? '{}').err).length).toBeLessThan(400_000)
+    expect(lines[0]).toContain('…[truncated]')
+  })
 })

@@ -1,4 +1,13 @@
-import { isErrorLike, OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
+import {
+  isErrorLike,
+  MAX_STACK_LENGTH,
+  MAX_STACK_SCAN,
+  OMIT_OWN_FIELD,
+  ownFieldForLog,
+  sanitizeError,
+  scrubStack,
+  STACK_TRUNCATED
+} from './sanitize-error.util'
 
 describe('sanitizeError', () => {
   it(/*
@@ -702,5 +711,82 @@ describe('ownFieldForLog', () => {
     )
 
     expect(Object.keys(node)).toStrictEqual(['name', 'message', 'stack', 'code'])
+  })
+})
+
+describe('scrubStack — the length of a stack', () => {
+  const frame = '    at app (/srv/src/a.ts:1:1)'
+
+  it('is 16 KiB, with a suffix that says the stack was cut', () => {
+    expect(MAX_STACK_LENGTH).toBe(16_384)
+    expect(STACK_TRUNCATED).toBe('…[truncated]')
+  })
+
+  it('keeps a stack of exactly the limit and cuts one character more', () => {
+    const exact = 'x'.repeat(MAX_STACK_LENGTH)
+
+    expect(scrubStack(exact)).toBe(exact)
+    expect(scrubStack(exact + 'y')).toBe(exact + STACK_TRUNCATED)
+  })
+
+  it('cuts a stack of many megabytes to the limit plus the suffix', () => {
+    const huge = `Error: ${'a'.repeat(5_000_000)}\n${frame}`
+
+    const scrubbed = scrubStack(huge)
+
+    expect(scrubbed).toHaveLength(MAX_STACK_LENGTH + STACK_TRUNCATED.length)
+    expect(scrubbed.endsWith(STACK_TRUNCATED)).toBe(true)
+  })
+
+  it('drops dependency frames before it counts, so a long dependency trace alone is not a cut', () => {
+    const lines = Array.from(
+      { length: 2000 },
+      (_, i) => `    at dep${i} (/srv/node_modules/p/i.js:${i})`
+    )
+    const stack = ['Error: boom', frame, ...lines].join('\n')
+
+    expect(scrubStack(stack)).toBe(`Error: boom\n${frame}`)
+  })
+
+  it('counts the length after control characters are escaped', () => {
+    const escapes = '\u001b'.repeat(MAX_STACK_LENGTH)
+
+    const scrubbed = scrubStack(escapes)
+
+    expect(scrubbed).toHaveLength(MAX_STACK_LENGTH + STACK_TRUNCATED.length)
+  })
+
+  describe('the part of a stack that is read', () => {
+    const frame = '    at app (/srv/src/a.ts:1:1)'
+    /** A dependency line of exactly `length` characters (it is dropped by the filter). */
+    const dependency = (length: number): string =>
+      'node_modules'.padEnd(length, 'x').slice(0, length)
+
+    it('is eight times the limit', () => {
+      expect(MAX_STACK_SCAN).toBe(8 * MAX_STACK_LENGTH)
+    })
+
+    it('reads a stack of exactly that size whole, and marks one character more as unread', () => {
+      const head = `Error: boom\n${frame}\n`
+      const whole = head + dependency(MAX_STACK_SCAN - head.length)
+
+      expect(whole).toHaveLength(MAX_STACK_SCAN)
+      expect(scrubStack(whole)).toBe(`Error: boom\n${frame}`)
+      expect(scrubStack(whole + 'x')).toBe(`Error: boom\n${frame}${STACK_TRUNCATED}`)
+    })
+
+    it('keeps a frame of the application that sits beyond seven limits of dependency lines', () => {
+      const dependencies = dependency(MAX_STACK_SCAN - 2_000)
+      const stack = `Error: boom\n${dependencies}\n${frame}`
+
+      expect(stack.length).toBeLessThan(MAX_STACK_SCAN)
+      expect(scrubStack(stack)).toBe(`Error: boom\n${frame}`)
+    })
+
+    it('does not read past the window: a frame beyond it is gone and the cut is marked', () => {
+      const stack = `Error: boom\n${dependency(MAX_STACK_SCAN + 1_000)}\n${frame}`
+
+      expect(scrubStack(stack)).toBe(`Error: boom${STACK_TRUNCATED}`)
+    })
   })
 })

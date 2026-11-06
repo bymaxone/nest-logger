@@ -33,10 +33,17 @@ heading here.
   each container, keeping the primitives beside them, as `'[REDACTION_DEPTH_EXCEEDED]'` does for
   depth. Nothing is passed through unwalked. The added `type` and `message` of a nested `Error` also
   count against the cause-chain budget, as `cause` and `errors` do.
+- **A stack is written at most 16384 characters long.** The engine builds the stack header from an
+  error's `name` and `message`, and when those are themselves errors it stringifies them, so a single
+  `stack` could reach hundreds of megabytes (about 54 MB in one measured line). The stack is now cut
+  at 16384 characters, after the dependency frames are dropped and the control characters escaped,
+  and ends with `…[truncated]`. It applies to every stack the logger writes: the root `err`, each
+  `cause` and `errors` link, a nested `Error` in the metadata, and the semconv `exception.stacktrace`.
 
 #### Apply to a derived backend
 
-Nothing to change in code. A single log call whose values hold more than 200000 containers in
+Nothing to change in code. A stack longer than 16384 characters is cut and ends with `…[truncated]`;
+an ordinary stack is far shorter. A single log call whose values hold more than 200000 containers in
 total, such as an array of 250000 objects in the metadata, now has its last containers replaced by
 the marker; a filter or alert that reads the whole array should read the part that is kept, or the
 array should be summarised before it is logged. Ordinary entries are unaffected.
