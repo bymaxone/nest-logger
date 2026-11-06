@@ -228,7 +228,7 @@ describe('the node of an Error outside a serialized root key', () => {
      */
     const written = (nesting: number): string => {
       let holder: Record<string, unknown> = {
-        e: Object.assign(new Error('x'), { cause: { a: { b: { c: 'leaf' } } } })
+        e: new Error('x', { cause: { a: { b: { c: 'leaf' } } } })
       }
       for (let level = 0; level < nesting; level++) holder = { n: holder }
       return JSON.stringify(redact({ meta: holder }, true))
@@ -236,6 +236,73 @@ describe('the node of an Error outside a serialized root key', () => {
 
     expect(written(95)).toContain('leaf')
     expect(written(96)).not.toContain('leaf')
+  })
+
+  it('reads no index past the end of an errors list', () => {
+    const reads: string[] = []
+    const list = new Proxy([new Error('m0'), new Error('m1')], {
+      get: (target, key, receiver) => {
+        reads.push(String(key))
+        return Reflect.get(target, key, receiver)
+      }
+    })
+
+    nodeOf(withErrors(new Error('x'), list))
+
+    expect(reads).not.toContain('2')
+  })
+
+  it('writes a cause that is not an Error past the budget, where only an Error link is cut', () => {
+    let chain: Error = new Error('d3', { cause: 'tail' })
+    for (let level = 2; level >= 0; level--) chain = new Error(`d${level}`, { cause: chain })
+
+    const written = nodeOf(chain) as any
+
+    expect(written.cause.cause.cause.cause).toBe('tail')
+  })
+
+  it('gives an Error back its own level after a walk that reached it as a link', () => {
+    // `shared` is walked as the cause of `top` first and as a key of the record after it.
+    const s3 = new Error('s3')
+    const s2 = new Error('s2', { cause: s3 })
+    const s1 = new Error('s1', { cause: s2 })
+    const shared = new Error('s0', { cause: s1 })
+    const top = new Error('top', { cause: shared })
+
+    const written = redact({ a: top, b: shared }, true) as any
+
+    expect(written.b.cause.cause.cause['message']).toBe('s3')
+  })
+
+  it('does not read a part the node already has a key for', () => {
+    const readsOfName = (own: object): number => {
+      let reads = 0
+      const error = Object.defineProperty(Object.assign(new Error('x'), own), 'name', {
+        get: () => {
+          reads++
+          return 'Custom'
+        }
+      })
+      nodeOf(error)
+      return reads
+    }
+
+    // Only the added `type` reads the name; an own `type` leaves that one read out.
+    expect(readsOfName({ type: 'mine' })).toBe(readsOfName({}) - 1)
+  })
+
+  it('censors an added part whose key is a covered name', () => {
+    const covered = createNameRedactor(['message', 'cause', 'stack'], '[REDACTED]', ['err'])
+    const error = new Error('secret text', { cause: new Error('c') })
+
+    const written = (covered({ inner: error }, true) as { inner: Record<string, unknown> }).inner
+
+    expect(written).toMatchObject({
+      type: 'Error',
+      message: '[REDACTED]',
+      stack: '[REDACTED]',
+      cause: '[REDACTED]'
+    })
   })
 
   it('writes the exact sanitizer node when the head cannot be read at all', () => {

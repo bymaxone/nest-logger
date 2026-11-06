@@ -605,16 +605,14 @@ function capErrors(errors: unknown): unknown {
   return kept
 }
 
-/** The objects that a `cause` or an `errors` list holds: the links of a chain. Read by index. */
-function linkTargets(key: string, value: unknown): object[] {
+/** The objects that a `cause` or an `errors` holds: the links of a chain. Read by index. */
+function linkTargets(value: unknown): object[] {
   const targets: object[] = []
   const take = (link: unknown): void => {
     if (typeof link === 'object' && link !== null) targets.push(link)
   }
-  if (key === 'cause') take(value)
-  else if (Array.isArray(value)) {
-    for (let index = 0; index < value.length; index++) take(Reflect.get(value, index))
-  }
+  if (!Array.isArray(value)) take(value)
+  else for (let index = 0; index < value.length; index++) take(Reflect.get(value, index))
   return targets
 }
 
@@ -623,14 +621,13 @@ function linkTargets(key: string, value: unknown): object[] {
  * level further than the node, for as long as they are walked; past the budget the part is a marker.
  */
 function walkChainPart(
-  key: string,
   value: unknown,
   level: number,
   rules: RedactRules,
   depth: number,
   ancestors: Set<object>
 ): unknown {
-  const targets = linkTargets(key, value)
+  const targets = linkTargets(value)
   if (targets.length > 0 && level + 1 > DEFAULT_MAX_CAUSE_DEPTH) return createDepthMarker()
   const before = new Map(targets.map((target) => [target, linkDepths.get(target)]))
   for (const target of targets) linkDepths.set(target, level + 1)
@@ -668,8 +665,7 @@ function addErrorParts(
   ): void => {
     if (taken.has(key)) return
     try {
-      const value = read()
-      const written = value === undefined ? undefined : write(value)
+      const written = write(read())
       if (written === undefined) return
       defineOwn(copy, key, rules.sensitive.has(key.toLowerCase()) ? rules.censor : written)
     } catch {
@@ -686,12 +682,12 @@ function addErrorParts(
   add(
     'cause',
     (): unknown => error.cause,
-    (cause) => walkChainPart('cause', cause, level, rules, depth, ancestors)
+    (cause) => walkChainPart(cause, level, rules, depth, ancestors)
   )
   add(
     'errors',
     (): unknown => capErrors((error as { errors?: unknown }).errors),
-    (errors) => walkChainPart('errors', errors, level, rules, depth, ancestors)
+    (errors) => walkChainPart(errors, level, rules, depth, ancestors)
   )
   if (incomplete && !taken.has(INCOMPLETE_KEY)) defineOwn(copy, INCOMPLETE_KEY, true)
 }
