@@ -221,15 +221,16 @@ describe('the node of an Error outside a serialized root key', () => {
     })
   })
 
-  it('counts the depth of its parts from its own depth', () => {
+  it.each([
+    ['cause', (value: unknown) => new Error('x', { cause: value })],
+    ['message', (value: unknown) => Object.defineProperty(new Error('x'), 'message', { value })]
+  ])('counts the depth of its %s from its own depth', (_part, build) => {
     /*
      * The walk drops a container past its depth ceiling. The parts of an Error are one level
      * below it, so the same structure is kept at one nesting and dropped at the next.
      */
     const written = (nesting: number): string => {
-      let holder: Record<string, unknown> = {
-        e: new Error('x', { cause: { a: { b: { c: 'leaf' } } } })
-      }
+      let holder: Record<string, unknown> = { e: build({ a: { b: { c: 'leaf' } } }) }
       for (let level = 0; level < nesting; level++) holder = { n: holder }
       return JSON.stringify(redact({ meta: holder }, true))
     }
