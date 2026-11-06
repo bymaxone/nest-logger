@@ -336,6 +336,20 @@ describe('the node of an Error outside a serialized root key', () => {
     expect(nodeOf(own)['type']).toBe('PRIVATE_PERSON')
   })
 
+  it.each([
+    ['name', ['name']],
+    ['message', ['message']],
+    ['neither', ['password']]
+  ])('censors the added stack only when %s is a covered name', (label, names) => {
+    const covered = createNameRedactor(names, '[REDACTED]', ['err'])
+    class Sub extends Error {}
+    const error = Object.assign(new Sub('SECRETmsg'), { stack: 'Sub: SECRETmsg\n    at x' })
+
+    const written = (covered({ inner: error }, true) as { inner: Record<string, unknown> }).inner
+
+    expect(written['stack']).toBe(label === 'neither' ? 'Sub: SECRETmsg\n    at x' : '[REDACTED]')
+  })
+
   it('writes the exact sanitizer node when the head cannot be read at all', () => {
     const explode = {
       get: (): never => {

@@ -220,5 +220,31 @@
       "message": "root",
       "stack": "Error: root"
     }
+  },
+  "redaction-leaf-name-with-own-name-in-the-stack-header": {
+    "inner": {
+      "name": "[REDACTED]"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "redaction-leaf-name-with-prototype-name-in-the-stack-header": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "redaction-leaf-message-with-message-in-the-stack-header": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "[REDACTED]",
+      "stack": "Error: root"
+    }
   }
 }

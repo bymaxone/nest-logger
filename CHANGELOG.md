@@ -37,6 +37,8 @@ Nothing to change in code. What can differ at run time:
   a secret inside a string.
 - An own enumerable field of an `Error` named `type`, `message`, `stack`, `cause` or `errors` is kept
   as it was written, and the added part of that name is not written.
+- The added `type` is censored when `name` is a covered name, and the added `stack` when `name` or
+  `message` is: both carry that text. Without such a covered name they are written.
 - A custom serializer on a record-root key receives the same value it received before, censored as
   before and with any `Error` inside it still an instance. What a serializer returns is written as
   the serializer returned it, so an `Error` in its output is still `{}`: the added parts are for the
@@ -48,7 +50,7 @@ Nothing to change in code. What can differ at run time:
 ### Internal
 
 - The server bundle budget (`scripts/check-size.mjs`) is 30.4 KiB, up from 30.2 KiB: the nested `Error`
-  node adds 0.70 KiB of executable code (`main` was 29.64 KiB, this tree is 30.34 KiB), and trimming
+  node adds 0.72 KiB of executable code (`main` was 29.64 KiB, this tree is 30.36 KiB), and trimming
   comments was measured to move the artifact by 0.00 KiB.
 
 ### Tests

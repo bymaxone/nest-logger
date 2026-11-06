@@ -182,6 +182,19 @@ add('redaction-leaf-name-with-prototype-name', () => ({
   meta: { inner: new (class Sub extends Error {})('o') },
   extra: { redactPaths: ['*.name'] }
 }))
+add('redaction-leaf-name-with-own-name-in-the-stack-header', () => ({
+  meta: { inner: Object.assign(new Error('o'), { name: 'LEAKperson' }) },
+  extra: { redactPaths: ['*.name'] }
+}))
+add('redaction-leaf-name-with-prototype-name-in-the-stack-header', () => {
+  class Sub extends Error {}
+  Sub.prototype.name = 'LEAKproto'
+  return { meta: { inner: new Sub('o') }, extra: { redactPaths: ['*.name'] } }
+})
+add('redaction-leaf-message-with-message-in-the-stack-header', () => ({
+  meta: { inner: new Error('LEAKmessage') },
+  extra: { redactPaths: ['*.message'] }
+}))
 
 /** Shapes that show less by decision: none in this part. */
 const ACCEPTED: Record<string, RegExp> = {}

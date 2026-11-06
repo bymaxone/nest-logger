@@ -578,6 +578,12 @@ function walkObject(
 /** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */
 const linkDepths = new WeakMap<object, number>()
 
+/** The other fields whose text an added part carries, so that covering one covers the part. */
+const DERIVED_FROM: ReadonlyMap<string, readonly string[]> = new Map([
+  ['type', ['name']],
+  ['stack', ['name', 'message']]
+])
+
 /** The marker key of a node that lost a part while it was being written. */
 const INCOMPLETE_KEY = '_errorFieldsIncomplete'
 
@@ -649,9 +655,11 @@ function addErrorParts(
     try {
       const written = write(read())
       if (written === undefined) return
-      // `type` is read from `name`, so a covered `name` covers it too.
-      const covered =
-        rules.sensitive.has(key.toLowerCase()) || (key === 'type' && rules.sensitive.has('name'))
+      // A part that carries another field's text is covered by that field's name too: `type`
+      // is the `name`, and the first line of `stack` is the `name` and the `message`.
+      const covered = [key, ...(DERIVED_FROM.get(key) ?? [])].some((name) =>
+        rules.sensitive.has(name)
+      )
       defineOwn(copy, key, covered ? rules.censor : written)
     } catch {
       incomplete = true
