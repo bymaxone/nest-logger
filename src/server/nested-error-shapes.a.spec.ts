@@ -4,7 +4,7 @@
  *
  * A shape passes when the new entry neither throws nor fails the whole record where 1.4.8 did
  * not, shows no marker of a secret that 1.4.8 did not, and keeps every leaf VALUE 1.4.8 emitted
- * (keys may change, values may not). The shapes come from three review passes: the credential
+ * (keys may change, values may not). The shapes cover the credential
  * written through an `Error` that defines `toJSON`, the `cause` and `errors` that are not shaped
  * like an `Error`, and the prototype, proxy, symbol, getter, realm and serializer cases around them.
  *

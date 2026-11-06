@@ -399,7 +399,7 @@ function walkError(
   try {
     return walkObject(error, rules, depth, ancestors, honorToJson, inSerialized)
   } catch {
-    // Under a serialized key the Error stays what the serializer reads, as before. Anywhere
+    // Under a serialized key the Error stays what the serializer reads. Anywhere
     // else it is written without the `toJSON` that could not be read, and marked.
     if (inSerialized || !rules.errorsAsData) {
       return walk(sanitizeError(error), rules, depth, ancestors, honorToJson, inSerialized)

@@ -1,5 +1,5 @@
 /**
- * Shapes of a nested `Error`, part C: the ones a first review of the node writer found it loses,
+ * Shapes of a nested `Error`, part C: shapes where the node could keep less than the base,
  * each with a leaf of its own next to the part under test so that losing the part, or the rest of the
  * node, shows. Judged against the entry 1.4.8 wrote for the same shape (`__tests__/nested-error-shapes.c.base.json`).
  *
@@ -121,10 +121,10 @@ add('error-in-array-field-with-sibling', () => ({
 }))
 
 /**
- * Shapes that show less by decision. 1.4.8 stood in for a cause it could not read with
- * `{ name: 'UnknownError', message: '[object Object]' }`, which came from turning the value into text,
- * and that call can run a method of the user's. The sibling field and the stack are kept; the node is
- * marked incomplete instead.
+ * Shapes that show less by decision. A cause that cannot be read is left out and the node is marked
+ * incomplete: it is never stood in for by the text of its conversion, which can run a method of the
+ * user's. The base recorded such a stand-in, `{ name: 'UnknownError', message: '[object Object]' }`;
+ * the sibling field and the stack are kept.
  */
 const ACCEPTED: Record<string, RegExp> = {
   'hostile-enumerable-cause-with-sibling': /^LOST "UnknownError" "\[object Object\]"$/
