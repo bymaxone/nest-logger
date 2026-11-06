@@ -14,17 +14,16 @@ heading here.
 ### Security
 
 - **Error entries no longer carry what a failed driver call was given or quoted.** A driver puts the
-  call that failed on its error (a Redis reply error carries `command: { name, args }`, a query error
-  `parameters`) and a PostgreSQL error quotes the row in `detail` and the statement in `where` and
-  `internalQuery`. The key-name redaction cannot see a value inside such a string, so it reached the
-  entry. The `args` and `parameters` own fields of an error are now omitted, a `command` object is
-  reduced to its `name`, and an error that PostgreSQL raised (recognised by its `severity`, a SQLSTATE
-  `code` and its `routine`) loses `detail`, `where` and `internalQuery` while its other fields
-  stay. This holds for the root `err`, for every `cause` and `errors` link, for an `Error` nested
-  in the metadata, and for a driver error held as a field of another error (TypeORM `driverError`,
-  Sequelize `parent`). `args` and `parameters` match in any case. A field of those names that you
-  attach yourself to an error is no longer logged either; put it under a different name, or in
-  the metadata, where name-based redaction applies.
+  call that failed on its error (a Redis reply error carries `command: { name, args }`, a query
+  error `parameters`) and a PostgreSQL error quotes the row in `detail` and the statement in `where`
+  and `internalQuery`. The key-name redaction cannot see a value inside such a string, so it reached
+  the entry. The `args` and `parameters` own fields of an error are now omitted, a `command` object
+  is reduced to its `name`, and an error that PostgreSQL raised loses `detail`, `where` and
+  `internalQuery` while its other fields stay. This holds for the root `err`, for every `cause` and
+  `errors` link, for an `Error` nested in the metadata, and for a driver error held as a field of
+  another error (a `driverError` or a `parent` field, for instance). `args` and `parameters` match
+  in any case. A field of those names that you attach yourself to an error is no longer logged
+  either; put it under a different name, or in the metadata, where name-based redaction applies.
 
   This covers the carriers above, not every driver: a field that carries a query's text or values
   under another name (a SQL string, `bindings`, an HTTP client's request body) is still written as
