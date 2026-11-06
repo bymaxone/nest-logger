@@ -4,7 +4,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cause-enum-axios": {
@@ -18,7 +18,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "agg-axios": {
@@ -26,18 +26,18 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "root-cause-axios": {
     "err": {
       "type": "Error",
       "message": "o",
-      "stack": "<stack>",
+      "stack": "Error: o",
       "cause": {
         "name": "AxiosLike",
         "message": "connect refused",
-        "stack": "<stack>",
+        "stack": "AxiosLike: connect refused",
         "config": {
           "url": "/x",
           "headers": {
@@ -61,7 +61,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cause-string": {
@@ -69,7 +69,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cause-obj-toString": {
@@ -77,7 +77,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cause-plain-toJSON": {
@@ -85,7 +85,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "enum-cause-plain-secret": {
@@ -99,7 +99,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "enum-cause-plain-nonerror": {
@@ -114,7 +114,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "enum-cause-string": {
@@ -124,7 +124,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "enum-cause-obj-info": {
@@ -139,7 +139,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "enum-errors-nonerror": {
@@ -154,7 +154,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "enum-errors-notarray": {
@@ -166,7 +166,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "own-name-field": {
@@ -177,7 +177,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "own-message-enumerable": {
@@ -185,7 +185,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "own-stack-enum": {
@@ -193,7 +193,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "type-field": {
@@ -203,7 +203,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "field-date-buffer-bigint": {
@@ -219,7 +219,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "field-depth": {
@@ -351,7 +351,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "field-array-error": {
@@ -361,7 +361,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "stack-undefined": {
@@ -369,7 +369,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "stack-nonstring": {
@@ -377,7 +377,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "stack-node_modules": {
@@ -385,7 +385,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "message-nonstring": {
@@ -393,7 +393,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "name-nonstring": {
@@ -401,7 +401,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "name-prototype-obj": {
@@ -409,7 +409,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "proto-null-error": {
@@ -417,7 +417,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "sym-secret": {
@@ -425,7 +425,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "sym-error": {
@@ -433,7 +433,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toPrimitive": {
@@ -441,7 +441,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toStringTag": {
@@ -449,7 +449,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toJSON-proto": {
@@ -459,7 +459,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toJSON-own": {
@@ -469,7 +469,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toJSON-getter": {
@@ -479,19 +479,19 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toJSON-getter-throw": {
     "inner": {
       "name": "Error",
       "message": "x",
-      "stack": "<stack>"
+      "stack": "Error: x"
     },
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toJSON-throws": {
@@ -503,7 +503,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toJSON-returns-self": {
@@ -511,7 +511,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toJSON-returns-error-w-secret": {
@@ -526,14 +526,14 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toJSON-under-err-key": {
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toJSON-root-err": {
@@ -547,7 +547,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "proxy-pass": {
@@ -555,7 +555,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "proxy-get-throw": {
@@ -566,7 +566,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "proxy-has": {
@@ -574,7 +574,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "proxy-ownKeys": {
@@ -586,7 +586,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "proxy-ownKeys-secret": {
@@ -594,7 +594,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "proxy-getProto": {
@@ -610,7 +610,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "proxy-get-secret-diff": {
@@ -620,7 +620,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "proxy-root-err": {
@@ -634,7 +634,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "proxy-in-bindings": {
@@ -645,7 +645,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "getter-diff": {
@@ -655,7 +655,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "getter-error": {
@@ -665,27 +665,27 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "getter-throw": {
     "inner": {
       "name": "Error",
       "message": "o",
-      "stack": "<stack>",
+      "stack": "Error: o",
       "_errorFieldsIncomplete": true
     },
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "getter-throw-root": {
     "err": {
       "type": "Error",
       "message": "o",
-      "stack": "<stack>",
+      "stack": "Error: o",
       "_errorFieldsIncomplete": true
     }
   },
@@ -693,13 +693,13 @@
     "inner": {
       "name": "Error",
       "message": "o",
-      "stack": "<stack>",
+      "stack": "Error: o",
       "_errorFieldsIncomplete": true
     },
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "getter-cause-diff": {
@@ -709,7 +709,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "classfield-errors": {
@@ -719,23 +719,23 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "classfield-errors-root": {
     "err": {
       "type": "Error",
       "message": "x",
-      "stack": "<stack>",
+      "stack": "Error: x",
       "errors": [
         {
           "name": "Error",
           "message": "e1",
-          "stack": "<stack>",
+          "stack": "Error: e1",
           "cause": {
             "name": "Error",
             "message": "e1c",
-            "stack": "<stack>"
+            "stack": "Error: e1c"
           }
         }
       ]

@@ -6,7 +6,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "classfield-held": {
@@ -16,7 +16,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "classfield-under-serializer": {
@@ -30,7 +30,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "realm-nested": {
@@ -38,7 +38,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "realm-root": {
@@ -52,7 +52,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "realm-errors": {
@@ -60,7 +60,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "realm-field": {
@@ -73,7 +73,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "realm-toJSON": {
@@ -83,7 +83,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "ser-err-identity": {
@@ -106,7 +106,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "ser-custom-throws": "THROW s",
@@ -122,7 +122,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "ser-custom-child": {
@@ -133,7 +133,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "ser-custom-child-nested-key": {
@@ -143,14 +143,14 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "child-err-key": {
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "child-plain": {
@@ -158,7 +158,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "child-toJSON": {
@@ -170,7 +170,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "accessor-name": {
@@ -178,7 +178,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "accessor-throw": {
@@ -189,7 +189,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "frozen": {
@@ -205,7 +205,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "sealed": {
@@ -216,7 +216,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "shared": {
@@ -226,7 +226,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cycle-cause": {
@@ -236,7 +236,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cycle-errors": {
@@ -244,7 +244,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cycle-field": {
@@ -257,7 +257,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cycle-toJSON-out": {
@@ -267,7 +267,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cycle-toJSON-out2": {
@@ -277,14 +277,14 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cycle-under-ser": {
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "depth-ceiling": {
@@ -488,7 +488,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "depth-ceiling2": {
@@ -694,7 +694,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "depth-ceiling3": {
@@ -900,7 +900,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "chain-12": {
@@ -908,7 +908,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "chain-cause-nonenum-secret": {
@@ -916,7 +916,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "arr-holes-error": {
@@ -924,7 +924,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "error-subclass-ownenum-array": {
@@ -940,7 +940,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toJSON-fn-on-field": {
@@ -953,7 +953,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "bindings-sym": {
@@ -961,7 +961,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "toJSON-nonerror-w-error-field": {
@@ -975,7 +975,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "string-cause-toString-hostile": {
@@ -983,7 +983,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "own-enum-cause-undefined": {
@@ -991,7 +991,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cmp-symbol-keyed-field": {
@@ -999,7 +999,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cmp-proxy-passthrough": {
@@ -1007,7 +1007,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cmp-getter-field-ok": {
@@ -1017,7 +1017,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cmp-toJSON-prototype": {
@@ -1027,7 +1027,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cmp-toJSON-returns-error": {
@@ -1035,7 +1035,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cmp-root-toJSON-prototype": {
@@ -1048,11 +1048,11 @@
     "err": {
       "type": "Error",
       "message": "c",
-      "stack": "<stack>",
+      "stack": "Error: c",
       "cause": {
         "name": "Error",
         "message": "cf",
-        "stack": "<stack>"
+        "stack": "Error: cf"
       }
     }
   },
@@ -1060,7 +1060,7 @@
     "err": {
       "type": "Error",
       "message": "c",
-      "stack": "<stack>",
+      "stack": "Error: c",
       "password": "[REDACTED]",
       "held": {}
     }
@@ -1070,7 +1070,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cmp-host-serializer-err-identity": {
@@ -1090,7 +1090,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cmp-array-of-errors": {
@@ -1098,7 +1098,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "cmp-enumerable-accessToken": {
@@ -1108,7 +1108,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "r5-enumerable-cause-axios": {
@@ -1122,7 +1122,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "r5-aggregate-axios": {
@@ -1130,7 +1130,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "r5-own-errors-map": {
@@ -1142,7 +1142,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "r5-own-errors-list": {
@@ -1157,7 +1157,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   },
   "r5-own-cause-object": {
@@ -1172,7 +1172,7 @@
     "err": {
       "type": "Error",
       "message": "root",
-      "stack": "<stack>"
+      "stack": "Error: root"
     }
   }
 }

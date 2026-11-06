@@ -8,7 +8,7 @@
  */
 import { writeFileSync } from 'node:fs'
 
-import { loadBase, problem, run, type Shape } from './__tests__/nested-error-shapes.runner'
+import { judge, loadBase, run, type Shape } from './__tests__/nested-error-shapes.runner'
 
 const cases: Record<string, () => Shape> = {}
 const add = (name: string, make: () => Shape): void => {
@@ -59,7 +59,8 @@ add('hostile-errors-member-with-sibling', () => ({
   meta: { inner: Object.assign(new AggregateError([hostile()], 'agg'), { good: 'KEEPgood3' }) }
 }))
 add('hostile-field-with-sibling', () => ({
-  meta: { inner: withFields('o', { first: 'KEEPfirst', bad: hostile(), last: 'KEEPlast' }) }
+  meta: { inner: withFields('o', { first: 'KEEPfirst', bad: hostile(), last: 'KEEPlast' }) },
+  keeps: ['KEEPfirst', 'KEEPlast']
 }))
 add('hostile-cause-keeps-stack', () => ({
   meta: { inner: Object.assign(new Error('o', { cause: hostile() }), { code: 'KEEPcode' }) }
@@ -146,6 +147,6 @@ describe('nested Error shapes, part C, against the 1.4.8 output', () => {
   })
 
   it.each(Object.keys(cases))('%s loses nothing and leaks nothing that 1.4.8 did not', (name) => {
-    expect(problem(base[name], run(cases[name] as () => Shape))).toMatch(ACCEPTED[name] ?? /^$/)
+    expect(judge(base[name], cases[name] as () => Shape)).toMatch(ACCEPTED[name] ?? /^$/)
   })
 })

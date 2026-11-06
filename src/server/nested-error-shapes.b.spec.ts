@@ -14,7 +14,7 @@
 import { writeFileSync } from 'node:fs'
 import vm from 'node:vm'
 
-import { axios, loadBase, problem, run, type Shape } from './__tests__/nested-error-shapes.runner'
+import { axios, judge, loadBase, run, type Shape } from './__tests__/nested-error-shapes.runner'
 
 const cases: Record<string, () => Shape> = {}
 const add = (name: string, make: () => any): void => {
@@ -372,6 +372,6 @@ describe('nested Error shapes, part B, against the 1.4.8 output', () => {
   })
 
   it.each(Object.keys(cases))('%s loses nothing and leaks nothing that 1.4.8 did not', (name) => {
-    expect(problem(base[name], run(cases[name] as () => Shape))).toMatch(ACCEPTED[name] ?? /^$/)
+    expect(judge(base[name], cases[name] as () => Shape)).toMatch(ACCEPTED[name] ?? /^$/)
   })
 })
