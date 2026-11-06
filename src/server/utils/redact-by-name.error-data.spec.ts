@@ -322,6 +322,18 @@ describe('the node of an Error outside a serialized root key', () => {
     expect(stacked).not.toHaveProperty('stack')
   })
 
+  it('censors the added type when the name it is read from is a covered name', () => {
+    const covered = createNameRedactor(['name'], '[REDACTED]', ['err'])
+    const own = Object.assign(new Error('x'), { name: 'PRIVATE_PERSON' })
+    class Sub extends Error {}
+
+    const written = covered({ own, sub: new Sub('y') }, true) as Record<string, any>
+
+    expect(written['own']).toMatchObject({ name: '[REDACTED]', type: '[REDACTED]' })
+    expect(written['sub']['type']).toBe('[REDACTED]')
+    expect(nodeOf(own)['type']).toBe('PRIVATE_PERSON')
+  })
+
   it('writes the exact sanitizer node when the head cannot be read at all', () => {
     const explode = {
       get: (): never => {

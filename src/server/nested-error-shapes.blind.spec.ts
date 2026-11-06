@@ -21,6 +21,13 @@ const add = (name: string, make: () => Shape): void => {
 const withFields = (message: string, fields: Record<string, unknown>): Error =>
   Object.assign(new Error(message), fields)
 
+/** An Error whose stack has been read, so a `name` set afterwards does not reach its header. */
+const withPinnedStack = (message: string): Error => {
+  const error = new Error(message)
+  void error.stack
+  return error
+}
+
 /** An Error whose own `toJSON` throws when it is called. */
 const throwingToJson = (message: string, fields: Record<string, unknown>): Error =>
   withFields(message, {
@@ -165,6 +172,15 @@ for (const key of ['message', 'name']) {
 }
 add('stack-holding-an-object-non-enumerable', () => ({
   meta: { inner: withPart('stack', { password: 'LEAK', keep: 'KEEPstk' }, false) }
+}))
+add('redaction-leaf-name-with-own-name', () => ({
+  // The stack is read first: V8 formats it on first read, and a later `name` would land in its header.
+  meta: { inner: Object.assign(withPinnedStack('o'), { name: 'LEAKperson' }) },
+  extra: { redactPaths: ['*.name'] }
+}))
+add('redaction-leaf-name-with-prototype-name', () => ({
+  meta: { inner: new (class Sub extends Error {})('o') },
+  extra: { redactPaths: ['*.name'] }
 }))
 
 /** Shapes that show less by decision: none in this part. */

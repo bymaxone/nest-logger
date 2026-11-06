@@ -33,8 +33,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-06 — server: 30.33 KiB real -> 30.4 KiB budget (0.07 KiB of headroom, the
-//     measured minimum). `main` measured 29.64 KiB; the nested-Error node adds +0.69 KiB,
+//   - 2026-11-06 — server: 30.34 KiB real -> 30.4 KiB budget (0.06 KiB of headroom, the
+//     measured minimum). `main` measured 29.64 KiB; the nested-Error node adds +0.70 KiB,
 //     all executable code (the field-walk copy, the head and chain parts each guarded on its
 //     own, the chain budget and the `errors` cap). Trimming the prose around it was measured
 //     and moved the artifact by 0.00 KiB, as in the entries below: comments do not ship.

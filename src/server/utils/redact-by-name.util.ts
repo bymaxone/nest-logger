@@ -649,7 +649,10 @@ function addErrorParts(
     try {
       const written = write(read())
       if (written === undefined) return
-      defineOwn(copy, key, rules.sensitive.has(key.toLowerCase()) ? rules.censor : written)
+      // `type` is read from `name`, so a covered `name` covers it too.
+      const covered =
+        rules.sensitive.has(key.toLowerCase()) || (key === 'type' && rules.sensitive.has('name'))
+      defineOwn(copy, key, covered ? rules.censor : written)
     } catch {
       incomplete = true
     }

@@ -202,5 +202,23 @@
       "message": "root",
       "stack": "Error: root"
     }
+  },
+  "redaction-leaf-name-with-own-name": {
+    "inner": {
+      "name": "[REDACTED]"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "redaction-leaf-name-with-prototype-name": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
   }
 }
