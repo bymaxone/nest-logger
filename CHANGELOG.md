@@ -14,13 +14,14 @@ heading here.
 ### Security
 
 - **A database error is recognised from its SQLSTATE `code` alone.** 1.4.9 also required an own
-  `severity` and an own `routine`, which the PostgreSQL protocol does not guarantee on an error
-  (`code` and the message are always sent; the other fields are optional), so a database error that
-  arrived without them kept `detail`, `where` and `internalQuery`, which can quote the row. An error
-  whose own `code` is a string of five characters from `0-9A-Z`, the first not `E`, now loses those
-  three fields; its other fields stay. The first character rules out the operating-system codes of
-  the same length (`EPIPE`, `EPERM`), and no class of the PostgreSQL error codes starts with `E`. An
-  error with any other `code`, or none, is written as before.
+  `severity` and an own `routine`. The PostgreSQL protocol sends the SQLSTATE `code` and the message
+  on every error but `routine` only when the server includes it, and a client library or proxy may
+  not expose `severity`, so a database error that arrived without them kept `detail`, `where` and
+  `internalQuery`, which can quote the row. An error whose own `code` is a string of five characters
+  from `0-9A-Z`, the first not `E`, now loses those three fields; its other fields stay. The first
+  character rules out the operating-system codes of the same length (`EPIPE`, `EPERM`), and no class
+  of the PostgreSQL error codes starts with `E`. An error with any other `code`, or none, is written
+  as before.
 
 ## [1.4.9] - 2026-11-06
 
