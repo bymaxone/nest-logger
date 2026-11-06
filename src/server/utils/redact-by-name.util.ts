@@ -685,6 +685,7 @@ function writeErrorFields(
   rules: RedactRules,
   part: ErrorPart
 ): void {
+  // Stryker disable next-line ArrayDeclaration: a key the error does not have reads undefined and is skipped, so a placeholder here changes nothing
   const keys = guarded(() => Object.keys(error), node) ?? []
   let fields: Record<string, unknown> | undefined
   for (const key of keys) {
