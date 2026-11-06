@@ -256,57 +256,56 @@ describe('an Error that cannot be fully read', () => {
     [
       'only its toJSON',
       { toJSON: true },
-      { type: 'Error', message: 'boom', _errorFieldsIncomplete: true }
+      { type: 'Error', message: 'boom', sibling: 'kept', _errorFieldsIncomplete: true }
     ],
     ['its toJSON and its name', { toJSON: true, name: true }, { type: 'SanitizeFailed' }]
-  ])('falls back to the head when %s cannot be read', (_label, hostile, expected) => {
-    // The failure comes before the head is read, so the head is read once, in the fallback.
-    const error = new Error('boom')
-    const explode = {
-      get: (): never => {
-        throw new Error('exploded')
-      }
-    }
-    Object.defineProperty(error, 'toJSON', explode)
-    if ('name' in hostile) Object.defineProperty(error, 'name', explode)
-
-    const { entry } = logWith({ inner: error })
-
-    expect(entry.logKey).toBe('KEY')
-    expect(entry.inner).toMatchObject(expected)
-  })
-
-  it('keeps only the parts of the head that are text when walking a field fails', () => {
-    const odd = Object.assign(
-      new Error('o', {
-        cause: {
-          get field(): never {
-            throw new Error('exploded')
-          }
+  ])(
+    'writes the Error without a toJSON that cannot be read when %s',
+    (_label, hostile, expected) => {
+      // The Error is written as if it had no toJSON, with its fields, and marked.
+      const error = Object.assign(new Error('boom'), { sibling: 'kept' })
+      const explode = {
+        get: (): never => {
+          throw new Error('exploded')
         }
-      }),
-      {
-        name: 42,
-        message: { not: 'text' }
       }
-    )
+      Object.defineProperty(error, 'toJSON', explode)
+      if ('name' in hostile) Object.defineProperty(error, 'name', explode)
 
-    const { entry } = logWith({ inner: odd })
+      const { entry } = logWith({ inner: error })
 
-    expect(entry.inner).toStrictEqual({ _errorFieldsIncomplete: true })
-  })
+      expect(entry.logKey).toBe('KEY')
+      expect(entry.inner).toMatchObject(expected)
+    }
+  )
 
-  it('writes the head alone and marks it when walking a field fails', () => {
+  it('keeps the other parts and marks the node when one part cannot be walked', () => {
     const hostile = {
       get field(): never {
         throw new Error('exploded')
       }
     }
+    const error = Object.assign(new Error('o', { cause: hostile }), { good: 'kept' })
 
-    const { entry } = logWith({ inner: new Error('o', { cause: hostile }) })
+    const { entry } = logWith({ inner: error })
 
     expect(entry.logKey).toBe('KEY')
-    expect(entry.inner).toStrictEqual({ type: 'Error', message: 'o', _errorFieldsIncomplete: true })
+    expect(entry.inner).toMatchObject({
+      type: 'Error',
+      message: 'o',
+      good: 'kept',
+      _errorFieldsIncomplete: true
+    })
+    expect(entry.inner.stack).toContain('o')
+    expect(entry.inner).not.toHaveProperty('cause')
+  })
+
+  it('writes a head that is not text as data, like any other value', () => {
+    const odd = Object.assign(new Error('o'), { name: 42, message: { not: 'text' } })
+
+    const { entry } = logWith({ inner: odd })
+
+    expect(entry.inner).toMatchObject({ type: 42, message: { not: 'text' } })
   })
 })
 

@@ -83,6 +83,20 @@ describe('the node of an Error outside a serialized root key', () => {
     ])
   })
 
+  it('ends a cycle that runs through both cause and errors, and keeps the level of the link it came by', () => {
+    // b is the cause of a, c is a member of b's errors, and c's cause is b again.
+    const b = new Error('b')
+    const c = new Error('c', { cause: b })
+    Object.assign(b, { errors: [c] })
+    const a = new Error('a', { cause: b })
+
+    const written = JSON.stringify(nodeOf(a))
+
+    expect(written).toContain('[Circular]')
+    expect(written).toContain('"message":"b"')
+    expect(written).toContain('"message":"c"')
+  })
+
   it('keeps an own field named like something every object inherits at the top level', () => {
     // `toString` and `constructor` are on every object's prototype, not on the node, so they collide with nothing.
     const written = nodeOf(
@@ -107,6 +121,15 @@ describe('the node of an Error outside a serialized root key', () => {
 
     expect(colliding['fields']).toStrictEqual({ type: 'validation' })
     expect(Object.keys(nodeOf(new Error('x')))).not.toContain('fields')
+  })
+
+  it('leaves a long errors list that has a toJSON to the method, with no cap and no marker', () => {
+    const members = Array.from({ length: 11 }, (_, index) => new Error(`m${index}`))
+    const list = Object.assign(members, { toJSON: () => ['from-toJSON'] })
+
+    expect(nodeOf(Object.assign(new Error('x'), { errors: list }))['errors']).toStrictEqual([
+      'from-toJSON'
+    ])
   })
 
   it('writes exactly ten members of errors with no marker, and a marker only past ten', () => {

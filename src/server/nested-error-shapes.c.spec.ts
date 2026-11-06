@@ -120,8 +120,15 @@ add('error-in-array-field-with-sibling', () => ({
   }
 }))
 
-/** Shapes that are worse by decision: none in this part. */
-const ACCEPTED: Record<string, RegExp> = {}
+/**
+ * Shapes that show less by decision. 1.4.8 stood in for a cause it could not read with
+ * `{ name: 'UnknownError', message: '[object Object]' }`, which came from turning the value into text,
+ * and that call can run a method of the user's. The sibling field and the stack are kept; the node is
+ * marked incomplete instead.
+ */
+const ACCEPTED: Record<string, RegExp> = {
+  'hostile-enumerable-cause-with-sibling': /^LOST "UnknownError" "\[object Object\]"$/
+}
 
 describe('nested Error shapes, part C, against the 1.4.8 output', () => {
   if (process.env.RECORD_SHAPES) {
