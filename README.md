@@ -727,7 +727,7 @@ any other serializer output.
 An error's own enumerable properties (`code`, `statusCode`, domain fields) are carried through, as
 Pino's standard serializer did, with one exception: the arguments of a failed driver call are not
 written. The fields `args` and `parameters` are omitted, a `command` object is reduced to its
-`name`, and a PostgreSQL error loses `detail`, `where` and `internalQuery`, which quote the row and
+`name`, and an error with a SQLSTATE `code` (five characters from `0-9A-Z`, the first not `E`) loses `detail`, `where` and `internalQuery`, which quote the row and
 the statement (its other fields stay), because the redaction
 matches key names and cannot see a value inside a string.
 

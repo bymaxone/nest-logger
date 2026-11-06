@@ -646,37 +646,46 @@ describe('ownFieldForLog', () => {
     expect(reads).toBe(0)
   })
 
-  it('omits the fields a PostgreSQL error quotes, and only on an error that carries all three marks', () => {
-    const database = { severity: 'ERROR', code: '23505', routine: '_bt_check_unique' }
-    const without = (mark: string): object => ({ ...database, [mark]: undefined })
-
+  it('omits the fields a database error quotes, from its SQLSTATE code alone', () => {
     for (const key of ['detail', 'where', 'internalQuery']) {
-      expect(ownFieldForLog(database, key, 'Key (email)=(a@b.c)')).toBe(OMIT_OWN_FIELD)
-      expect(ownFieldForLog(without('severity'), key, 'v')).toBe('v')
-      expect(ownFieldForLog(without('routine'), key, 'v')).toBe('v')
-      expect(ownFieldForLog({ ...database, code: 'ENOENT' }, key, 'v')).toBe('v')
-      expect(ownFieldForLog({ ...database, code: 23505 }, key, 'v')).toBe('v')
+      expect(ownFieldForLog({ code: '23505' }, key, 'Key (email)=(a@b.c)')).toBe(OMIT_OWN_FIELD)
+      expect(ownFieldForLog({ code: 'XX000', severity: 'ERROR' }, key, 'v')).toBe(OMIT_OWN_FIELD)
+      expect(ownFieldForLog({ code: '0A000' }, key, 'v')).toBe(OMIT_OWN_FIELD)
+      // The first and last characters of the range, as real codes: class F0 and class 0Z.
+      expect(ownFieldForLog({ code: 'F0000' }, key, 'v')).toBe(OMIT_OWN_FIELD)
+      expect(ownFieldForLog({ code: '0Z002' }, key, 'v')).toBe(OMIT_OWN_FIELD)
+      expect(ownFieldForLog({ code: 'ZZZZZ' }, key, 'v')).toBe(OMIT_OWN_FIELD)
+      expect(ownFieldForLog({ code: '00000' }, key, 'v')).toBe(OMIT_OWN_FIELD)
+      expect(ownFieldForLog({ code: '99999' }, key, 'v')).toBe(OMIT_OWN_FIELD)
+      expect(ownFieldForLog({ code: 'D0000' }, key, 'v')).toBe(OMIT_OWN_FIELD)
+      expect(ownFieldForLog({ code: 'AAAAA' }, key, 'v')).toBe(OMIT_OWN_FIELD)
+      // Longer than five characters, with the five in front or behind.
+      expect(ownFieldForLog({ code: '235055' }, key, 'v')).toBe('v')
+      expect(ownFieldForLog({ code: 'x23505' }, key, 'v')).toBe('v')
+      expect(ownFieldForLog({ code: '23505x' }, key, 'v')).toBe('v')
+      expect(ownFieldForLog({ code: 'EPIPE' }, key, 'v')).toBe('v')
+      expect(ownFieldForLog({ code: '2350' }, key, 'v')).toBe('v')
+      expect(ownFieldForLog({ code: '23a05' }, key, 'v')).toBe('v')
+      expect(ownFieldForLog({ code: 23505 }, key, 'v')).toBe('v')
+      expect(ownFieldForLog({}, key, 'v')).toBe('v')
     }
-    expect(ownFieldForLog(database, 'constraint', 'users_email_key')).toBe('users_email_key')
-    expect(ownFieldForLog(database, 'hint', 'Use a different value.')).toBe(
+    expect(ownFieldForLog({ code: '23505' }, 'constraint', 'users_email_key')).toBe(
+      'users_email_key'
+    )
+    expect(ownFieldForLog({ code: '23505' }, 'hint', 'Use a different value.')).toBe(
       'Use a different value.'
     )
   })
 
-  it('recognises a PostgreSQL error from its own data properties, never from a getter', () => {
+  it('reads the code from its own data property, never from a getter', () => {
     let reads = 0
-    const viaGetter = Object.defineProperties(
-      { code: '23505', routine: 'r' },
-      {
-        severity: {
-          enumerable: true,
-          get: () => {
-            reads++
-            return 'ERROR'
-          }
-        }
+    const viaGetter = Object.defineProperty({}, 'code', {
+      enumerable: true,
+      get: () => {
+        reads++
+        return '23505'
       }
-    )
+    })
 
     expect(ownFieldForLog(viaGetter, 'detail', 'v')).toBe('v')
     expect(reads).toBe(0)
