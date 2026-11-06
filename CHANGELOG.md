@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.9] - 2026-11-06
+
 ### Security
 
 - **Error entries no longer carry what a failed driver call was given or quoted.** A driver puts the
@@ -72,12 +74,17 @@ Nothing to change in code. What can differ at run time:
 - The server bundle budget (`scripts/check-size.mjs`) is raised to 32 KiB, re-derived from the built
   artifact with the usual headroom; the calibration history there has the measurements. The growth
   is executable code, not comment weight.
+- The mutation inventory now exempts the two specs that judge no mutant, each with its reason
+  (`scripts/mutation-inventory.exempt.json`): one spawns a script and imports nothing from `src/`, the
+  other scans the text of the sources and the README.
 
 ### Tests
 
 - The shapes of a nested `Error` are judged against the output recorded
   from 1.4.8: none may throw or fail the record where 1.4.8 did not, show a secret marker 1.4.8 did not,
   or drop a value 1.4.8 emitted.
+- `LOGGER_ERROR_CODES`, `RESERVED_LOG_KEYS` and `RESERVED_LOG_KEYS_NOT_EMITTED` are compared whole
+  against written-out lists, so an added, removed or renamed entry fails a spec.
 
 ## [1.4.8] - 2026-11-01
 
@@ -2406,7 +2413,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.8...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.9...HEAD
+[1.4.9]: https://github.com/bymaxone/nest-logger/compare/v1.4.8...v1.4.9
 [1.4.8]: https://github.com/bymaxone/nest-logger/compare/v1.4.7...v1.4.8
 [1.4.7]: https://github.com/bymaxone/nest-logger/compare/v1.4.6...v1.4.7
 [1.4.6]: https://github.com/bymaxone/nest-logger/compare/v1.4.5...v1.4.6
