@@ -23,9 +23,8 @@ heading here.
   stay. This holds for the root `err`, for every `cause` and `errors` link, for an `Error` nested
   in the metadata, and for a driver error held as a field of another error (TypeORM `driverError`,
   Sequelize `parent`). `args` and `parameters` match in any case. A field of those names that you
-  attach
-  yourself to an error is no longer logged either; put it under a different name, or in the
-  metadata, where name-based redaction applies.
+  attach yourself to an error is no longer logged either; put it under a different name, or in
+  the metadata, where name-based redaction applies.
 
 ### Changed
 
