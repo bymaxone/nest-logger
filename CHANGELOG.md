@@ -26,6 +26,11 @@ heading here.
   attach yourself to an error is no longer logged either; put it under a different name, or in
   the metadata, where name-based redaction applies.
 
+  This covers the carriers above, not every driver: a field that carries a query's text or values
+  under another name (a SQL string, `bindings`, an HTTP client's request body) is still written as
+  the error holds it. Do not put such values on an error you log, or keep them out of its own fields
+  before it reaches the logger.
+
 ### Changed
 
 - **An `Error` nested in the metadata is logged with its content.** `{ inner: new Error('x') }` was
