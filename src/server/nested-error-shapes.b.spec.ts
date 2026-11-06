@@ -351,7 +351,7 @@ add('r5-own-cause-object', () => ({
 
 /**
  * Shapes that are worse by decision, with the decision. A string `cause` is written like a
- * `message` now, as the root `err` already does, so a secret placed in one is as visible as one
+ * `message`, as the root `err` does, so a secret placed in one is as visible as one
  * placed in a message: secrets do not belong in either.
  */
 const ACCEPTED: Record<string, RegExp> = { 'cause-string': /^LEAK SECRET$/ }

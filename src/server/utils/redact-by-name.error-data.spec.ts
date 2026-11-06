@@ -61,7 +61,7 @@ describe('the node of an Error outside a serialized root key', () => {
       }
     })
 
-    // An Error whose own field cannot be read is written by the sanitizer, as it always was.
+    // An Error whose own field cannot be read is written by the sanitizer.
     expect(Object.keys(nodeOf(error))).toStrictEqual([
       'name',
       'message',

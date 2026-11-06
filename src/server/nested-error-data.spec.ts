@@ -114,7 +114,7 @@ describe('an Error outside a serialized root key', () => {
 
     const { entry, line } = logWith({ inner: new PayError('pay failed') })
 
-    // The own `type` is what the walk wrote before; the head does not replace it.
+    // An own `type` field is kept as the walk wrote it; the head `type` is not added over it.
     expect(entry.inner).toMatchObject({
       type: 'validation',
       message: 'pay failed',
@@ -203,7 +203,7 @@ describe('an Error that defines toJSON', () => {
     ['a non-enumerable cause', (e: Error) => new Error('o', { cause: e })],
     ['errors', (e: Error) => new AggregateError([e], 'agg')]
   ])('is written as its toJSON decides when it is the %s of another Error', (_label, wrap) => {
-    // The credential that reached the line in clear through the link of a chain.
+    // A link's toJSON keeps request credentials out of the line, whichever way it is reached.
     const { line } = logWith({ inner: wrap(new HttpFailure()) })
 
     expect(line).toContain('ECONNREFUSED')

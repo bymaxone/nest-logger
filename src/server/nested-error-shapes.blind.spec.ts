@@ -1,5 +1,5 @@
 /**
- * Shapes of a nested `Error`, the blind spots: the ones the oracle itself used to be blind to. Values under
+ * Shapes of a nested `Error`, the blind spots: the ones a comparison of leaf values alone would miss. Values under
  * a `stack` key, `null` leaves, a node that breaks only when the record is stringified, a user
  * redaction leaf that names a key the node uses, and shapes on which 1.4.8 failed the whole record,
  * which cannot be compared and so say what they must keep. Judged against the entry 1.4.8 wrote for

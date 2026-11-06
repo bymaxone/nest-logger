@@ -394,7 +394,7 @@ add('classfield-errors-root', () => {
 
 /**
  * Shapes that are worse by decision, with the decision. A string `cause` is written like a
- * `message` now, as the root `err` already does, so a secret placed in one is as visible as one
+ * `message`, as the root `err` does, so a secret placed in one is as visible as one
  * placed in a message: secrets do not belong in either. A nested Error's own `stack` text is
  * part of its node, as the root `err` writes it, so text planted there appears where 1.4.8
  * wrote `{}`.
