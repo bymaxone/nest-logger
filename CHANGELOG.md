@@ -22,9 +22,8 @@ heading here.
   added only where the node has no key of that name, so nothing written before is replaced or removed,
   and a part that cannot be read is left out and the node carries `_errorFieldsIncomplete: true`. A
   `cause` or `errors` value that is not an `Error` is written as data and censored by name; it is never
-  turned into text. The added chain is written to the same depth as the root `err` (the error and
-  three links, then a `_truncated` marker) and `errors` to ten members plus a width marker; these
-  limits apply to the added parts only.
+  turned into text. The added chain and `errors` are bounded as the root `err`'s are, each ending in a
+  `_truncated` marker; these limits apply to the added parts only.
 
 #### Apply to a derived backend
 
@@ -47,9 +46,7 @@ Nothing to change in code. What can differ at run time:
 
 ### Tests
 
-- The shapes of a nested `Error` (prototype, own, getter and throwing `toJSON`; proxies; symbol keys;
-  getters; class-field `cause` and `errors`; errors from another realm; serializers on `err` and on
-  other keys, at the root and through `child()`; cycles; depth) are judged against the output recorded
+- The shapes of a nested `Error` are judged against the output recorded
   from 1.4.8: none may throw or fail the record where 1.4.8 did not, show a secret marker 1.4.8 did not,
   or drop a value 1.4.8 emitted.
 
