@@ -18,7 +18,7 @@
 import { escapeControlCharacters } from './escape-log-text.util'
 
 /** Default number of `cause` / `AggregateError` links walked before truncating. */
-const DEFAULT_MAX_CAUSE_DEPTH = 3
+export const DEFAULT_MAX_CAUSE_DEPTH = 3
 
 /**
  * Maximum number of `AggregateError.errors` members serialized for a single node.
@@ -26,7 +26,7 @@ const DEFAULT_MAX_CAUSE_DEPTH = 3
  * over thousands of rejections must not turn one log call into O(N) sanitize +
  * stack-scrub work. Members past this cap collapse into a single width marker.
  */
-const MAX_AGGREGATE_ERRORS = 10
+export const MAX_AGGREGATE_ERRORS = 10
 
 /** Sentinel substituted for a value already visited while walking the graph. */
 const CIRCULAR_SENTINEL = '[Circular]'
@@ -463,7 +463,7 @@ function isObject(value: unknown): value is object {
  *
  * @returns A new depth {@link TruncatedMarker}.
  */
-function createDepthMarker(): TruncatedMarker {
+export function createDepthMarker(): TruncatedMarker {
   return { _truncated: true, _reason: 'cause-depth-exceeded' }
 }
 
@@ -474,6 +474,6 @@ function createDepthMarker(): TruncatedMarker {
  * @param omitted - Count of omitted members.
  * @returns A new width {@link TruncatedMarker}.
  */
-function createWidthMarker(omitted: number): TruncatedMarker {
+export function createWidthMarker(omitted: number): TruncatedMarker {
   return { _truncated: true, _reason: 'aggregate-width-exceeded', _omitted: omitted }
 }

@@ -399,7 +399,10 @@ function buildNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor 
   if (names.length === 0) {
     return PASS_THROUGH
   }
-  return createNameRedactor(names, options.redactCensor)
+  return createNameRedactor(names, options.redactCensor, [
+    'err',
+    ...Object.keys(options.serializers)
+  ])
 }
 
 /**
