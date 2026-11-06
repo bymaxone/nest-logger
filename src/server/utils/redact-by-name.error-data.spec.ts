@@ -350,6 +350,27 @@ describe('the node of an Error outside a serialized root key', () => {
     expect(written['stack']).toBe(label === 'neither' ? 'Sub: SECRETmsg\n    at x' : '[REDACTED]')
   })
 
+  it.each([
+    ['type', ['type']],
+    ['name', ['type', 'stack']],
+    ['message', ['message', 'stack']],
+    ['stack', ['stack']],
+    ['cause', ['cause']],
+    ['errors', ['errors']]
+  ])('censors exactly these added parts when only %s is covered', (name, expected) => {
+    const alone = createNameRedactor([name], '[REDACTED]', ['err'])
+    const error = new AggregateError([new Error('m')], 'agg', { cause: new Error('c') })
+
+    const written = (alone({ inner: error }, true) as { inner: Record<string, unknown> }).inner
+    const censored = ['type', 'message', 'stack', 'cause', 'errors'].filter(
+      (part) => written[part] === '[REDACTED]'
+    )
+
+    expect(censored).toStrictEqual(
+      ['type', 'message', 'stack', 'cause', 'errors'].filter((part) => expected.includes(part))
+    )
+  })
+
   it('writes the exact sanitizer node when the head cannot be read at all', () => {
     const explode = {
       get: (): never => {

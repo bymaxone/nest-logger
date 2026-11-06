@@ -578,12 +578,6 @@ function walkObject(
 /** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */
 const linkDepths = new WeakMap<object, number>()
 
-/** The other fields whose text an added part carries, so that covering one covers the part. */
-const DERIVED_FROM: ReadonlyMap<string, readonly string[]> = new Map([
-  ['type', ['name']],
-  ['stack', ['name', 'message']]
-])
-
 /** The marker key of a node that lost a part while it was being written. */
 const INCOMPLETE_KEY = '_errorFieldsIncomplete'
 
@@ -646,8 +640,12 @@ function addErrorParts(
   const taken = new Set(ownKeys)
   const level = linkDepths.get(error) ?? 0
   let incomplete = false
+  // `covers` names every field whose text the part carries, its own included: covering any of
+  // them covers the part. `type` is the `name`; the first line of `stack` is the `name` and the
+  // `message`.
   const add = (
     key: string,
+    covers: readonly string[],
     read: () => unknown,
     write = (value: unknown): unknown => walk(value, rules, depth + 1, ancestors)
   ): void => {
@@ -655,30 +653,29 @@ function addErrorParts(
     try {
       const written = write(read())
       if (written === undefined) return
-      // A part that carries another field's text is covered by that field's name too: `type`
-      // is the `name`, and the first line of `stack` is the `name` and the `message`.
-      const covered = [key, ...(DERIVED_FROM.get(key) ?? [])].some((name) =>
-        rules.sensitive.has(name)
-      )
+      const covered = covers.some((name) => rules.sensitive.has(name))
       defineOwn(copy, key, covered ? rules.censor : written)
     } catch {
       incomplete = true
     }
   }
-  add('type', () => error.name)
-  add('message', () => error.message)
+  add('type', ['type', 'name'], () => error.name)
+  add('message', ['message'], () => error.message)
   add(
     'stack',
+    ['stack', 'name', 'message'],
     (): unknown => error.stack,
     (stack) => (typeof stack === 'string' ? scrubStack(stack) : undefined)
   )
   add(
     'cause',
+    ['cause'],
     (): unknown => error.cause,
     (cause) => walkChainPart(cause, level, rules, depth, ancestors)
   )
   add(
     'errors',
+    ['errors'],
     (): unknown => capErrors((error as { errors?: unknown }).errors),
     (errors) => walkChainPart(errors, level, rules, depth, ancestors)
   )
