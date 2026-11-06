@@ -19,8 +19,8 @@ heading here.
   `internalQuery`. The key-name redaction cannot see a value inside such a string, so it reached the
   entry. The `args` and `parameters` own fields of an error are now omitted, a `command` object is
   reduced to its `name`, and an error that PostgreSQL raised (recognised by its `severity`, a SQLSTATE
-  `code` and its `routine`) loses `detail`, `where` and `internalQuery` while `code`, `constraint`,
-  `table`, `column`, `schema` and `routine` stay. This holds for the root `err`, for every `cause` and
+  `code` and its `routine`) loses `detail`, `where` and `internalQuery` while its other fields
+  stay. This holds for the root `err`, for every `cause` and
   `errors` link, and for an `Error` nested in the metadata. A field of those names that you attach
   yourself to an error is no longer logged either; put it under a different name, or in the
   metadata, where name-based redaction applies.
@@ -63,10 +63,9 @@ Nothing to change in code. What can differ at run time:
 
 ### Internal
 
-- The server bundle budget (`scripts/check-size.mjs`) is 32 KiB, up from 30.2 KiB, re-derived from
-  the 30.61 KiB artifact with the usual headroom. The growth is executable code: the nested `Error`
-  node (+0.70 KiB over the 29.64 KiB of `main`) and the omission of what a failed call was given or quoted from an
-  error's fields (+0.27 KiB). Trimming comments was measured to move the artifact by 0.00 KiB.
+- The server bundle budget (`scripts/check-size.mjs`) is raised to 32 KiB, re-derived from the built
+  artifact with the usual headroom; the calibration history there has the measurements. The growth
+  is executable code, not comment weight.
 
 ### Tests
 

@@ -728,7 +728,7 @@ An error's own enumerable properties (`code`, `statusCode`, domain fields) are c
 Pino's standard serializer did, with one exception: the arguments of a failed driver call are not
 written. The fields `args` and `parameters` are omitted, a `command` object is reduced to its
 `name`, and a PostgreSQL error loses `detail`, `where` and `internalQuery`, which quote the row and
-the statement (its `code`, `constraint`, `table`, `column` and `schema` stay), because the redaction
+the statement (its other fields stay), because the redaction
 matches key names and cannot see a value inside a string.
 
 When those properties cannot be read (a Proxy whose `ownKeys` throws, or a getter that throws), none of them is copied and the error node carries `_errorFieldsIncomplete: true`, so an entry without its `code` is never mistaken for a complete one.
