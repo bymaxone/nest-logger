@@ -22,8 +22,7 @@ heading here.
   written as its method decides, at every level of a chain. A `cause` or `errors` value that is not an
   `Error` is written as data and censored by name; it is never turned into text. The chain is written
   to the same depth as the root `err` (the error and three links, then a `_truncated` marker) and
-  `errors` to ten members plus a width marker. An own field whose name the node already uses, such as
-  `type`, is kept under `fields`.
+  `errors` to ten members plus a width marker. An own field named `type` is kept under `fields`.
 
 #### Apply to a derived backend
 
@@ -46,7 +45,7 @@ Nothing to change in code. What can differ at run time:
 
 ### Tests
 
-- 125 shapes of a nested `Error` (prototype, own, getter and throwing `toJSON`; proxies; symbol keys;
+- The shapes of a nested `Error` (prototype, own, getter and throwing `toJSON`; proxies; symbol keys;
   getters; class-field `cause` and `errors`; errors from another realm; serializers on `err` and on
   other keys, at the root and through `child()`; cycles; depth) are judged against the output recorded
   from 1.4.8: none may throw or fail the record where 1.4.8 did not, show a secret marker 1.4.8 did not,
