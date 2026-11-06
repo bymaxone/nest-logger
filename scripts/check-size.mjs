@@ -33,11 +33,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-06 — server: 30.50 KiB real -> 32.0 KiB budget (~4.9% headroom). RE-DERIVED from
+//   - 2026-11-06 — server: 30.61 KiB real -> 32.0 KiB budget (~4.5% headroom). RE-DERIVED from
 //     the artifact, per the standing rule: the nested-Error node had taken the headroom down to
-//     0.06 KiB, and omitting the arguments of a failed driver call from an error's fields adds
-//     +0.16 KiB (the helper that decides which own fields are written, and its use in both the
-//     serializer and the redaction walk). It is executable code, not comment weight.
+//     0.06 KiB, and omitting what a failed driver call was given or quoted from an error's fields
+//     adds +0.27 KiB (the helper that decides which own fields are written, the check that
+//     recognises a PostgreSQL error, and the use of both in the serializer and the redaction
+//     walk). It is executable code, not comment weight.
 //   - 2026-11-06 — server: 30.34 KiB real -> 30.4 KiB budget (0.06 KiB of headroom, the
 //     measured minimum). `main` measured 29.64 KiB; the nested-Error node adds +0.70 KiB,
 //     all executable code (the field-walk copy, the head and chain parts each guarded on its
