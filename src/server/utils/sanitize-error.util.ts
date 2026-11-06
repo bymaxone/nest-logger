@@ -295,8 +295,9 @@ export const OMIT_OWN_FIELD: unique symbol = Symbol('omit-own-field')
 /**
  * Whether an error carries a SQLSTATE `code` as its own string data. The protocol guarantees that
  * field on every error a PostgreSQL server sends, and it is the same code across servers that speak
- * the protocol, while `severity`, `routine` and the position fields are optional and a sender may
- * leave them out. Read from the property descriptor, so no getter runs.
+ * the protocol. `routine` and the position fields are optional on the wire, and a client library or
+ * proxy may not expose `severity`, so none of them decides. Read from the property descriptor, so no
+ * getter runs.
  */
 function isDatabaseError(source: object): boolean {
   const code: unknown = Object.getOwnPropertyDescriptor(source, 'code')?.value
