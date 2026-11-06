@@ -146,6 +146,16 @@ describe('the node of an Error outside a serialized root key', () => {
     expect(written['second']).toMatchObject({ message: 'x', sibling: 'kept' })
   })
 
+  it('writes a null cause and a null member of errors as they are, without marking the node', () => {
+    const withCause = nodeOf(new Error('x', { cause: null }))
+    const withMember = nodeOf(Object.assign(new Error('y'), { errors: [null, 'text'] }))
+
+    expect(withCause['cause']).toBeNull()
+    expect(withCause).not.toHaveProperty('_errorFieldsIncomplete')
+    expect(withMember['errors']).toStrictEqual([null, 'text'])
+    expect(withMember).not.toHaveProperty('_errorFieldsIncomplete')
+  })
+
   it('does not copy an own field the head already carries', () => {
     const written = nodeOf(Object.assign(new Error('x'), { name: 'Custom' }))
 
