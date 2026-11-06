@@ -23,6 +23,24 @@ heading here.
   of the PostgreSQL error codes starts with `E`. An error with any other `code`, or none, is written
   as before.
 
+### Changed
+
+- **One redaction call stops expanding after 200000 containers.** The name redaction walks an object
+  once per path that reaches it, so a value in which objects share references (a graph where each
+  level holds the next twice) took time and produced output that doubled with each level: a graph 20
+  levels deep took 570 ms and wrote 19 MB. A call now counts the containers (objects, arrays and
+  errors) it visits, and from the 200001st on it writes `'[REDACTION_BUDGET_EXCEEDED]'` in place of
+  each container, keeping the primitives beside them, as `'[REDACTION_DEPTH_EXCEEDED]'` does for
+  depth. Nothing is passed through unwalked. The added `type` and `message` of a nested `Error` also
+  count against the cause-chain budget, as `cause` and `errors` do.
+
+#### Apply to a derived backend
+
+Nothing to change in code. A single log call whose values hold more than 200000 containers in
+total, such as an array of 250000 objects in the metadata, now has its last containers replaced by
+the marker; a filter or alert that reads the whole array should read the part that is kept, or the
+array should be summarised before it is logged. Ordinary entries are unaffected.
+
 ## [1.4.9] - 2026-11-06
 
 ### Security

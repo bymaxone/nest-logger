@@ -91,6 +91,18 @@ export const REDACT_MAX_TRAVERSAL_DEPTH = 100
 export const REDACT_DEPTH_EXCEEDED = '[REDACTION_DEPTH_EXCEEDED]'
 
 /**
+ * Containers one redaction call visits before it stops expanding. The walk expands an object once
+ * per path that reaches it, so a graph that shares references grows as 2^depth in time and in
+ * output; this bounds both. A call that reaches it fills every further container with
+ * {@link REDACT_BUDGET_EXCEEDED}, keeps the primitives beside them, and passes nothing through
+ * unwalked. Measured, 200000 visits walk in about 100 to 150 ms.
+ */
+export const REDACT_MAX_VISITS = 200_000
+
+/** Substituted for a container met after {@link REDACT_MAX_VISITS} containers were visited. */
+export const REDACT_BUDGET_EXCEEDED = '[REDACTION_BUDGET_EXCEEDED]'
+
+/**
  * Substituted for a reference already on the current traversal path.
  *
  * Matches the sentinel Pino's own stringifier emits for a cycle, so a circular
@@ -280,6 +292,8 @@ interface RedactRules {
   readonly serializedKeys: ReadonlySet<string>
   /** Whether an `Error` outside those keys is written as data; off, it stays an `Error`. */
   readonly errorsAsData: boolean
+  /** Containers this call has visited, counted against {@link REDACT_MAX_VISITS}. */
+  readonly visits: { count: number }
 }
 
 /**
@@ -357,6 +371,9 @@ function walk(
   }
   if (depth > REDACT_MAX_TRAVERSAL_DEPTH) {
     return REDACT_DEPTH_EXCEEDED
+  }
+  if (++rules.visits.count > REDACT_MAX_VISITS) {
+    return REDACT_BUDGET_EXCEEDED
   }
   if (ancestors.has(value)) {
     return REDACT_CIRCULAR
@@ -661,7 +678,7 @@ function addErrorParts(
     key: string,
     covers: readonly string[],
     read: () => unknown,
-    write = (value: unknown): unknown => walk(value, rules, depth + 1, ancestors)
+    write = (value: unknown): unknown => walkChainPart(value, level, rules, depth, ancestors)
   ): void => {
     if (taken.has(key)) return
     try {
@@ -681,18 +698,8 @@ function addErrorParts(
     (): unknown => error.stack,
     (stack) => (typeof stack === 'string' ? scrubStack(stack) : undefined)
   )
-  add(
-    'cause',
-    ['cause'],
-    (): unknown => error.cause,
-    (cause) => walkChainPart(cause, level, rules, depth, ancestors)
-  )
-  add(
-    'errors',
-    ['errors'],
-    (): unknown => capErrors((error as { errors?: unknown }).errors),
-    (errors) => walkChainPart(errors, level, rules, depth, ancestors)
-  )
+  add('cause', ['cause'], (): unknown => error.cause)
+  add('errors', ['errors'], (): unknown => capErrors((error as { errors?: unknown }).errors))
   if (incomplete && !taken.has(INCOMPLETE_KEY)) defineOwn(copy, INCOMPLETE_KEY, true)
 }
 
@@ -724,7 +731,7 @@ export function createNameRedactor(
   // Applying it to every name rather than only to headers costs one
   // `toLowerCase()` per key (~4 % of an entry, measured) and errs toward
   // redacting `Password` / `Email` too, which is the safe direction.
-  const rules: RedactRules = {
+  const rules: Omit<RedactRules, 'visits'> = {
     sensitive: new Set(fieldNames.map((name) => name.toLowerCase())),
     censor,
     serializedKeys: new Set(serializedKeys),
@@ -732,7 +739,8 @@ export function createNameRedactor(
   }
   return (value: unknown, isRecordRoot = false): unknown => {
     try {
-      return walk(value, rules, 0, new Set<object>(), !isRecordRoot)
+      const call: RedactRules = { ...rules, visits: { count: 0 } }
+      return walk(value, call, 0, new Set<object>(), !isRecordRoot)
     } catch {
       // The record resisted traversal (a throwing getter, a hostile proxy). It
       // cannot be proven safe, so nothing from it is emitted — a redactor must
