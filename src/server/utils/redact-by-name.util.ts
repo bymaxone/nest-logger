@@ -555,8 +555,8 @@ function walkObject(
     const copy = clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
     // What a failed driver call quoted or was given is not written, whether the `Error` is written
     // as data or kept an instance: it can sit in the serializer's output as a field of the root
-    // `err` (a driver error held by a wrapper). Under a serializer's key the instance is the
-    // serializer's to read, so nothing is dropped there.
+    // `err` (a driver error held by a wrapper), or be returned by a custom serializer. Under a
+    // serializer's key the instance is the serializer's to read, so nothing is dropped there.
     const scrubbed = value instanceof Error && !inSerialized
     for (const key of keys) {
       const current = scrubbed

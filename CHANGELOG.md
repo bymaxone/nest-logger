@@ -61,7 +61,8 @@ Nothing to change in code. What can differ at run time:
 - A custom serializer on a record-root key receives the same value it received before, censored as
   before and with any `Error` inside it still an instance. What a serializer returns is written as
   the serializer returned it, so an `Error` in its output is still `{}`: the added parts are for the
-  metadata walk only.
+  metadata walk only. The one exception is the Security entry above: the arguments and quoted values
+  of a failed driver call are omitted from an `Error` there too.
 - This applies where the name redaction runs on the record, which is the default
   (`redactStrategy: 'names'` with at least one name covered). Under `'paths'`, or with no name covered,
   the record is not walked and a nested `Error` is written as before.

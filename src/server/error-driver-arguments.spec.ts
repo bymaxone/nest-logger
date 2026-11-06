@@ -203,6 +203,21 @@ describe('a driver error held as a field of another error', () => {
     expect(line).not.toContain('person@example.com')
   })
 
+  it('removes the quoting fields from the held error itself, and keeps its names', () => {
+    const { entry } = log(wrapper())
+
+    expect(entry.err.driverError).toMatchObject({
+      code: '23505',
+      table: 'users',
+      constraint: 'users_email_key'
+    })
+    for (const held of [entry.err.driverError, entry.err]) {
+      for (const field of ['detail', 'where', 'internalQuery']) {
+        expect(held).not.toHaveProperty(field)
+      }
+    }
+  })
+
   it('does the same for a reply error held as the parent of another error', () => {
     const { line, entry } = log(Object.assign(new Error('sequelize'), { parent: replyError() }))
 
