@@ -36,6 +36,10 @@ Nothing to change in code. What can differ at run time:
   a secret inside a string.
 - A nested `Error` that cannot be read was written with `name` (`name: 'SanitizeFailed'`); it now has
   `type`, like every other node, so a filter on that nested `name` should read `type`.
+- A `cause` or `errors` member that cannot be read is no longer replaced by
+  `{ name: 'UnknownError', message: '[object Object]' }`, which came from turning the value into text
+  and could run a method of the user's. The node leaves that part out, keeps its other parts and its
+  stack, and carries `_errorFieldsIncomplete: true`.
 - A custom serializer on a record-root key receives the same value it received before, censored as
   before and with any `Error` inside it still an instance. An `Error` such a serializer returns is now
   written as the node, where it was written as `{}`.
