@@ -277,29 +277,30 @@ function toSanitizedError(
 /** Own error fields that hold the arguments of the call that failed, such as a query's `parameters`. */
 const ARGUMENT_FIELDS: ReadonlySet<string> = new Set(['args', 'parameters'])
 
-/** Fields of a PostgreSQL error that quote the row or the statement: names are kept, these are not. */
+/** Fields of a database error that quote the row or the statement: names are kept, these are not. */
 const DATABASE_VALUE_FIELDS: ReadonlySet<string> = new Set(['detail', 'where', 'internalQuery'])
 
-/** The five characters of a SQLSTATE. */
-const SQLSTATE = /^[0-9A-Z]{5}$/
+/**
+ * The shape of a SQLSTATE that is not an operating-system error code: five characters of
+ * `[0-9A-Z]` whose first is not `E`. Node's own `EPIPE`, `EPERM` and `EBUSY` have the five-character
+ * shape, and no class of the PostgreSQL error codes starts with `E` (Appendix A, "PostgreSQL Error
+ * Codes": https://www.postgresql.org/docs/current/errcodes-appendix.html, checked against the
+ * version 18 page).
+ */
+const SQLSTATE = /^[0-9A-DF-Z][0-9A-Z]{4}$/
 
 /** Returned by {@link ownFieldForLog} for a field that must not be written. */
 export const OMIT_OWN_FIELD: unique symbol = Symbol('omit-own-field')
 
 /**
- * Whether an error is one a PostgreSQL server raised: it carries a `severity`, a SQLSTATE `code`
- * and the `routine` that raised it, all as own string data. No other error source sets the three
- * together. Read from the property descriptors, so no getter runs.
+ * Whether an error carries a SQLSTATE `code` as its own string data. The protocol guarantees that
+ * field on every error a PostgreSQL server sends, and it is the same code across servers that speak
+ * the protocol, while `severity`, `routine` and the position fields are optional and a sender may
+ * leave them out. Read from the property descriptor, so no getter runs.
  */
 function isDatabaseError(source: object): boolean {
-  const own = (key: string): unknown => Object.getOwnPropertyDescriptor(source, key)?.value
-  const code = own('code')
-  return (
-    typeof own('severity') === 'string' &&
-    typeof own('routine') === 'string' &&
-    typeof code === 'string' &&
-    SQLSTATE.test(code)
-  )
+  const code: unknown = Object.getOwnPropertyDescriptor(source, 'code')?.value
+  return typeof code === 'string' && SQLSTATE.test(code)
 }
 
 /**
@@ -307,8 +308,8 @@ function isDatabaseError(source: object): boolean {
  * Redis reply error carries `command: { name, args }`, a query error `parameters`, and a PostgreSQL
  * error quotes the row in `detail` and the statement in `where` and `internalQuery`. The redaction
  * matches key names only, so a value inside such a string would reach the line. These are dropped by
- * structure, not by value: `args` and `parameters` go, a PostgreSQL error loses its quoting fields
- * and keeps `code`, `constraint`, `table`, `column`, `schema` and `routine`, and a `command` object
+ * structure, not by value: `args` and `parameters` go, an error with a SQLSTATE `code` loses its
+ * quoting fields and keeps `code`, `constraint`, `table`, `column`, `schema` and `routine`, and a `command` object
  * keeps only its `name`. The name is read from the property descriptor, so no getter of the
  * driver's runs.
  *

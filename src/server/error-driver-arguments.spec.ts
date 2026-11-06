@@ -168,8 +168,32 @@ describe('the row values a database error quotes', () => {
 
   it.each([
     ['no severity', { severity: undefined }],
-    ['a code that is not a SQLSTATE', { code: 'ENOENT' }],
-    ['no routine', { routine: undefined }]
+    ['no routine', { routine: undefined }],
+    [
+      'neither severity, routine, file nor line',
+      {
+        severity: undefined,
+        routine: undefined,
+        file: undefined,
+        line: undefined
+      }
+    ]
+  ])('drops the quoting fields of a SQLSTATE-coded error with %s', (_label, change) => {
+    const { line, entry } = log(uniqueViolation(change))
+
+    expect(entry.err).toMatchObject({ code: '23505', constraint: 'users_email_key' })
+    for (const field of ['detail', 'where', 'internalQuery']) {
+      expect(entry.err).not.toHaveProperty(field)
+    }
+    expect(line).not.toContain('person@example.com')
+  })
+
+  it.each([
+    ['a code of an operating-system error', { code: 'EPIPE' }],
+    ['a code of another length', { code: '2350' }],
+    ['a lowercase code', { code: '23a05' }],
+    ['a numeric code', { code: 23505 }],
+    ['no code', { code: undefined }]
   ])('leaves detail alone on an error with %s', (_label, change) => {
     const { entry } = log(uniqueViolation(change))
 
