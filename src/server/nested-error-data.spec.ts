@@ -104,7 +104,7 @@ describe('an Error outside a serialized root key', () => {
     expect(entry.inner.cause).toBe('plain reason')
   })
 
-  it('keeps a subclass own fields, censored by name, and puts a colliding `type` under fields', () => {
+  it('keeps a subclass own fields, censored by name, and an own `type` as the walk wrote it', () => {
     class PayError extends Error {
       readonly code = 'E_PAY'
       readonly password = 'own-secret'
@@ -114,14 +114,15 @@ describe('an Error outside a serialized root key', () => {
 
     const { entry, line } = logWith({ inner: new PayError('pay failed') })
 
+    // The own `type` is what the walk wrote before; the head does not replace it.
     expect(entry.inner).toMatchObject({
-      type: 'Error',
+      type: 'validation',
       message: 'pay failed',
       code: 'E_PAY',
       password: '[REDACTED]',
-      detail: { token: '[REDACTED]' },
-      fields: { type: 'validation' }
+      detail: { token: '[REDACTED]' }
     })
+    expect(entry.inner).not.toHaveProperty('fields')
     expect(line).not.toContain('own-secret')
     expect(line).not.toContain('detail-secret')
   })
@@ -231,7 +232,7 @@ describe('an Error that cannot be fully read', () => {
     const { entry } = logWith({ inner: error })
 
     expect(entry.logKey).toBe('KEY')
-    expect(entry.inner).toMatchObject({ type: 'SanitizeFailed' })
+    expect(entry.inner).toMatchObject({ name: 'SanitizeFailed' })
   })
 
   it('keeps the rest and marks the node when one field cannot be read', () => {
@@ -244,25 +245,21 @@ describe('an Error that cannot be fully read', () => {
 
     const { entry } = logWith({ inner: error })
 
+    // An Error whose own field cannot be read is written as it was: by the sanitizer.
     expect(entry.inner).toMatchObject({
-      type: 'Error',
+      name: 'Error',
       message: 'boom',
-      keep: 'k',
       _errorFieldsIncomplete: true
     })
   })
 
   it.each([
-    [
-      'only its toJSON',
-      { toJSON: true },
-      { type: 'Error', message: 'boom', sibling: 'kept', _errorFieldsIncomplete: true }
-    ],
-    ['its toJSON and its name', { toJSON: true, name: true }, { type: 'SanitizeFailed' }]
+    ['only its toJSON', { toJSON: true }, { name: 'Error', message: 'boom', sibling: 'kept' }],
+    ['its toJSON and its name', { toJSON: true, name: true }, { name: 'SanitizeFailed' }]
   ])(
     'writes the Error without a toJSON that cannot be read when %s',
     (_label, hostile, expected) => {
-      // The Error is written as if it had no toJSON, with its fields, and marked.
+      // The Error is written as the sanitizer reads it, with the fields it could read.
       const error = Object.assign(new Error('boom'), { sibling: 'kept' })
       const explode = {
         get: (): never => {

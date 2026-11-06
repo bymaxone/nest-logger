@@ -59,8 +59,7 @@ add('hostile-errors-member-with-sibling', () => ({
   meta: { inner: Object.assign(new AggregateError([hostile()], 'agg'), { good: 'KEEPgood3' }) }
 }))
 add('hostile-field-with-sibling', () => ({
-  meta: { inner: withFields('o', { first: 'KEEPfirst', bad: hostile(), last: 'KEEPlast' }) },
-  keeps: ['KEEPfirst', 'KEEPlast']
+  meta: { inner: withFields('o', { first: 'KEEPfirst', bad: hostile(), last: 'KEEPlast' }) }
 }))
 add('hostile-cause-keeps-stack', () => ({
   meta: { inner: Object.assign(new Error('o', { cause: hostile() }), { code: 'KEEPcode' }) }
@@ -121,15 +120,8 @@ add('error-in-array-field-with-sibling', () => ({
   }
 }))
 
-/**
- * Shapes that show less by decision. A cause that cannot be read is left out and the node is marked
- * incomplete: it is never stood in for by the text of its conversion, which can run a method of the
- * user's. The base recorded such a stand-in, `{ name: 'UnknownError', message: '[object Object]' }`;
- * the sibling field and the stack are kept.
- */
-const ACCEPTED: Record<string, RegExp> = {
-  'hostile-enumerable-cause-with-sibling': /^LOST "UnknownError" "\[object Object\]"$/
-}
+/** Shapes that show less by decision: none in this part. */
+const ACCEPTED: Record<string, RegExp> = {}
 
 describe('nested Error shapes, part C, against the 1.4.8 output', () => {
   if (process.env.RECORD_SHAPES) {

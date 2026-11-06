@@ -401,15 +401,7 @@ function walkError(
   } catch {
     // Under a serialized key the Error stays what the serializer reads. Anywhere
     // else it is written without the `toJSON` that could not be read, and marked.
-    if (inSerialized || !rules.errorsAsData) {
-      return walk(sanitizeError(error), rules, depth, ancestors, honorToJson, inSerialized)
-    }
-    ancestors.add(error)
-    try {
-      return walkErrorAsData(error, rules, depth, ancestors, true)
-    } finally {
-      ancestors.delete(error)
-    }
+    return walk(sanitizeError(error), rules, depth, ancestors, honorToJson, inSerialized)
   }
 }
 
@@ -530,10 +522,6 @@ function walkObject(
     }
 
     // No `toJSON` decides its form (that branch returned), and `JSON.stringify` writes `{}`.
-    if (value instanceof Error && rules.errorsAsData && !inSerialized) {
-      return walkErrorAsData(value, rules, depth, ancestors)
-    }
-
     const source = value as Record<string, unknown>
     // No fast path for an empty key list. Returning the original would reopen the
     // very window the snapshot closes: a Proxy can answer `[]` to this
@@ -555,10 +543,15 @@ function walkObject(
     // An Error is cloned through its prototype and descriptors so it stays an
     // Error; anything else becomes a plain object carrying the same own
     // enumerable properties — exactly what `JSON.stringify` would have emitted.
-    const copy =
-      value instanceof Error
-        ? (cloneError(value as Error) as unknown as Record<string, unknown>)
-        : {}
+    // An `Error` outside a serializer's keys, when the redactor is told to write it as data, is
+    // the copy of its own fields below with its head and chain added: what the walk wrote
+    // before is still all there.
+    const asData = value instanceof Error && rules.errorsAsData && !inSerialized
+    // The clone is still made: it reads the descriptors and the stack, and an `Error` that cannot
+    // be read there goes to the fallback in `walkError` as it always did, so such an `Error` is
+    // written exactly as before. Only a readable one becomes the plain copy below.
+    const clone = value instanceof Error ? cloneError(value) : undefined
+    const copy = clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
     for (const key of keys) {
       const current = Reflect.get(source, key)
       defineOwn(
@@ -576,6 +569,7 @@ function walkObject(
             )
       )
     }
+    if (asData) addErrorParts(copy, value as Error, keys, rules, depth, ancestors)
     return copy
   } finally {
     ancestors.delete(value)
@@ -594,23 +588,11 @@ function serializedRootKey(rules: RedactRules, key: string, honorToJson: boolean
   return !honorToJson && rules.serializedKeys.has(key)
 }
 
-/** Keys the node takes from the error itself, so an own field of that name is not copied. */
-const ERROR_HEAD_KEYS = new Set(['name', 'message', 'stack', 'cause', 'errors'])
-
-/** Keys the node uses for itself: an own field of that name is kept under `fields`. */
-const NODE_KEYS = new Set(['type', 'fields', '_errorFieldsIncomplete'])
-
-/** The node of an `Error` whose name or message cannot be read. */
-const SANITIZE_FAILED = { type: 'SanitizeFailed', message: 'Failed to sanitize the thrown value' }
-
 /** The chain level of an `Error` reached as a `cause` or an `errors` member, set while it is walked. */
 const linkDepths = new WeakMap<object, number>()
 
-/** An `Error` read once into the entries its node is written from. */
-interface ErrorView {
-  readonly entries: [string, unknown][]
-  incomplete: boolean
-}
+/** The marker key of a node that lost a part while it was being written. */
+const INCOMPLETE_KEY = '_errorFieldsIncomplete'
 
 /** The first `MAX_AGGREGATE_ERRORS` members of `errors` and one marker for the rest. */
 function capErrors(errors: unknown): unknown {
@@ -623,109 +605,95 @@ function capErrors(errors: unknown): unknown {
   return kept
 }
 
-/** Read an `Error` once: its head, cause, errors and own fields. */
-function readErrorView(error: Error): ErrorView | undefined {
-  const view: ErrorView = { entries: [], incomplete: false }
-  const read = <T>(get: () => T): T | undefined => {
-    try {
-      return get()
-    } catch {
-      view.incomplete = true
-      return undefined
-    }
-  }
-  try {
-    view.entries.push(['type', error.name], ['message', error.message])
-  } catch {
-    return undefined
-  }
-  const stack = read(() => error.stack)
-  if (typeof stack === 'string') view.entries.push(['stack', scrubStack(stack)])
-  const cause = read((): unknown => error.cause)
-  if (cause !== undefined) view.entries.push(['cause', cause])
-  const errors = read((): unknown => capErrors((error as { errors?: unknown }).errors))
-  if (errors !== undefined) view.entries.push(['errors', errors])
-  const keys = read(() => Object.keys(error))
-  if (keys === undefined) return view
-  // An own field of a name the node uses, such as `type`, goes under `fields` and is not lost.
-  const fields: Record<string, unknown> = {}
-  for (const key of keys) {
-    if (ERROR_HEAD_KEYS.has(key)) continue
-    const own = read((): unknown => Reflect.get(error, key))
-    if (own === undefined) continue
-    if (NODE_KEYS.has(key)) defineOwn(fields, key, own)
-    else view.entries.push([key, own])
-  }
-  if (Object.keys(fields).length > 0) view.entries.push(['fields', fields])
-  return view
-}
-
-/** The objects that `cause` and `errors` hold: the links of a chain. Read by index, not iterated. */
+/** The objects that a `cause` or an `errors` list holds: the links of a chain. Read by index. */
 function linkTargets(key: string, value: unknown): object[] {
-  const links =
-    key === 'cause' ? [value] : key === 'errors' && Array.isArray(value) ? value : undefined
-  if (links === undefined) return []
-  const isObject = (link: unknown): link is object => typeof link === 'object' && link !== null
-  return Array.prototype.filter.call(links, isObject) as object[]
+  const targets: object[] = []
+  const take = (link: unknown): void => {
+    if (typeof link === 'object' && link !== null) targets.push(link)
+  }
+  if (key === 'cause') take(value)
+  else if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index++) take(Reflect.get(value, index))
+  }
+  return targets
 }
 
 /**
- * Walk one entry of an `Error`'s node. The `Error`s that `cause` and `errors` hold are the links of
- * its chain, one level further than it, for as long as they are walked.
+ * Walk the value of a `cause` or an `errors` added to a node. The `Error`s it holds are links one
+ * level further than the node, for as long as they are walked; past the budget the part is a marker.
  */
-function walkEntry(
-  [key, value]: [string, unknown],
+function walkChainPart(
+  key: string,
+  value: unknown,
   level: number,
   rules: RedactRules,
   depth: number,
   ancestors: Set<object>
 ): unknown {
-  const targets = new Map(linkTargets(key, value).map((link) => [link, linkDepths.get(link)]))
-  for (const target of targets.keys()) linkDepths.set(target, level + 1)
+  const targets = linkTargets(key, value)
+  if (targets.length > 0 && level + 1 > DEFAULT_MAX_CAUSE_DEPTH) return createDepthMarker()
+  const before = new Map(targets.map((target) => [target, linkDepths.get(target)]))
+  for (const target of targets) linkDepths.set(target, level + 1)
   try {
     return walk(value, rules, depth + 1, ancestors)
   } finally {
-    targets.forEach((before, target) => {
-      if (before === undefined) linkDepths.delete(target)
-      else linkDepths.set(target, before)
+    before.forEach((earlier, target) => {
+      if (earlier === undefined) linkDepths.delete(target)
+      else linkDepths.set(target, earlier)
     })
   }
 }
 
 /**
- * Write an `Error` as data, in one read: its view, then each entry walked by the same walk as any
- * other value, so a link of the chain with a `toJSON` is written as that method decides and a
- * `cause` that is not an `Error` is censored by name and never turned into text. An entry that
- * cannot be walked costs the node that entry, not the others. `unreadable` marks an error whose
- * `toJSON` could not be read, which is then written as if it had none.
+ * Add to the copy of an `Error` what the base walk does not write: its `type`, `message` and
+ * `stack`, and its `cause` and `errors`. A part is added only where the copy has no key of that
+ * name, so nothing the base walk wrote is replaced, and each part is read and walked on its own: one
+ * that cannot be costs the node that part and marks it, not the others.
  */
-function walkErrorAsData(
+function addErrorParts(
+  copy: Record<string, unknown>,
   error: Error,
+  ownKeys: readonly string[],
   rules: RedactRules,
   depth: number,
-  ancestors: Set<object>,
-  unreadable = false
-): unknown {
+  ancestors: Set<object>
+): void {
+  const taken = new Set(ownKeys)
   const level = linkDepths.get(error) ?? 0
-  if (level > DEFAULT_MAX_CAUSE_DEPTH) return createDepthMarker()
-  const view = readErrorView(error)
-  if (view === undefined) return { ...SANITIZE_FAILED }
-  const node: Record<string, unknown> = {}
-  let incomplete = view.incomplete || unreadable
-  for (const entry of view.entries) {
+  let incomplete = false
+  const add = (
+    key: string,
+    read: () => unknown,
+    write = (value: unknown): unknown => value
+  ): void => {
+    if (taken.has(key)) return
     try {
-      const censored = rules.sensitive.has(entry[0].toLowerCase())
-      defineOwn(
-        node,
-        entry[0],
-        censored ? rules.censor : walkEntry(entry, level, rules, depth, ancestors)
-      )
+      const value = read()
+      const written = value === undefined ? undefined : write(value)
+      if (written === undefined) return
+      defineOwn(copy, key, rules.sensitive.has(key.toLowerCase()) ? rules.censor : written)
     } catch {
       incomplete = true
     }
   }
-  if (incomplete) node['_errorFieldsIncomplete'] = true
-  return node
+  add('type', () => error.name)
+  add('message', () => error.message)
+  add(
+    'stack',
+    (): unknown => error.stack,
+    (stack) => (typeof stack === 'string' ? scrubStack(stack) : undefined)
+  )
+  add(
+    'cause',
+    (): unknown => error.cause,
+    (cause) => walkChainPart('cause', cause, level, rules, depth, ancestors)
+  )
+  add(
+    'errors',
+    (): unknown => capErrors((error as { errors?: unknown }).errors),
+    (errors) => walkChainPart('errors', errors, level, rules, depth, ancestors)
+  )
+  if (incomplete && !taken.has(INCOMPLETE_KEY)) defineOwn(copy, INCOMPLETE_KEY, true)
 }
 
 /**

@@ -16,6 +16,11 @@ function nodeOf(error: Error): Record<string, unknown> {
   return record.inner
 }
 
+/** `error` with `errors` as an AggregateError holds it: an own property that is not enumerable. */
+function withErrors(error: Error, errors: unknown): Error {
+  return Object.defineProperty(error, 'errors', { value: errors, enumerable: false })
+}
+
 describe('whether an Error outside a serialized root key is written as data', () => {
   /*
    * The redactor is built INSIDE each case on purpose: one built when the file loads has already
@@ -56,8 +61,9 @@ describe('the node of an Error outside a serialized root key', () => {
       }
     })
 
+    // An Error whose own field cannot be read is written by the sanitizer, as it always was.
     expect(Object.keys(nodeOf(error))).toStrictEqual([
-      'type',
+      'name',
       'message',
       'stack',
       '_errorFieldsIncomplete'
@@ -76,7 +82,7 @@ describe('the node of an Error outside a serialized root key', () => {
     })
 
     expect(Object.keys(nodeOf(proxy))).toStrictEqual([
-      'type',
+      'name',
       'message',
       'stack',
       '_errorFieldsIncomplete'
@@ -107,19 +113,25 @@ describe('the node of an Error outside a serialized root key', () => {
     expect(Object.keys(written)).not.toContain('fields')
   })
 
-  it('keeps an own fields field and an own type field together', () => {
+  it('keeps an own fields field and an own type field exactly as the walk wrote them', () => {
     const written = nodeOf(
       Object.assign(new Error('x'), { type: 'mine', fields: { z: 1 }, other: 2 })
     )
 
-    expect(written).toMatchObject({ type: 'Error', other: 2, stack: expect.any(String) })
-    expect(written['fields']).toStrictEqual({ type: 'mine', fields: { z: 1 } })
+    expect(written).toMatchObject({
+      type: 'mine',
+      fields: { z: 1 },
+      other: 2,
+      message: 'x',
+      stack: expect.any(String)
+    })
   })
 
-  it('keeps a colliding own field under fields and no key for fields otherwise', () => {
+  it('does not replace an own field with the head key of the same name, and adds no fields key', () => {
     const colliding = nodeOf(Object.assign(new Error('x'), { type: 'validation' }))
 
-    expect(colliding['fields']).toStrictEqual({ type: 'validation' })
+    expect(colliding['type']).toBe('validation')
+    expect(Object.keys(colliding)).not.toContain('fields')
     expect(Object.keys(nodeOf(new Error('x')))).not.toContain('fields')
   })
 
@@ -127,9 +139,13 @@ describe('the node of an Error outside a serialized root key', () => {
     const members = Array.from({ length: 11 }, (_, index) => new Error(`m${index}`))
     const list = Object.assign(members, { toJSON: () => ['from-toJSON'] })
 
-    expect(nodeOf(Object.assign(new Error('x'), { errors: list }))['errors']).toStrictEqual([
-      'from-toJSON'
-    ])
+    expect(nodeOf(withErrors(new Error('x'), list))['errors']).toStrictEqual(['from-toJSON'])
+  })
+
+  it('walks an errors that is not a list as data, with no cap and no budget of its own', () => {
+    const written = nodeOf(withErrors(new Error('x'), { code: 7, password: 'p' }))
+
+    expect(written['errors']).toStrictEqual({ code: 7, password: '[REDACTED]' })
   })
 
   it('writes an Error whose toJSON cannot be read in full under every key that holds it', () => {
@@ -148,7 +164,7 @@ describe('the node of an Error outside a serialized root key', () => {
 
   it('writes a null cause and a null member of errors as they are, without marking the node', () => {
     const withCause = nodeOf(new Error('x', { cause: null }))
-    const withMember = nodeOf(Object.assign(new Error('y'), { errors: [null, 'text'] }))
+    const withMember = nodeOf(withErrors(new Error('y'), [null, 'text']))
 
     expect(withCause['cause']).toBeNull()
     expect(withCause).not.toHaveProperty('_errorFieldsIncomplete')
@@ -156,11 +172,11 @@ describe('the node of an Error outside a serialized root key', () => {
     expect(withMember).not.toHaveProperty('_errorFieldsIncomplete')
   })
 
-  it('does not copy an own field the head already carries', () => {
+  it('writes the head type beside an own name field, which stays as the walk wrote it', () => {
     const written = nodeOf(Object.assign(new Error('x'), { name: 'Custom' }))
 
     expect(written['type']).toBe('Custom')
-    expect(Object.keys(written)).toStrictEqual(['type', 'message', 'stack'])
+    expect(Object.keys(written)).toStrictEqual(['name', 'type', 'message', 'stack'])
   })
 
   it('counts the chain budget along errors as it does along cause', () => {
@@ -170,7 +186,7 @@ describe('the node of an Error outside a serialized root key', () => {
     const written = nodeOf(error) as any
 
     expect(written.errors[0].errors[0].errors[0]['message']).toBeDefined()
-    expect(written.errors[0].errors[0].errors[0].errors[0]).toStrictEqual({
+    expect(written.errors[0].errors[0].errors[0].errors).toStrictEqual({
       _truncated: true,
       _reason: 'cause-depth-exceeded'
     })
@@ -222,7 +238,7 @@ describe('the node of an Error outside a serialized root key', () => {
     expect(written(96)).not.toContain('leaf')
   })
 
-  it('writes the exact SanitizeFailed node when the head cannot be read at all', () => {
+  it('writes the exact sanitizer node when the head cannot be read at all', () => {
     const explode = {
       get: (): never => {
         throw new Error('exploded')
@@ -233,7 +249,7 @@ describe('the node of an Error outside a serialized root key', () => {
     Object.defineProperty(error, 'name', explode)
 
     expect(nodeOf(error)).toStrictEqual({
-      type: 'SanitizeFailed',
+      name: 'SanitizeFailed',
       message: 'Failed to sanitize the thrown value'
     })
   })

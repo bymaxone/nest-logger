@@ -17,12 +17,14 @@ heading here.
   written as `inner: {}`, because `JSON.stringify` skips an `Error`'s non-enumerable `message` and
   `stack`; the same held inside arrays and inside another `Error`'s own fields, and a nested `cause` or
   `AggregateError.errors` was lost with it. Outside a record-root key that has a serializer, such an
-  `Error` is now written as `{ type, message, stack, cause, errors, ...own fields }`, and every part is
-  walked by the same name redaction as the rest of the record. An `Error` that defines `toJSON` is
-  written as its method decides, at every level of a chain. A `cause` or `errors` value that is not an
-  `Error` is written as data and censored by name; it is never turned into text. The chain is written
-  to the same depth as the root `err` (the error and three links, then a `_truncated` marker) and
-  `errors` to ten members plus a width marker. An own field named `type` is kept under `fields`.
+  `Error` is now written as what it was written as before (its own enumerable fields, censored by name,
+  or the output of its `toJSON`) with `type`, `message`, `stack`, `cause` and `errors` added. A part is
+  added only where the node has no key of that name, so nothing written before is replaced or removed,
+  and a part that cannot be read is left out and the node carries `_errorFieldsIncomplete: true`. A
+  `cause` or `errors` value that is not an `Error` is written as data and censored by name; it is never
+  turned into text. The added chain is written to the same depth as the root `err` (the error and
+  three links, then a `_truncated` marker) and `errors` to ten members plus a width marker; these
+  limits apply to the added parts only.
 
 #### Apply to a derived backend
 
@@ -34,15 +36,11 @@ Nothing to change in code. What can differ at run time:
 - A string `cause` is now logged exactly as a `message` is, and the root `err` already did so. Do not
   put secrets in an `Error`'s `message` or `cause`: the redaction works on field names and cannot see
   a secret inside a string.
-- A nested `Error` that cannot be read was written with `name` (`name: 'SanitizeFailed'`); it now has
-  `type`, like every other node, so a filter on that nested `name` should read `type`.
-- A `cause` or `errors` member that cannot be read is no longer replaced by
-  `{ name: 'UnknownError', message: '[object Object]' }`, which came from turning the value into text
-  and could run a method of the user's. The node leaves that part out, keeps its other parts and its
-  stack, and carries `_errorFieldsIncomplete: true`.
+- An own enumerable field of an `Error` named `type`, `message`, `stack`, `cause` or `errors` is kept
+  as it was written, and the added part of that name is not written.
 - A custom serializer on a record-root key receives the same value it received before, censored as
   before and with any `Error` inside it still an instance. An `Error` such a serializer returns is now
-  written as the node, where it was written as `{}`.
+  written with its content, where it was written as `{}`.
 - This applies where the name redaction runs on the record, which is the default
   (`redactStrategy: 'names'` with at least one name covered). Under `'paths'`, or with no name covered,
   the record is not walked and a nested `Error` is written as before.
@@ -53,7 +51,7 @@ Nothing to change in code. What can differ at run time:
   getters; class-field `cause` and `errors`; errors from another realm; serializers on `err` and on
   other keys, at the root and through `child()`; cycles; depth) are judged against the output recorded
   from 1.4.8: none may throw or fail the record where 1.4.8 did not, show a secret marker 1.4.8 did not,
-  or drop a value 1.4.8 emitted. A string `cause` is the one shape that shows more by decision.
+  or drop a value 1.4.8 emitted.
 
 ## [1.4.8] - 2026-11-01
 

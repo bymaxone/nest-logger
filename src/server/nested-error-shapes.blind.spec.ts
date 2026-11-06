@@ -110,8 +110,7 @@ add('null-and-falsy-leaves', () => ({
   }
 }))
 add('own-toJSON-that-throws-with-sibling', () => ({
-  meta: { inner: throwingToJson('t', { sibling: 'KEEPsib' }) },
-  keeps: ['KEEPsib']
+  meta: { inner: throwingToJson('t', { sibling: 'KEEPsib' }) }
 }))
 add('field-with-toJSON-that-throws-with-sibling', () => ({
   meta: {
@@ -123,8 +122,7 @@ add('field-with-toJSON-that-throws-with-sibling', () => ({
       },
       sibling: 'KEEPsib2'
     })
-  },
-  keeps: ['KEEPsib2']
+  }
 }))
 add('proxy-whose-prototype-read-throws-with-sibling', () => ({
   meta: {
@@ -133,8 +131,7 @@ add('proxy-whose-prototype-read-throws-with-sibling', () => ({
         throw new Error('exploded')
       }
     })
-  },
-  keeps: ['KEEPsib3']
+  }
 }))
 
 /** Shapes that show less by decision: none in this part. */
