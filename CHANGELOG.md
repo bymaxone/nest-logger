@@ -37,8 +37,8 @@ Nothing to change in code. What can differ at run time:
   a secret inside a string.
 - An own enumerable field of an `Error` named `type`, `message`, `stack`, `cause` or `errors` is kept
   as it was written, and the added part of that name is not written.
-- The added `type` is censored when `name` is a covered name, and the added `stack` when `name` or
-  `message` is: both carry that text. Without such a covered name they are written.
+- The added `type` is censored when `type` or `name` is a covered name, and the added `stack` when
+  `stack`, `name` or `message` is: both carry that text. Without such a covered name they are written.
 - A custom serializer on a record-root key receives the same value it received before, censored as
   before and with any `Error` inside it still an instance. What a serializer returns is written as
   the serializer returned it, so an `Error` in its output is still `{}`: the added parts are for the
