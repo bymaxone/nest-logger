@@ -132,6 +132,53 @@ describe('the node of an Error outside a serialized root key', () => {
     ])
   })
 
+  it('writes an Error whose toJSON cannot be read in full under every key that holds it', () => {
+    const error = Object.assign(new Error('x'), { sibling: 'kept' })
+    Object.defineProperty(error, 'toJSON', {
+      get: () => {
+        throw new Error('exploded')
+      }
+    })
+
+    const written = redact({ first: error, second: error }, true) as Record<string, any>
+
+    expect(written['first']).toMatchObject({ message: 'x', sibling: 'kept' })
+    expect(written['second']).toMatchObject({ message: 'x', sibling: 'kept' })
+  })
+
+  it('does not copy an own field the head already carries', () => {
+    const written = nodeOf(Object.assign(new Error('x'), { name: 'Custom' }))
+
+    expect(written['type']).toBe('Custom')
+    expect(Object.keys(written)).toStrictEqual(['type', 'message', 'stack'])
+  })
+
+  it('counts the chain budget along errors as it does along cause', () => {
+    let error: Error = new Error('leaf')
+    for (let level = 0; level < 6; level++) error = new AggregateError([error], `level${level}`)
+
+    const written = nodeOf(error) as any
+
+    expect(written.errors[0].errors[0].errors[0]['message']).toBeDefined()
+    expect(written.errors[0].errors[0].errors[0].errors[0]).toStrictEqual({
+      _truncated: true,
+      _reason: 'cause-depth-exceeded'
+    })
+  })
+
+  it('gives an Error back its own level once it has been walked as a link', () => {
+    // `shared` is the cause of the error, at level 1, and later one of its fields, at level 0.
+    const third = new Error('third')
+    const second = new Error('second', { cause: third })
+    const first = new Error('first', { cause: second })
+    const shared = new Error('shared', { cause: first })
+    const error = Object.assign(new Error('top', { cause: shared }), { held: shared })
+
+    const written = nodeOf(error) as any
+
+    expect(written.held.cause.cause.cause['message']).toBe('third')
+  })
+
   it('writes exactly ten members of errors with no marker, and a marker only past ten', () => {
     const members = (count: number): Error[] =>
       Array.from({ length: count }, (_, index) => new Error(`m${index}`))

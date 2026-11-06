@@ -645,9 +645,11 @@ function readErrorView(error: Error): ErrorView | undefined {
   if (cause !== undefined) view.entries.push(['cause', cause])
   const errors = read((): unknown => capErrors((error as { errors?: unknown }).errors))
   if (errors !== undefined) view.entries.push(['errors', errors])
+  const keys = read(() => Object.keys(error))
+  if (keys === undefined) return view
   // An own field of a name the node uses, such as `type`, goes under `fields` and is not lost.
   const fields: Record<string, unknown> = {}
-  for (const key of read(() => Object.keys(error)) ?? []) {
+  for (const key of keys) {
     if (ERROR_HEAD_KEYS.has(key)) continue
     const own = read((): unknown => Reflect.get(error, key))
     if (own === undefined) continue
@@ -656,6 +658,15 @@ function readErrorView(error: Error): ErrorView | undefined {
   }
   if (Object.keys(fields).length > 0) view.entries.push(['fields', fields])
   return view
+}
+
+/** The objects that `cause` and `errors` hold: the links of a chain. Read by index, not iterated. */
+function linkTargets(key: string, value: unknown): object[] {
+  const links =
+    key === 'cause' ? [value] : key === 'errors' && Array.isArray(value) ? value : undefined
+  if (links === undefined) return []
+  const isObject = (link: unknown): link is object => typeof link === 'object' && link !== null
+  return Array.prototype.filter.call(links, isObject) as object[]
 }
 
 /**
@@ -669,13 +680,7 @@ function walkEntry(
   depth: number,
   ancestors: Set<object>
 ): unknown {
-  const links: unknown[] =
-    key === 'cause' ? [value] : key === 'errors' && Array.isArray(value) ? value : []
-  const targets = new Map<object, number | undefined>()
-  for (let index = 0; index < links.length; index++) {
-    const link = Reflect.get(links, index)
-    if (typeof link === 'object' && link !== null) targets.set(link, linkDepths.get(link))
-  }
+  const targets = new Map(linkTargets(key, value).map((link) => [link, linkDepths.get(link)]))
   for (const target of targets.keys()) linkDepths.set(target, level + 1)
   try {
     return walk(value, rules, depth + 1, ancestors)
