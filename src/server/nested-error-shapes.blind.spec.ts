@@ -133,6 +133,13 @@ add('proxy-whose-prototype-read-throws-with-sibling', () => ({
     })
   }
 }))
+add('serializer-output-with-error-under-a-small-size-cap', () => ({
+  meta: { thing: 1 },
+  extra: {
+    maxEntrySizeBytes: 300,
+    serializers: { thing: () => ({ status: 500, code: 'E_X', inner: new Error('x') }) }
+  }
+}))
 
 /** Shapes that show less by decision: none in this part. */
 const ACCEPTED: Record<string, RegExp> = {}

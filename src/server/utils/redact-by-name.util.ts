@@ -399,8 +399,9 @@ function walkError(
   try {
     return walkObject(error, rules, depth, ancestors, honorToJson, inSerialized)
   } catch {
-    // Under a serialized key the Error stays what the serializer reads. Anywhere
-    // else it is written without the `toJSON` that could not be read, and marked.
+    // The sanitized node replaces an `Error` that cannot be read: it never throws, copies no
+    // field it could not read and marks what it lost. Under a serialized key the same node is
+    // what the serializer receives.
     return walk(sanitizeError(error), rules, depth, ancestors, honorToJson, inSerialized)
   }
 }
@@ -544,12 +545,13 @@ function walkObject(
     // Error; anything else becomes a plain object carrying the same own
     // enumerable properties — exactly what `JSON.stringify` would have emitted.
     // An `Error` outside a serializer's keys, when the redactor is told to write it as data, is
-    // the copy of its own fields below with its head and chain added: what the walk wrote
-    // before is still all there.
+    // the copy of its own fields below plus the head and chain: the parts are only ever added,
+    // so every key the field walk writes stays.
     const asData = value instanceof Error && rules.errorsAsData && !inSerialized
-    // The clone is still made: it reads the descriptors and the stack, and an `Error` that cannot
-    // be read there goes to the fallback in `walkError` as it always did, so such an `Error` is
-    // written exactly as before. Only a readable one becomes the plain copy below.
+    // The clone is made even when it is discarded: it reads the descriptors and the stack, and an
+    // `Error` that cannot be read there must reach the fallback in `walkError`, so that the
+    // fallback node is the same with or without the data form. Only a readable one becomes the
+    // plain copy below.
     const clone = value instanceof Error ? cloneError(value) : undefined
     const copy = clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
     for (const key of keys) {
@@ -642,10 +644,10 @@ function walkChainPart(
 }
 
 /**
- * Add to the copy of an `Error` what the base walk does not write: its `type`, `message` and
- * `stack`, and its `cause` and `errors`. A part is added only where the copy has no key of that
- * name, so nothing the base walk wrote is replaced, and each part is read and walked on its own: one
- * that cannot be costs the node that part and marks it, not the others.
+ * Add the `type`, `message`, `stack`, `cause` and `errors` that the field walk cannot reach, since
+ * they are not enumerable. A part is added only where the copy has no key of that name, so a key
+ * the field walk wrote is never replaced, and each part is read and walked on its own: one that
+ * cannot be costs the node that part and marks it, not the others.
  */
 function addErrorParts(
   copy: Record<string, unknown>,

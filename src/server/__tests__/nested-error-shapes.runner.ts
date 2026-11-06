@@ -85,7 +85,7 @@ export function runShape(shape: Shape): unknown {
   try {
     target.errorStructured(
       'KEY',
-      (shape.root ?? new Error('root')) as Error,
+      (shape.root ?? Object.assign(new Error('root'), { stack: 'Error: root' })) as Error,
       'u1',
       shape.meta ?? {}
     )

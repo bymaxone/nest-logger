@@ -355,7 +355,7 @@ export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): 
   if (options.redactStrategy !== 'names') {
     return PASS_THROUGH
   }
-  return buildNameRedactor(options)
+  return buildNameRedactor(options, true)
 }
 
 /**
@@ -389,9 +389,16 @@ export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): 
  * `redactPaths`.
  *
  * @param options - Fully-defaulted module options.
+ * @param nestedErrorsAsData - `true` only for the redactor of the caller's record: an `Error`
+ *   nested in it is written with its content. Serializer output keeps the shape the serializer
+ *   chose, because the size bound that follows measures it and a larger value would be truncated
+ *   where the same output was not.
  * @returns A redaction function; the identity function when no name is covered.
  */
-function buildNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
+function buildNameRedactor(
+  options: ResolvedBymaxLoggerModuleOptions,
+  nestedErrorsAsData = false
+): Redactor {
   const names = [
     ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
     ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
@@ -399,10 +406,9 @@ function buildNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor 
   if (names.length === 0) {
     return PASS_THROUGH
   }
-  return createNameRedactor(names, options.redactCensor, [
-    'err',
-    ...Object.keys(options.serializers)
-  ])
+  return nestedErrorsAsData
+    ? createNameRedactor(names, options.redactCensor, ['err', ...Object.keys(options.serializers)])
+    : createNameRedactor(names, options.redactCensor)
 }
 
 /**

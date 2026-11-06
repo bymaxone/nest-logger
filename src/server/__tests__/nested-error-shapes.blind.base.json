@@ -118,5 +118,17 @@
   "proxy-whose-prototype-read-throws-with-sibling": {
     "_redactionFailed": true,
     "_logKey": "LOGGER_REDACTION_FAILED"
+  },
+  "serializer-output-with-error-under-a-small-size-cap": {
+    "thing": {
+      "status": 500,
+      "code": "E_X",
+      "inner": {}
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
   }
 }

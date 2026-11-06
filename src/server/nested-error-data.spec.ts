@@ -346,10 +346,14 @@ describe('what a record-root key with a serializer receives', () => {
     expect(entry.outer).toMatchObject({ error: { type: 'Error' }, err: { type: 'Error' } })
   })
 
-  it('writes an Error that a serializer returns as data', () => {
+  it('leaves an Error that a serializer returns as the stringifier writes it', () => {
+    /*
+     * The size bound that follows a serializer measures what it returned, so an Error written with
+     * its content there could push the whole output past `maxEntrySizeBytes` and lose its fields.
+     */
     const { entry } = logWith({ wrapped: new Error('returned') }, { serializers })
 
-    expect(entry.wrapped).toMatchObject({ original: { type: 'Error', message: 'returned' } })
+    expect(entry.wrapped).toStrictEqual({ original: {} })
   })
 
   it('keeps the Errors held by an error-like root err, which the sanitizer reads by shape', () => {
