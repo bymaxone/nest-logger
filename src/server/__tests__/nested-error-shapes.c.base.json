@@ -1,0 +1,255 @@
+{
+  "own-type-and-fields": {
+    "inner": {
+      "type": "KEEPtype",
+      "fields": {
+        "z": "KEEPf"
+      },
+      "other": "KEEPother"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "own-type-and-fields-in-array": {
+    "list": [
+      {
+        "type": "KEEPtype2",
+        "fields": {
+          "z": "KEEPf2"
+        },
+        "other": "KEEPother2"
+      }
+    ],
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "own-fields-without-type": {
+    "inner": {
+      "fields": {
+        "z": "KEEPf3"
+      },
+      "other": "KEEPother3"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "own-inherited-names": {
+    "inner": {
+      "toString": "KEEPts",
+      "constructor": "KEEPctor",
+      "hasOwnProperty": "KEEPhop"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "own-incomplete-marker-name": {
+    "inner": {
+      "_errorFieldsIncomplete": "KEEPmarker",
+      "other": "KEEPother4"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "hostile-enumerable-cause-with-sibling": {
+    "inner": {
+      "name": "Error",
+      "message": "o",
+      "stack": "<stack>",
+      "cause": {
+        "name": "UnknownError",
+        "message": "[object Object]"
+      },
+      "good": "KEEPgood"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "hostile-cause-object-with-sibling": {
+    "inner": {
+      "good": "KEEPgood2"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "hostile-errors-member-with-sibling": {
+    "inner": {
+      "good": "KEEPgood3"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "hostile-field-with-sibling": {
+    "_redactionFailed": true,
+    "_logKey": "LOGGER_REDACTION_FAILED"
+  },
+  "hostile-cause-keeps-stack": {
+    "inner": {
+      "code": "KEEPcode"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "errors-nested-through-fields": {
+    "inner": {
+      "code": "KEEPcode0",
+      "w": {
+        "code": "KEEPcode1",
+        "w": {
+          "code": "KEEPcode2",
+          "w": {
+            "code": "KEEPcode3",
+            "w": {
+              "code": "KEEPcode4",
+              "w": {
+                "code": "KEEPcode5",
+                "w": {
+                  "code": "KEEPcode6"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "errors-nested-through-array-fields": {
+    "inner": {
+      "code": "KEEPacode0",
+      "list": [
+        {
+          "code": "KEEPacode1",
+          "list": [
+            {
+              "code": "KEEPacode2",
+              "list": [
+                {
+                  "code": "KEEPacode3",
+                  "list": [
+                    {
+                      "code": "KEEPacode4",
+                      "list": [
+                        {
+                          "code": "KEEPacode5",
+                          "list": [
+                            {
+                              "code": "KEEPacode6"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "errors-array-with-toJSON": {
+    "inner": {
+      "errors": ["KEEPtj2"],
+      "sibling": "KEEPsibling"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "errors-array-subclass-with-toJSON": {
+    "inner": {
+      "errors": ["KEEPtj3"],
+      "sibling": "KEEPsibling2"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "duplicate-leaf-values": {
+    "inner": {
+      "a": "KEEPdup",
+      "b": "KEEPdup",
+      "c": ["KEEPdup"]
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "own-stack-not-text": {
+    "inner": {
+      "sibling": "KEEPsibling3"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "to-json-getter-throws-with-fields": {
+    "inner": {
+      "name": "Error",
+      "message": "x",
+      "stack": "<stack>",
+      "sibling": "KEEPsibling4"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  },
+  "error-in-array-field-with-sibling": {
+    "inner": {
+      "list": [{}],
+      "sibling": "KEEPsibling5"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "<stack>"
+    }
+  }
+}

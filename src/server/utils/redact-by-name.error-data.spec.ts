@@ -83,6 +83,25 @@ describe('the node of an Error outside a serialized root key', () => {
     ])
   })
 
+  it('keeps an own field named like something every object inherits at the top level', () => {
+    // `toString` and `constructor` are on every object's prototype, not on the node, so they collide with nothing.
+    const written = nodeOf(
+      Object.assign(new Error('x'), { toString: 'custom', constructor: 'ctor' })
+    )
+
+    expect(written).toMatchObject({ toString: 'custom', constructor: 'ctor' })
+    expect(Object.keys(written)).not.toContain('fields')
+  })
+
+  it('keeps an own fields field and an own type field together', () => {
+    const written = nodeOf(
+      Object.assign(new Error('x'), { type: 'mine', fields: { z: 1 }, other: 2 })
+    )
+
+    expect(written).toMatchObject({ type: 'Error', other: 2, stack: expect.any(String) })
+    expect(written['fields']).toStrictEqual({ type: 'mine', fields: { z: 1 } })
+  })
+
   it('keeps a colliding own field under fields and no key for fields otherwise', () => {
     const colliding = nodeOf(Object.assign(new Error('x'), { type: 'validation' }))
 

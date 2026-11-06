@@ -90,11 +90,14 @@ export function run(make: () => Shape): unknown {
   return entry
 }
 
-function leaves(value: unknown, into: Set<string>): Set<string> {
+function leaves(value: unknown, into: Map<string, number>): Map<string, number> {
   if (Array.isArray(value)) value.forEach((item) => leaves(item, into))
   else if (value !== null && typeof value === 'object') {
     Object.values(value).forEach((item) => leaves(item, into))
-  } else if (value !== null && value !== undefined) into.add(JSON.stringify(value))
+  } else if (value !== null && value !== undefined) {
+    const leaf = JSON.stringify(value)
+    into.set(leaf, (into.get(leaf) ?? 0) + 1)
+  }
   return into
 }
 
@@ -122,8 +125,11 @@ export function problem(base: unknown, now: unknown): string {
   const baseMarkers = markers(base)
   const added = [...markers(now)].filter((marker) => !baseMarkers.has(marker))
   if (added.length > 0) return 'LEAK ' + added.sort().join(',')
-  const kept = leaves(now, new Set())
-  const lost = [...leaves(base, new Set())].filter((leaf) => !kept.has(leaf) && !LEAK.test(leaf))
+  // Counted, not collected: a value that 1.4.8 wrote twice and the new entry writes once is a loss.
+  const kept = leaves(now, new Map())
+  const lost = [...leaves(base, new Map())]
+    .filter(([leaf, count]) => (kept.get(leaf) ?? 0) < count && !LEAK.test(leaf))
+    .map(([leaf]) => leaf)
   return lost.length > 0 ? 'LOST ' + lost.sort().join(' ') : ''
 }
 
