@@ -1,0 +1,10 @@
+[
+  {
+    "file": "src/check-api-surface.spec.ts",
+    "reason": "Runs scripts/check-api-surface.mjs as a child process on fixture directories and imports nothing from src/, so it judges no mutant."
+  },
+  {
+    "file": "src/server/config/readme-error-catalog.spec.ts",
+    "reason": "Scans the text of src/ and of the README for the error catalog. The mutation sandbox holds instrumented copies of src/, where that scan finds nothing and the dry run fails. The one module it imports, reserved-log-keys.constants.ts, has no mutant in the run, so it has none to kill."
+  }
+]
