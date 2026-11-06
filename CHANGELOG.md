@@ -11,6 +11,25 @@ heading here.
 
 ## [Unreleased]
 
+### Security
+
+- **Error entries no longer carry what a failed driver call was given or quoted.** A driver puts the
+  call that failed on its error (a Redis reply error carries `command: { name, args }`, a query
+  error `parameters`) and a PostgreSQL error quotes the row in `detail` and the statement in `where`
+  and `internalQuery`. The key-name redaction cannot see a value inside such a string, so it reached
+  the entry. The `args` and `parameters` own fields of an error are now omitted, a `command` object
+  is reduced to its `name`, and an error that PostgreSQL raised loses `detail`, `where` and
+  `internalQuery` while its other fields stay. This holds for the root `err`, for every `cause` and
+  `errors` link, for an `Error` nested in the metadata, and for a driver error held as a field of
+  another error (a `driverError` or a `parent` field, for instance). `args` and `parameters` match
+  in any case. A field of those names that you attach yourself to an error is no longer logged
+  either; put it under a different name, or in the metadata, where name-based redaction applies.
+
+  This covers the carriers above, not every driver: a field that carries a query's text or values
+  under another name (a SQL string, `bindings`, an HTTP client's request body) is still written as
+  the error holds it. Do not put such values on an error you log, or keep them out of its own fields
+  before it reaches the logger.
+
 ### Changed
 
 - **An `Error` nested in the metadata is logged with its content.** `{ inner: new Error('x') }` was
@@ -42,16 +61,17 @@ Nothing to change in code. What can differ at run time:
 - A custom serializer on a record-root key receives the same value it received before, censored as
   before and with any `Error` inside it still an instance. What a serializer returns is written as
   the serializer returned it, so an `Error` in its output is still `{}`: the added parts are for the
-  metadata walk only.
+  metadata walk only. The one exception is the Security entry above: the arguments and quoted values
+  of a failed driver call are omitted from an `Error` there too.
 - This applies where the name redaction runs on the record, which is the default
   (`redactStrategy: 'names'` with at least one name covered). Under `'paths'`, or with no name covered,
   the record is not walked and a nested `Error` is written as before.
 
 ### Internal
 
-- The server bundle budget (`scripts/check-size.mjs`) is 30.4 KiB, up from 30.2 KiB: the nested `Error`
-  node adds 0.70 KiB of executable code (`main` was 29.64 KiB, this tree is 30.34 KiB), and trimming
-  comments was measured to move the artifact by 0.00 KiB.
+- The server bundle budget (`scripts/check-size.mjs`) is raised to 32 KiB, re-derived from the built
+  artifact with the usual headroom; the calibration history there has the measurements. The growth
+  is executable code, not comment weight.
 
 ### Tests
 

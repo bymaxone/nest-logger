@@ -725,13 +725,17 @@ field the serializer derives, and they pass through the same name-based redactio
 any other serializer output.
 
 An error's own enumerable properties (`code`, `statusCode`, domain fields) are carried through, as
-Pino's standard serializer did.
+Pino's standard serializer did, with one exception: the arguments of a failed driver call are not
+written. The fields `args` and `parameters` are omitted, a `command` object is reduced to its
+`name`, and a PostgreSQL error loses `detail`, `where` and `internalQuery`, which quote the row and
+the statement (its other fields stay), because the redaction
+matches key names and cannot see a value inside a string.
 
 When those properties cannot be read (a Proxy whose `ownKeys` throws, or a getter that throws), none of them is copied and the error node carries `_errorFieldsIncomplete: true`, so an entry without its `code` is never mistaken for a complete one.
 
 An `Error` that cannot be read at all does not cost the record its `logKey`, `userId` or metadata: the node is replaced by its sanitized form, which keeps `name` and `message` and carries the same marker unless `name` or `message` itself is unreadable, in which case it is `{ type: 'SanitizeFailed' }`. Filter on `err._errorFieldsIncomplete: true` or `SanitizeFailed` to find these entries.
 
-An `Error` nested in the metadata (under a key, inside an array, or inside another `Error`) is written as its own enumerable fields, censored by name (or as its `toJSON` decides), with `type`, `message`, `stack`, `cause` and `errors` added where the node has no key of that name. The added cause chain and `errors` are bounded as the root `err`'s are, each with a `_truncated` marker. A string `cause` is logged like a `message`: do not put secrets in either. Whatever sits under a record-root key that has a serializer, `err` or a key of `serializers`, reaches that serializer censored by name, with its `Error`s still instances, and what a serializer returns is written as returned, so an `Error` in that output stays `{}`.
+An `Error` nested in the metadata (under a key, inside an array, or inside another `Error`) is written as its own enumerable fields, censored by name (or as its `toJSON` decides), with `type`, `message`, `stack`, `cause` and `errors` added where the node has no key of that name. The added cause chain and `errors` are bounded as the root `err`'s are, each with a `_truncated` marker. A string `cause` is logged like a `message`: do not put secrets in either. Whatever sits under a record-root key that has a serializer, `err` or a key of `serializers`, reaches that serializer censored by name, with its `Error`s still instances, and what a serializer returns is written as returned, so an `Error` in that output stays `{}` (the arguments and quoted values of a failed driver call are omitted from it, as everywhere).
 
 ### 7. Context propagation with `LogContextService`
 

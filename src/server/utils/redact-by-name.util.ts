@@ -62,6 +62,8 @@ import {
   createWidthMarker,
   DEFAULT_MAX_CAUSE_DEPTH,
   MAX_AGGREGATE_ERRORS,
+  OMIT_OWN_FIELD,
+  ownFieldForLog,
   sanitizeError,
   scrubStack
 } from './sanitize-error.util'
@@ -551,8 +553,20 @@ function walkObject(
     // `walkError`, which is the same node with or without the data form.
     const clone = value instanceof Error ? cloneError(value) : undefined
     const copy = clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
+    // What a failed driver call quoted or was given is not written, whether the `Error` is written
+    // as data or kept an instance: it can sit in the serializer's output as a field of the root
+    // `err` (a driver error held by a wrapper), or be returned by a custom serializer. Under a
+    // serializer's key the instance is the serializer's to read, so nothing is dropped there.
+    const scrubbed = value instanceof Error && !inSerialized
     for (const key of keys) {
-      const current = Reflect.get(source, key)
+      const current = scrubbed
+        ? ownFieldForLog(source, key, Reflect.get(source, key))
+        : Reflect.get(source, key)
+      if (current === OMIT_OWN_FIELD) {
+        // The clone carries the original field; the data form has none to remove.
+        Reflect.deleteProperty(copy, key)
+        continue
+      }
       defineOwn(
         copy,
         key,

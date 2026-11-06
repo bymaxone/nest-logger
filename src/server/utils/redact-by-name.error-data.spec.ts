@@ -371,6 +371,37 @@ describe('the node of an Error outside a serialized root key', () => {
     )
   })
 
+  it('leaves an omitted driver field out of the node altogether, not as a value JSON drops', () => {
+    const error = Object.assign(new Error('x'), {
+      args: ['a'],
+      parameters: ['b'],
+      command: { args: ['c'] },
+      code: 'E_X'
+    })
+
+    expect(Object.keys(nodeOf(error))).toStrictEqual(['code', 'type', 'message', 'stack'])
+  })
+
+  it('removes a driver field from an Error kept as an instance, and leaves it under a serializer key', () => {
+    const plain = createNameRedactor(['password'], '[REDACTED]')
+    const keyed = createNameRedactor(['password'], '[REDACTED]', ['db'])
+    const error = Object.assign(new Error('x'), {
+      severity: 'ERROR',
+      code: '23505',
+      routine: 'r',
+      detail: 'Key (email)=(a@b.c) already exists.',
+      args: ['k'],
+      table: 'users'
+    })
+
+    const instance = (plain({ e: error }, true) as { e: Error }).e
+    const under = (keyed({ db: error }, true) as { db: Error }).db
+
+    expect(instance).toBeInstanceOf(Error)
+    expect(Object.keys(instance)).toStrictEqual(['severity', 'code', 'routine', 'table'])
+    expect(Object.keys(under)).toStrictEqual(Object.keys(error))
+  })
+
   it('writes the exact sanitizer node when the head cannot be read at all', () => {
     const explode = {
       get: (): never => {

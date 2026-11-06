@@ -33,6 +33,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-06 — server: 30.61 KiB real -> 32.0 KiB budget (~4.5% headroom). RE-DERIVED from
+//     the artifact, per the standing rule: the nested-Error node had taken the headroom down to
+//     0.06 KiB, and omitting what a failed driver call was given or quoted from an error's fields
+//     adds +0.27 KiB (the helper that decides which own fields are written, the check that
+//     recognises a PostgreSQL error, and the use of both in the serializer and the redaction
+//     walk). It is executable code, not comment weight.
 //   - 2026-11-06 — server: 30.34 KiB real -> 30.4 KiB budget (0.06 KiB of headroom, the
 //     measured minimum). `main` measured 29.64 KiB; the nested-Error node adds +0.70 KiB,
 //     all executable code (the field-walk copy, the head and chain parts each guarded on its
@@ -184,7 +190,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 30.4 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 32 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 
