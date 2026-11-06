@@ -31,10 +31,7 @@ Nothing to change in code. What can differ at run time:
 
 - A nested `Error` that was written as `{}` is now written with its content, so a filter or alert that
   matched `inner: {}` stops matching, and a parser of nested errors gets new fields. Entries that hold
-  one are larger, because the stack is included. With a small `maxEntrySizeBytes` (the default is
-  64 KB) an entry that carries nested Errors in its metadata can now exceed the cap and be replaced by
-  the `LOGGER_ENTRY_TRUNCATED` envelope, where the same entry with `{}` fitted. Raise
-  `maxEntrySizeBytes` if you set it close to your usual entry size.
+  one are larger, because the stack is included.
 - A string `cause` is now logged exactly as a `message` is, and the root `err` already did so. Do not
   put secrets in an `Error`'s `message` or `cause`: the redaction works on field names and cannot see
   a secret inside a string.
