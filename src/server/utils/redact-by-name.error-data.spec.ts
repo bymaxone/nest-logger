@@ -16,6 +16,32 @@ function nodeOf(error: Error): Record<string, unknown> {
   return record.inner
 }
 
+describe('whether an Error outside a serialized root key is written as data', () => {
+  /*
+   * The redactor is built INSIDE each case on purpose: one built when the file loads has already
+   * run the line under test, so a mutation run, which switches the mutant on afterwards, could
+   * never reach it.
+   */
+  it('leaves the Error as it is when the serialized keys are not given', () => {
+    const plain = createNameRedactor(['password'], '[REDACTED]')
+    const error = Object.assign(new Error('x'), { password: 'p' })
+
+    const written = (plain({ inner: error }, true) as { inner: unknown }).inner
+
+    expect(written).toBeInstanceOf(Error)
+    expect((written as Error & { password: string }).password).toBe('[REDACTED]')
+  })
+
+  it('writes it as data when the serialized keys are given, even with none', () => {
+    const none = createNameRedactor(['password'], '[REDACTED]', [])
+
+    const written = (none({ inner: new Error('x') }, true) as { inner: unknown }).inner
+
+    expect(written).not.toBeInstanceOf(Error)
+    expect(written).toMatchObject({ type: 'Error', message: 'x' })
+  })
+})
+
 describe('the node of an Error outside a serialized root key', () => {
   it('has only the keys it has a value for', () => {
     expect(Object.keys(nodeOf(new Error('plain')))).toStrictEqual(['type', 'message', 'stack'])
