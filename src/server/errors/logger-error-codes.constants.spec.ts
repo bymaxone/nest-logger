@@ -60,4 +60,23 @@ describe('LOGGER_ERROR_CODES', () => {
       expect(values).toContain(code)
     }
   })
+
+  it(/*
+   * The whole table, written out. The count and the key-equals-value checks above
+   * cannot tell an added, removed or renamed code from a different one, and these
+   * strings are what a consumer's alert or dashboard matches, so any change to
+   * the set has to show up here as a deliberate edit.
+   */
+  'should be exactly the documented table', () => {
+    expect(LOGGER_ERROR_CODES).toStrictEqual({
+      LOGGER_INVALID_OPTIONS: 'LOGGER_INVALID_OPTIONS',
+      LOGGER_INVALID_LEVEL: 'LOGGER_INVALID_LEVEL',
+      LOGGER_PRETTY_UNAVAILABLE: 'LOGGER_PRETTY_UNAVAILABLE',
+      LOGGER_OTEL_API_UNAVAILABLE: 'LOGGER_OTEL_API_UNAVAILABLE',
+      LOGGER_DESTINATION_INIT_FAILED: 'LOGGER_DESTINATION_INIT_FAILED',
+      LOGGER_DESTINATION_WRITE_FAILED: 'LOGGER_DESTINATION_WRITE_FAILED',
+      LOGGER_CONTEXT_OUT_OF_SCOPE: 'LOGGER_CONTEXT_OUT_OF_SCOPE',
+      LOGGER_ENTRY_TRUNCATED: 'LOGGER_ENTRY_TRUNCATED'
+    })
+  })
 })

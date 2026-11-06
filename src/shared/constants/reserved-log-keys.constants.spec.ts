@@ -119,4 +119,39 @@ describe('RESERVED_LOG_KEYS', () => {
     }
     expect(Object.isFrozen(RESERVED_LOG_KEYS_NOT_EMITTED)).toBe(true)
   })
+
+  it(/*
+   * The whole table, written out. The structural checks above hold for any set of
+   * well-formed keys, and these strings are what a consumer's alert or dashboard
+   * indexes on, so adding, removing or renaming a key has to show up here as a
+   * deliberate edit. The reserved-only table is pinned with it.
+   */
+  'should be exactly the documented tables', () => {
+    expect(RESERVED_LOG_KEYS).toStrictEqual({
+      LOGGER_BOOTSTRAP_OK: 'LOGGER_BOOTSTRAP_OK',
+      LOGGER_BOOTSTRAP_WARNING: 'LOGGER_BOOTSTRAP_WARNING',
+      LOGGER_SHUTDOWN_OK: 'LOGGER_SHUTDOWN_OK',
+      HTTP_REQUEST_START: 'HTTP_REQUEST_START',
+      HTTP_REQUEST_SUCCESS: 'HTTP_REQUEST_SUCCESS',
+      HTTP_REQUEST_REDIRECT: 'HTTP_REQUEST_REDIRECT',
+      HTTP_REQUEST_CLIENT_ERROR: 'HTTP_REQUEST_CLIENT_ERROR',
+      HTTP_REQUEST_SERVER_ERROR: 'HTTP_REQUEST_SERVER_ERROR',
+      HTTP_REQUEST_COMPLETED: 'HTTP_REQUEST_COMPLETED',
+      HTTP_REQUEST_ABORTED: 'HTTP_REQUEST_ABORTED',
+      HTTP_EXCEPTION_HANDLED: 'HTTP_EXCEPTION_HANDLED',
+      HTTP_EXCEPTION_UNHANDLED: 'HTTP_EXCEPTION_UNHANDLED',
+      HTTP_UNEXPECTED_ERROR: 'HTTP_UNEXPECTED_ERROR',
+      HTTP_UNEXPECTED_ERROR_DROPPED: 'HTTP_UNEXPECTED_ERROR_DROPPED',
+      METHOD_EXECUTION: 'METHOD_EXECUTION',
+      METHOD_SLOW_EXECUTION: 'METHOD_SLOW_EXECUTION',
+      LOGGER_DESTINATION_INIT_FAILED: 'LOGGER_DESTINATION_INIT_FAILED',
+      LOGGER_DESTINATION_WRITE_FAILED: 'LOGGER_DESTINATION_WRITE_FAILED',
+      LOGGER_ENTRY_TRUNCATED: 'LOGGER_ENTRY_TRUNCATED',
+      LOGGER_REDACTION_FAILED: 'LOGGER_REDACTION_FAILED',
+      LOGGER_OTEL_API_BROKEN: 'LOGGER_OTEL_API_BROKEN'
+    })
+    expect(RESERVED_LOG_KEYS_NOT_EMITTED).toStrictEqual({
+      HTTP_REQUEST_COMPLETED: 'reserved: superseded by the four status-specific terminal keys'
+    })
+  })
 })
