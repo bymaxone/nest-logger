@@ -130,5 +130,77 @@
       "message": "root",
       "stack": "Error: root"
     }
+  },
+  "message-holding-an-object-non-enumerable": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "message-holding-an-object-enumerable": {
+    "inner": {
+      "message": {
+        "password": "[REDACTED]",
+        "keep": "KEEPobj"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "message-whose-getter-throws-with-sibling": {
+    "inner": {
+      "name": "SanitizeFailed",
+      "message": "Failed to sanitize the thrown value"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "name-holding-an-object-non-enumerable": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "name-holding-an-object-enumerable": {
+    "inner": {
+      "name": {
+        "password": "[REDACTED]",
+        "keep": "KEEPobj"
+      }
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "name-whose-getter-throws-with-sibling": {
+    "inner": {
+      "name": "SanitizeFailed",
+      "message": "Failed to sanitize the thrown value"
+    },
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
+  },
+  "stack-holding-an-object-non-enumerable": {
+    "inner": {},
+    "err": {
+      "type": "Error",
+      "message": "root",
+      "stack": "Error: root"
+    }
   }
 }

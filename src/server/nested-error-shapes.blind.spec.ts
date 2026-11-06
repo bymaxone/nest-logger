@@ -141,6 +141,32 @@ add('serializer-output-with-error-under-a-small-size-cap', () => ({
   }
 }))
 
+/** An Error whose `key` is defined with `value`, as an own data property. */
+const withPart = (key: string, value: unknown, enumerable: boolean): Error =>
+  Object.defineProperty(new Error('part'), key, { value, enumerable })
+
+/** An Error whose `key` is an accessor that throws when it is read. */
+const withHostilePart = (key: string): Error =>
+  Object.defineProperty(new Error('part'), key, {
+    get(): never {
+      throw new Error('getter exploded')
+    }
+  })
+
+for (const key of ['message', 'name']) {
+  for (const enumerable of [false, true]) {
+    add(`${key}-holding-an-object-${enumerable ? 'enumerable' : 'non-enumerable'}`, () => ({
+      meta: { inner: withPart(key, { password: 'LEAK', keep: 'KEEPobj' }, enumerable) }
+    }))
+  }
+  add(`${key}-whose-getter-throws-with-sibling`, () => ({
+    meta: { inner: Object.assign(withHostilePart(key), { sibling: 'KEEPsib' }) }
+  }))
+}
+add('stack-holding-an-object-non-enumerable', () => ({
+  meta: { inner: withPart('stack', { password: 'LEAK', keep: 'KEEPstk' }, false) }
+}))
+
 /** Shapes that show less by decision: none in this part. */
 const ACCEPTED: Record<string, RegExp> = {}
 

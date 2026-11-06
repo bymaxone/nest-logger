@@ -305,6 +305,22 @@ describe('the node of an Error outside a serialized root key', () => {
     })
   })
 
+  it('walks an object held by name or message, and drops one held by stack', () => {
+    const hold = (key: string): Error =>
+      Object.defineProperty(new Error('x'), key, {
+        value: { password: 'p', keep: 'k' },
+        enumerable: false
+      })
+
+    const named = nodeOf(hold('name'))
+    const messaged = nodeOf(hold('message'))
+    const stacked = nodeOf(hold('stack'))
+
+    expect(named['type']).toStrictEqual({ password: '[REDACTED]', keep: 'k' })
+    expect(messaged['message']).toStrictEqual({ password: '[REDACTED]', keep: 'k' })
+    expect(stacked).not.toHaveProperty('stack')
+  })
+
   it('writes the exact sanitizer node when the head cannot be read at all', () => {
     const explode = {
       get: (): never => {

@@ -45,6 +45,12 @@ Nothing to change in code. What can differ at run time:
   (`redactStrategy: 'names'` with at least one name covered). Under `'paths'`, or with no name covered,
   the record is not walked and a nested `Error` is written as before.
 
+### Internal
+
+- The server bundle budget (`scripts/check-size.mjs`) is 30.4 KiB, up from 30.2 KiB: the nested `Error`
+  node adds 0.69 KiB of executable code (`main` was 29.64 KiB, this tree is 30.33 KiB), and trimming
+  comments was measured to move the artifact by 0.00 KiB.
+
 ### Tests
 
 - The shapes of a nested `Error` are judged against the output recorded

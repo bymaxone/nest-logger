@@ -544,14 +544,11 @@ function walkObject(
     // An Error is cloned through its prototype and descriptors so it stays an
     // Error; anything else becomes a plain object carrying the same own
     // enumerable properties — exactly what `JSON.stringify` would have emitted.
-    // An `Error` outside a serializer's keys, when the redactor is told to write it as data, is
-    // the copy of its own fields below plus the head and chain: the parts are only ever added,
-    // so every key the field walk writes stays.
+    // Outside a serializer's keys an `Error` is written as data: its own fields below plus the
+    // head and chain, which are only ever added.
     const asData = value instanceof Error && rules.errorsAsData && !inSerialized
-    // The clone is made even when it is discarded: it reads the descriptors and the stack, and an
-    // `Error` that cannot be read there must reach the fallback in `walkError`, so that the
-    // fallback node is the same with or without the data form. Only a readable one becomes the
-    // plain copy below.
+    // The clone is made even when discarded: an `Error` it cannot read must reach the fallback in
+    // `walkError`, which is the same node with or without the data form.
     const clone = value instanceof Error ? cloneError(value) : undefined
     const copy = clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
     for (const key of keys) {
@@ -567,7 +564,7 @@ function walkObject(
               depth + 1,
               ancestors,
               true,
-              inSerialized || serializedRootKey(rules, key, honorToJson)
+              inSerialized || (!honorToJson && rules.serializedKeys.has(key))
             )
       )
     }
@@ -578,19 +575,7 @@ function walkObject(
   }
 }
 
-/**
- * Whether `key` is a key of the record root that has a serializer.
- *
- * @param rules - The names to censor and the root keys that have a serializer.
- * @param key - The property being walked.
- * @param honorToJson - `false` only for the root of a log record.
- * @returns `true` for a serialized key of the record root.
- */
-function serializedRootKey(rules: RedactRules, key: string, honorToJson: boolean): boolean {
-  return !honorToJson && rules.serializedKeys.has(key)
-}
-
-/** The chain level of an `Error` reached as a `cause` or an `errors` member, set while it is walked. */
+/** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */
 const linkDepths = new WeakMap<object, number>()
 
 /** The marker key of a node that lost a part while it was being written. */
@@ -599,7 +584,7 @@ const INCOMPLETE_KEY = '_errorFieldsIncomplete'
 /** The first `MAX_AGGREGATE_ERRORS` members of `errors` and one marker for the rest. */
 function capErrors(errors: unknown): unknown {
   if (!Array.isArray(errors) || errors.length <= MAX_AGGREGATE_ERRORS) return errors
-  // A list with a `toJSON` is left to the walk, which writes what the method returns.
+  // A list with a `toJSON` is left to that method.
   if (resolveToJson(errors).method !== undefined) return errors
   const kept: unknown[] = []
   for (let index = 0; index < MAX_AGGREGATE_ERRORS; index++) kept.push(Reflect.get(errors, index))
@@ -607,7 +592,7 @@ function capErrors(errors: unknown): unknown {
   return kept
 }
 
-/** The objects that a `cause` or an `errors` holds: the links of a chain. Read by index. */
+/** The objects a `cause` or `errors` holds, read by index. */
 function linkTargets(value: unknown): object[] {
   const targets: object[] = []
   const take = (link: unknown): void => {
@@ -618,10 +603,7 @@ function linkTargets(value: unknown): object[] {
   return targets
 }
 
-/**
- * Walk the value of a `cause` or an `errors` added to a node. The `Error`s it holds are links one
- * level further than the node, for as long as they are walked; past the budget the part is a marker.
- */
+/** Walk an added `cause` or `errors`: its `Error`s are links one level deeper; past the budget, a marker. */
 function walkChainPart(
   value: unknown,
   level: number,
@@ -644,10 +626,8 @@ function walkChainPart(
 }
 
 /**
- * Add the `type`, `message`, `stack`, `cause` and `errors` that the field walk cannot reach, since
- * they are not enumerable. A part is added only where the copy has no key of that name, so a key
- * the field walk wrote is never replaced, and each part is read and walked on its own: one that
- * cannot be costs the node that part and marks it, not the others.
+ * Add the non-enumerable `type`, `message`, `stack`, `cause` and `errors`, each only where the copy
+ * has no such key and each read and walked alone: a part that cannot be costs only itself.
  */
 function addErrorParts(
   copy: Record<string, unknown>,
@@ -663,7 +643,7 @@ function addErrorParts(
   const add = (
     key: string,
     read: () => unknown,
-    write = (value: unknown): unknown => value
+    write = (value: unknown): unknown => walk(value, rules, depth + 1, ancestors)
   ): void => {
     if (taken.has(key)) return
     try {
