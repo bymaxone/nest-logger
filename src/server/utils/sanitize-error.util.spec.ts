@@ -681,4 +681,17 @@ describe('ownFieldForLog', () => {
     expect(ownFieldForLog(viaGetter, 'detail', 'v')).toBe('v')
     expect(reads).toBe(0)
   })
+
+  it('leaves an omitted field out of the sanitized node altogether, not as a value JSON drops', () => {
+    const node = sanitizeError(
+      Object.assign(new Error('x'), {
+        args: ['a'],
+        parameters: ['b'],
+        command: { args: ['c'] },
+        code: 'E_X'
+      })
+    )
+
+    expect(Object.keys(node)).toStrictEqual(['name', 'message', 'stack', 'code'])
+  })
 })
