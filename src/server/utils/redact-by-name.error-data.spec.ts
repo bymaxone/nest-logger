@@ -64,6 +64,25 @@ describe('the node of an Error outside a serialized root key', () => {
     ])
   })
 
+  it('keeps the head and the stack and marks the node when its own keys cannot be listed', () => {
+    // A proxy whose `ownKeys` throws; `stack` is answered by the trap, since reading it through a
+    // proxy would otherwise find nothing.
+    const proxy = new Proxy(new Error('px'), {
+      ownKeys: () => {
+        throw new Error('exploded')
+      },
+      get: (target, key, receiver) =>
+        key === 'stack' ? 'Error: px\n    at somewhere' : Reflect.get(target, key, receiver)
+    })
+
+    expect(Object.keys(nodeOf(proxy))).toStrictEqual([
+      'type',
+      'message',
+      'stack',
+      '_errorFieldsIncomplete'
+    ])
+  })
+
   it('keeps a colliding own field under fields and no key for fields otherwise', () => {
     const colliding = nodeOf(Object.assign(new Error('x'), { type: 'validation' }))
 
