@@ -331,6 +331,8 @@ describe('the node of an Error outside a serialized root key', () => {
 
     expect(written['own']).toMatchObject({ name: '[REDACTED]', type: '[REDACTED]' })
     expect(written['sub']['type']).toBe('[REDACTED]')
+    // Only `type` is read from `name`: the other added parts keep their own coverage.
+    expect(written['sub']).toMatchObject({ message: 'y', stack: expect.any(String) })
     expect(nodeOf(own)['type']).toBe('PRIVATE_PERSON')
   })
 
