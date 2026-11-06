@@ -277,24 +277,50 @@ function toSanitizedError(
 /** Own error fields that hold the arguments of the call that failed, such as a query's `parameters`. */
 const ARGUMENT_FIELDS: ReadonlySet<string> = new Set(['args', 'parameters'])
 
+/** Fields of a PostgreSQL error that quote the row or the statement: names are kept, these are not. */
+const DATABASE_VALUE_FIELDS: ReadonlySet<string> = new Set(['detail', 'where', 'internalQuery'])
+
+/** The five characters of a SQLSTATE. */
+const SQLSTATE = /^[0-9A-Z]{5}$/
+
 /** Returned by {@link ownFieldForLog} for a field that must not be written. */
 export const OMIT_OWN_FIELD: unique symbol = Symbol('omit-own-field')
 
 /**
- * What an error's own field may be written as. A driver puts the arguments of the failed call on
- * its error (a Redis reply error carries `command: { name, args }`, a query error `parameters`),
- * and the redaction matches key names only, so a value inside a string argument would reach the
- * line. These are dropped by structure, not by value: `args` and `parameters` go, and a `command`
- * object keeps only its `name`. Reading the name takes the property descriptor, so no getter of the
+ * Whether an error is one a PostgreSQL server raised: it carries a `severity`, a SQLSTATE `code`
+ * and the `routine` that raised it, all as own string data. No other error source sets the three
+ * together. Read from the property descriptors, so no getter runs.
+ */
+function isDatabaseError(source: object): boolean {
+  const own = (key: string): unknown => Object.getOwnPropertyDescriptor(source, key)?.value
+  const code = own('code')
+  return (
+    typeof own('severity') === 'string' &&
+    typeof own('routine') === 'string' &&
+    typeof code === 'string' &&
+    SQLSTATE.test(code)
+  )
+}
+
+/**
+ * What an error's own field may be written as. A driver puts the call that failed on its error: a
+ * Redis reply error carries `command: { name, args }`, a query error `parameters`, and a PostgreSQL
+ * error quotes the row in `detail` and the statement in `where` and `internalQuery`. The redaction
+ * matches key names only, so a value inside such a string would reach the line. These are dropped by
+ * structure, not by value: `args` and `parameters` go, a PostgreSQL error loses its quoting fields
+ * and keeps `code`, `constraint`, `table`, `column`, `schema` and `routine`, and a `command` object
+ * keeps only its `name`. The name is read from the property descriptor, so no getter of the
  * driver's runs.
  *
  * @internal Shared with the redaction walk. NOT re-exported by the package barrel.
+ * @param source - The error the field belongs to.
  * @param key - The own field's name.
  * @param value - The own field's value.
  * @returns The value to write, or {@link OMIT_OWN_FIELD} when the field is not written.
  */
-export function ownFieldForLog(key: string, value: unknown): unknown {
+export function ownFieldForLog(source: object, key: string, value: unknown): unknown {
   if (ARGUMENT_FIELDS.has(key)) return OMIT_OWN_FIELD
+  if (DATABASE_VALUE_FIELDS.has(key) && isDatabaseError(source)) return OMIT_OWN_FIELD
   if (key !== 'command' || typeof value !== 'object' || value === null) return value
   const name: unknown = Object.getOwnPropertyDescriptor(value, 'name')?.value
   return typeof name === 'string' ? { name } : OMIT_OWN_FIELD
@@ -335,7 +361,7 @@ export function assignOwnErrorFields(target: Record<string, unknown>, source: ob
   try {
     const own = Array.isArray(source) ? {} : (source as Record<string, unknown>)
     for (const [key, field] of Object.entries(own)) {
-      const value = ownFieldForLog(key, field)
+      const value = ownFieldForLog(own, key, field)
       if (value === OMIT_OWN_FIELD) continue
       if (!Object.hasOwn(target, key) && !DERIVED_ERROR_FIELDS.has(key)) {
         // `defineProperty` rather than `Reflect.set`, and `__proto__` is the whole

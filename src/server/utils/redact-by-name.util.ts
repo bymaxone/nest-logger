@@ -554,9 +554,9 @@ function walkObject(
     const clone = value instanceof Error ? cloneError(value) : undefined
     const copy = clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
     for (const key of keys) {
-      // The arguments of a failed driver call are not written, as for the root `err`.
+      // What a failed driver call quoted or was given is not written, as for the root `err`.
       const current = asData
-        ? ownFieldForLog(key, Reflect.get(source, key))
+        ? ownFieldForLog(source, key, Reflect.get(source, key))
         : Reflect.get(source, key)
       if (current === OMIT_OWN_FIELD) continue
       defineOwn(

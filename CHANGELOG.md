@@ -13,11 +13,14 @@ heading here.
 
 ### Security
 
-- **Error entries no longer carry the arguments of a failed driver call.** A driver puts the call
-  that failed on its error (a Redis reply error carries `command: { name, args }`, a query error
-  `parameters`), and the key-name redaction cannot see a value inside a string argument, so such a
-  value reached the entry. The `args` and `parameters` own fields of an error are now omitted, and a
-  `command` object is reduced to its `name`. This holds for the root `err`, for every `cause` and
+- **Error entries no longer carry what a failed driver call was given or quoted.** A driver puts the
+  call that failed on its error (a Redis reply error carries `command: { name, args }`, a query error
+  `parameters`) and a PostgreSQL error quotes the row in `detail` and the statement in `where` and
+  `internalQuery`. The key-name redaction cannot see a value inside such a string, so it reached the
+  entry. The `args` and `parameters` own fields of an error are now omitted, a `command` object is
+  reduced to its `name`, and an error that PostgreSQL raised (recognised by its `severity`, a SQLSTATE
+  `code` and its `routine`) loses `detail`, `where` and `internalQuery` while `code`, `constraint`,
+  `table`, `column`, `schema` and `routine` stay. This holds for the root `err`, for every `cause` and
   `errors` link, and for an `Error` nested in the metadata. A field of those names that you attach
   yourself to an error is no longer logged either; put it under a different name, or in the
   metadata, where name-based redaction applies.

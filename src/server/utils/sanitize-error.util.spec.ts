@@ -622,11 +622,11 @@ describe('isErrorLike — a value whose shape cannot be read', () => {
 
 describe('ownFieldForLog', () => {
   it('omits the argument fields and keeps every other field as it is', () => {
-    expect(ownFieldForLog('args', ['a'])).toBe(OMIT_OWN_FIELD)
-    expect(ownFieldForLog('parameters', { a: 1 })).toBe(OMIT_OWN_FIELD)
-    expect(ownFieldForLog('code', 'E_X')).toBe('E_X')
-    expect(ownFieldForLog('command', 'ls -la')).toBe('ls -la')
-    expect(ownFieldForLog('command', null)).toBeNull()
+    expect(ownFieldForLog({}, 'args', ['a'])).toBe(OMIT_OWN_FIELD)
+    expect(ownFieldForLog({}, 'parameters', { a: 1 })).toBe(OMIT_OWN_FIELD)
+    expect(ownFieldForLog({}, 'code', 'E_X')).toBe('E_X')
+    expect(ownFieldForLog({}, 'command', 'ls -la')).toBe('ls -la')
+    expect(ownFieldForLog({}, 'command', null)).toBeNull()
   })
 
   it('keeps only the name of a command object, read without running a getter', () => {
@@ -638,11 +638,47 @@ describe('ownFieldForLog', () => {
       }
     })
 
-    expect(ownFieldForLog('command', { name: 'set', args: ['secret'] })).toStrictEqual({
+    expect(ownFieldForLog({}, 'command', { name: 'set', args: ['secret'] })).toStrictEqual({
       name: 'set'
     })
-    expect(ownFieldForLog('command', command)).toBe(OMIT_OWN_FIELD)
-    expect(ownFieldForLog('command', { args: ['secret'] })).toBe(OMIT_OWN_FIELD)
+    expect(ownFieldForLog({}, 'command', command)).toBe(OMIT_OWN_FIELD)
+    expect(ownFieldForLog({}, 'command', { args: ['secret'] })).toBe(OMIT_OWN_FIELD)
+    expect(reads).toBe(0)
+  })
+
+  it('omits the fields a PostgreSQL error quotes, and only on an error that carries all three marks', () => {
+    const database = { severity: 'ERROR', code: '23505', routine: '_bt_check_unique' }
+    const without = (mark: string): object => ({ ...database, [mark]: undefined })
+
+    for (const key of ['detail', 'where', 'internalQuery']) {
+      expect(ownFieldForLog(database, key, 'Key (email)=(a@b.c)')).toBe(OMIT_OWN_FIELD)
+      expect(ownFieldForLog(without('severity'), key, 'v')).toBe('v')
+      expect(ownFieldForLog(without('routine'), key, 'v')).toBe('v')
+      expect(ownFieldForLog({ ...database, code: 'ENOENT' }, key, 'v')).toBe('v')
+      expect(ownFieldForLog({ ...database, code: 23505 }, key, 'v')).toBe('v')
+    }
+    expect(ownFieldForLog(database, 'constraint', 'users_email_key')).toBe('users_email_key')
+    expect(ownFieldForLog(database, 'hint', 'Use a different value.')).toBe(
+      'Use a different value.'
+    )
+  })
+
+  it('recognises a PostgreSQL error from its own data properties, never from a getter', () => {
+    let reads = 0
+    const viaGetter = Object.defineProperties(
+      { code: '23505', routine: 'r' },
+      {
+        severity: {
+          enumerable: true,
+          get: () => {
+            reads++
+            return 'ERROR'
+          }
+        }
+      }
+    )
+
+    expect(ownFieldForLog(viaGetter, 'detail', 'v')).toBe('v')
     expect(reads).toBe(0)
   })
 })

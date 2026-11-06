@@ -112,3 +112,67 @@ describe('the arguments of a failed driver call', () => {
     expect(line).not.toContain('person@example.com')
   })
 })
+
+/** An error shaped like the one pg raises for a unique violation, with the fields pg sets. */
+function uniqueViolation(extra: Record<string, unknown> = {}): Error {
+  return Object.assign(
+    new Error('duplicate key value violates unique constraint "users_email_key"'),
+    {
+      name: 'error',
+      severity: 'ERROR',
+      code: '23505',
+      detail: 'Key (email)=(person@example.com) already exists.',
+      where: 'SQL statement "INSERT INTO users(email) VALUES (\'person@example.com\')"',
+      internalQuery: "INSERT INTO users(email) VALUES ('person@example.com')",
+      hint: 'Use a different value.',
+      schema: 'public',
+      table: 'users',
+      column: 'email',
+      constraint: 'users_email_key',
+      file: 'nbtinsert.c',
+      line: '666',
+      routine: '_bt_check_unique',
+      ...extra
+    }
+  )
+}
+
+describe('the row values a database error quotes', () => {
+  it('drops the detail, where and internal query of a pg error and keeps the names', () => {
+    const { line, entry } = log(uniqueViolation())
+
+    expect(entry.err).toMatchObject({
+      severity: 'ERROR',
+      code: '23505',
+      schema: 'public',
+      table: 'users',
+      column: 'email',
+      constraint: 'users_email_key',
+      routine: '_bt_check_unique'
+    })
+    for (const field of ['detail', 'where', 'internalQuery']) {
+      expect(entry.err).not.toHaveProperty(field)
+    }
+    expect(line).not.toContain('person@example.com')
+  })
+
+  it('does the same as a cause and nested in the metadata', () => {
+    const { line, entry } = log(new Error('wrapped', { cause: uniqueViolation() }), {
+      failed: uniqueViolation()
+    })
+
+    expect(entry.err.cause).not.toHaveProperty('detail')
+    expect(entry.failed).not.toHaveProperty('detail')
+    expect(line).not.toContain('person@example.com')
+  })
+
+  it.each([
+    ['no severity', { severity: undefined }],
+    ['a code that is not a SQLSTATE', { code: 'ENOENT' }],
+    ['no routine', { routine: undefined }]
+  ])('leaves detail alone on an error with %s', (_label, change) => {
+    const { entry } = log(uniqueViolation(change))
+
+    expect(entry.err.detail).toBe('Key (email)=(person@example.com) already exists.')
+  })
+})
