@@ -24,6 +24,7 @@ import { LOGGER_OPTIONS_TOKEN } from '../constants/injection-tokens.constants'
 import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { PinoLoggerService } from '../services/pino-logger.service'
+import { cutIfText } from '../utils/bounded-text.util'
 import {
   HTTP_CLIENT_ERROR_MIN,
   HTTP_REDIRECT_MIN,
@@ -217,7 +218,7 @@ export class HttpLoggingInterceptor implements NestInterceptor {
           RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR,
           `${method} ${url} → ${statusCode}`,
           userId,
-          { method, url, statusCode, duration, errorMessage: err.message }
+          { method, url, statusCode, duration, errorMessage: cutIfText(err.message) }
         )
       }
       return

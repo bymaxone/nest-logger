@@ -35,7 +35,12 @@ import {
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
-import { escapeControlCharacters, toSingleLineMessage } from '../utils/escape-log-text.util'
+import { cutText } from '../utils/bounded-text.util'
+import {
+  escapeControlCharacters,
+  toBoundedMessage,
+  toSingleLineMessage
+} from '../utils/escape-log-text.util'
 import { detectOtelTraceApi } from '../utils/otel-detector'
 import {
   reportDestinationFailure,
@@ -43,7 +48,7 @@ import {
   safeMinLevel
 } from '../utils/report-destination-failure.util'
 import { writeStderrSafely } from '../utils/safe-stdio.util'
-import { cutStack, isErrorLike } from '../utils/sanitize-error.util'
+import { isErrorLike } from '../utils/sanitize-error.util'
 
 /**
  * Coordinates destination initialization and graceful shutdown.
@@ -359,8 +364,8 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       const stack = isErrorLike(cause) ? cause.stack : undefined
       detail =
         stack === undefined
-          ? toSingleLineMessage(isErrorLike(cause) ? String(cause.message) : String(cause))
-          : escapeControlCharacters(cutStack(String(stack)))
+          ? toBoundedMessage(isErrorLike(cause) ? String(cause.message) : String(cause))
+          : escapeControlCharacters(cutText(String(stack)))
     } catch {
       // Left as `UnknownError`: a value that cannot be read is still worth a line
       // naming the destination, and this path must never throw.

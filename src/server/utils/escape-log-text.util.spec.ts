@@ -1,4 +1,8 @@
-import { escapeControlCharacters, toSingleLineMessage } from './escape-log-text.util'
+import {
+  toBoundedMessage,
+  escapeControlCharacters,
+  toSingleLineMessage
+} from './escape-log-text.util'
 
 /*
  * SECURITY. These helpers are the boundary between log text and a terminal.
@@ -130,5 +134,20 @@ describe('escape-log-text util', () => {
         `at app${TAB}(/srv/a.ts:1:1)`
       )
     })
+  })
+})
+
+describe('toBoundedMessage', () => {
+  it('escapes the line breaks first and then cuts, so the limit counts what is written', () => {
+    const bounded = toBoundedMessage('a\nb'.repeat(16_384))
+
+    expect(bounded).toHaveLength(16_384 + '…[truncated]'.length)
+    expect(bounded).not.toContain('\n')
+    expect(bounded.endsWith('…[truncated]')).toBe(true)
+  })
+
+  it('leaves a message within the limit exactly as the single-line escaping writes it', () => {
+    expect(toBoundedMessage('fail\nnext')).toBe(toSingleLineMessage('fail\nnext'))
+    expect(toBoundedMessage('x'.repeat(16_384))).toBe('x'.repeat(16_384))
   })
 })

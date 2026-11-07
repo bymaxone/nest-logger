@@ -1248,7 +1248,7 @@ Every `write()` runs inside a try/catch. A destination that throws or rejects pr
 
 ### What redaction covers, and what it cannot
 
-The walk is bounded: a container nested more than 100 levels deep is written as `[REDACTION_DEPTH_EXCEEDED]`, and a call that visits more than 200000 containers writes `[REDACTION_BUDGET_EXCEEDED]` in place of each further one. Nothing past either bound is passed through unwalked. A stack is written at most 16384 characters long and ends with `…[truncated]` when it was cut.
+The walk is bounded: a container nested more than 100 levels deep is written as `[REDACTION_DEPTH_EXCEEDED]`, and a call that visits more than 200000 containers writes `[REDACTION_BUDGET_EXCEEDED]` in place of each further one (only primitives beside them are kept; a container sibling after the budget is the marker too). Nothing past either bound is passed through unwalked. A stack or a message is written at most 16384 characters long and ends with `…[truncated]` when it was cut. A string under a metadata key is the caller's own data and is written as given: `maxEntrySizeBytes` bounds what a serializer returns, not a metadata string.
 
 Redaction here matches **field names**, not values. Under the default `redactStrategy: 'names'` a secret stored under a covered name is censored at any depth — under the legacy `'paths'` strategy the four-level `fast-redact` ceiling applies instead, and a deeper field is not covered. Either way, the same secret **embedded inside a string** under an uncovered name travels intact. Measured:
 

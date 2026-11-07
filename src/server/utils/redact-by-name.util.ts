@@ -57,6 +57,7 @@
  *
  * @see {@link createNameRedactor}
  */
+import { cutIfText, cutText } from './bounded-text.util'
 import {
   createDepthMarker,
   createWidthMarker,
@@ -94,7 +95,7 @@ export const REDACT_DEPTH_EXCEEDED = '[REDACTION_DEPTH_EXCEEDED]'
  * Containers one redaction call visits before it stops expanding. The walk expands an object once
  * per path that reaches it, so a graph that shares references grows as 2^depth in time and in
  * output; this bounds both. A call that reaches it fills every further container with
- * {@link REDACT_BUDGET_EXCEEDED}, keeps the primitives beside them, and passes nothing through
+ * {@link REDACT_BUDGET_EXCEEDED}, keeps only the primitives beside them, and passes nothing through
  * unwalked. Measured, 200000 visits walk in about 100 to 150 ms.
  */
 export const REDACT_MAX_VISITS = 200_000
@@ -594,7 +595,9 @@ function walkObject(
         rules.sensitive.has(key.toLowerCase())
           ? rules.censor
           : walk(
-              current,
+              // An own enumerable `name`, `message` or `stack` of an `Error` is the same text as
+              // the part the walk would add, so it is cut the same way.
+              scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
               rules,
               depth + 1,
               ancestors,
@@ -612,6 +615,9 @@ function walkObject(
 
 /** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */
 const linkDepths = new WeakMap<object, number>()
+
+/** The own fields of an `Error` that hold text the logger copies and bounds like a message. */
+const ERROR_TEXT_FIELDS: ReadonlySet<string> = new Set(['name', 'message', 'stack'])
 
 /** The marker key of a node that lost a part while it was being written. */
 const INCOMPLETE_KEY = '_errorFieldsIncomplete'
@@ -660,9 +666,25 @@ function walkChainPart(
   }
 }
 
+/** Write an added `type` or `message`: a string is cut at the text limit, anything else is walked as a chain part. */
+function cutOrWalk(
+  value: unknown,
+  level: number,
+  rules: RedactRules,
+  depth: number,
+  ancestors: Set<object>
+): unknown {
+  return typeof value === 'string'
+    ? cutText(value)
+    : walkChainPart(value, level, rules, depth, ancestors)
+}
+
 /**
  * Add the non-enumerable `type`, `message`, `stack`, `cause` and `errors`, each only where the copy
  * has no such key and each read and walked alone: a part that cannot be costs only itself.
+ * A part's `covers` names every field whose text it carries, its own included: covering any of
+ * them covers the part. `type` is the `name`; the first line of `stack` is the `name` and the
+ * `message`.
  */
 function addErrorParts(
   copy: Record<string, unknown>,
@@ -675,9 +697,6 @@ function addErrorParts(
   const taken = new Set(ownKeys)
   const level = linkDepths.get(error) ?? 0
   let incomplete = false
-  // `covers` names every field whose text the part carries, its own included: covering any of
-  // them covers the part. `type` is the `name`; the first line of `stack` is the `name` and the
-  // `message`.
   const add = (
     key: string,
     covers: readonly string[],
@@ -694,8 +713,18 @@ function addErrorParts(
       incomplete = true
     }
   }
-  add('type', ['type', 'name'], () => error.name)
-  add('message', ['message'], () => error.message)
+  add(
+    'type',
+    ['type', 'name'],
+    () => error.name,
+    (name) => cutOrWalk(name, level, rules, depth, ancestors)
+  )
+  add(
+    'message',
+    ['message'],
+    () => error.message,
+    (message) => cutOrWalk(message, level, rules, depth, ancestors)
+  )
   add(
     'stack',
     ['stack', 'name', 'message'],

@@ -79,6 +79,14 @@ describe('PrettyDevDestination', () => {
       expect(error.cause).toBe(failure)
     })
 
+    it('cuts a failure message that is longer than the limit the logger writes', async () => {
+      const error = (await initFailure(new RangeError('x'.repeat(30_000)), true)) as Error
+
+      expect(error.message).toBe(
+        `[PrettyDevDestination] pino-pretty failed to start: ${'x'.repeat(16_384)}…[truncated]`
+      )
+    })
+
     it.each([
       [
         'build() throwing a RangeError',

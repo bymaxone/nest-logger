@@ -55,6 +55,16 @@ class FixtureController {
     return { ok: true }
   }
 
+  @Get('numeric')
+  numeric(): never {
+    throw Object.assign(new BadRequestException('x'), { message: 42 })
+  }
+
+  @Get('long')
+  long(): never {
+    throw new BadRequestException('x'.repeat(100_000))
+  }
+
   @Get('bad')
   bad(): never {
     throw new BadRequestException('bad input')
@@ -208,6 +218,36 @@ describe('HttpLoggingInterceptor (integration)', () => {
     const terminalKeys = infoSpy.mock.calls.map((call) => call[0])
     expect(terminalKeys).not.toContain('HTTP_REQUEST_SUCCESS')
     expect(terminalKeys).not.toContain('HTTP_REQUEST_REDIRECT')
+  })
+
+  it(/*
+   * The library builds `errorMessage` from the thrown value, so it is cut at the same limit as
+   * every other message it copies from a value it does not own.
+   */
+  'cuts errorMessage on a 4xx at the message limit', async () => {
+    await request(app.getHttpServer()).get('/long').expect(400)
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'HTTP_REQUEST_CLIENT_ERROR',
+      expect.stringContaining('→ 400'),
+      undefined,
+      expect.objectContaining({ errorMessage: 'x'.repeat(16_384) + '…[truncated]' })
+    )
+  })
+
+  it(/*
+   * `message` is typed as a string, but a thrown value can carry anything. The cut applies only
+   * to a string, and the interceptor still answers the request with the 400.
+   */
+  'copies errorMessage as given when the message of the error is not a string', async () => {
+    await request(app.getHttpServer()).get('/numeric').expect(400)
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'HTTP_REQUEST_CLIENT_ERROR',
+      expect.stringContaining('→ 400'),
+      undefined,
+      expect.objectContaining({ errorMessage: 42 })
+    )
   })
 
   it(/*
