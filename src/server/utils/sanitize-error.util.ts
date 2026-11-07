@@ -253,10 +253,11 @@ function toSanitizedError(
       )
       // A list the redaction walk already capped ends in its marker, which says how many it left
       // out: that number is kept, not recounted with the marker as one more member. It is trusted
-      // only as the last element of a list one longer than the cap and as a positive number;
+      // only as the last element of a list one longer than the cap and as a positive integer;
       // anything else is a member, and the members are counted.
       const cut = aggregated.at(MAX_AGGREGATE_ERRORS) as Partial<TruncatedMarker> | undefined
-      const carried = cut?._truncated === true ? Number(cut._omitted) : 0
+      const carried =
+        cut?._truncated === true && Number.isInteger(cut._omitted) ? (cut._omitted as number) : 0
       const left =
         carried > 0 && aggregated.length === MAX_AGGREGATE_ERRORS + 1
           ? carried

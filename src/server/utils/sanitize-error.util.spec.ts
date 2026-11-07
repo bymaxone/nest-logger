@@ -305,7 +305,28 @@ describe('sanitizeError', () => {
     ['a count that is a string', { _truncated: true, _omitted: 'abc' }, 11, 1],
     ['a count of zero', { _truncated: true, _omitted: 0 }, 11, 1],
     ['a flag that is false', { _truncated: false, _omitted: 5 }, 11, 1],
-    ['a flag that is not a boolean', { _truncated: 'yes', _omitted: 5 }, 11, 1]
+    ['a flag that is not a boolean', { _truncated: 'yes', _omitted: 5 }, 11, 1],
+    ['a count that is a numeric string', { _truncated: true, _omitted: '5' }, 11, 1],
+    ['a count that is a Symbol', { _truncated: true, _omitted: Symbol('x') }, 11, 1],
+    [
+      'a count whose valueOf throws',
+      {
+        _truncated: true,
+        _omitted: {
+          valueOf() {
+            throw new Error('hostile')
+          }
+        }
+      },
+      11,
+      1
+    ],
+    ['a count of Infinity', { _truncated: true, _omitted: Infinity }, 11, 1],
+    ['a count of NaN', { _truncated: true, _omitted: NaN }, 11, 1],
+    ['a count that is a fraction', { _truncated: true, _omitted: 1.5 }, 11, 1],
+    ['a count that is a bigint', { _truncated: true, _omitted: 5n }, 11, 1],
+    ['a count that is null', { _truncated: true, _omitted: null }, 11, 1],
+    ['a count that is true', { _truncated: true, _omitted: true }, 11, 1]
   ])(
     /*
      * The number a marker carries is trusted only when it is the last element of a list of one
