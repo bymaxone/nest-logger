@@ -11,8 +11,25 @@ heading here.
 
 ## [Unreleased]
 
+### Added
+
+- **`errorOwnFields: 'all' | 'safe'` and `errorOwnFieldNames`.** Node's own errors carry values in
+  their own fields: a failed child process has its `stdout`, `stderr` and `output`, an
+  `AssertionError` its `actual` and `expected`, a file system error its `path`. A list of field
+  names to drop cannot name them all, so `'safe'` writes only an allow-list of operational
+  names (listed in the README) plus the names in `errorOwnFieldNames`, at
+  every depth and for an `Error` nested in the metadata. The default stays `'all'` in the 1.x line,
+  where every own field is written as before. Under `'safe'` the redaction also writes plain data: a
+  function or a symbol is omitted, a Buffer or typed array anywhere in the record is its size
+  marker, an `Error` is written from its own fields (its `toJSON` is not called), and a custom
+  serializer receives it as a plain error-like object instead of an `Error` instance.
+
 ### Changed
 
+- **A binary own field of an error is written as its size.** A Buffer, a typed array or a `DataView`
+  in an error's own fields, or as a member of an array there (how a child process's `output`
+  arrives), was written as an object of its bytes. It is now `"[Binary 42 bytes]"`, in both modes.
+  Nothing deeper than the field or a member of it is read.
 - **A message is written at most 16384 characters long.** The `msg` of every call, the `message` of
   a serialized error and of each `cause` or `errors` link, the `message` of a nested `Error` in the
   metadata, the semconv `exception.message`, the `errorMessage` of a 4xx access-log entry, and the
@@ -26,7 +43,11 @@ heading here.
 
 #### Apply to a derived backend
 
-Nothing to change in code. A message longer than 16384 characters, such as the message of an
+Set `errorOwnFields: 'safe'`, and list in `errorOwnFieldNames` any own field you alert on that is
+not in the default list (`orderId`, or `path` if a path is not data to you). Without it the error
+entries keep every own field, as before, except that bytes are written as a size.
+
+A message longer than 16384 characters, such as the message of an
 `assert` failure over two large objects, is cut and ends with `…[truncated]`; an ordinary message
 is far shorter and is written as before.
 

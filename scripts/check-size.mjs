@@ -33,6 +33,24 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-07 — server: 32.17 KiB real -> 33.0 KiB budget (~2.6% headroom). Budget = measured
+//     32.17 + 0.83 of headroom; re-derive from the artifact when it is exceeded. `main` measured
+//     31.04 KiB, and the option that chooses which own fields of an error are written adds +1.13
+//     KiB, every byte executable code. By step: the options, their validation, the policy and its
+//     threading through the serializer and the redaction walk +0.60; the review fixes (the record
+//     walked even when no name is covered, the `Error` parts split out of the walk, the `toJSON`
+//     skip) +0.16; the output written as plain data under 'safe' (functions and symbols omitted,
+//     binary anywhere as its size, `toJSON` read once the way the stringifier reads it, a name
+//     for what a serializer receives) +0.18; the copier of an error's own fields split to stay
+//     within the function-size rule +0.02; the width cap kept in the walk and its marker read by
+//     the sanitizer, so an `AggregateError` is not traversed in full before a serializer keeps
+//     ten members and the count of its marker read only as a positive integer, +0.03; a list of
+//     members kept as a list at the cause-depth limit for what a serializer receives, one marker per member of any kind and the
+//     cap's own marker kept, +0.14.
+//     Savings that were tried and measured: removing duplication (one set of
+//     derived fields, one policy-only redactor, cosmetic freezes) recovered the first overrun;
+//     the later ones moved the compressed size by less than its noise (+-0.03 KiB per edit), and
+//     the one simplification that saved bytes changed behavior on hostile arrays.
 //   - 2026-11-06 — server: 30.61 KiB real -> 32.0 KiB budget (~4.5% headroom). RE-DERIVED from
 //     the artifact, per the standing rule: the nested-Error node had taken the headroom down to
 //     0.06 KiB, and omitting what a failed driver call was given or quoted from an error's fields
@@ -190,7 +208,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 32 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 33 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 

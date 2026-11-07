@@ -186,3 +186,47 @@ describe('validateOptions — P1 closed-set options', () => {
     )
   })
 })
+
+describe('validateOptions: error own fields', () => {
+  const validOpts: BymaxLoggerModuleOptions = { service: { name: 'app', version: '1.0.0' } }
+
+  it.each(['all', 'safe'] as const)('should accept errorOwnFields %s', (mode) => {
+    expect(() => validateOptions({ ...validOpts, errorOwnFields: mode })).not.toThrow()
+  })
+
+  it(/*
+   * A typo in the mode would silently keep writing every own field, which is the
+   * posture the consumer was trying to leave.
+   */
+  'should reject a mode that is neither all nor safe', () => {
+    expect(() =>
+      validateOptions({ ...validOpts, errorOwnFields: 'strict' as unknown as 'safe' })
+    ).toThrow(/errorOwnFields must be 'all' or 'safe'/)
+  })
+
+  it('should accept a list of non-empty names', () => {
+    expect(() =>
+      validateOptions({ ...validOpts, errorOwnFields: 'safe', errorOwnFieldNames: ['orderId'] })
+    ).not.toThrow()
+    expect(() => validateOptions({ ...validOpts, errorOwnFieldNames: [] })).not.toThrow()
+  })
+
+  it.each([
+    ['a string', 'orderId'],
+    ['an object', { orderId: true }]
+  ])('should reject errorOwnFieldNames given as %s', (_label, value) => {
+    expect(() =>
+      validateOptions({ ...validOpts, errorOwnFieldNames: value as unknown as string[] })
+    ).toThrow(/errorOwnFieldNames must be an array of strings/)
+  })
+
+  it.each([
+    ['empty', ''],
+    ['a number', 7],
+    ['null', null]
+  ])('should reject a name that is %s', (_label, entry) => {
+    expect(() =>
+      validateOptions({ ...validOpts, errorOwnFieldNames: ['ok', entry as unknown as string] })
+    ).toThrow(/errorOwnFieldNames\[1\] must be a non-empty string/)
+  })
+})

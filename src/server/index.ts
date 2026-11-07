@@ -65,6 +65,7 @@ export type {
   BymaxLoggerModuleAsyncOptions,
   BymaxLoggerModuleOptionsFactory,
   ResolvedBymaxLoggerModuleOptions,
+  ErrorOwnFieldsMode,
   HttpOptions,
   OtelOptions,
   IUnexpectedErrorSink,

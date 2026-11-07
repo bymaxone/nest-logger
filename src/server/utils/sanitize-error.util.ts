@@ -17,6 +17,13 @@
 
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
 import { escapeControlCharacters } from './escape-log-text.util'
+import {
+  ALL_OWN_FIELDS,
+  allowsOwnField,
+  DERIVED_ERROR_FIELDS,
+  withBinaryAsSize,
+  type OwnFieldPolicy
+} from './own-field-policy.util'
 
 /** Default number of `cause` / `AggregateError` links walked before truncating. */
 export const DEFAULT_MAX_CAUSE_DEPTH = 3
@@ -73,27 +80,6 @@ export interface SanitizedError {
 }
 
 /**
- * Fields a sanitized node derives itself, excluded from the own-property copy.
- *
- * A real `Error` keeps `name` / `message` / `stack` non-enumerable, so they never
- * reach the copy loop. An error-LIKE plain object — what `HttpExceptionFilter`
- * produces, and what any error crossing a worker boundary becomes — carries them
- * as ordinary own keys, and copying them would emit the same value twice: once
- * derived (scrubbed, in the case of `stack`) and once raw.
- *
- * Module-private: the only reader is {@link assignOwnErrorFields}, which is what
- * `pino-factory` shares. An earlier draft exported this set for a version of that
- * helper that took it as a parameter.
- */
-const DERIVED_ERROR_FIELDS: ReadonlySet<string> = new Set([
-  'name',
-  'message',
-  'stack',
-  'cause',
-  'errors'
-])
-
-/**
  * A nested sanitized value: a full {@link SanitizedError}, a truncation marker
  * (depth or width), or the circular-reference sentinel.
  */
@@ -106,6 +92,12 @@ export interface SanitizeErrorOptions {
    * truncation marker. Defaults to {@link DEFAULT_MAX_CAUSE_DEPTH} (3).
    */
   maxCauseDepth?: number
+  /**
+   * Which of an error's own fields the node carries, at every depth. Defaults to all of them.
+   *
+   * @internal Resolved from `errorOwnFields` by the pino factory.
+   */
+  ownFields?: OwnFieldPolicy
 }
 
 /**
@@ -135,7 +127,10 @@ export interface SanitizeErrorOptions {
  */
 export function sanitizeError(err: unknown, options?: SanitizeErrorOptions): SanitizedError {
   const maxCauseDepth = options?.maxCauseDepth ?? DEFAULT_MAX_CAUSE_DEPTH
-  return toSanitizedError(err, new WeakSet<object>(), 0, maxCauseDepth)
+  return toSanitizedError(err, new WeakSet<object>(), 0, {
+    maxDepth: maxCauseDepth,
+    ownFields: options?.ownFields ?? ALL_OWN_FIELDS
+  })
 }
 
 /**
@@ -203,6 +198,12 @@ function isErrorInstance(value: unknown): boolean {
   }
 }
 
+/** What every node of one sanitization shares: how deep the chain is walked and which fields are kept. */
+interface ErrorWalk {
+  readonly maxDepth: number
+  readonly ownFields: OwnFieldPolicy
+}
+
 /**
  * Build a full {@link SanitizedError} for one node of the error graph. Wrapped in
  * a try/catch at every level so a hostile getter degrades only its own node
@@ -211,14 +212,14 @@ function isErrorInstance(value: unknown): boolean {
  * @param value - The candidate error value.
  * @param seen - References already visited (circular-reference guard).
  * @param depth - Current depth in the cause/aggregate graph.
- * @param maxDepth - Maximum depth to walk before truncating.
+ * @param walk - The depth budget and the own-field policy, the same for every node.
  * @returns The sanitized node (always a `SanitizedError`, never a marker).
  */
 function toSanitizedError(
   value: unknown,
   seen: WeakSet<object>,
   depth: number,
-  maxDepth: number
+  walk: ErrorWalk
 ): SanitizedError {
   try {
     if (!readsAsError(value)) {
@@ -236,23 +237,22 @@ function toSanitizedError(
       result.stack = scrubStack(stack)
     }
 
-    const isAtDepthLimit = depth >= maxDepth
+    const isAtDepthLimit = depth >= walk.maxDepth
     const cause = readOptional(() => value.cause as unknown, result)
     if (cause !== undefined) {
       result.cause = isAtDepthLimit
         ? createDepthMarker()
-        : toSanitizedChild(cause, seen, depth + 1, maxDepth)
+        : toSanitizedChild(cause, seen, depth + 1, walk)
     }
 
     const aggregated = readAggregatedErrors(value)
     if (aggregated !== undefined) {
       const capped = aggregated.slice(0, MAX_AGGREGATE_ERRORS)
       result.errors = capped.map((inner) =>
-        isAtDepthLimit ? createDepthMarker() : toSanitizedChild(inner, seen, depth + 1, maxDepth)
+        isAtDepthLimit ? createDepthMarker() : toSanitizedChild(inner, seen, depth + 1, walk)
       )
-      if (aggregated.length > MAX_AGGREGATE_ERRORS) {
-        result.errors.push(createWidthMarker(aggregated.length - MAX_AGGREGATE_ERRORS))
-      }
+      const left = carriedOmitted(aggregated) || aggregated.length - MAX_AGGREGATE_ERRORS
+      if (left > 0) result.errors.push(createWidthMarker(left))
     }
 
     // At EVERY depth, not only the top. The `err` serializer used to copy own
@@ -265,7 +265,7 @@ function toSanitizedError(
     // part of it one level down, and a wrapped error is the common case, not the
     // exotic one. The reporting consumer put it precisely — the human stayed
     // served, because the message survives, while the machine went blind.
-    assignOwnErrorFields(result, value)
+    assignOwnErrorFields(result, value, walk.ownFields)
 
     return result
   } catch {
@@ -313,20 +313,67 @@ function isDatabaseError(source: object): boolean {
  * structure, not by value: `args` and `parameters` go, an error with a SQLSTATE `code` loses its
  * quoting fields and keeps `code`, `constraint`, `table`, `column`, `schema` and `routine`, and a `command` object
  * keeps only its `name`. The name is read from the property descriptor, so no getter of the
- * driver's runs.
+ * driver's runs. Under `errorOwnFields: 'safe'` a field not on the policy's list is not written
+ * either, and in both modes a binary value is written as its size.
  *
  * @internal Shared with the redaction walk. NOT re-exported by the package barrel.
  * @param source - The error the field belongs to.
  * @param key - The own field's name.
  * @param value - The own field's value.
+ * @param policy - Which own fields the configuration writes; every one by default.
  * @returns The value to write, or {@link OMIT_OWN_FIELD} when the field is not written.
  */
-export function ownFieldForLog(source: object, key: string, value: unknown): unknown {
+export function ownFieldForLog(
+  source: object,
+  key: string,
+  value: unknown,
+  policy: OwnFieldPolicy = ALL_OWN_FIELDS
+): unknown {
+  if (!allowsOwnField(policy, key)) return OMIT_OWN_FIELD
   if (ARGUMENT_FIELDS.has(key.toLowerCase())) return OMIT_OWN_FIELD
   if (DATABASE_VALUE_FIELDS.has(key) && isDatabaseError(source)) return OMIT_OWN_FIELD
-  if (key !== 'command' || typeof value !== 'object' || value === null) return value
+  if (key !== 'command' || typeof value !== 'object' || value === null) {
+    return withBinaryAsSize(value)
+  }
   const name: unknown = Object.getOwnPropertyDescriptor(value, 'name')?.value
   return typeof name === 'string' ? { name } : OMIT_OWN_FIELD
+}
+
+/**
+ * Store one own field on a sanitized node as an inert data property.
+ *
+ * @param target - The node being built; mutated in place.
+ * @param key - The field's name.
+ * @param value - The value to store.
+ */
+function defineErrorField(target: Record<string, unknown>, key: string, value: unknown): void {
+  // `defineProperty` rather than `Reflect.set`, and `__proto__` is the whole
+  // reason. It is an accessor inherited from `Object.prototype`, so a SET
+  // walks the chain and invokes that setter — replacing the node's prototype
+  // instead of storing a field. An error-like object arriving from JSON (a
+  // worker boundary, a queue, an HTTP body) carries `__proto__` as an OWN
+  // enumerable key, and `Object.entries` hands it over like any other.
+  //
+  // Measured: the node's prototype really is replaced, and with
+  // `{"__proto__": null}` it loses `hasOwnProperty` and `toString`, which
+  // then THROW for anything downstream that touches them — inside the one
+  // path whose contract is that logging never crashes the application.
+  // `Object.prototype` itself is never touched, so this is prototype
+  // injection into one node rather than global pollution.
+  //
+  // Defining an own data property makes the key inert AND keeps its value:
+  // an error that genuinely carries a `__proto__` field gets it logged as
+  // the data it is.
+  //
+  // The descriptor is deliberately minimal — no `writable`, no
+  // `configurable`. Both would default to `true` under assignment and
+  // neither is observable here, because the node is built once and handed
+  // on: the redaction walk is copy-on-write, verified on the built artifact
+  // (a nested `password` still comes out `[REDACTED]`), and nothing else
+  // writes to a node after this loop, so no test can tell the minimal descriptor from a fuller
+  // one. If a future change ever needs to rewrite a field in place, it has to add `writable`
+  // back, because a silent assignment would throw under the module's strict mode.
+  Object.defineProperty(target, key, { value, enumerable: true })
 }
 
 /**
@@ -347,6 +394,8 @@ export function ownFieldForLog(source: object, key: string, value: unknown): unk
  * @internal Shared with `pino-factory`. NOT re-exported by the package barrel.
  * @param target - The node being built; mutated in place.
  * @param source - The object the node was derived from.
+ * @param policy - Which own fields the configuration writes; every one by default, which is right
+ *   for a node that was already built under a policy.
  * @example
  *   const node = { name: 'Error', message: 'config invalid' }
  *   assignOwnErrorFields(node, Object.assign(new Error('config invalid'), {
@@ -360,44 +409,18 @@ export function ownFieldForLog(source: object, key: string, value: unknown): unk
  *   assignOwnErrorFields(node, JSON.parse('{"__proto__":{"toJSON":1}}'))
  *   Object.getPrototypeOf(node) === Object.prototype  // true
  */
-export function assignOwnErrorFields(target: Record<string, unknown>, source: object): void {
+export function assignOwnErrorFields(
+  target: Record<string, unknown>,
+  source: object,
+  policy: OwnFieldPolicy = ALL_OWN_FIELDS
+): void {
   try {
     const own = Array.isArray(source) ? {} : (source as Record<string, unknown>)
     for (const [key, field] of Object.entries(own)) {
-      const value = ownFieldForLog(own, key, field)
+      const value = ownFieldForLog(own, key, field, policy)
       if (value === OMIT_OWN_FIELD) continue
       if (!Object.hasOwn(target, key) && !DERIVED_ERROR_FIELDS.has(key)) {
-        // `defineProperty` rather than `Reflect.set`, and `__proto__` is the whole
-        // reason. It is an accessor inherited from `Object.prototype`, so a SET
-        // walks the chain and invokes that setter — replacing the node's prototype
-        // instead of storing a field. An error-like object arriving from JSON (a
-        // worker boundary, a queue, an HTTP body) carries `__proto__` as an OWN
-        // enumerable key, and `Object.entries` hands it over like any other.
-        //
-        // Measured: the node's prototype really is replaced, and with
-        // `{"__proto__": null}` it loses `hasOwnProperty` and `toString`, which
-        // then THROW for anything downstream that touches them — inside the one
-        // path whose contract is that logging never crashes the application.
-        // `Object.prototype` itself is never touched, so this is prototype
-        // injection into one node rather than global pollution.
-        //
-        // Defining an own data property makes the key inert AND keeps its value:
-        // an error that genuinely carries a `__proto__` field gets it logged as
-        // the data it is.
-        //
-        // The descriptor is deliberately minimal — no `writable`, no
-        // `configurable`. Both would default to `true` under assignment and
-        // neither is observable here, because the node is built once and handed
-        // on: the redaction walk is copy-on-write, verified on the built artifact
-        // (a nested `password` still comes out `[REDACTED]`), and nothing else
-        // writes to a node after this loop. Mutation testing is what forces the
-        // question — two `BooleanLiteral` mutants survived on those flags — and
-        // the answer here matches the one this repo already reached on its other
-        // property descriptors: delete the redundant literal rather than document
-        // why no test can kill it. If a future change ever needs to rewrite a
-        // field in place, it has to add `writable` back, because a silent
-        // assignment would throw under the module's strict mode.
-        Object.defineProperty(target, key, { value, enumerable: true })
+        defineErrorField(target, key, value)
       }
     }
   } catch {
@@ -447,19 +470,42 @@ function readOptional<T>(read: () => T, node: Record<string, unknown>): T | unde
  * @param value - The nested candidate value.
  * @param seen - References already visited.
  * @param depth - Current depth in the graph.
- * @param maxDepth - Maximum depth to walk before truncating.
+ * @param walk - The depth budget and the own-field policy.
  * @returns The sanitized child, or the circular sentinel.
  */
 function toSanitizedChild(
   value: unknown,
   seen: WeakSet<object>,
   depth: number,
-  maxDepth: number
+  walk: ErrorWalk
 ): SanitizedChild {
   if (isObject(value) && seen.has(value)) {
     return CIRCULAR_SENTINEL
   }
-  return toSanitizedError(value, seen, depth, maxDepth)
+  return toSanitizedError(value, seen, depth, walk)
+}
+
+/**
+ * The number of members a list the redaction walk already capped says it left out, or 0.
+ *
+ * Such a list ends in its width marker, one past the cap, and that number is kept instead of
+ * recounting the marker as one more member. The last element is caller data, so it is read only
+ * for a list of exactly that length, each field once, and trusted only as a positive integer on a
+ * marker flagged `_truncated`. Anything else, including a getter that throws, is not a marker.
+ *
+ * @param list - The `errors` of an `AggregateError`.
+ * @returns The carried count, or 0 when the last element is not a width marker.
+ */
+function carriedOmitted(list: readonly unknown[]): number {
+  // A shorter list has no element at the cut position, so only a longer one is ruled out here.
+  if (list.length > MAX_AGGREGATE_ERRORS + 1) return 0
+  try {
+    const cut = list.at(MAX_AGGREGATE_ERRORS) as Partial<TruncatedMarker> | undefined
+    const omitted = cut?._truncated === true ? cut._omitted : undefined
+    return Number.isInteger(omitted) ? Math.max(omitted as number, 0) : 0
+  } catch {
+    return 0
+  }
 }
 
 /**

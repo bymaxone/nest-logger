@@ -26,6 +26,11 @@ import type { LogContextService } from './services/log-context.service'
 import { cutText } from './utils/bounded-text.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { destinationToStream } from './utils/destination-to-stream'
+import {
+  createOwnFieldPolicy,
+  type OwnFieldPolicy,
+  ALL_OWN_FIELDS
+} from './utils/own-field-policy.util'
 import { createNameRedactor } from './utils/redact-by-name.util'
 import type { Redactor } from './utils/redact-by-name.util'
 import { safeMinLevel } from './utils/report-destination-failure.util'
@@ -128,14 +133,18 @@ export function leafNameOf(path: string): string | undefined {
  *   omitted field from one written as `undefined`. Mutation testing found that
  *   gap. NOT re-exported by the package barrel.
  * @param value_ - The thrown value, in whatever shape it reached the log call.
+ * @param ownFields - Which of the error's own fields are written; every one by default.
  * @returns A JSON-safe error object.
  * @example
  *   serializeErrorValue(new Error('outer', { cause: new Error('inner') }))
  *   // → { type: 'Error', message: 'outer', stack: '…',
  *   //     cause: { name: 'Error', message: 'inner', … } }
  */
-export function serializeErrorValue(value_: unknown): Record<string, unknown> {
-  const sanitized = sanitizeError(value_)
+export function serializeErrorValue(
+  value_: unknown,
+  ownFields: OwnFieldPolicy = ALL_OWN_FIELDS
+): Record<string, unknown> {
+  const sanitized = sanitizeError(value_, { ownFields })
   const serialized: Record<string, unknown> = {
     // `type` rather than `name`: the field consumers already query.
     type: sanitized.name,
@@ -162,6 +171,7 @@ export function serializeErrorValue(value_: unknown): Record<string, unknown> {
   // at every depth, so reading the raw value again here would be the identical
   // walk written twice — and the version that drifts is always the one further
   // from the bug report.
+  // The policy already applied when `sanitized` was built, so what this copies is filtered.
   assignOwnErrorFields(serialized, sanitized)
   return serialized
 }
@@ -343,20 +353,24 @@ const PASS_THROUGH: Redactor = (value: unknown): unknown => value
 
 /**
  * Resolve the name-walk redactor for the active configuration, or a pass-through
- * when the walk is not in play (legacy `'paths'` strategy, or defaults disabled).
+ * when the walk is not in play (legacy `'paths'` strategy, or defaults disabled) and
+ * `errorOwnFields` is not `'safe'`.
  *
  * @internal Exported only for unit testing — this is the switch that decides
  *   whether the DEFAULT PII protection is active at all, so its branches are
  *   asserted directly rather than inferred from a serialized line. NOT
  *   re-exported by the package barrel.
  * @param options - Fully-defaulted module options.
- * @returns A redaction function; the identity function when the walk is off.
+ * @returns A redaction function; the identity function when the walk is off and the policy is not
+ *   `errorOwnFields: 'safe'`, which walks the record whatever the strategy or the names covered.
  */
 export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
-  if (options.redactStrategy !== 'names') {
-    return PASS_THROUGH
-  }
-  return buildNameRedactor(options, true)
+  return buildNameRedactor(options, true, options.redactStrategy === 'names')
+}
+
+/** The own-field policy the configuration resolves to. */
+function ownFieldPolicyOf(options: ResolvedBymaxLoggerModuleOptions): OwnFieldPolicy {
+  return createOwnFieldPolicy(options.errorOwnFields, options.errorOwnFieldNames)
 }
 
 /**
@@ -393,23 +407,39 @@ export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): 
  * @param nestedErrorsAsData - `true` only for the redactor of the caller's record: an `Error`
  *   nested in it is written with its content. Serializer output keeps the shape the serializer
  *   chose, because the size bound that follows measures it and a larger value would be truncated
- *   where the same output was not.
- * @returns A redaction function; the identity function when no name is covered.
+ *   where the same output was not; under `errorOwnFields: 'safe'` it is walked into plain data
+ *   too, since nothing else would make it so.
+ * @param coversNames - `false` for the record under the `'paths'` strategy, whose names
+ *   `fast-redact` covers.
+ * @returns A redaction function; the identity function when no name is covered and the policy is
+ *   not `errorOwnFields: 'safe'`.
  */
 function buildNameRedactor(
   options: ResolvedBymaxLoggerModuleOptions,
-  nestedErrorsAsData = false
+  nestedErrorsAsData = false,
+  coversNames = true
 ): Redactor {
-  const names = [
-    ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
-    ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
-  ]
-  if (names.length === 0) {
+  const names = coversNames
+    ? [
+        ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
+        ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
+      ]
+    : []
+  const ownFields = ownFieldPolicyOf(options)
+  // With no name to cover the value is still walked under 'safe', which writes plain data only the
+  // walk can produce: an `Error` nested in the record, and what a serializer returns.
+  if (names.length === 0 && !ownFields.safe) {
     return PASS_THROUGH
   }
   return nestedErrorsAsData
-    ? createNameRedactor(names, options.redactCensor, ['err', ...Object.keys(options.serializers)])
-    : createNameRedactor(names, options.redactCensor)
+    ? createNameRedactor(
+        names,
+        options.redactCensor,
+        ['err', ...Object.keys(options.serializers)],
+        undefined,
+        ownFields
+      )
+    : createNameRedactor(names, options.redactCensor, undefined, undefined, ownFields)
 }
 
 /**
@@ -478,6 +508,7 @@ export function buildPinoInstance(
   //     e2e case, which is the check that caught it.
   const redactRecord = resolveNameRedactor(options)
   const redactSerialized = buildNameRedactor(options)
+  const ownFields = ownFieldPolicyOf(options)
 
   // Every serializer (default `err` + any consumer-supplied) is composed as
   // size-bound(redact(serialize)). Two orderings matter here:
@@ -501,7 +532,7 @@ export function buildPinoInstance(
   const bound = <T>(serializer: (input: T) => unknown): ((input: T) => unknown) =>
     createSizeBoundedSerializer((input: T) => redactSerialized(serializer(input)), maxBytes)
   const serializers = {
-    err: bound(serializeErrorValue),
+    err: bound((error) => serializeErrorValue(error, ownFields)),
     ...Object.fromEntries(
       Object.entries(options.serializers).map(
         ([key, serializer]): [string, (input: unknown) => unknown] => [key, bound(serializer)]
