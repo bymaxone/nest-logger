@@ -70,6 +70,14 @@ const shapes: [string, () => Record<string, unknown>][] = [
       return { inner: new Failure('f') }
     }
   ],
+  [
+    'an Error whose hook is an own enumerable field',
+    () => ({
+      inner: Object.assign(new Error('o'), {
+        toJSON: () => ({ password: SECRET, actual: 'visible' })
+      })
+    })
+  ],
   ['an Error under the key err', () => ({ err: errorWithHook() })],
   ['an Error under a key with a serializer', () => ({ thing: errorWithHook() })]
 ]
@@ -89,6 +97,19 @@ const configurations = [
     coversPassword: true,
     isRecord: true,
     build: () => createNameRedactor(['password'], 'X', ['err', 'thing'], undefined, SAFE)
+  },
+  {
+    name: 'record, safe, toJSON listed as an own field',
+    coversPassword: true,
+    isRecord: true,
+    build: () =>
+      createNameRedactor(
+        ['password'],
+        'X',
+        ['err', 'thing'],
+        undefined,
+        createOwnFieldPolicy('safe', ['toJSON'])
+      )
   },
   {
     name: 'record, safe, no names',
@@ -135,5 +156,24 @@ describe('the output of the redaction walk', () => {
       expect(hooksIn(written)).toEqual([])
       if (coversPassword) expect(JSON.stringify(written)).not.toContain(SECRET)
     })
+  })
+})
+
+describe('what the walk keeps beside the hooks it removes', () => {
+  it('keeps a function that is not a toJSON, and a toJSON that is not a function', () => {
+    const run = (): number => 1
+    const redact = createNameRedactor(['password'], 'X', undefined, undefined, ALL_OWN_FIELDS)
+
+    const output = redact(
+      { run, nested: Object.assign(new Error('o'), { run, toJSON: 'text' }) },
+      true
+    ) as {
+      run: unknown
+      nested: Record<string, unknown>
+    }
+
+    expect(output.run).toBe(run)
+    expect(output.nested['run']).toBe(run)
+    expect(output.nested['toJSON']).toBe('text')
   })
 })

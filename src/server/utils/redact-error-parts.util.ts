@@ -54,6 +54,9 @@ export function defineOwn(target: Record<string, unknown>, key: string, value: u
   // descriptors `cloneError` relaxes precisely so a censor always lands.
   // `Reflect.defineProperty` reports failure by returning `false`, not by throwing, so a check
   // of the result would be a branch no input can take: untested code claiming a guarantee.
+  // A callable `toJSON` is never written onto a copy: `JSON.stringify` would run it after the
+  // redaction, and whatever it returns would reach the line uncensored.
+  if (key === 'toJSON' && typeof value === 'function') return
   Reflect.defineProperty(target, key, { value, enumerable: true })
 }
 
