@@ -299,6 +299,34 @@ describe('sanitizeError', () => {
     expect(result.errors?.[10]).toEqual(marker)
   })
 
+  it.each([
+    ['a marker-shaped member in a longer list', { _truncated: true, _omitted: 1e9 }, 91, 81],
+    ['a negative count', { _truncated: true, _omitted: -5 }, 11, 1],
+    ['a count that is a string', { _truncated: true, _omitted: 'abc' }, 11, 1],
+    ['a count of zero', { _truncated: true, _omitted: 0 }, 11, 1],
+    ['a flag that is false', { _truncated: false, _omitted: 5 }, 11, 1],
+    ['a flag that is not a boolean', { _truncated: 'yes', _omitted: 5 }, 11, 1]
+  ])(
+    /*
+     * The number a marker carries is trusted only when it is the last element of a list of one
+     * more than the cap and is a positive number. Anything else is a member, and the members are
+     * counted, so a value that merely looks like a marker cannot change or hide the count.
+     */
+    'should count the members, not trust %s',
+    (_label, lookalike, length, omitted) => {
+      const members: unknown[] = Array.from({ length }, (_, i) => new Error(`e${i}`))
+      members[10] = lookalike
+      const result = sanitizeError(new AggregateError(members, 'looks capped'))
+
+      expect(result.errors).toHaveLength(11)
+      expect(result.errors?.[10]).toEqual({
+        _truncated: true,
+        _reason: 'aggregate-width-exceeded',
+        _omitted: omitted
+      })
+    }
+  )
+
   it(/*
    * Eleven real members are not a capped list: the eleventh is a member that is left out, so the
    * marker counts one, and a member that merely sits at that index is not mistaken for a marker.

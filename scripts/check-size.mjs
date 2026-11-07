@@ -33,9 +33,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-07 — server: 32.05 KiB real -> 33.0 KiB budget (~3.0% headroom). Budget = measured
-//     32.05 + 0.95 of headroom; re-derive from the artifact when it is exceeded. `main` measured
-//     31.04 KiB, and the option that chooses which own fields of an error are written adds +1.01
+//   - 2026-11-07 — server: 32.06 KiB real -> 33.0 KiB budget (~2.9% headroom). Budget = measured
+//     32.06 + 0.94 of headroom; re-derive from the artifact when it is exceeded. `main` measured
+//     31.04 KiB, and the option that chooses which own fields of an error are written adds +1.02
 //     KiB, every byte executable code. By step: the options, their validation, the policy and its
 //     threading through the serializer and the redaction walk +0.60; the review fixes (the record
 //     walked even when no name is covered, the `Error` parts split out of the walk, the `toJSON`
@@ -44,7 +44,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     for what a serializer receives) +0.18; the copier of an error's own fields split to stay
 //     within the function-size rule +0.02; the width cap kept in the walk and its marker read by
 //     the sanitizer, so an `AggregateError` is not traversed in full before a serializer keeps
-//     ten members, +0.05. Savings that were tried and measured: removing duplication (one set of
+//     ten members and a member shaped like a marker cannot change the count, +0.06. Savings that
+//     were tried and measured: removing duplication (one set of
 //     derived fields, one policy-only redactor, cosmetic freezes) recovered the first overrun;
 //     the later ones moved the compressed size by less than its noise (+-0.03 KiB per edit), and
 //     the one simplification that saved bytes changed behavior on hostile arrays.
