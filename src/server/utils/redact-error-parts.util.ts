@@ -104,7 +104,13 @@ function walkChainPart(
   depth: number
 ): unknown {
   const targets = linkTargets(value)
-  if (targets.length > 0 && level + 1 > DEFAULT_MAX_CAUSE_DEPTH) return createDepthMarker()
+  if (targets.length > 0 && level + 1 > DEFAULT_MAX_CAUSE_DEPTH) {
+    // What a serializer receives keeps a list as a list, one marker per member, because the
+    // sanitizer reads only lists and would otherwise lose the members left out. The node written
+    // into an entry keeps its single marker.
+    const isList = Array.isArray(value) && host.nameKey === 'name'
+    return isList ? targets.map(() => createDepthMarker()) : createDepthMarker()
+  }
   const before = new Map(targets.map((target) => [target, linkDepths.get(target)]))
   for (const target of targets) linkDepths.set(target, level + 1)
   try {

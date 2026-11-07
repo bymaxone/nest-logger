@@ -593,3 +593,63 @@ describe('the width cap of an AggregateError reports the same count in both mode
     }
   )
 })
+
+describe('an AggregateError at the cause-depth limit keeps its errors as a list in both modes', () => {
+  it.each(['all', 'safe'] as const)(
+    "writes errors as a list of depth markers, under '%s'",
+    (mode) => {
+      const { service, entry } = pipeline({ errorOwnFields: mode })
+      const aggregate = new AggregateError([new Error('a'), new Error('b')], 'agg')
+      const deep = new Error('l1', {
+        cause: new Error('l2', { cause: new Error('l3', { cause: aggregate }) })
+      })
+
+      service.errorStructured('KEY', deep, 'u1')
+
+      const leaf = entry().err.cause.cause.cause
+      expect(leaf.name).toBe('AggregateError')
+      expect(Array.isArray(leaf.errors)).toBe(true)
+      expect(leaf.errors).toHaveLength(2)
+      expect(leaf.errors[0]).toMatchObject({ _truncated: true, _reason: 'cause-depth-exceeded' })
+    }
+  )
+
+  it.each(['all', 'safe'] as const)(
+    "keeps a cause past the depth limit as one marker, not a list, under '%s'",
+    (mode) => {
+      const { service, entry } = pipeline({ errorOwnFields: mode })
+      let chain = new Error('leaf')
+      for (let level = 0; level < 5; level++)
+        chain = new Error(`l${String(level)}`, { cause: chain })
+
+      service.errorStructured('KEY', chain, 'u1')
+
+      expect(entry().err.cause.cause.cause.cause).toEqual({
+        _truncated: true,
+        _reason: 'cause-depth-exceeded'
+      })
+    }
+  )
+
+  it("gives a serializer a cause past the depth limit as one marker, and errors as a list, under 'safe'", () => {
+    let seen: any
+    const { service } = pipeline({
+      errorOwnFields: 'safe',
+      serializers: {
+        thing: (input: unknown): unknown => {
+          seen = input
+          return 'done'
+        }
+      }
+    })
+    let chain: Error = new AggregateError([new Error('a'), new Error('b')], 'agg')
+    for (let level = 0; level < 5; level++) chain = new Error(`l${String(level)}`, { cause: chain })
+
+    service.info('KEY', 'hello', 'u1', { thing: chain })
+
+    expect(seen.cause.cause.cause.cause).toEqual({
+      _truncated: true,
+      _reason: 'cause-depth-exceeded'
+    })
+  })
+})
