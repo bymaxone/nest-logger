@@ -369,3 +369,21 @@ describe("the width cap of an AggregateError's errors under 'safe'", () => {
     })
   })
 })
+
+describe("the width cap of an AggregateError's errors in the default mode", () => {
+  it('reads the list for a toJSON by its descriptors, so a hook only a get trap answers does not exempt it', () => {
+    const members = Array.from({ length: 12 }, (_member, index) => new Error(`m${String(index)}`))
+    const list = new Proxy(members, {
+      get: (target, key, receiver) =>
+        key === 'toJSON' ? () => target : Reflect.get(target, key, receiver)
+    })
+    const aggregate = new AggregateError([], 'many')
+    Object.defineProperty(aggregate, 'errors', { value: list })
+    const redact = createNameRedactor(['password'], 'X', ['err'], undefined, ALL_OWN_FIELDS)
+
+    const written = redact({ inner: aggregate }, true) as { inner: { errors: unknown[] } }
+
+    expect(written.inner.errors).toHaveLength(11)
+    expect(JSON.stringify(written.inner.errors.at(-1))).toContain('_omitted":2')
+  })
+})
