@@ -286,6 +286,36 @@ describe('sanitizeError', () => {
   })
 
   it(/*
+   * A list the redaction walk already capped ends in its width marker. The marker says how many
+   * members were left out, so that number is kept: counting the marker as one more member would
+   * report 1 where 90 were omitted.
+   */
+  'should keep the omitted count of a width marker the list already ends in', () => {
+    const members = Array.from({ length: 10 }, (_, i) => new Error(`e${i}`))
+    const marker = { _truncated: true, _reason: 'aggregate-width-exceeded', _omitted: 90 }
+    const result = sanitizeError(new AggregateError([...members, marker], 'already capped'))
+
+    expect(result.errors).toHaveLength(11)
+    expect(result.errors?.[10]).toEqual(marker)
+  })
+
+  it(/*
+   * Eleven real members are not a capped list: the eleventh is a member that is left out, so the
+   * marker counts one, and a member that merely sits at that index is not mistaken for a marker.
+   */
+  'should count one omitted member for eleven real members', () => {
+    const members = Array.from({ length: 11 }, (_, i) => new Error(`e${i}`))
+    const result = sanitizeError(new AggregateError(members, 'eleven'))
+
+    expect(result.errors).toHaveLength(11)
+    expect(result.errors?.[10]).toEqual({
+      _truncated: true,
+      _reason: 'aggregate-width-exceeded',
+      _omitted: 1
+    })
+  })
+
+  it(/*
    * A self-referential cause must collapse to the circular sentinel instead of
    * recursing forever. This is the canonical crash a naive serializer hits.
    */

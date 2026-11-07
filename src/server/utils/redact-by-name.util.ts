@@ -152,10 +152,12 @@ interface ResolvedToJson {
  * @param value - A non-null object.
  * @returns The resolved method and whether it came from an accessor.
  */
-function resolveToJson(value: object): ResolvedToJson {
+function resolveToJson(value: object, viaGet = false): ResolvedToJson {
   let getter: (() => unknown) | undefined
-  let candidate: unknown
-  let current: object | null = value
+  // Under 'safe' the read is the one `JSON.stringify` makes, a single `[[Get]]` through any Proxy
+  // trap, which is not the descriptor walk below.
+  let candidate: unknown = viaGet ? Reflect.get(value, 'toJSON') : undefined
+  let current: object | null = viaGet ? null : value
   while (current !== null) {
     const descriptor = Object.getOwnPropertyDescriptor(current, 'toJSON')
     if (descriptor !== undefined) {
@@ -174,17 +176,6 @@ function resolveToJson(value: object): ResolvedToJson {
     method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined,
     fromAccessor: getter !== undefined
   }
-}
-
-/**
- * The `toJSON` of a value as `JSON.stringify` reads it: one `[[Get]]`, through any Proxy trap.
- *
- * @param value - A non-null object or callable.
- * @returns The method when the read is callable.
- */
-function getToJson(value: object): ResolvedToJson {
-  const candidate: unknown = Reflect.get(value, 'toJSON')
-  return { method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined }
 }
 
 /**
@@ -466,7 +457,7 @@ function walkObject(
   if (plain && ArrayBuffer.isView(value)) {
     return withBinaryAsSize(value)
   }
-  const resolvedToJson = plain ? getToJson(value) : resolveToJson(value)
+  const resolvedToJson = resolveToJson(value, plain)
   if (!plain && !resolvedToJson.fromAccessor && resolvedToJson.method === BUFFER_TO_JSON) {
     return value
   }

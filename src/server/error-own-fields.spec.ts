@@ -572,4 +572,24 @@ describe('the width cap of an AggregateError reports the same count in both mode
       expect(entry().nested.errors.at(-1)._omitted).toBe(90)
     }
   )
+
+  it.each(['all', 'safe'] as const)(
+    "reads only the members it keeps of a hundred, and counts the 90 left out, under '%s'",
+    (mode) => {
+      const { service, entry } = pipeline({ errorOwnFields: mode })
+      let reads = 0
+      const members = Array.from({ length: 100 }, (_member, index) =>
+        Object.defineProperty(new Error(`m${String(index)}`), 'probe', {
+          enumerable: true,
+          get: () => ++reads
+        })
+      )
+
+      service.errorStructured('KEY', new AggregateError(members, 'many'), 'u1')
+
+      expect(reads).toBeLessThanOrEqual(20)
+      expect(entry().err.errors).toHaveLength(11)
+      expect(entry().err.errors.at(-1)._omitted).toBe(90)
+    }
+  )
 })

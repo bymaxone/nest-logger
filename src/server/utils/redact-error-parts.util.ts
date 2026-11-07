@@ -76,9 +76,6 @@ const INCOMPLETE_KEY = '_errorFieldsIncomplete'
 
 /** The first `MAX_AGGREGATE_ERRORS` members of `errors` and one marker for the rest. */
 function capErrors(errors: unknown, host: ErrorPartsHost): unknown {
-  // What a serializer receives is capped by the serializer, once: a second cap would count the
-  // first one's marker as a member and report the wrong number left out.
-  if (host.nameKey === 'name') return errors
   if (!Array.isArray(errors) || errors.length <= MAX_AGGREGATE_ERRORS) return errors
   // A list with a `toJSON` is left to that method.
   if (host.hasToJson(errors)) return errors

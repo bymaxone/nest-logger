@@ -251,9 +251,11 @@ function toSanitizedError(
       result.errors = capped.map((inner) =>
         isAtDepthLimit ? createDepthMarker() : toSanitizedChild(inner, seen, depth + 1, walk)
       )
-      if (aggregated.length > MAX_AGGREGATE_ERRORS) {
-        result.errors.push(createWidthMarker(aggregated.length - MAX_AGGREGATE_ERRORS))
-      }
+      // A list the redaction walk already capped ends in its marker, which says how many it left
+      // out: that number is kept, not recounted with the marker as one more member.
+      const cut = aggregated.at(MAX_AGGREGATE_ERRORS) as Partial<TruncatedMarker> | undefined
+      const left = (cut?._truncated && cut._omitted) || aggregated.length - MAX_AGGREGATE_ERRORS
+      if (left > 0) result.errors.push(createWidthMarker(left))
     }
 
     // At EVERY depth, not only the top. The `err` serializer used to copy own
