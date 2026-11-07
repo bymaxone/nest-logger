@@ -423,6 +423,8 @@ function walkError(
     // The sanitized node replaces an `Error` that cannot be read: it never throws, copies no
     // field it could not read and marks what it lost. Under a serialized key the same node is
     // what the serializer receives.
+    // The sanitized node is the same container as `error`, which `walk` already counted.
+    rules.visits.count--
     return walk(sanitizeError(error), rules, depth, ancestors, honorToJson, inSerialized)
   }
 }

@@ -116,6 +116,29 @@ describe('the visit budget of one redaction call', () => {
     expect(second).toStrictEqual({ meta: { small: { a: [1, 2, 3] } } })
   })
 
+  it('counts an Error that cannot be read once, not again for the node that replaces it', () => {
+    const unreadable = Object.defineProperty(new Error('x'), 'bad', {
+      enumerable: true,
+      get: () => {
+        throw new Error('exploded')
+      }
+    })
+    // The record, `meta`, the array and the Error are four containers; the sanitized node that
+    // replaces the Error is the same container, so SMALL - 4 plain objects still fit after it.
+    const fits = Array.from({ length: SMALL - 4 }, (_, index) => ({ index }))
+
+    const kept = small({ meta: { list: [unreadable, ...fits] } }, true) as {
+      meta: { list: unknown[] }
+    }
+    const cut = small({ meta: { list: [unreadable, ...fits, { index: 'over' }] } }, true) as {
+      meta: { list: unknown[] }
+    }
+
+    expect(markers(kept)).toBe(0)
+    expect(cut.meta.list.at(-1)).toBe(REDACT_BUDGET_EXCEEDED)
+    expect(cut.meta.list.at(-2)).toStrictEqual(fits.at(-1))
+  })
+
   it('counts a cause that is a very large array like any other container', () => {
     const big = Array.from({ length: SMALL + 10 }, (_, index) => ({ index }))
 
