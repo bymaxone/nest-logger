@@ -26,7 +26,7 @@ import {
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
 import { toSingleLineMessage } from '../utils/escape-log-text.util'
 import type { Redactor } from '../utils/redact-by-name.util'
-import { isErrorLike } from '../utils/sanitize-error.util'
+import { cutStack, isErrorLike } from '../utils/sanitize-error.util'
 
 /** Pino level methods the NestJS-style variadic path dispatches to (error is handled separately). */
 type PinoLevelMethod = 'info' | 'warn' | 'debug' | 'trace' | 'fatal'
@@ -272,7 +272,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const context = typeof optionalParams[1] === 'string' ? optionalParams[1] : this.context
     const payload: Record<string, unknown> = {}
     assignIfDefined(payload, 'context', context)
-    assignIfDefined(payload, 'stack', stack)
+    assignIfDefined(payload, 'stack', stack === undefined ? stack : cutStack(stack))
     // An `Error` in the tail is attached as `err`, the same field the
     // leading-`Error` branch above writes, so `logger.error(msg, err)` and
     // `logger.error(err)` produce the same queryable shape. `stack` stays the

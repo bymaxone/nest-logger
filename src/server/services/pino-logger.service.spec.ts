@@ -182,6 +182,21 @@ describe('PinoLoggerService', () => {
     })
 
     it(/*
+     * The stack passed as the second argument is the string `error.stack` gave, and it can be
+     * megabytes long when the error's name and message are themselves errors, so it is cut at the
+     * same limit as every other stack the logger writes. A stack under the limit is written as given.
+     */
+    'error() cuts a stack passed as a string at the stack limit', () => {
+      const spy = jest.spyOn(rawLogger, 'error')
+      service.error('failed', 'x'.repeat(3_000_000), 'Ctx')
+      service.error('failed', 'short', 'Ctx')
+
+      const cut = (spy.mock.calls[0]?.[0] as { stack: string }).stack
+      expect(cut).toBe('x'.repeat(16_384) + '…[truncated]')
+      expect(spy.mock.calls[1]?.[0]).toEqual({ context: 'Ctx', stack: 'short' })
+    })
+
+    it(/*
      * error(message) without extra params must not attach a stack.
      */
     'error() without params attaches no stack', () => {

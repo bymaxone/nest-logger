@@ -28,25 +28,31 @@ heading here.
 - **One redaction call stops expanding after 200000 containers.** The name redaction walks an object
   once per path that reaches it, so a value in which objects share references (a graph where each
   level holds the next twice) took time and produced output that doubled with each level: a graph 20
-  levels deep took 570 ms and wrote 19 MB. A call now counts the containers (objects, arrays and
-  errors) it visits, and from the 200001st on it writes `'[REDACTION_BUDGET_EXCEEDED]'` in place of
-  each container, keeping the primitives beside them, as `'[REDACTION_DEPTH_EXCEEDED]'` does for
-  depth. Nothing is passed through unwalked. The added `type` and `message` of a nested `Error` also
-  count against the cause-chain budget, as `cause` and `errors` do.
+  levels deep took 570 ms and wrote 19 MB. A call now counts the containers it visits (an object, an
+  array or an error, and also what an object's `toJSON` returns and an error's `cause` and `errors`,
+  each of which is walked as a container of its own), and from the 200001st on it writes
+  `'[REDACTION_BUDGET_EXCEEDED]'` in place of each container, keeping the primitives beside them, as
+  `'[REDACTION_DEPTH_EXCEEDED]'` does for depth. Nothing is passed through unwalked. The added
+  `type` and `message` of a nested `Error` also count against the cause-chain budget, as `cause` and
+  `errors` do.
 - **A stack is written at most 16384 characters long.** The engine builds the stack header from an
-  error's `name` and `message`, and when those are themselves errors it stringifies them, so a single
-  `stack` could reach hundreds of megabytes (about 54 MB in one measured line). The stack is now cut
-  at 16384 characters, after the dependency frames are dropped and the control characters escaped,
-  and ends with `…[truncated]`. It applies to every stack the logger writes: the root `err`, each
-  `cause` and `errors` link, a nested `Error` in the metadata, and the semconv `exception.stacktrace`.
+  error's `name` and `message`, and when those are themselves errors it stringifies them, so a
+  single `stack` could reach hundreds of megabytes (about 54 MB in one measured line). The stack is
+  now cut at 16384 characters, after the dependency frames are dropped and the control characters
+  escaped, and ends with `…[truncated]`; a cut never leaves half of a surrogate pair. It applies to
+  every stack the logger writes: the root `err`, each `cause` and `errors` link, a nested `Error` in
+  the metadata, the semconv `exception.stacktrace`, the `stack` argument of `error(message, stack)`
+  (cut, with its frames left as given) and the stack in a destination's shutdown-failure report on
+  stderr.
 
 #### Apply to a derived backend
 
 Nothing to change in code. A stack longer than 16384 characters is cut and ends with `…[truncated]`;
-an ordinary stack is far shorter. A single log call whose values hold more than 200000 containers in
-total, such as an array of 250000 objects in the metadata, now has its last containers replaced by
-the marker; a filter or alert that reads the whole array should read the part that is kept, or the
-array should be summarised before it is logged. Ordinary entries are unaffected.
+an ordinary stack is far shorter. A single log call that makes more than 200000 container visits,
+such as an array of 250000 objects in the metadata (an object with a `toJSON` counts twice, once for
+itself and once for what it returns), now has its last containers replaced by the marker; a filter
+or alert that reads the whole array should read the part that is kept, or the array should be
+summarised before it is logged. Ordinary entries are unaffected.
 
 ## [1.4.9] - 2026-11-06
 

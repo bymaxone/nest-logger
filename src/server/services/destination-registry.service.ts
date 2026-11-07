@@ -43,7 +43,7 @@ import {
   safeMinLevel
 } from '../utils/report-destination-failure.util'
 import { writeStderrSafely } from '../utils/safe-stdio.util'
-import { isErrorLike } from '../utils/sanitize-error.util'
+import { cutStack, isErrorLike } from '../utils/sanitize-error.util'
 
 /**
  * Coordinates destination initialization and graceful shutdown.
@@ -360,7 +360,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
       detail =
         stack === undefined
           ? toSingleLineMessage(isErrorLike(cause) ? String(cause.message) : String(cause))
-          : escapeControlCharacters(String(stack))
+          : escapeControlCharacters(cutStack(String(stack)))
     } catch {
       // Left as `UnknownError`: a value that cannot be read is still worth a line
       // naming the destination, and this path must never throw.

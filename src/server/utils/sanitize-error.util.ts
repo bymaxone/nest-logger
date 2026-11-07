@@ -520,9 +520,35 @@ export function scrubStack(stack: string): string {
       .filter((line) => !line.includes('node_modules'))
       .join('\n')
   )
-  return stack.length > MAX_STACK_SCAN || scrubbed.length > MAX_STACK_LENGTH
-    ? scrubbed.slice(0, MAX_STACK_LENGTH) + STACK_TRUNCATED
-    : scrubbed
+  return cutAtLimit(scrubbed, stack.length > MAX_STACK_SCAN)
+}
+
+/**
+ * Cut `text` at {@link MAX_STACK_LENGTH} when it is longer, or when `alreadyCut` says it is the
+ * start of something longer, and append {@link STACK_TRUNCATED}. A cut that falls between the two
+ * halves of a surrogate pair drops the first half, so the result is well-formed text.
+ */
+function cutAtLimit(text: string, alreadyCut: boolean): string {
+  if (!alreadyCut && text.length <= MAX_STACK_LENGTH) return text
+  const head = text.slice(0, MAX_STACK_LENGTH)
+  const last = head.charCodeAt(head.length - 1)
+  const whole = last >= 0xd800 && last <= 0xdbff ? head.slice(0, -1) : head
+  return whole + STACK_TRUNCATED
+}
+
+/**
+ * Cut a stack that is written as the caller gave it, such as the `stack` argument of NestJS's
+ * `error(message, stack)`, at {@link MAX_STACK_LENGTH}. Its frames are kept as given: only the
+ * length is bounded.
+ *
+ * @internal Shared with the logger service and the destination registry. NOT re-exported by the
+ *   package barrel.
+ * @param stack - The stack text.
+ * @returns The text, or its first {@link MAX_STACK_LENGTH} characters followed by
+ *   {@link STACK_TRUNCATED}.
+ */
+export function cutStack(stack: string): string {
+  return cutAtLimit(stack, false)
 }
 
 /**
