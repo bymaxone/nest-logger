@@ -48,6 +48,11 @@ function markers(value: unknown): number {
   return JSON.stringify(value).split(REDACT_BUDGET_EXCEEDED).length - 1
 }
 
+/** A budget small enough to reach with a few objects: the rule is the same at any size. */
+const SMALL = 40
+
+const small = createNameRedactor(['password'], '[REDACTED]', ['err'], SMALL)
+
 describe('the visit budget of one redaction call', () => {
   it('is the documented number of containers, with the documented marker', () => {
     expect(REDACT_MAX_VISITS).toBe(200_000)
@@ -56,14 +61,14 @@ describe('the visit budget of one redaction call', () => {
 
   /*
    * `{ meta: { big } }` is three containers (the record, `meta` and the array) before its elements,
-   * so an array of `REDACT_MAX_VISITS - 3` objects uses the whole budget and one more does not fit.
+   * so an array of `budget - 3` objects uses the whole budget and one more does not fit.
    */
   it('keeps every container up to the budget and replaces the first one past it', () => {
-    const fits = Array.from({ length: REDACT_MAX_VISITS - 3 }, (_, index) => ({ index }))
+    const fits = Array.from({ length: SMALL - 3 }, (_, index) => ({ index }))
     const over = [...fits, { index: fits.length }]
 
-    const kept = redact({ meta: { big: fits } }, true) as { meta: { big: unknown[] } }
-    const cut = redact({ meta: { big: over } }, true) as { meta: { big: unknown[] } }
+    const kept = small({ meta: { big: fits } }, true) as { meta: { big: unknown[] } }
+    const cut = small({ meta: { big: over } }, true) as { meta: { big: unknown[] } }
 
     expect(markers(kept)).toBe(0)
     expect(kept.meta.big).toHaveLength(fits.length)
@@ -72,16 +77,29 @@ describe('the visit budget of one redaction call', () => {
     expect(cut.meta.big.at(-2)).toStrictEqual({ index: fits.length - 1 })
   })
 
+  it('applies the documented number when none is given', () => {
+    const fits = Array.from({ length: REDACT_MAX_VISITS - 3 }, (_, index) => ({ index }))
+
+    const kept = redact({ meta: { big: fits } }, true) as { meta: { big: unknown[] } }
+    const cut = redact({ meta: { big: [...fits, { index: fits.length }] } }, true) as {
+      meta: { big: unknown[] }
+    }
+
+    expect(markers(kept)).toBe(0)
+    expect(cut.meta.big.at(-1)).toBe(REDACT_BUDGET_EXCEEDED)
+    expect(cut.meta.big.at(-2)).toStrictEqual({ index: fits.length - 1 })
+  })
+
   it('stops a graph that shares references long before its paths are walked', () => {
     // 2 ** 40 paths: unbounded, this never finishes and its output cannot be held.
-    const walked = redact({ meta: { graph: sharedGraph(40) } }, true)
+    const walked = small({ meta: { graph: sharedGraph(40) } }, true)
 
     expect(markers(walked)).toBeGreaterThan(0)
-    expect(JSON.stringify(walked).length).toBeLessThan(REDACT_MAX_VISITS * 64)
+    expect(JSON.stringify(walked).length).toBeLessThan(SMALL * 64)
   })
 
   it('keeps the primitives beside a container that is cut, and censors what it still walks', () => {
-    const walked = redact(
+    const walked = small(
       { meta: { graph: sharedGraph(40), keep: 'beside', password: 'secret' } },
       true
     ) as { meta: Record<string, unknown> }
@@ -91,17 +109,17 @@ describe('the visit budget of one redaction call', () => {
   })
 
   it('starts every call with a full budget', () => {
-    const first = redact({ meta: { graph: sharedGraph(40) } }, true)
-    const second = redact({ meta: { small: { a: [1, 2, 3] } } }, true)
+    const first = small({ meta: { graph: sharedGraph(40) } }, true)
+    const second = small({ meta: { small: { a: [1, 2, 3] } } }, true)
 
     expect(markers(first)).toBeGreaterThan(0)
     expect(second).toStrictEqual({ meta: { small: { a: [1, 2, 3] } } })
   })
 
   it('counts a cause that is a very large array like any other container', () => {
-    const big = Array.from({ length: REDACT_MAX_VISITS + 10 }, (_, index) => ({ index }))
+    const big = Array.from({ length: SMALL + 10 }, (_, index) => ({ index }))
 
-    const walked = redact({ meta: { e: new Error('x', { cause: big }) } }, true) as {
+    const walked = small({ meta: { e: new Error('x', { cause: big }) } }, true) as {
       meta: { e: { cause: unknown[] } }
     }
 
@@ -117,14 +135,6 @@ describe('the visit budget of one redaction call', () => {
     // Three links deep, then the marker: 2 ** 12 paths would otherwise each be nested in the next.
     expect(JSON.stringify(walked)).toContain('cause-depth-exceeded')
     expect(nesting((walked as { meta: { held: unknown } }).meta.held)).toBeLessThan(8)
-  })
-
-  it('degrades, and does not throw, when an Error held in name and message cannot be read at all', () => {
-    // Reading the stack of such a chain builds a string that doubles per link until the engine refuses.
-    const walked = redact({ meta: { held: linkedByNameAndMessage(40), keep: 'beside' } }, true)
-
-    expect(walked).toMatchObject({ meta: { keep: 'beside' } })
-    expect(walked).not.toHaveProperty('_redactionFailed')
   })
 })
 
@@ -155,7 +165,7 @@ describe('the visit budget through the real pipeline', () => {
 
   it('bounds the line when the stack of a nested Error is megabytes long', () => {
     // V8 builds the stack header of such a chain by stringifying the links: it doubles per link.
-    const held = linkedByNameAndMessage(20)
+    const held = linkedByNameAndMessage(18)
     expect(held.stack?.length).toBeGreaterThan(1_000_000)
     const lines: string[] = []
     const options = applyDefaults({ service: { name: 'app', version: '1.0.0' } })

@@ -292,7 +292,9 @@ interface RedactRules {
   readonly serializedKeys: ReadonlySet<string>
   /** Whether an `Error` outside those keys is written as data; off, it stays an `Error`. */
   readonly errorsAsData: boolean
-  /** Containers this call has visited, counted against {@link REDACT_MAX_VISITS}. */
+  /** Containers one call may visit before it stops expanding. */
+  readonly maxVisits: number
+  /** Containers this call has visited, counted against {@link RedactRules.maxVisits}. */
   readonly visits: { count: number }
 }
 
@@ -372,7 +374,7 @@ function walk(
   if (depth > REDACT_MAX_TRAVERSAL_DEPTH) {
     return REDACT_DEPTH_EXCEEDED
   }
-  if (++rules.visits.count > REDACT_MAX_VISITS) {
+  if (++rules.visits.count > rules.maxVisits) {
     return REDACT_BUDGET_EXCEEDED
   }
   if (ancestors.has(value)) {
@@ -713,6 +715,10 @@ function addErrorParts(
  *   deeper than that is dropped rather than emitted, while a primitive leaf at
  *   the boundary is kept — its key was already matched one level up.
  * @param censor - Replacement written in place of a sensitive value.
+ * @param serializedKeys - Record-root keys that have a serializer; given, an `Error` outside them
+ *   is written as data.
+ * @param maxVisits - Containers one call may visit; a seam for tests, which exercise the boundary
+ *   with a small number. The package passes none.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
  *   const redact = createNameRedactor(['password'], '[REDACTED]')
@@ -722,7 +728,8 @@ function addErrorParts(
 export function createNameRedactor(
   fieldNames: readonly string[],
   censor: string,
-  serializedKeys?: readonly string[]
+  serializedKeys?: readonly string[],
+  maxVisits: number = REDACT_MAX_VISITS
 ): Redactor {
   // Matched case-INSENSITIVELY. HTTP header names are case-insensitive by spec,
   // and only INBOUND Node headers arrive lower-cased — a hand-built or outbound
@@ -735,7 +742,8 @@ export function createNameRedactor(
     sensitive: new Set(fieldNames.map((name) => name.toLowerCase())),
     censor,
     serializedKeys: new Set(serializedKeys),
-    errorsAsData: serializedKeys !== undefined
+    errorsAsData: serializedKeys !== undefined,
+    maxVisits
   }
   return (value: unknown, isRecordRoot = false): unknown => {
     try {
