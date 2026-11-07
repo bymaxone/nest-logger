@@ -341,6 +341,43 @@ export function ownFieldForLog(
 }
 
 /**
+ * Store one own field on a sanitized node as an inert data property.
+ *
+ * @param target - The node being built; mutated in place.
+ * @param key - The field's name.
+ * @param value - The value to store.
+ */
+function defineErrorField(target: Record<string, unknown>, key: string, value: unknown): void {
+  // `defineProperty` rather than `Reflect.set`, and `__proto__` is the whole
+  // reason. It is an accessor inherited from `Object.prototype`, so a SET
+  // walks the chain and invokes that setter — replacing the node's prototype
+  // instead of storing a field. An error-like object arriving from JSON (a
+  // worker boundary, a queue, an HTTP body) carries `__proto__` as an OWN
+  // enumerable key, and `Object.entries` hands it over like any other.
+  //
+  // Measured: the node's prototype really is replaced, and with
+  // `{"__proto__": null}` it loses `hasOwnProperty` and `toString`, which
+  // then THROW for anything downstream that touches them — inside the one
+  // path whose contract is that logging never crashes the application.
+  // `Object.prototype` itself is never touched, so this is prototype
+  // injection into one node rather than global pollution.
+  //
+  // Defining an own data property makes the key inert AND keeps its value:
+  // an error that genuinely carries a `__proto__` field gets it logged as
+  // the data it is.
+  //
+  // The descriptor is deliberately minimal — no `writable`, no
+  // `configurable`. Both would default to `true` under assignment and
+  // neither is observable here, because the node is built once and handed
+  // on: the redaction walk is copy-on-write, verified on the built artifact
+  // (a nested `password` still comes out `[REDACTED]`), and nothing else
+  // writes to a node after this loop, so no test can tell the minimal descriptor from a fuller
+  // one. If a future change ever needs to rewrite a field in place, it has to add `writable`
+  // back, because a silent assignment would throw under the module's strict mode.
+  Object.defineProperty(target, key, { value, enumerable: true })
+}
+
+/**
  * Copy a source error's OWN enumerable properties onto a serialized node.
  *
  * Skips any key the node already holds and any key in {@link DERIVED_ERROR_FIELDS},
@@ -384,37 +421,7 @@ export function assignOwnErrorFields(
       const value = ownFieldForLog(own, key, field, policy)
       if (value === OMIT_OWN_FIELD) continue
       if (!Object.hasOwn(target, key) && !DERIVED_ERROR_FIELDS.has(key)) {
-        // `defineProperty` rather than `Reflect.set`, and `__proto__` is the whole
-        // reason. It is an accessor inherited from `Object.prototype`, so a SET
-        // walks the chain and invokes that setter — replacing the node's prototype
-        // instead of storing a field. An error-like object arriving from JSON (a
-        // worker boundary, a queue, an HTTP body) carries `__proto__` as an OWN
-        // enumerable key, and `Object.entries` hands it over like any other.
-        //
-        // Measured: the node's prototype really is replaced, and with
-        // `{"__proto__": null}` it loses `hasOwnProperty` and `toString`, which
-        // then THROW for anything downstream that touches them — inside the one
-        // path whose contract is that logging never crashes the application.
-        // `Object.prototype` itself is never touched, so this is prototype
-        // injection into one node rather than global pollution.
-        //
-        // Defining an own data property makes the key inert AND keeps its value:
-        // an error that genuinely carries a `__proto__` field gets it logged as
-        // the data it is.
-        //
-        // The descriptor is deliberately minimal — no `writable`, no
-        // `configurable`. Both would default to `true` under assignment and
-        // neither is observable here, because the node is built once and handed
-        // on: the redaction walk is copy-on-write, verified on the built artifact
-        // (a nested `password` still comes out `[REDACTED]`), and nothing else
-        // writes to a node after this loop. Mutation testing is what forces the
-        // question — two `BooleanLiteral` mutants survived on those flags — and
-        // the answer here matches the one this repo already reached on its other
-        // property descriptors: delete the redundant literal rather than document
-        // why no test can kill it. If a future change ever needs to rewrite a
-        // field in place, it has to add `writable` back, because a silent
-        // assignment would throw under the module's strict mode.
-        Object.defineProperty(target, key, { value, enumerable: true })
+        defineErrorField(target, key, value)
       }
     }
   } catch {

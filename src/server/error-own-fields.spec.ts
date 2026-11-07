@@ -551,3 +551,25 @@ describe("errorOwnFields 'safe' writes plain data however the redaction is confi
     })
   })
 })
+
+describe('the width cap of an AggregateError reports the same count in both modes', () => {
+  it.each(['all', 'safe'] as const)(
+    "counts the 90 members left out of a hundred once, for the root err and a nested one, under '%s'",
+    (mode) => {
+      const { service, entry } = pipeline({ errorOwnFields: mode })
+      const members = Array.from(
+        { length: 100 },
+        (_member, index) => new Error(`m${String(index)}`)
+      )
+
+      service.errorStructured('KEY', new AggregateError(members, 'many'), 'u1', {
+        nested: new AggregateError(members, 'again')
+      })
+
+      expect(entry().err.errors).toHaveLength(11)
+      expect(entry().err.errors.at(-1)._omitted).toBe(90)
+      expect(entry().nested.errors).toHaveLength(11)
+      expect(entry().nested.errors.at(-1)._omitted).toBe(90)
+    }
+  )
+})
