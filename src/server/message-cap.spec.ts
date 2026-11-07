@@ -114,3 +114,30 @@ describe('the report of a failed destination', () => {
     expect(describeCause('x'.repeat(30_000)).message).toBe(CUT)
   })
 })
+
+describe('the name of an error', () => {
+  const longName = (): Error => Object.assign(new Error('boom'), { name: 'N'.repeat(100_000) })
+
+  it('is cut for the serialized root err, a cause link and a nested Error in the metadata', () => {
+    const cut = 'N'.repeat(LIMIT) + SUFFIX
+    // Separate calls: two cut names and their two cut stacks together pass the 64 KiB size bound
+    // of the err slot, which replaces the slot by its envelope.
+    const root = pipeline()
+    root.service.errorStructured('KEY', longName(), 'u1')
+    const linked = pipeline()
+    linked.service.errorStructured('KEY', new Error('top', { cause: longName() }), 'u1')
+    const nested = pipeline()
+    nested.service.errorStructured('KEY', new Error('root'), 'u1', { nested: longName() })
+
+    expect(root.entry().err.type).toBe(cut)
+    expect(linked.entry().err.cause.name).toBe(cut)
+    expect(nested.entry().nested.type).toBe(cut)
+  })
+
+  it('is cut for the stand-in node and for the destination failure report', () => {
+    expect(sanitizeError({ name: 'N'.repeat(100_000), message: 'x' }).name).toBe(
+      'N'.repeat(LIMIT) + SUFFIX
+    )
+    expect(describeCause(longName()).type).toBe('N'.repeat(LIMIT) + SUFFIX)
+  })
+})

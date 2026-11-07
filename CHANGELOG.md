@@ -20,7 +20,9 @@ heading here.
   message of 5 million characters made a line of 5 million characters. A message is now cut at 16384
   characters, after its line breaks and control characters are escaped, and ends with
   `…[truncated]`, as a stack does; the limit is one number for both. A cut never leaves half of a
-  surrogate pair. Metadata strings are the caller's data and are not cut.
+  surrogate pair. The name of an error (the serialized `type`, the semconv `exception.type` and
+  `error.type`, and the name in a failure report) is cut the same way. Metadata strings are the
+  caller's data and are not cut.
 
 #### Apply to a derived backend
 

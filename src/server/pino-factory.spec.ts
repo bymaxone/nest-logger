@@ -1218,6 +1218,32 @@ describe('errorFormat', () => {
   })
 
   it(/*
+   * `exception.type` and `error.type` are copied from the error's name before the serializer
+   * runs, so they are cut at the same limit as every other text copied from an error.
+   */
+  'cuts exception.type and error.type at the text limit in semconv and both modes', () => {
+    for (const errorFormat of ['semconv', 'both'] as const) {
+      const capture = createCapture()
+      const logger = new PinoLoggerService(
+        buildPinoInstance(
+          applyDefaults({ service: { name: 'svc', version: '1.0.0' }, errorFormat }),
+          new LogContextService(),
+          [capture.destination]
+        )
+      )
+
+      logger.errorStructured(
+        'PAYMENT_FAILED',
+        Object.assign(new Error('x'), { name: 'N'.repeat(100_000) })
+      )
+
+      const entry = capture.entries()[0] as Record<string, unknown>
+      expect(entry['exception.type']).toBe('N'.repeat(16_384) + '…[truncated]')
+      expect(entry['error.type']).toBe('N'.repeat(16_384) + '…[truncated]')
+    }
+  })
+
+  it(/*
    * All four attributes are Stable in SemConv v1.44.0. The spec requires at
    * least one of `exception.type` / `exception.message`; both are present here
    * because both come from the same value.

@@ -226,7 +226,7 @@ function toSanitizedError(
     }
 
     seen.add(value)
-    const result: SanitizedError = { name: value.name, message: cutText(value.message) }
+    const result: SanitizedError = { name: cutText(value.name), message: cutText(value.message) }
     // `stack` and `cause` are optional, so each is read in its own guard: an unreadable one
     // costs the node that property and marks it incomplete, instead of costing the node its
     // name and message. The name and message identify the error; if THEY cannot be read the

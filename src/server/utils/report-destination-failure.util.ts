@@ -80,7 +80,7 @@ export function describeCause(cause: unknown): { type: string; message: string }
   try {
     return cause instanceof Error
       ? {
-          type: toSingleLineMessage(String(cause.name)),
+          type: toBoundedMessage(String(cause.name)),
           message: toBoundedMessage(String(cause.message))
         }
       : { type: 'UnknownError', message: toBoundedMessage(String(cause)) }

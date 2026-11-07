@@ -218,8 +218,8 @@ export function withSemconvException(
     const candidate = record['err'] as
       { name?: unknown; message?: unknown; stack?: unknown } | undefined
     if (typeof candidate?.name === 'string') {
-      record['exception.type'] = candidate.name
-      record['error.type'] = candidate.name
+      record['exception.type'] = cutText(candidate.name)
+      record['error.type'] = cutText(candidate.name)
     }
     if (typeof candidate?.message === 'string') {
       record['exception.message'] = cutText(candidate.message)

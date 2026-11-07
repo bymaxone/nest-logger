@@ -695,7 +695,13 @@ function addErrorParts(
       incomplete = true
     }
   }
-  add('type', ['type', 'name'], () => error.name)
+  add(
+    'type',
+    ['type', 'name'],
+    () => error.name,
+    (name) =>
+      typeof name === 'string' ? cutText(name) : walkChainPart(name, level, rules, depth, ancestors)
+  )
   add(
     'message',
     ['message'],
