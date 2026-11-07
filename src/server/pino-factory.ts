@@ -353,14 +353,16 @@ const PASS_THROUGH: Redactor = (value: unknown): unknown => value
 
 /**
  * Resolve the name-walk redactor for the active configuration, or a pass-through
- * when the walk is not in play (legacy `'paths'` strategy, or defaults disabled).
+ * when the walk is not in play (legacy `'paths'` strategy, or defaults disabled) and
+ * `errorOwnFields` is not `'safe'`.
  *
  * @internal Exported only for unit testing — this is the switch that decides
  *   whether the DEFAULT PII protection is active at all, so its branches are
  *   asserted directly rather than inferred from a serialized line. NOT
  *   re-exported by the package barrel.
  * @param options - Fully-defaulted module options.
- * @returns A redaction function; the identity function when the walk is off.
+ * @returns A redaction function; the identity function when the walk is off and the policy is not
+ *   `errorOwnFields: 'safe'`, which walks the record whatever the strategy or the names covered.
  */
 export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
   return buildNameRedactor(options, true, options.redactStrategy === 'names')
@@ -405,8 +407,12 @@ function ownFieldPolicyOf(options: ResolvedBymaxLoggerModuleOptions): OwnFieldPo
  * @param nestedErrorsAsData - `true` only for the redactor of the caller's record: an `Error`
  *   nested in it is written with its content. Serializer output keeps the shape the serializer
  *   chose, because the size bound that follows measures it and a larger value would be truncated
- *   where the same output was not.
- * @returns A redaction function; the identity function when no name is covered.
+ *   where the same output was not; under `errorOwnFields: 'safe'` it is walked into plain data
+ *   too, since nothing else would make it so.
+ * @param coversNames - `false` for the record under the `'paths'` strategy, whose names
+ *   `fast-redact` covers.
+ * @returns A redaction function; the identity function when no name is covered and the policy is
+ *   not `errorOwnFields: 'safe'`.
  */
 function buildNameRedactor(
   options: ResolvedBymaxLoggerModuleOptions,
