@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.10] - 2026-11-06
+
 ### Security
 
 - **A database error is recognised from its SQLSTATE `code` alone.** 1.4.9 also required an own
@@ -2456,7 +2458,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.9...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.10...HEAD
+[1.4.10]: https://github.com/bymaxone/nest-logger/compare/v1.4.9...v1.4.10
 [1.4.9]: https://github.com/bymaxone/nest-logger/compare/v1.4.8...v1.4.9
 [1.4.8]: https://github.com/bymaxone/nest-logger/compare/v1.4.7...v1.4.8
 [1.4.7]: https://github.com/bymaxone/nest-logger/compare/v1.4.6...v1.4.7
