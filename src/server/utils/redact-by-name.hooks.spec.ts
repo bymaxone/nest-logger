@@ -1,0 +1,139 @@
+/**
+ * Pins one invariant of the redaction walk: nothing in its output that `JSON.stringify` will see
+ * carries a callable `toJSON`. A hook that survives the walk runs after the redaction, so a secret
+ * it returns is written uncensored. The walk's final value is inspected for every shape a value
+ * with a hook can take, under every configuration of the walk.
+ *
+ * Layer: server, utils, tests.
+ */
+import { createNameRedactor } from './redact-by-name.util'
+import { ALL_OWN_FIELDS, createOwnFieldPolicy } from './own-field-policy.util'
+
+const SECRET = 'SECRET-FROM-HOOK'
+
+/** A value whose `toJSON` returns the secret under a name the redaction censors. */
+function withHook<T extends object>(value: T): T {
+  Object.defineProperty(value, 'toJSON', {
+    value: () => ({ password: SECRET, actual: 'visible' })
+  })
+  return value
+}
+
+const errorWithHook = (): Error => withHook(Object.assign(new Error('boom'), { code: 'E_X' }))
+const plainWithHook = (): object => withHook({ amount: 5 })
+
+/** Every place a value with a hook can sit in a record. */
+const shapes: [string, () => Record<string, unknown>][] = [
+  ['an Error under a key', () => ({ inner: errorWithHook() })],
+  ['a plain object under a key', () => ({ inner: plainWithHook() })],
+  ['an Error in an array', () => ({ list: [1, errorWithHook()] })],
+  ['an Error deep in the record', () => ({ a: { b: { c: { d: { inner: errorWithHook() } } } } })],
+  [
+    'an Error as an own field of an Error',
+    () => ({ inner: Object.assign(new Error('o'), { held: errorWithHook() }) })
+  ],
+  [
+    'an Error as the cause of an Error',
+    () => ({ inner: new Error('o', { cause: errorWithHook() }) })
+  ],
+  [
+    'an Error in the errors of an AggregateError',
+    () => ({ inner: new AggregateError([errorWithHook()], 'many') })
+  ],
+  [
+    'a plain object as the cause of an Error',
+    () => ({ inner: new Error('o', { cause: plainWithHook() }) })
+  ],
+  [
+    'an Error with a hook that holds an Error with a hook',
+    () => ({ inner: withHook(Object.assign(new Error('o'), { held: errorWithHook() })) })
+  ],
+  [
+    'an instance whose class defines the hook',
+    () => {
+      class Money {
+        toJSON(): object {
+          return { password: SECRET, actual: 'visible' }
+        }
+      }
+      return { inner: new Money() }
+    }
+  ],
+  [
+    'an Error whose class defines the hook',
+    () => {
+      class Failure extends Error {
+        toJSON(): object {
+          return { password: SECRET, actual: 'visible' }
+        }
+      }
+      return { inner: new Failure('f') }
+    }
+  ],
+  ['an Error under the key err', () => ({ err: errorWithHook() })],
+  ['an Error under a key with a serializer', () => ({ thing: errorWithHook() })]
+]
+
+const SAFE = createOwnFieldPolicy('safe', [])
+
+/** The ways the walk is built: the caller's record or serializer output, with each policy. */
+const configurations = [
+  {
+    name: 'record, all',
+    coversPassword: true,
+    isRecord: true,
+    build: () => createNameRedactor(['password'], 'X', ['err', 'thing'], undefined, ALL_OWN_FIELDS)
+  },
+  {
+    name: 'record, safe',
+    coversPassword: true,
+    isRecord: true,
+    build: () => createNameRedactor(['password'], 'X', ['err', 'thing'], undefined, SAFE)
+  },
+  {
+    name: 'record, safe, no names',
+    coversPassword: false,
+    isRecord: true,
+    build: () => createNameRedactor(new Set<string>(), 'X', ['err', 'thing'], undefined, SAFE)
+  },
+  {
+    name: 'serializer output, all',
+    coversPassword: true,
+    isRecord: false,
+    build: () => createNameRedactor(['password'], 'X', undefined, undefined, ALL_OWN_FIELDS)
+  },
+  {
+    name: 'serializer output, safe',
+    coversPassword: true,
+    isRecord: false,
+    build: () => createNameRedactor(['password'], 'X', undefined, undefined, SAFE)
+  }
+]
+
+/** The paths in a value that hold a callable `toJSON`, own or inherited. */
+function hooksIn(value: unknown, path = '$', seen = new Set<object>()): string[] {
+  if (typeof value !== 'object' || value === null || seen.has(value)) return []
+  seen.add(value)
+  const found = typeof (value as { toJSON?: unknown }).toJSON === 'function' ? [path] : []
+  for (const key of Object.keys(value)) {
+    found.push(...hooksIn(Reflect.get(value, key), `${path}.${key}`, seen))
+  }
+  return found
+}
+
+describe('the output of the redaction walk', () => {
+  describe.each(configurations)('as $name', ({ build, coversPassword, isRecord }) => {
+    it.each(shapes)('carries no hook that runs after it, for %s', (_shape, make) => {
+      const output = build()(make(), true) as Record<string, unknown>
+      // What sits under a key with a serializer is that serializer's input, not what is written.
+      const written = isRecord
+        ? Object.fromEntries(
+            Object.entries(output).filter(([key]) => key !== 'err' && key !== 'thing')
+          )
+        : output
+
+      expect(hooksIn(written)).toEqual([])
+      if (coversPassword) expect(JSON.stringify(written)).not.toContain(SECRET)
+    })
+  })
+})
