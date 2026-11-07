@@ -22,6 +22,8 @@ export interface ErrorPartsHost {
   readonly sensitive: ReadonlySet<string>
   /** Replacement written in place of a sensitive value. */
   readonly censor: string
+  /** The key the error's name is written under: `type` in an entry, `name` for a serializer. */
+  readonly nameKey: 'name' | 'type'
   /** Walk a value one container deeper than `depth`, under the walk's own bounds. */
   walk(value: unknown, depth: number): unknown
   /** Whether a value has a `toJSON` the walk would honour. */
@@ -54,9 +56,6 @@ export function defineOwn(target: Record<string, unknown>, key: string, value: u
   // descriptors `cloneError` relaxes precisely so a censor always lands.
   // `Reflect.defineProperty` reports failure by returning `false`, not by throwing, so a check
   // of the result would be a branch no input can take: untested code claiming a guarantee.
-  // A callable `toJSON` is never written onto a copy: `JSON.stringify` would run it after the
-  // redaction, and whatever it returns would reach the line uncensored.
-  if (key === 'toJSON' && typeof value === 'function') return
   Reflect.defineProperty(target, key, { value, enumerable: true })
 }
 
@@ -157,8 +156,8 @@ export function addErrorParts(
     }
   }
   add(
-    'type',
-    ['type', 'name'],
+    host.nameKey,
+    [host.nameKey, 'name'],
     () => error.name,
     (name) => cutOrWalk(name, level, host, depth)
   )

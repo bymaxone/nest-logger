@@ -58,7 +58,7 @@
  * @see {@link createNameRedactor}
  */
 import { cutIfText } from './bounded-text.util'
-import { ALL_OWN_FIELDS, type OwnFieldPolicy } from './own-field-policy.util'
+import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import {
   addErrorParts,
   defineOwn,
@@ -177,6 +177,20 @@ function resolveToJson(value: object): ResolvedToJson {
 }
 
 /**
+ * The `toJSON` of a value as `JSON.stringify` reads it: one `[[Get]]`, through any Proxy trap.
+ *
+ * @param value - A non-null object or callable.
+ * @returns The method when the read is callable.
+ */
+function getToJson(value: object): ResolvedToJson {
+  const candidate: unknown = Reflect.get(value, 'toJSON')
+  return {
+    method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined,
+    fromAccessor: false
+  }
+}
+
+/**
  * Clone an `Error` preserving what makes it an Error.
  *
  * The walk cannot flatten an error into a plain object: Pino's `err` serializer
@@ -227,24 +241,7 @@ function cloneError(error: Error): Error {
     // defaults: nothing downstream rewrites or deletes a stack.
     Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false })
   }
-  // The clone is handed on after the walk has read `toJSON` once, and a descriptor copied from the
-  // source (an accessor that answers differently the next time) or one inherited would let
-  // `JSON.stringify` run a hook the walk never saw. An own `undefined` shadows both.
-  Reflect.defineProperty(clone, 'toJSON', { value: undefined, configurable: true })
   return clone
-}
-
-/**
- * A callable, handed on as one that has no `toJSON`. `JSON.stringify` reads `toJSON` of a function
- * too, through whatever the value is (an accessor, a prototype, a Proxy trap), and the walk cannot
- * tell by any one read of its own what that will answer, so no function is handed on as it is.
- */
-function withoutToJson(callable: CallableFunction): (...args: unknown[]) => unknown {
-  const wrapped = function (this: unknown, ...args: unknown[]): unknown {
-    return Reflect.apply(callable, this, args)
-  }
-  Reflect.defineProperty(wrapped, 'toJSON', { value: undefined })
-  return wrapped
 }
 
 /**
@@ -341,7 +338,7 @@ function walk(
   rules: RedactRules,
   depth: number,
   ancestors: Set<object>,
-  honorToJson = true,
+  honorToJson: boolean,
   inSerialized = false
 ): unknown {
   // Callables are admitted, not skipped as primitives. `JSON.stringify` invokes a
@@ -356,7 +353,8 @@ function walk(
   // `typeof` is written inline rather than hoisted into a variable so TypeScript
   // narrows `value` from `unknown` for the rest of the function.
   if (typeof value !== 'object' && typeof value !== 'function') {
-    return value
+    // Under 'safe' the output is plain data, and `JSON.stringify` omits a symbol.
+    return typeof value === 'symbol' && rules.ownFields.safe ? undefined : value
   }
   if (depth > REDACT_MAX_TRAVERSAL_DEPTH) {
     return REDACT_DEPTH_EXCEEDED
@@ -464,7 +462,14 @@ function walkObject(
   // `fromAccessor` disqualifies the fast path even when the method IS
   // `Buffer.prototype.toJSON`, because this path hands back the ORIGINAL
   // reference and `JSON.stringify` reads `toJSON` again from it.
-  const resolvedToJson = resolveToJson(value)
+  // Under 'safe' the output is plain data: binary is its size, and `toJSON` is read once through
+  // the same operation `JSON.stringify` uses, so a Proxy that answers differently to a descriptor
+  // read than to a get is read the way the stringifier would read it.
+  const plain = rules.ownFields.safe
+  if (plain && ArrayBuffer.isView(value)) {
+    return withBinaryAsSize(value)
+  }
+  const resolvedToJson = plain ? getToJson(value) : resolveToJson(value)
   if (!resolvedToJson.fromAccessor && resolvedToJson.method === BUFFER_TO_JSON) {
     return value
   }
@@ -488,11 +493,10 @@ function walkObject(
     // and discard `logKey`, `msg` and every other field. Nested values and
     // serializer outputs DO reach `JSON.stringify`, which honours `toJSON`, so
     // they keep it.
-    // Under `errorOwnFields: 'safe'` an `Error` written as data is written from its own fields: a
-    // library's `toJSON` (an HTTP client's, say) would otherwise carry the request it made. Any
-    // other `Error` stays an instance that keeps its `toJSON`, so the method is still walked and
-    // replaced by its censored output. What the walk hands on never holds a hook to run later: a
-    // clone and a function are given a `toJSON` of `undefined`, and `defineOwn` refuses a callable.
+    // Under `errorOwnFields: 'safe'` the output is plain data, so nothing in it can run after the
+    // redaction. An `Error` is written from its own fields and its `toJSON` is not called: a
+    // library's (an HTTP client's, say) would carry the request it made. Any other `toJSON` is
+    // called once and its result is walked.
     const ownsItsForm = rules.ownFields.safe && isWrittenAsData(value, rules, inSerialized)
     const toJson = honorToJson && !ownsItsForm ? resolvedToJson.method : undefined
     if (toJson !== undefined) {
@@ -538,7 +542,7 @@ function walkObject(
     // walking it would replace it with a plain object, and `JSON.stringify`
     // omits a bare function rather than emitting `{}`.
     if (typeof value === 'function') {
-      return withoutToJson(value as CallableFunction)
+      return plain ? undefined : value
     }
 
     if (Array.isArray(value)) {
@@ -578,7 +582,7 @@ function walkObject(
     // as data or kept an instance: it can sit in the serializer's output as a field of the root
     // `err` (a driver error held by a wrapper), or be returned by a custom serializer. Under a
     // serializer's key the instance is the serializer's to read, so nothing is dropped there.
-    const scrubbed = value instanceof Error && !inSerialized
+    const scrubbed = value instanceof Error && (plain || !inSerialized)
     const omitted = new Set<string>()
     for (const key of keys) {
       // Under a serializer's key the field is the serializer's to read, but a binary one is still
@@ -611,7 +615,13 @@ function walkObject(
     }
     if (asData) {
       const written = keys.filter((key) => !omitted.has(key))
-      addErrorParts(copy, value as Error, written, errorPartsHost(rules, ancestors), depth)
+      addErrorParts(
+        copy,
+        value as Error,
+        written,
+        errorPartsHost(rules, ancestors, inSerialized),
+        depth
+      )
     }
     return copy
   } finally {
@@ -621,15 +631,22 @@ function walkObject(
 
 /** Whether an `Error` is written as data (its own fields plus the parts added), not kept as an instance. */
 function isWrittenAsData(value: object, rules: RedactRules, inSerialized: boolean): boolean {
-  return value instanceof Error && rules.errorsAsData && !inSerialized
+  return value instanceof Error && (rules.ownFields.safe || (rules.errorsAsData && !inSerialized))
 }
 
 /** What the code that writes the parts of an `Error` needs from this walk. */
-function errorPartsHost(rules: RedactRules, ancestors: Set<object>): ErrorPartsHost {
+function errorPartsHost(
+  rules: RedactRules,
+  ancestors: Set<object>,
+  inSerialized: boolean
+): ErrorPartsHost {
   return {
     sensitive: rules.sensitive,
     censor: rules.censor,
-    walk: (value, depth) => walk(value, rules, depth, ancestors),
+    // What a serializer receives names the error `name`, as the error-like shape it reads does;
+    // everything else keeps the `type` the written entries use.
+    nameKey: inSerialized ? 'name' : 'type',
+    walk: (value, depth) => walk(value, rules, depth, ancestors, true, inSerialized),
     hasToJson: (value) => resolveToJson(value).method !== undefined
   }
 }

@@ -411,18 +411,69 @@ describe('an Error with a toJSON that a serializer returns', () => {
     }
   )
 
-  it.each(['all', 'safe'] as const)(
-    "is still censored by name when the line is written, under '%s'",
-    (mode) => {
-      const { service, line } = pipeline({
-        errorOwnFields: mode,
-        serializers: { thing: () => ({ inner: returned() }) }
+  it.each([
+    ['all', '[REDACTED]'],
+    ['safe', '"inner":{"type":"Error","message":"n"']
+  ] as const)("never writes what its toJSON returns, under '%s'", (mode, written) => {
+    const { service, line } = pipeline({
+      errorOwnFields: mode,
+      serializers: { thing: () => ({ inner: returned() }) }
+    })
+
+    service.info('KEY', 'hello', 'u1', { thing: 1 })
+
+    expect(line()).not.toContain('SECRET')
+    expect(line()).toContain(written)
+  })
+})
+
+describe("a serializer under 'safe' receives plain data", () => {
+  it('sees an error-like object holding only the fields the policy allows', () => {
+    let seen: unknown
+    const { service } = pipeline({
+      errorOwnFields: 'safe',
+      serializers: {
+        thing: (input: unknown): unknown => {
+          seen = input
+          return 'done'
+        }
+      }
+    })
+
+    service.info('KEY', 'hello', 'u1', {
+      thing: Object.assign(new Error('n', { cause: new Error('c') }), {
+        code: 'E_T',
+        orderId: 'o-1'
       })
+    })
 
-      service.info('KEY', 'hello', 'u1', { thing: 1 })
+    expect(seen).not.toBeInstanceOf(Error)
+    expect(seen).toMatchObject({ name: 'Error', message: 'n', code: 'E_T' })
+    expect(seen).not.toHaveProperty('orderId')
+    expect(seen).toMatchObject({ cause: { name: 'Error', message: 'c' } })
+  })
 
-      expect(line()).not.toContain('SECRET')
-      expect(line()).toContain('[REDACTED]')
-    }
-  )
+  it('applies toJSON the way the stringifier reads it, through a Proxy get trap', () => {
+    let seen: unknown
+    const { service } = pipeline({
+      errorOwnFields: 'safe',
+      serializers: {
+        thing: (input: unknown): unknown => {
+          seen = input
+          return 'done'
+        }
+      }
+    })
+    const proxied = new Proxy(
+      { hidden: 1 },
+      {
+        get: (target, key, receiver) =>
+          key === 'toJSON' ? () => ({ kept: 2 }) : Reflect.get(target, key, receiver)
+      }
+    )
+
+    service.info('KEY', 'hello', 'u1', { thing: proxied })
+
+    expect(seen).toEqual({ kept: 2 })
+  })
 })

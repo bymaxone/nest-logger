@@ -88,6 +88,108 @@ const shapes: [string, () => Record<string, unknown>][] = [
       })
     })
   ],
+  ['an Error under the key err', () => ({ err: errorWithHook() })],
+  ['an Error under a key with a serializer', () => ({ thing: errorWithHook() })]
+]
+
+const SAFE = createOwnFieldPolicy('safe', [])
+
+/** The ways the walk is built: the caller's record or serializer output, with each policy. */
+const configurations = [
+  {
+    name: 'record, all',
+    plain: false,
+    coversPassword: true,
+    build: () => createNameRedactor(['password'], 'X', ['err', 'thing'], undefined, ALL_OWN_FIELDS)
+  },
+  {
+    name: 'record, safe',
+    plain: true,
+    coversPassword: true,
+    build: () => createNameRedactor(['password'], 'X', ['err', 'thing'], undefined, SAFE)
+  },
+  {
+    name: 'record, safe, toJSON listed as an own field',
+    plain: true,
+    coversPassword: true,
+    build: () =>
+      createNameRedactor(
+        ['password'],
+        'X',
+        ['err', 'thing'],
+        undefined,
+        createOwnFieldPolicy('safe', ['toJSON'])
+      )
+  },
+  {
+    name: 'record, safe, no names',
+    plain: true,
+    coversPassword: false,
+    build: () => createNameRedactor(new Set<string>(), 'X', ['err', 'thing'], undefined, SAFE)
+  },
+  {
+    name: 'serializer output, all',
+    plain: false,
+    coversPassword: true,
+    build: () => createNameRedactor(['password'], 'X', undefined, undefined, ALL_OWN_FIELDS)
+  },
+  {
+    name: 'serializer output, safe',
+    plain: true,
+    coversPassword: true,
+    build: () => createNameRedactor(['password'], 'X', undefined, undefined, SAFE)
+  }
+]
+
+/** The paths in a value that hold a callable `toJSON`, own or inherited. */
+function hooksIn(value: unknown, path = '$', seen = new Set<object>()): string[] {
+  if (typeof value !== 'object' || value === null || seen.has(value)) return []
+  seen.add(value)
+  const found = typeof (value as { toJSON?: unknown }).toJSON === 'function' ? [path] : []
+  for (const key of Object.keys(value)) {
+    found.push(...hooksIn(Reflect.get(value, key), `${path}.${key}`, seen))
+  }
+  return found
+}
+
+/** Whether a value is plain data: primitives, arrays and plain objects with data properties only. */
+function isPlainTree(value: unknown, seen = new Set<object>()): boolean {
+  if (value === null || value === undefined) return true
+  if (typeof value === 'function' || typeof value === 'symbol') return false
+  if (typeof value !== 'object') return true
+  if (seen.has(value)) return false
+  seen.add(value)
+  const prototype: unknown = Object.getPrototypeOf(value)
+  const shapeOk = Array.isArray(value)
+    ? prototype === Array.prototype
+    : prototype === Object.prototype
+  return (
+    shapeOk &&
+    Reflect.ownKeys(value).every((key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)
+      return (
+        descriptor !== undefined &&
+        'value' in descriptor &&
+        (Array.isArray(value) && key === 'length' ? true : isPlainTree(descriptor.value, seen))
+      )
+    })
+  )
+}
+
+describe('the output of the redaction walk', () => {
+  describe.each(configurations)('as $name', ({ build, coversPassword, plain }) => {
+    it.each(shapes)('carries no hook that runs after it, for %s', (_shape, make) => {
+      const written = build()(make(), true)
+
+      expect(hooksIn(written)).toEqual([])
+      if (coversPassword) expect(JSON.stringify(written)).not.toContain(SECRET)
+      if (plain) expect(isPlainTree(written)).toBe(true)
+    })
+  })
+})
+
+/** Values that only the 'safe' output turns into plain data: binary, symbols and callables. */
+const plainOnlyShapes: [string, () => Record<string, unknown>][] = [
   [
     'an Error whose toJSON is an accessor that answers differently the second time',
     () => ({ inner: withStatefulHook(new Error('o')) })
@@ -110,122 +212,99 @@ const shapes: [string, () => Record<string, unknown>][] = [
       })
     })
   ],
-  ['an Error under the key err', () => ({ err: errorWithHook() })],
-  ['an Error under a key with a serializer', () => ({ thing: errorWithHook() })]
-]
-
-const SAFE = createOwnFieldPolicy('safe', [])
-
-/** The ways the walk is built: the caller's record or serializer output, with each policy. */
-const configurations = [
-  {
-    name: 'record, all',
-    coversPassword: true,
-    build: () => createNameRedactor(['password'], 'X', ['err', 'thing'], undefined, ALL_OWN_FIELDS)
-  },
-  {
-    name: 'record, safe',
-    coversPassword: true,
-    build: () => createNameRedactor(['password'], 'X', ['err', 'thing'], undefined, SAFE)
-  },
-  {
-    name: 'record, safe, toJSON listed as an own field',
-    coversPassword: true,
-    build: () =>
-      createNameRedactor(
-        ['password'],
-        'X',
-        ['err', 'thing'],
-        undefined,
-        createOwnFieldPolicy('safe', ['toJSON'])
-      )
-  },
-  {
-    name: 'record, safe, no names',
-    coversPassword: false,
-    build: () => createNameRedactor(new Set<string>(), 'X', ['err', 'thing'], undefined, SAFE)
-  },
-  {
-    name: 'serializer output, all',
-    coversPassword: true,
-    build: () => createNameRedactor(['password'], 'X', undefined, undefined, ALL_OWN_FIELDS)
-  },
-  {
-    name: 'serializer output, safe',
-    coversPassword: true,
-    build: () => createNameRedactor(['password'], 'X', undefined, undefined, SAFE)
-  }
-]
-
-/** The paths in a value that hold a callable `toJSON`, own or inherited. */
-function hooksIn(value: unknown, path = '$', seen = new Set<object>()): string[] {
-  if (typeof value !== 'object' || value === null || seen.has(value)) return []
-  seen.add(value)
-  const found = typeof (value as { toJSON?: unknown }).toJSON === 'function' ? [path] : []
-  for (const key of Object.keys(value)) {
-    found.push(...hooksIn(Reflect.get(value, key), `${path}.${key}`, seen))
-  }
-  return found
-}
-
-describe('the output of the redaction walk', () => {
-  describe.each(configurations)('as $name', ({ build, coversPassword }) => {
-    it.each(shapes)('carries no hook that runs after it, for %s', (_shape, make) => {
-      const written = build()(make(), true)
-
-      expect(hooksIn(written)).toEqual([])
-      if (coversPassword) expect(JSON.stringify(written)).not.toContain(SECRET)
+  ['a Buffer', () => ({ raw: Buffer.from('ab') })],
+  [
+    'a typed array and a DataView',
+    () => ({ a: new Uint8Array(2), b: new DataView(new ArrayBuffer(3)) })
+  ],
+  [
+    'a subclass of Uint8Array that defines a hook',
+    () => {
+      class Bytes extends Uint8Array {
+        toJSON(): object {
+          return { password: SECRET }
+        }
+      }
+      return { raw: new Bytes(2) }
+    }
+  ],
+  [
+    'a symbol and a function beside data',
+    () => ({ id: Symbol('x'), run: () => 1, ok: 1, list: [() => 1, Symbol('y'), 2] })
+  ],
+  [
+    'a Map, a Set and a class instance',
+    () => ({
+      m: new Map([[1, 2]]),
+      s: new Set([1]),
+      c: new (class Box {
+        v = 1
+      })()
     })
-  })
+  ],
+  [
+    'an Error with a cause that is an Error with a hook',
+    () => ({ err: new Error('o', { cause: errorWithHook() }) })
+  ]
+]
+
+describe('the output of the redaction walk under safe is plain data', () => {
+  describe.each(configurations.filter((configuration) => configuration.plain))(
+    'as $name',
+    ({ build, coversPassword }) => {
+      it.each([...shapes, ...plainOnlyShapes])('has only plain nodes, for %s', (_shape, make) => {
+        const written = build()(make(), true)
+
+        expect(isPlainTree(written)).toBe(true)
+        if (coversPassword) expect(JSON.stringify(written)).not.toContain(SECRET)
+      })
+    }
+  )
 })
 
-describe('what the walk keeps beside the hooks it removes', () => {
-  it('keeps a function that is not a toJSON as one that still works, and a toJSON that is not a function', () => {
-    const redact = createNameRedactor(['password'], 'X', undefined, undefined, ALL_OWN_FIELDS)
+describe('what the walk does with a function', () => {
+  it("hands it on as it is under 'all' and omits it under 'safe', with a toJSON that is not a function kept", () => {
     const run = (): number => 1
-
-    const output = redact(
-      { run, nested: Object.assign(new Error('o'), { run, toJSON: 'text' }) },
-      true
-    ) as {
-      run: () => number
-      nested: Record<string, unknown> & { run: () => number }
-    }
-
-    expect(output.run()).toBe(1)
-    expect(output.nested.run()).toBe(1)
-    expect(output.nested['toJSON']).toBe('text')
-  })
-
-  it('hands on a function whose toJSON read as no hook as one that still calls the original', () => {
-    const owner = { base: 10 }
-    function add(this: { base: number }, left: number, right: number): number {
-      return this.base + left + right
-    }
-    withStatefulHook(add)
-    const redact = createNameRedactor(['password'], 'X', undefined, undefined, ALL_OWN_FIELDS)
-
-    const output = redact({ add }, true) as { add: (this: unknown, ...args: number[]) => number }
-
-    expect(output.add).not.toBe(add)
-    expect(output.add.call(owner, 1, 2)).toBe(13)
-    expect(JSON.stringify({ add: output.add })).toBe('{}')
-  })
-
-  it('gives that function no toJSON even when one is inherited from Function.prototype', () => {
-    const run = withStatefulHook((): number => 1)
-    const redact = createNameRedactor(['password'], 'X', undefined, undefined, ALL_OWN_FIELDS)
-    Object.defineProperty(Function.prototype, 'toJSON', {
-      value: () => ({ password: SECRET }),
-      configurable: true
+    const record = (): Record<string, unknown> => ({
+      run,
+      list: [run, 2],
+      nested: Object.assign(new Error('o'), { toJSON: 'text' })
     })
 
-    try {
-      const output = redact({ run }, true) as { run: { toJSON?: unknown } }
-
-      expect(output.run.toJSON).toBeUndefined()
-    } finally {
-      Reflect.deleteProperty(Function.prototype, 'toJSON')
+    const all = createNameRedactor(
+      ['password'],
+      'X',
+      undefined,
+      undefined,
+      ALL_OWN_FIELDS
+    )(record(), true) as {
+      run: unknown
+      list: unknown[]
+      nested: Record<string, unknown>
     }
+    const safe = createNameRedactor(
+      ['password'],
+      'X',
+      ['err'],
+      undefined,
+      SAFE
+    )(record(), true) as {
+      run: unknown
+      list: unknown[]
+      nested: Record<string, unknown>
+    }
+
+    expect(all.run).toBe(run)
+    expect(all.nested['toJSON']).toBe('text')
+    expect(safe.run).toBeUndefined()
+    expect(safe.list).toEqual([undefined, 2])
+    expect(JSON.stringify(safe)).toContain('"list":[null,2]')
+  })
+
+  it("applies the toJSON of a function once, as the stringifier would, under 'safe'", () => {
+    const run = Object.assign((): number => 1, { toJSON: () => ({ password: SECRET, shown: 1 }) })
+    const redact = createNameRedactor(['password'], 'X', ['err'], undefined, SAFE)
+
+    expect(redact({ run }, true)).toEqual({ run: { password: 'X', shown: 1 } })
   })
 })
