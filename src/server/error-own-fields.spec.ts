@@ -1,6 +1,6 @@
 /**
- * Pins what an error's own fields do to a line: `errorOwnFields: 'all'` (the default) writes them
- * as before, except that a binary value becomes a size marker, and `'safe'` writes only an
+ * Pins what an error's own fields do to a line: `errorOwnFields: 'all'` (the default) writes every
+ * own field and replaces a binary value by its size marker, and `'safe'` writes only an
  * allow-list of operational names plus the consumer's. Driven through the real Pino pipeline, on
  * the line a destination receives, with the error Node itself throws when a child process fails.
  *
@@ -240,6 +240,48 @@ describe("errorOwnFields: 'safe'", () => {
 
     expect(entry().err.errors[0]).toMatchObject({ message: 'm', code: 'E_M' })
     expect(entry().err.errors[0].orderId).toBeUndefined()
+  })
+
+  it('writes an Error with its own toJSON from its own fields, as the root err is written', () => {
+    const { service, entry } = pipeline({ errorOwnFields: 'safe' })
+    const withToJson = Object.assign(new Error('n'), { path: '/p', actual: 'A', code: 'E_J' })
+    Object.defineProperty(withToJson, 'toJSON', {
+      value(this: { path: string; actual: string; code: string }) {
+        return { path: this.path, actual: this.actual, code: this.code }
+      }
+    })
+
+    service.errorStructured('KEY', new Error('root'), 'u1', { nested: withToJson })
+
+    expect(entry().nested).toMatchObject({ code: 'E_J', message: 'n' })
+    expect(entry().nested.path).toBeUndefined()
+    expect(entry().nested.actual).toBeUndefined()
+  })
+
+  it('keeps the toJSON of a value that is not an Error', () => {
+    const { service, entry } = pipeline({ errorOwnFields: 'safe' })
+
+    service.errorStructured('KEY', new Error('root'), 'u1', {
+      when: new Date(0),
+      money: { amount: 5, toJSON: () => ({ formatted: '5.00' }) }
+    })
+
+    expect(entry().when).toBe('1970-01-01T00:00:00.000Z')
+    expect(entry().money).toEqual({ formatted: '5.00' })
+  })
+
+  it("keeps the output of an Error's toJSON under 'all', as documented", () => {
+    const { service, entry } = pipeline()
+    const withToJson = Object.assign(new Error('n'), { path: '/p' })
+    Object.defineProperty(withToJson, 'toJSON', {
+      value(this: { path: string }) {
+        return { fromToJson: this.path }
+      }
+    })
+
+    service.errorStructured('KEY', new Error('root'), 'u1', { nested: withToJson })
+
+    expect(entry().nested).toEqual({ fromToJson: '/p' })
   })
 
   it('applies to a nested Error that has to be rebuilt because a field threw on its first read', () => {

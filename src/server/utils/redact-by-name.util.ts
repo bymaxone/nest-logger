@@ -57,18 +57,16 @@
  *
  * @see {@link createNameRedactor}
  */
-import { cutIfText, cutText } from './bounded-text.util'
-import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
+import { cutIfText } from './bounded-text.util'
+import { ALL_OWN_FIELDS, type OwnFieldPolicy } from './own-field-policy.util'
 import {
-  createDepthMarker,
-  createWidthMarker,
-  DEFAULT_MAX_CAUSE_DEPTH,
-  MAX_AGGREGATE_ERRORS,
-  OMIT_OWN_FIELD,
-  ownFieldForLog,
-  sanitizeError,
-  scrubStack
-} from './sanitize-error.util'
+  addErrorParts,
+  defineOwn,
+  ERROR_TEXT_FIELDS,
+  readOwnField,
+  type ErrorPartsHost
+} from './redact-error-parts.util'
+import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 /**
@@ -251,38 +249,6 @@ export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
  * pointer compare, and so a later reassignment of the global cannot redirect it.
  */
 const BUFFER_TO_JSON: unknown = Buffer.prototype.toJSON
-
-/**
- * Write a key onto a copy without triggering a setter.
- *
- * `Reflect.defineProperty` rather than assignment: a key named `__proto__`
- * reaching an ordinary assignment would walk the prototype chain to
- * `Object.prototype`'s accessor and repoint the copy's prototype instead of
- * storing a property. Defining the property keeps a hostile key inert AND keeps
- * the dynamic write off the `security/detect-object-injection` sink list.
- *
- * @param target - The copy being built.
- * @param key - The property name.
- * @param value - The value to store.
- */
-function defineOwn(target: Record<string, unknown>, key: string, value: unknown): void {
-  // Only `enumerable` is specified. `writable` / `configurable` would default to
-  // `false`, and nothing here can tell the difference: `Object.keys` yields each
-  // key once so a copy never redefines one, and the copy is serialized and
-  // discarded without further mutation (verified against Pino's `redact`, which
-  // tolerates a non-writable property on the record it censors). Stating them
-  // would be two more literals no test could ever pin.
-  //
-  // The write cannot fail, and that is established at CONSTRUCTION rather than
-  // checked here. Every target is either a fresh `{}` or an error clone whose
-  // descriptors `cloneError` relaxes precisely so a censor always lands. This once
-  // checked the result — `Reflect.defineProperty` reports failure by returning
-  // `false`, not by throwing — and threw into the caller's guard, which dropped the
-  // whole record. That guard was reachable only because the clone could reject the
-  // write; with that fixed at the source, keeping the check would leave a branch no
-  // input can take, which is untested code claiming a guarantee.
-  Reflect.defineProperty(target, key, { value, enumerable: true })
-}
 
 /** What one walk needs besides the value. */
 interface RedactRules {
@@ -505,7 +471,10 @@ function walkObject(
     // and discard `logKey`, `msg` and every other field. Nested values and
     // serializer outputs DO reach `JSON.stringify`, which honours `toJSON`, so
     // they keep it.
-    const toJson = honorToJson ? resolvedToJson.method : undefined
+    // Under `errorOwnFields: 'safe'` an `Error` is written from its own fields, as the root `err`
+    // is: a library's `toJSON` (an HTTP client's, say) would otherwise carry the request it made.
+    const ownsItsForm = rules.ownFields.safe && value instanceof Error
+    const toJson = honorToJson && !ownsItsForm ? resolvedToJson.method : undefined
     if (toJson !== undefined) {
       // A `toJSON` can RENAME the field it exposes, carrying the value around the
       // matcher: `{ password, toJSON() { return { value: this.password } } }`
@@ -622,7 +591,7 @@ function walkObject(
     }
     if (asData) {
       const written = keys.filter((key) => !omitted.has(key))
-      addErrorParts(copy, value as Error, written, rules, depth, ancestors)
+      addErrorParts(copy, value as Error, written, errorPartsHost(rules, ancestors), depth)
     }
     return copy
   } finally {
@@ -630,133 +599,14 @@ function walkObject(
   }
 }
 
-/** An own field as the walk reads it: a binary value of an `Error` is read as its size. */
-function readOwnField(source: object, key: string): unknown {
-  const field: unknown = Reflect.get(source, key)
-  return source instanceof Error ? withBinaryAsSize(field) : field
-}
-
-/** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */
-const linkDepths = new WeakMap<object, number>()
-
-/** The own fields of an `Error` that hold text the logger copies and bounds like a message. */
-const ERROR_TEXT_FIELDS: ReadonlySet<string> = new Set(['name', 'message', 'stack'])
-
-/** The marker key of a node that lost a part while it was being written. */
-const INCOMPLETE_KEY = '_errorFieldsIncomplete'
-
-/** The first `MAX_AGGREGATE_ERRORS` members of `errors` and one marker for the rest. */
-function capErrors(errors: unknown): unknown {
-  if (!Array.isArray(errors) || errors.length <= MAX_AGGREGATE_ERRORS) return errors
-  // A list with a `toJSON` is left to that method.
-  if (resolveToJson(errors).method !== undefined) return errors
-  const kept: unknown[] = []
-  for (let index = 0; index < MAX_AGGREGATE_ERRORS; index++) kept.push(Reflect.get(errors, index))
-  kept.push(createWidthMarker(errors.length - MAX_AGGREGATE_ERRORS))
-  return kept
-}
-
-/** The objects a `cause` or `errors` holds, read by index. */
-function linkTargets(value: unknown): object[] {
-  const targets: object[] = []
-  const take = (link: unknown): void => {
-    if (typeof link === 'object' && link !== null) targets.push(link)
+/** What the code that writes the parts of an `Error` needs from this walk. */
+function errorPartsHost(rules: RedactRules, ancestors: Set<object>): ErrorPartsHost {
+  return {
+    sensitive: rules.sensitive,
+    censor: rules.censor,
+    walk: (value, depth) => walk(value, rules, depth, ancestors),
+    hasToJson: (value) => resolveToJson(value).method !== undefined
   }
-  if (!Array.isArray(value)) take(value)
-  else for (let index = 0; index < value.length; index++) take(Reflect.get(value, index))
-  return targets
-}
-
-/** Walk an added `cause` or `errors`: its `Error`s are links one level deeper; past the budget, a marker. */
-function walkChainPart(
-  value: unknown,
-  level: number,
-  rules: RedactRules,
-  depth: number,
-  ancestors: Set<object>
-): unknown {
-  const targets = linkTargets(value)
-  if (targets.length > 0 && level + 1 > DEFAULT_MAX_CAUSE_DEPTH) return createDepthMarker()
-  const before = new Map(targets.map((target) => [target, linkDepths.get(target)]))
-  for (const target of targets) linkDepths.set(target, level + 1)
-  try {
-    return walk(value, rules, depth + 1, ancestors)
-  } finally {
-    before.forEach((earlier, target) => {
-      if (earlier === undefined) linkDepths.delete(target)
-      else linkDepths.set(target, earlier)
-    })
-  }
-}
-
-/** Write an added `type` or `message`: a string is cut at the text limit, anything else is walked as a chain part. */
-function cutOrWalk(
-  value: unknown,
-  level: number,
-  rules: RedactRules,
-  depth: number,
-  ancestors: Set<object>
-): unknown {
-  return typeof value === 'string'
-    ? cutText(value)
-    : walkChainPart(value, level, rules, depth, ancestors)
-}
-
-/**
- * Add the non-enumerable `type`, `message`, `stack`, `cause` and `errors`, each only where the copy
- * has no such key and each read and walked alone: a part that cannot be costs only itself.
- * A part's `covers` names every field whose text it carries, its own included: covering any of
- * them covers the part. `type` is the `name`; the first line of `stack` is the `name` and the
- * `message`.
- */
-function addErrorParts(
-  copy: Record<string, unknown>,
-  error: Error,
-  ownKeys: readonly string[],
-  rules: RedactRules,
-  depth: number,
-  ancestors: Set<object>
-): void {
-  const taken = new Set(ownKeys)
-  const level = linkDepths.get(error) ?? 0
-  let incomplete = false
-  const add = (
-    key: string,
-    covers: readonly string[],
-    read: () => unknown,
-    write = (value: unknown): unknown => walkChainPart(value, level, rules, depth, ancestors)
-  ): void => {
-    if (taken.has(key)) return
-    try {
-      const written = write(read())
-      if (written === undefined) return
-      const covered = covers.some((name) => rules.sensitive.has(name))
-      defineOwn(copy, key, covered ? rules.censor : written)
-    } catch {
-      incomplete = true
-    }
-  }
-  add(
-    'type',
-    ['type', 'name'],
-    () => error.name,
-    (name) => cutOrWalk(name, level, rules, depth, ancestors)
-  )
-  add(
-    'message',
-    ['message'],
-    () => error.message,
-    (message) => cutOrWalk(message, level, rules, depth, ancestors)
-  )
-  add(
-    'stack',
-    ['stack', 'name', 'message'],
-    (): unknown => error.stack,
-    (stack) => (typeof stack === 'string' ? scrubStack(stack) : undefined)
-  )
-  add('cause', ['cause'], (): unknown => error.cause)
-  add('errors', ['errors'], (): unknown => capErrors((error as { errors?: unknown }).errors))
-  if (incomplete && !taken.has(INCOMPLETE_KEY)) defineOwn(copy, INCOMPLETE_KEY, true)
 }
 
 /**
