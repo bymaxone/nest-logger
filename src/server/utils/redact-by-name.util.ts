@@ -781,7 +781,7 @@ function addErrorParts(
  *   // → { user: { deep: { password: '[REDACTED]' } } }
  */
 export function createNameRedactor(
-  fieldNames: readonly string[],
+  fieldNames: Iterable<string>,
   censor: string,
   serializedKeys?: readonly string[],
   maxVisits: number = REDACT_MAX_VISITS,
@@ -795,7 +795,7 @@ export function createNameRedactor(
   // `toLowerCase()` per key (~4 % of an entry, measured) and errs toward
   // redacting `Password` / `Email` too, which is the safe direction.
   const rules: Omit<RedactRules, 'visits'> = {
-    sensitive: new Set(fieldNames.map((name) => name.toLowerCase())),
+    sensitive: new Set(Array.from(fieldNames, (name) => name.toLowerCase())),
     censor,
     serializedKeys: new Set(serializedKeys),
     errorsAsData: serializedKeys !== undefined,
