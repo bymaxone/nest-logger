@@ -639,8 +639,8 @@ function errorPartsHost(
     // everything else keeps the `type` the written entries use.
     nameKey: inSerialized ? 'name' : 'type',
     walk: (value, depth) => walk(value, rules, depth, ancestors, true, inSerialized),
-    // Under 'safe' the cap leaves a list's `toJSON` unread: the capped copy is a fresh array, and
-    // the one read of it is the walk's.
+    // Under 'safe' the cap does not read a list's `toJSON`: a list over the cap becomes a fresh array
+    // and is never read for it, and a list within the cap is read once, by the walk.
     hasToJson: (value) => !rules.ownFields.safe && resolveToJson(value).method !== undefined
   }
 }

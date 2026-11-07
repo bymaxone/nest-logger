@@ -370,17 +370,30 @@ describe("errorOwnFields: 'safe' when the name redaction does not walk the recor
     expect(bareWithSerializer.entry().wrapped).toEqual(coveredWithSerializer.entry().wrapped)
   })
 
-  it('leaves what a custom serializer returns as it returned it, as before', () => {
-    const { service, entry } = pipeline({
-      errorOwnFields: 'safe',
-      shouldDisableDefaultRedact: true,
-      serializers: { thing: () => ({ inner: nestedError() }) }
-    })
+  it.each([
+    ['safe', undefined],
+    ['all', 'o-9']
+  ] as const)(
+    "writes what a custom serializer returns as plain data under 'safe' and as it returned it under 'all', with no name covered (%s)",
+    (mode, orderId) => {
+      const { service, entry, line } = pipeline({
+        errorOwnFields: mode,
+        shouldDisableDefaultRedact: true,
+        serializers: {
+          thing: () => ({ inner: nestedError(), buf: Buffer.from('S'), fn: () => 1 })
+        }
+      })
 
-    service.info('KEY', 'hello', 'u1', { thing: 1 })
+      service.info('KEY', 'hello', 'u1', { thing: 1 })
 
-    expect(entry().thing.inner.orderId).toBe('o-9')
-  })
+      expect(entry().thing.inner.orderId).toBe(orderId)
+      if (mode === 'safe') {
+        expect(entry().thing.buf).toBe('[Binary 1 bytes]')
+        expect(entry().thing.fn).toBeUndefined()
+        expect(line()).not.toContain('"data"')
+      }
+    }
+  )
 })
 
 describe('an Error with a toJSON that a serializer returns', () => {

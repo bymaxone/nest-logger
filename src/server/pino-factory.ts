@@ -420,9 +420,9 @@ function buildNameRedactor(
       ]
     : []
   const ownFields = ownFieldPolicyOf(options)
-  // The caller's record is walked even with no name to cover when 'safe' has to filter an `Error`
-  // nested in it, which only the walk reaches.
-  if (names.length === 0 && !(nestedErrorsAsData && ownFields.safe)) {
+  // With no name to cover the value is still walked under 'safe', which writes plain data only the
+  // walk can produce: an `Error` nested in the record, and what a serializer returns.
+  if (names.length === 0 && !ownFields.safe) {
     return PASS_THROUGH
   }
   return nestedErrorsAsData
