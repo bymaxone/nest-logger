@@ -490,3 +490,64 @@ describe("a serializer under 'safe' receives plain data", () => {
     expect(seen).toEqual({ kept: 2 })
   })
 })
+
+describe("errorOwnFields 'safe' writes plain data however the redaction is configured", () => {
+  const configurations: [string, Partial<BymaxLoggerModuleOptions>][] = [
+    ['names, defaults', {}],
+    ['names, defaults off', { shouldDisableDefaultRedact: true }],
+    [
+      'names, defaults off, a path',
+      { shouldDisableDefaultRedact: true, redactPaths: ['meta.secret'] }
+    ],
+    ['names, defaults and a path', { redactPaths: ['meta.secret'] }],
+    ['paths, defaults', { redactStrategy: 'paths' }],
+    ['paths, defaults off', { redactStrategy: 'paths', shouldDisableDefaultRedact: true }],
+    [
+      'paths, defaults off, a path',
+      { redactStrategy: 'paths', shouldDisableDefaultRedact: true, redactPaths: ['meta.secret'] }
+    ],
+    ['paths, defaults and a path', { redactStrategy: 'paths', redactPaths: ['meta.secret'] }]
+  ]
+  const payload = (): Record<string, unknown> => ({
+    buf: Buffer.from('S'),
+    run: () => 1,
+    err: Object.assign(new Error('n'), { orderId: 'o-1', code: 'E_P', stdout: Buffer.from('S') })
+  })
+  const channels: [string, (s: PinoLoggerService) => void][] = [
+    ['metadata', (s) => s.info('KEY', 'hello', 'u1', { meta: payload() })],
+    [
+      'the root err',
+      (s) =>
+        s.errorStructured(
+          'KEY',
+          Object.assign(new Error('r'), { orderId: 'o-1', stdout: Buffer.from('S') }),
+          'u1'
+        )
+    ],
+    ['what a serializer returns', (s) => s.info('KEY', 'hello', 'u1', { thing: 1 })],
+    ['bindings of a child', (s) => s.child({ meta: payload() }).info('KEY', 'hello', 'u1')]
+  ]
+
+  describe.each(configurations)('%s', (_name, extra) => {
+    it.each(channels)('has no byte array, function or dropped field, for %s', (_channel, write) => {
+      const { service, line } = pipeline({
+        errorOwnFields: 'safe',
+        serializers: { thing: () => ({ meta: payload() }) },
+        ...extra
+      })
+
+      write(service)
+
+      const keys = new Set<string>()
+      JSON.parse(line(), function (key, value: unknown) {
+        keys.add(key)
+        return value
+      })
+      expect(line()).not.toContain('"data"')
+      expect(keys.has('orderId')).toBe(false)
+      expect(keys.has('stdout')).toBe(false)
+      expect(keys.has('run')).toBe(false)
+      expect(line()).toContain('KEY')
+    })
+  })
+})
