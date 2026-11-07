@@ -12,7 +12,7 @@ import type { ErrorOwnFieldsMode } from '../interfaces/logger-module-options.int
  * place in the schema and quote no row. `path` is not here, because it is a file system path and
  * the consumer decides whether that is data.
  */
-export const DEFAULT_SAFE_ERROR_FIELDS: readonly string[] = Object.freeze([
+export const DEFAULT_SAFE_ERROR_FIELDS: readonly string[] = [
   'code',
   'errno',
   'syscall',
@@ -27,19 +27,23 @@ export const DEFAULT_SAFE_ERROR_FIELDS: readonly string[] = Object.freeze([
   'column',
   'schema',
   'routine'
-])
+]
 
 /**
- * Fields the logger itself writes on a node, whatever the policy: the ones it derives, and the
- * marker of a field it could not read. Filtering these would lose the error's own message.
+ * Fields a sanitized node derives itself, excluded from the own-property copy and always written,
+ * whatever the policy: filtering them would lose the error's own message.
+ *
+ * A real `Error` keeps `name` / `message` / `stack` non-enumerable, so they never reach the copy
+ * loop. An error-LIKE plain object (what `HttpExceptionFilter` produces, and what any error
+ * crossing a worker boundary becomes) carries them as ordinary own keys, and copying them would
+ * emit the same value twice: once derived (scrubbed, in the case of `stack`) and once raw.
  */
-const LIBRARY_FIELDS: ReadonlySet<string> = new Set([
+export const DERIVED_ERROR_FIELDS: ReadonlySet<string> = new Set([
   'name',
   'message',
   'stack',
   'cause',
-  'errors',
-  '_errorFieldsIncomplete'
+  'errors'
 ])
 
 /** What the sanitizer and the redaction walk consult for each own field of an error. */
@@ -51,10 +55,7 @@ export interface OwnFieldPolicy {
 }
 
 /** The policy of `errorOwnFields: 'all'`: every own field is written. */
-export const ALL_OWN_FIELDS: OwnFieldPolicy = Object.freeze({
-  safe: false,
-  names: new Set<string>()
-})
+export const ALL_OWN_FIELDS: OwnFieldPolicy = { safe: false, names: new Set<string>() }
 
 /**
  * Resolve the policy for the configured mode.
@@ -68,10 +69,7 @@ export function createOwnFieldPolicy(
   extraNames: readonly string[]
 ): OwnFieldPolicy {
   if (mode === 'all') return ALL_OWN_FIELDS
-  return Object.freeze({
-    safe: true,
-    names: new Set([...DEFAULT_SAFE_ERROR_FIELDS, ...extraNames])
-  })
+  return { safe: true, names: new Set([...DEFAULT_SAFE_ERROR_FIELDS, ...extraNames]) }
 }
 
 /**
@@ -82,7 +80,12 @@ export function createOwnFieldPolicy(
  * @returns `true` when the field is written.
  */
 export function allowsOwnField(policy: OwnFieldPolicy, key: string): boolean {
-  return !policy.safe || LIBRARY_FIELDS.has(key) || policy.names.has(key)
+  return (
+    !policy.safe ||
+    DERIVED_ERROR_FIELDS.has(key) ||
+    key === '_errorFieldsIncomplete' ||
+    policy.names.has(key)
+  )
 }
 
 /** The size marker written in place of a Buffer, a typed array or a DataView. */

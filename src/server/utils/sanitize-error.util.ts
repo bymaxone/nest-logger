@@ -20,6 +20,7 @@ import { escapeControlCharacters } from './escape-log-text.util'
 import {
   ALL_OWN_FIELDS,
   allowsOwnField,
+  DERIVED_ERROR_FIELDS,
   withBinaryAsSize,
   type OwnFieldPolicy
 } from './own-field-policy.util'
@@ -77,27 +78,6 @@ export interface SanitizedError {
    */
   [key: string]: unknown
 }
-
-/**
- * Fields a sanitized node derives itself, excluded from the own-property copy.
- *
- * A real `Error` keeps `name` / `message` / `stack` non-enumerable, so they never
- * reach the copy loop. An error-LIKE plain object — what `HttpExceptionFilter`
- * produces, and what any error crossing a worker boundary becomes — carries them
- * as ordinary own keys, and copying them would emit the same value twice: once
- * derived (scrubbed, in the case of `stack`) and once raw.
- *
- * Module-private: the only reader is {@link assignOwnErrorFields}, which is what
- * `pino-factory` shares. An earlier draft exported this set for a version of that
- * helper that took it as a parameter.
- */
-const DERIVED_ERROR_FIELDS: ReadonlySet<string> = new Set([
-  'name',
-  'message',
-  'stack',
-  'cause',
-  'errors'
-])
 
 /**
  * A nested sanitized value: a full {@link SanitizedError}, a truncation marker

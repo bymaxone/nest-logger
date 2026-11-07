@@ -363,34 +363,12 @@ const PASS_THROUGH: Redactor = (value: unknown): unknown => value
  * @returns A redaction function; the identity function when the walk is off.
  */
 export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
-  if (options.redactStrategy !== 'names') {
-    return ownFieldsOnlyRedactor(options)
-  }
-  return buildNameRedactor(options, true)
+  return buildNameRedactor(options, true, options.redactStrategy === 'names')
 }
 
 /** The own-field policy the configuration resolves to. */
 function ownFieldPolicyOf(options: ResolvedBymaxLoggerModuleOptions): OwnFieldPolicy {
   return createOwnFieldPolicy(options.errorOwnFields, options.errorOwnFieldNames)
-}
-
-/**
- * The redactor of the caller's record when no name is covered (the walk is off, or the strategy is
- * `'paths'`): the pass-through, unless `errorOwnFields: 'safe'` has to filter an `Error` nested in
- * the metadata, which only the walk reaches. It censors nothing.
- */
-function ownFieldsOnlyRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
-  const ownFields = ownFieldPolicyOf(options)
-  if (!ownFields.safe) {
-    return PASS_THROUGH
-  }
-  return createNameRedactor(
-    new Set<string>(),
-    options.redactCensor,
-    ['err', ...Object.keys(options.serializers)],
-    undefined,
-    ownFields
-  )
 }
 
 /**
@@ -432,16 +410,21 @@ function ownFieldsOnlyRedactor(options: ResolvedBymaxLoggerModuleOptions): Redac
  */
 function buildNameRedactor(
   options: ResolvedBymaxLoggerModuleOptions,
-  nestedErrorsAsData = false
+  nestedErrorsAsData = false,
+  coversNames = true
 ): Redactor {
-  const names = [
-    ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
-    ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
-  ]
-  if (names.length === 0) {
-    return nestedErrorsAsData ? ownFieldsOnlyRedactor(options) : PASS_THROUGH
-  }
+  const names = coversNames
+    ? [
+        ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
+        ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
+      ]
+    : []
   const ownFields = ownFieldPolicyOf(options)
+  // The caller's record is walked even with no name to cover when 'safe' has to filter an `Error`
+  // nested in it, which only the walk reaches.
+  if (names.length === 0 && !(nestedErrorsAsData && ownFields.safe)) {
+    return PASS_THROUGH
+  }
   return nestedErrorsAsData
     ? createNameRedactor(
         names,

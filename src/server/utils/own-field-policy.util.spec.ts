@@ -22,7 +22,6 @@ describe('createOwnFieldPolicy', () => {
 
     expect(policy.safe).toBe(true)
     expect([...policy.names].sort()).toEqual([...DEFAULT_SAFE_ERROR_FIELDS, 'orderId'].sort())
-    expect(Object.isFrozen(policy)).toBe(true)
   })
 
   it('does not list a file system path by default', () => {

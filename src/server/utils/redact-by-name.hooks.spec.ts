@@ -191,6 +191,34 @@ describe('the output of the redaction walk', () => {
 /** Values that only the 'safe' output turns into plain data: binary, symbols and callables. */
 const plainOnlyShapes: [string, () => Record<string, unknown>][] = [
   [
+    'an Error whose toJSON is Buffer.prototype.toJSON and that holds a Buffer',
+    () => ({
+      inner: Object.assign(new Error('x'), {
+        toJSON: Buffer.prototype.toJSON,
+        stdout: Buffer.from('S')
+      })
+    })
+  ],
+  [
+    'a Proxy that answers Buffer.prototype.toJSON once and a hook after that',
+    () => {
+      let reads = 0
+      return {
+        inner: new Proxy(
+          {},
+          {
+            get: (_target, key) =>
+              key === 'toJSON'
+                ? reads++ === 0
+                  ? Buffer.prototype.toJSON
+                  : () => ({ password: SECRET })
+                : undefined
+          }
+        )
+      }
+    }
+  ],
+  [
     'an Error whose toJSON is an accessor that answers differently the second time',
     () => ({ inner: withStatefulHook(new Error('o')) })
   ],
@@ -306,5 +334,30 @@ describe('what the walk does with a function', () => {
     const redact = createNameRedactor(['password'], 'X', ['err'], undefined, SAFE)
 
     expect(redact({ run }, true)).toEqual({ run: { password: 'X', shown: 1 } })
+  })
+})
+
+describe("the width cap of an AggregateError's errors under 'safe'", () => {
+  it('reads a toJSON accessor of the list at most once, and writes the cap marker', () => {
+    const errors = Array.from({ length: 11 }, () => new Error('x'))
+    let reads = 0
+    Object.defineProperty(errors, 'toJSON', {
+      get() {
+        reads++
+        return () => errors
+      }
+    })
+    const redact = createNameRedactor([], 'X', undefined, undefined, SAFE)
+
+    const aggregate = new AggregateError([], 'many')
+    Object.defineProperty(aggregate, 'errors', { value: errors })
+
+    const written = redact({ inner: aggregate }, true) as {
+      inner: { errors: unknown[] }
+    }
+
+    expect(reads).toBeLessThanOrEqual(1)
+    expect(written.inner.errors).toHaveLength(11)
+    expect(JSON.stringify(written.inner.errors.at(-1))).toContain('_truncated')
   })
 })

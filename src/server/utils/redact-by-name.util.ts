@@ -134,7 +134,7 @@ interface ResolvedToJson {
    * `true` when `toJSON` is an ACCESSOR, so a second read can yield a different
    * function. Nothing may be decided from the identity of such a method.
    */
-  fromAccessor: boolean
+  fromAccessor?: boolean
 }
 
 /**
@@ -184,10 +184,7 @@ function resolveToJson(value: object): ResolvedToJson {
  */
 function getToJson(value: object): ResolvedToJson {
   const candidate: unknown = Reflect.get(value, 'toJSON')
-  return {
-    method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined,
-    fromAccessor: false
-  }
+  return { method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined }
 }
 
 /**
@@ -470,7 +467,7 @@ function walkObject(
     return withBinaryAsSize(value)
   }
   const resolvedToJson = plain ? getToJson(value) : resolveToJson(value)
-  if (!resolvedToJson.fromAccessor && resolvedToJson.method === BUFFER_TO_JSON) {
+  if (!plain && !resolvedToJson.fromAccessor && resolvedToJson.method === BUFFER_TO_JSON) {
     return value
   }
 
@@ -497,7 +494,7 @@ function walkObject(
     // redaction. An `Error` is written from its own fields and its `toJSON` is not called: a
     // library's (an HTTP client's, say) would carry the request it made. Any other `toJSON` is
     // called once and its result is walked.
-    const ownsItsForm = rules.ownFields.safe && isWrittenAsData(value, rules, inSerialized)
+    const ownsItsForm = rules.ownFields.safe && value instanceof Error
     const toJson = honorToJson && !ownsItsForm ? resolvedToJson.method : undefined
     if (toJson !== undefined) {
       // A `toJSON` can RENAME the field it exposes, carrying the value around the
@@ -573,7 +570,7 @@ function walkObject(
     // enumerable properties — exactly what `JSON.stringify` would have emitted.
     // Outside a serializer's keys an `Error` is written as data: its own fields below plus the
     // head and chain, which are only ever added.
-    const asData = isWrittenAsData(value, rules, inSerialized)
+    const asData = value instanceof Error && (plain || (rules.errorsAsData && !inSerialized))
     // The clone is made even when discarded: an `Error` it cannot read must reach the fallback in
     // `walkError`, which is the same node with or without the data form.
     const clone = value instanceof Error ? cloneError(value) : undefined
@@ -629,11 +626,6 @@ function walkObject(
   }
 }
 
-/** Whether an `Error` is written as data (its own fields plus the parts added), not kept as an instance. */
-function isWrittenAsData(value: object, rules: RedactRules, inSerialized: boolean): boolean {
-  return value instanceof Error && (rules.ownFields.safe || (rules.errorsAsData && !inSerialized))
-}
-
 /** What the code that writes the parts of an `Error` needs from this walk. */
 function errorPartsHost(
   rules: RedactRules,
@@ -647,7 +639,9 @@ function errorPartsHost(
     // everything else keeps the `type` the written entries use.
     nameKey: inSerialized ? 'name' : 'type',
     walk: (value, depth) => walk(value, rules, depth, ancestors, true, inSerialized),
-    hasToJson: (value) => resolveToJson(value).method !== undefined
+    // Under 'safe' the cap leaves a list's `toJSON` unread: the capped copy is a fresh array, and
+    // the one read of it is the walk's.
+    hasToJson: (value) => !rules.ownFields.safe && resolveToJson(value).method !== undefined
   }
 }
 
