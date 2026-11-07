@@ -652,4 +652,72 @@ describe('an AggregateError at the cause-depth limit keeps its errors as a list 
       _reason: 'cause-depth-exceeded'
     })
   })
+
+  it.each(['all', 'safe'] as const)(
+    "writes one marker per member of any kind, and the count left out, at the limit, under '%s'",
+    (mode) => {
+      const deepBelow = (aggregate: AggregateError): Error => {
+        let chain: Error = aggregate
+        for (let level = 0; level < 3; level++)
+          chain = new Error(`l${String(level)}`, { cause: chain })
+        return chain
+      }
+      const many = new AggregateError(
+        Array.from({ length: 100 }, (_member, index) => new Error(`m${String(index)}`)),
+        'many'
+      )
+      const members: unknown[] = ['a', 2, null, undefined, new Error('e')]
+      const mixed = new AggregateError([], 'mixed')
+      Object.defineProperty(mixed, 'errors', { value: members })
+      const first = pipeline({ errorOwnFields: mode })
+      const second = pipeline({ errorOwnFields: mode })
+
+      first.service.errorStructured('KEY', deepBelow(many), 'u1')
+      second.service.errorStructured('KEY', deepBelow(mixed), 'u1')
+
+      const wide = first.entry().err.cause.cause.cause.errors
+      expect(wide).toHaveLength(11)
+      expect(wide.at(-1)._omitted).toBe(90)
+      const kinds = second.entry().err.cause.cause.cause.errors
+      expect(kinds).toHaveLength(5)
+      expect(kinds.every((member: any) => member._reason === 'cause-depth-exceeded')).toBe(true)
+    }
+  )
+
+  it("gives a serializer markers for every member at the limit and passes no member through, under 'safe'", () => {
+    let seen: any
+    const { service } = pipeline({
+      errorOwnFields: 'safe',
+      serializers: {
+        thing: (input: unknown): unknown => {
+          seen = input
+          return 'done'
+        }
+      }
+    })
+    const lookalike = {
+      _truncated: true,
+      _reason: 'aggregate-width-exceeded',
+      _omitted: 7,
+      password: 'LEAK'
+    }
+    const members: unknown[] = [
+      ...Array.from({ length: 9 }, (_member, index) => new Error(`m${String(index)}`)),
+      lookalike,
+      ...Array.from({ length: 90 }, () => new Error('more'))
+    ]
+    let chain: Error = new AggregateError([], 'wide')
+    Object.defineProperty(chain, 'errors', { value: members })
+    for (let level = 0; level < 3; level++) chain = new Error(`l${String(level)}`, { cause: chain })
+
+    service.info('KEY', 'hello', 'u1', { thing: chain })
+
+    const list = seen.cause.cause.cause.errors
+    expect(list).toHaveLength(11)
+    expect(list.at(-1)).toMatchObject({ _reason: 'aggregate-width-exceeded', _omitted: 90 })
+    expect(JSON.stringify(list)).not.toContain('LEAK')
+    expect(
+      list.slice(0, 10).every((member: any) => member._reason === 'cause-depth-exceeded')
+    ).toBe(true)
+  })
 })

@@ -74,6 +74,9 @@ export const ERROR_TEXT_FIELDS: ReadonlySet<string> = new Set(['name', 'message'
 /** The marker key of a node that lost a part while it was being written. */
 const INCOMPLETE_KEY = '_errorFieldsIncomplete'
 
+/** The width markers {@link capErrors} made, told apart from a member that merely looks like one. */
+const widthMarkers = new WeakSet<object>()
+
 /** The first `MAX_AGGREGATE_ERRORS` members of `errors` and one marker for the rest. */
 function capErrors(errors: unknown, host: ErrorPartsHost): unknown {
   if (!Array.isArray(errors) || errors.length <= MAX_AGGREGATE_ERRORS) return errors
@@ -81,7 +84,9 @@ function capErrors(errors: unknown, host: ErrorPartsHost): unknown {
   if (host.hasToJson(errors)) return errors
   const kept: unknown[] = []
   for (let index = 0; index < MAX_AGGREGATE_ERRORS; index++) kept.push(Reflect.get(errors, index))
-  kept.push(createWidthMarker(errors.length - MAX_AGGREGATE_ERRORS))
+  const marker = createWidthMarker(errors.length - MAX_AGGREGATE_ERRORS)
+  widthMarkers.add(marker)
+  kept.push(marker)
   return kept
 }
 
@@ -105,11 +110,18 @@ function walkChainPart(
 ): unknown {
   const targets = linkTargets(value)
   if (targets.length > 0 && level + 1 > DEFAULT_MAX_CAUSE_DEPTH) {
-    // What a serializer receives keeps a list as a list, one marker per member, because the
-    // sanitizer reads only lists and would otherwise lose the members left out. The node written
-    // into an entry keeps its single marker.
-    const isList = Array.isArray(value) && host.nameKey === 'name'
-    return isList ? targets.map(() => createDepthMarker()) : createDepthMarker()
+    // What a serializer receives keeps a list as a list, one marker per member of any kind and the
+    // width marker the cap wrote, because the sanitizer reads only lists and would otherwise lose
+    // the members left out. The node written into an entry keeps its single marker.
+    if (Array.isArray(value) && host.nameKey === 'name') {
+      return Array.from({ length: value.length }, (_member, index) => {
+        const member: unknown = Reflect.get(value, index)
+        return typeof member === 'object' && member !== null && widthMarkers.has(member)
+          ? member
+          : createDepthMarker()
+      })
+    }
+    return createDepthMarker()
   }
   const before = new Map(targets.map((target) => [target, linkDepths.get(target)]))
   for (const target of targets) linkDepths.set(target, level + 1)
