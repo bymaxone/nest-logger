@@ -15,8 +15,8 @@ heading here.
 
 - **A message is written at most 16384 characters long.** The `msg` of every call, the `message` of
   a serialized error and of each `cause` or `errors` link, the `message` of a nested `Error` in the
-  metadata, and the messages in the reports of a failed destination or of `pino-pretty` were
-  written whole, so a message of 5 million characters made a line of 5 million characters. A
+  metadata, the semconv `exception.message`, the `errorMessage` of a 4xx access-log entry, and the
+  messages in the reports of a failed destination or of `pino-pretty` were written whole, so a message of 5 million characters made a line of 5 million characters. A
   message is now cut at 16384 characters, after its line breaks and control characters are escaped,
   and ends with `…[truncated]`, as a stack does; the limit is one number for both. A cut never
   leaves half of a surrogate pair. Metadata strings are the caller's data and are not cut.

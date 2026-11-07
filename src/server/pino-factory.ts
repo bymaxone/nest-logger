@@ -23,6 +23,7 @@ import type { ResolvedBymaxLoggerModuleOptions } from './interfaces/logger-modul
 import { createTraceContextMixin } from './mixins/trace-context.mixin'
 import type { DestinationHealth } from './services/destination-health.service'
 import type { LogContextService } from './services/log-context.service'
+import { cutText } from './utils/bounded-text.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { destinationToStream } from './utils/destination-to-stream'
 import { createNameRedactor } from './utils/redact-by-name.util'
@@ -221,7 +222,7 @@ export function withSemconvException(
       record['error.type'] = candidate.name
     }
     if (typeof candidate?.message === 'string') {
-      record['exception.message'] = candidate.message
+      record['exception.message'] = cutText(candidate.message)
     }
     if (typeof candidate?.stack === 'string') {
       // Same scrubbing the legacy `err.stack` gets. Without it, a consumer moving

@@ -284,6 +284,25 @@ describe('HttpAccessLogMiddleware', () => {
   })
 
   it(/*
+   * The library builds `errorMessage` from the thrown value, so it is cut at the same limit as
+   * every other message it copies from a value it does not own.
+   */
+  'cuts errorMessage on a 4xx at the message limit', () => {
+    const { logger, warnStructured } = createLogger()
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
+    const req = createRequest()
+    const { res, fireClose } = createResponse(400)
+
+    middleware.use(req, res, jest.fn())
+    recordError(req, new Error('x'.repeat(100_000)))
+    fireClose()
+
+    expect((warnStructured.mock.calls[0]?.[3] as { errorMessage: string }).errorMessage).toBe(
+      'x'.repeat(16_384) + '…[truncated]'
+    )
+  })
+
+  it(/*
    * A rejection that never threw through the interceptor — a guard rejection an
    * exception filter resolved, or a status set directly — carries NO
    * `errorMessage` rather than an empty one, so "no message" stays
