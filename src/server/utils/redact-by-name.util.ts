@@ -227,7 +227,23 @@ function cloneError(error: Error): Error {
     // defaults: nothing downstream rewrites or deletes a stack.
     Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false })
   }
+  // The clone is handed on after the walk has read `toJSON` once, and a descriptor copied from the
+  // source (an accessor that answers differently the next time) or one inherited would let
+  // `JSON.stringify` run a hook the walk never saw. An own `undefined` shadows both.
+  Reflect.defineProperty(clone, 'toJSON', { value: undefined, configurable: true })
   return clone
+}
+
+/**
+ * A callable that has a `toJSON` (own or inherited), handed on without it: `JSON.stringify`
+ * calls the method of a function too, and the walk read it only once.
+ */
+function withoutToJson(callable: CallableFunction): (...args: unknown[]) => unknown {
+  const wrapped = function (this: unknown, ...args: unknown[]): unknown {
+    return Reflect.apply(callable, this, args)
+  }
+  Reflect.defineProperty(wrapped, 'toJSON', { value: undefined })
+  return wrapped
 }
 
 /**
@@ -474,7 +490,8 @@ function walkObject(
     // Under `errorOwnFields: 'safe'` an `Error` written as data is written from its own fields: a
     // library's `toJSON` (an HTTP client's, say) would otherwise carry the request it made. Any
     // other `Error` stays an instance that keeps its `toJSON`, so the method is still walked and
-    // replaced by its censored output, and nothing this walk returns holds a hook to run later.
+    // replaced by its censored output. What the walk hands on never holds a hook to run later: a
+    // clone and a function are given a `toJSON` of `undefined`, and `defineOwn` refuses a callable.
     const ownsItsForm = rules.ownFields.safe && isWrittenAsData(value, rules, inSerialized)
     const toJson = honorToJson && !ownsItsForm ? resolvedToJson.method : undefined
     if (toJson !== undefined) {
@@ -520,7 +537,7 @@ function walkObject(
     // walking it would replace it with a plain object, and `JSON.stringify`
     // omits a bare function rather than emitting `{}`.
     if (typeof value === 'function') {
-      return value
+      return 'toJSON' in value ? withoutToJson(value as CallableFunction) : value
     }
 
     if (Array.isArray(value)) {

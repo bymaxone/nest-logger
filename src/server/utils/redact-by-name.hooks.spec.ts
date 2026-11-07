@@ -19,6 +19,16 @@ function withHook<T extends object>(value: T): T {
   return value
 }
 
+/** A value whose `toJSON` accessor answers `undefined` on the first read and a hook after that. */
+function withStatefulHook<T extends object>(value: T): T {
+  let reads = 0
+  Object.defineProperty(value, 'toJSON', {
+    get: () => (reads++ === 0 ? undefined : () => ({ password: SECRET, actual: 'visible' })),
+    configurable: true
+  })
+  return value
+}
+
 const errorWithHook = (): Error => withHook(Object.assign(new Error('boom'), { code: 'E_X' }))
 const plainWithHook = (): object => withHook({ amount: 5 })
 
@@ -77,6 +87,14 @@ const shapes: [string, () => Record<string, unknown>][] = [
         toJSON: () => ({ password: SECRET, actual: 'visible' })
       })
     })
+  ],
+  [
+    'an Error whose toJSON is an accessor that answers differently the second time',
+    () => ({ inner: withStatefulHook(new Error('o')) })
+  ],
+  [
+    'a function that carries a toJSON accessor that answers differently the second time',
+    () => ({ run: withStatefulHook(() => 1) })
   ],
   ['an Error under the key err', () => ({ err: errorWithHook() })],
   ['an Error under a key with a serializer', () => ({ thing: errorWithHook() })]
@@ -163,5 +181,37 @@ describe('what the walk keeps beside the hooks it removes', () => {
     expect(output.run).toBe(run)
     expect(output.nested['run']).toBe(run)
     expect(output.nested['toJSON']).toBe('text')
+  })
+
+  it('hands on a function whose toJSON read as no hook as one that still calls the original', () => {
+    const owner = { base: 10 }
+    function add(this: { base: number }, left: number, right: number): number {
+      return this.base + left + right
+    }
+    withStatefulHook(add)
+    const redact = createNameRedactor(['password'], 'X', undefined, undefined, ALL_OWN_FIELDS)
+
+    const output = redact({ add }, true) as { add: (this: unknown, ...args: number[]) => number }
+
+    expect(output.add).not.toBe(add)
+    expect(output.add.call(owner, 1, 2)).toBe(13)
+    expect(JSON.stringify({ add: output.add })).toBe('{}')
+  })
+
+  it('gives that function no toJSON even when one is inherited from Function.prototype', () => {
+    const run = withStatefulHook((): number => 1)
+    const redact = createNameRedactor(['password'], 'X', undefined, undefined, ALL_OWN_FIELDS)
+    Object.defineProperty(Function.prototype, 'toJSON', {
+      value: () => ({ password: SECRET }),
+      configurable: true
+    })
+
+    try {
+      const output = redact({ run }, true) as { run: { toJSON?: unknown } }
+
+      expect(output.run.toJSON).toBeUndefined()
+    } finally {
+      Reflect.deleteProperty(Function.prototype, 'toJSON')
+    }
   })
 })
