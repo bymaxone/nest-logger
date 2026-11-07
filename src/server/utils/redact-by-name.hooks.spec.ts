@@ -360,4 +360,12 @@ describe("the width cap of an AggregateError's errors under 'safe'", () => {
     expect(written.inner.errors).toHaveLength(11)
     expect(JSON.stringify(written.inner.errors.at(-1))).toContain('_truncated')
   })
+
+  it("keeps a value whose toJSON is not a function as the data it is, under 'safe'", () => {
+    const redact = createNameRedactor(['password'], 'X', ['err'], undefined, SAFE)
+
+    expect(redact({ value: { toJSON: 'text', kept: 1, password: 'p' } }, true)).toEqual({
+      value: { toJSON: 'text', kept: 1, password: 'X' }
+    })
+  })
 })
