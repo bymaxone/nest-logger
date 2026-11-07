@@ -1,10 +1,10 @@
 /**
  * The parts the redaction walk adds to an `Error` it writes as data, and the helpers they share.
  *
- * Layer: server/utils. Split from `redact-by-name.util.ts` by responsibility: that file walks a
- * record, this one decides what an `Error` node gains (`type`, `message`, `stack`, `cause`,
- * `errors`), how deep a chain of them goes, and how an own field of an `Error` is read. It never
- * imports the walk: the walk hands over what it needs as an {@link ErrorPartsHost}.
+ * Layer: server/utils. `redact-by-name.util.ts` walks a record. This module decides what an
+ * `Error` node gains (`type`, `message`, `stack`, `cause`, `errors`), how deep a chain of them
+ * goes, and how an own field of an `Error` is read. It does not import the walk: the walk hands
+ * over what it needs as an {@link ErrorPartsHost}.
  */
 import { cutText } from './bounded-text.util'
 import { withBinaryAsSize } from './own-field-policy.util'
@@ -51,12 +51,9 @@ export function defineOwn(target: Record<string, unknown>, key: string, value: u
   //
   // The write cannot fail, and that is established at CONSTRUCTION rather than
   // checked here. Every target is either a fresh `{}` or an error clone whose
-  // descriptors `cloneError` relaxes precisely so a censor always lands. This once
-  // checked the result — `Reflect.defineProperty` reports failure by returning
-  // `false`, not by throwing — and threw into the caller's guard, which dropped the
-  // whole record. That guard was reachable only because the clone could reject the
-  // write; with that fixed at the source, keeping the check would leave a branch no
-  // input can take, which is untested code claiming a guarantee.
+  // descriptors `cloneError` relaxes precisely so a censor always lands.
+  // `Reflect.defineProperty` reports failure by returning `false`, not by throwing, so a check
+  // of the result would be a branch no input can take: untested code claiming a guarantee.
   Reflect.defineProperty(target, key, { value, enumerable: true })
 }
 
