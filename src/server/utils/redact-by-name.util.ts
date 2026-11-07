@@ -57,7 +57,7 @@
  *
  * @see {@link createNameRedactor}
  */
-import { cutText } from './bounded-text.util'
+import { cutIfText, cutText } from './bounded-text.util'
 import {
   createDepthMarker,
   createWidthMarker,
@@ -595,7 +595,9 @@ function walkObject(
         rules.sensitive.has(key.toLowerCase())
           ? rules.censor
           : walk(
-              current,
+              // An own enumerable `name`, `message` or `stack` of an `Error` is the same text as
+              // the part the walk would add, so it is cut the same way.
+              scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
               rules,
               depth + 1,
               ancestors,
@@ -613,6 +615,9 @@ function walkObject(
 
 /** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */
 const linkDepths = new WeakMap<object, number>()
+
+/** The own fields of an `Error` that hold text the logger copies and bounds like a message. */
+const ERROR_TEXT_FIELDS: ReadonlySet<string> = new Set(['name', 'message', 'stack'])
 
 /** The marker key of a node that lost a part while it was being written. */
 const INCOMPLETE_KEY = '_errorFieldsIncomplete'

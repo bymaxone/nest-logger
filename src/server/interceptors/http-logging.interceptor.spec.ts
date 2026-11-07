@@ -55,6 +55,11 @@ class FixtureController {
     return { ok: true }
   }
 
+  @Get('numeric')
+  numeric(): never {
+    throw Object.assign(new BadRequestException('x'), { message: 42 })
+  }
+
   @Get('long')
   long(): never {
     throw new BadRequestException('x'.repeat(100_000))
@@ -227,6 +232,21 @@ describe('HttpLoggingInterceptor (integration)', () => {
       expect.stringContaining('→ 400'),
       undefined,
       expect.objectContaining({ errorMessage: 'x'.repeat(16_384) + '…[truncated]' })
+    )
+  })
+
+  it(/*
+   * `message` is typed as a string, but a thrown value can carry anything. The cut applies only
+   * to a string, and the interceptor still answers the request with the 400.
+   */
+  'copies errorMessage as given when the message of the error is not a string', async () => {
+    await request(app.getHttpServer()).get('/numeric').expect(400)
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'HTTP_REQUEST_CLIENT_ERROR',
+      expect.stringContaining('→ 400'),
+      undefined,
+      expect.objectContaining({ errorMessage: 42 })
     )
   })
 

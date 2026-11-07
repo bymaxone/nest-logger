@@ -4,7 +4,7 @@
  *
  * Layer: server/utils, tests.
  */
-import { cutText, MAX_TEXT_LENGTH, TEXT_TRUNCATED } from './bounded-text.util'
+import { cutIfText, cutText, MAX_TEXT_LENGTH, TEXT_TRUNCATED } from './bounded-text.util'
 
 describe('cutText — the length of a text written as given', () => {
   it('cuts at the limit and leaves every frame and character before it as given', () => {
@@ -58,5 +58,20 @@ describe('a cut that falls inside a surrogate pair', () => {
     const text = 'x'.repeat(MAX_TEXT_LENGTH - 2) + pair + 'tail'
 
     expect(cutText(text)).toBe('x'.repeat(MAX_TEXT_LENGTH - 2) + pair + TEXT_TRUNCATED)
+  })
+})
+
+describe('cutIfText', () => {
+  it('cuts a string like cutText and returns anything else as the very same value', () => {
+    const object = { text: 'x' }
+
+    expect(cutIfText('x'.repeat(MAX_TEXT_LENGTH + 1))).toBe(
+      'x'.repeat(MAX_TEXT_LENGTH) + TEXT_TRUNCATED
+    )
+    expect(cutIfText('short')).toBe('short')
+    expect(cutIfText(object)).toBe(object)
+    expect(cutIfText(42)).toBe(42)
+    expect(cutIfText(undefined)).toBeUndefined()
+    expect(cutIfText(null)).toBeNull()
   })
 })

@@ -14,6 +14,19 @@ export const MAX_TEXT_LENGTH = 16_384
 export const TEXT_TRUNCATED = '…[truncated]'
 
 /**
+ * {@link cutText} for a value that is a string, and the value itself for anything else. A thrown
+ * value can carry any type where the type system says `string`, and a logging path must not throw
+ * because of what an error holds.
+ *
+ * @internal Shared across the logger. NOT re-exported by the package barrel.
+ * @param value - A field that is usually text.
+ * @returns The cut text, or `value` unchanged when it is not a string.
+ */
+export function cutIfText(value: unknown): unknown {
+  return typeof value === 'string' ? cutText(value) : value
+}
+
+/**
  * Cut `text` at {@link MAX_TEXT_LENGTH} when it is longer, or when `alreadyCut` says it is the
  * start of something longer, and append {@link TEXT_TRUNCATED}. A cut that falls between the two
  * halves of a surrogate pair drops the first half, so the result is well-formed text.

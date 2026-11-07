@@ -12,6 +12,7 @@ import { DestinationHealth } from './services/destination-health.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
 import { describeCause } from './utils/report-destination-failure.util'
+import { HttpException } from '@nestjs/common'
 import { sanitizeError } from './utils/sanitize-error.util'
 
 const LIMIT = 16_384
@@ -139,5 +140,60 @@ describe('the name of an error', () => {
       'N'.repeat(LIMIT) + SUFFIX
     )
     expect(describeCause(longName()).type).toBe('N'.repeat(LIMIT) + SUFFIX)
+  })
+})
+
+describe('a nested Error whose name, message or stack is an own enumerable field', () => {
+  /** The shapes where the field loop copies the field before an added part could cut it. */
+  const shapes: [string, string, () => Error][] = [
+    [
+      'a name set by the constructor',
+      'name',
+      () => {
+        class Named extends Error {
+          constructor() {
+            super('boom')
+            this.name = 'N'.repeat(100_000)
+          }
+        }
+        return new Named()
+      }
+    ],
+    [
+      'a message assigned after construction',
+      'message',
+      () => Object.assign(new Error(), { message: 'M'.repeat(100_000) })
+    ],
+    ['an HttpException message', 'message', () => new HttpException('H'.repeat(100_000), 400)],
+    [
+      'an enumerable stack',
+      'stack',
+      () =>
+        Object.defineProperty(new Error('x'), 'stack', {
+          value: 'S'.repeat(100_000),
+          enumerable: true
+        })
+    ]
+  ]
+
+  it.each(shapes)('is cut for %s', (_label, field, make) => {
+    const { service, entry } = pipeline()
+
+    service.errorStructured('KEY', new Error('root'), 'u1', { nested: make() })
+
+    const written = entry().nested[field] as string
+    expect(written.length).toBe(LIMIT + SUFFIX.length)
+    expect(written.endsWith(SUFFIX)).toBe(true)
+  })
+})
+
+describe('a name, message or stack that belongs to caller data', () => {
+  it('is written as given on a plain object that only looks like an error', () => {
+    const { service, entry } = pipeline()
+    const long = 'P'.repeat(100_000)
+
+    service.info('KEY', 'hello', 'u1', { shaped: { name: long, message: long, stack: long } })
+
+    expect(entry().shaped).toEqual({ name: long, message: long, stack: long })
   })
 })

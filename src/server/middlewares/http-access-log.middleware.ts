@@ -49,7 +49,7 @@ import type {
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { LogContextService } from '../services/log-context.service'
 import { PinoLoggerService } from '../services/pino-logger.service'
-import { cutText } from '../utils/bounded-text.util'
+import { cutIfText } from '../utils/bounded-text.util'
 import {
   HTTP_CLIENT_ERROR_MIN,
   HTTP_REDIRECT_MIN,
@@ -257,7 +257,7 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
         RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR,
         `${method} ${url} → ${statusCode}`,
         userId,
-        recorded === undefined ? meta : { ...meta, errorMessage: cutText(recorded.error.message) }
+        recorded === undefined ? meta : { ...meta, errorMessage: cutIfText(recorded.error.message) }
       )
       return
     }
