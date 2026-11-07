@@ -382,3 +382,55 @@ describe("errorOwnFields: 'safe' when the name redaction does not walk the recor
     expect(entry().thing.inner.orderId).toBe('o-9')
   })
 })
+
+describe('an Error with a toJSON that a serializer returns', () => {
+  const returned = (): Error => {
+    const error = Object.assign(new Error('n'), { password: 'SECRET', actual: 'PRIVATE' })
+    Object.defineProperty(error, 'toJSON', {
+      value(this: { password: string; actual: string }) {
+        return { password: this.password, actual: this.actual }
+      }
+    })
+    return error
+  }
+
+  it.each(['all', 'safe'] as const)(
+    "is censored by name when it is the root err or sits under a key with a serializer, under '%s'",
+    (mode) => {
+      const root = pipeline({ errorOwnFields: mode })
+      const keyed = pipeline({
+        errorOwnFields: mode,
+        serializers: { thing: (input: unknown) => ({ seen: input }) }
+      })
+
+      root.service.errorStructured('KEY', returned(), 'u1')
+      keyed.service.info('KEY', 'hello', 'u1', { thing: returned() })
+
+      expect(root.line()).not.toContain('SECRET')
+      expect(keyed.line()).not.toContain('SECRET')
+    }
+  )
+
+  it("reaches the serializer of a root err as the Error it is, under 'safe'", () => {
+    const { service, entry } = pipeline({ errorOwnFields: 'safe' })
+
+    service.errorStructured('KEY', returned(), 'u1')
+
+    expect(entry().err).toMatchObject({ type: 'Error', message: 'n' })
+  })
+
+  it.each(['all', 'safe'] as const)(
+    "is still censored by name when the line is written, under '%s'",
+    (mode) => {
+      const { service, line } = pipeline({
+        errorOwnFields: mode,
+        serializers: { thing: () => ({ inner: returned() }) }
+      })
+
+      service.info('KEY', 'hello', 'u1', { thing: 1 })
+
+      expect(line()).not.toContain('SECRET')
+      expect(line()).toContain('[REDACTED]')
+    }
+  )
+})

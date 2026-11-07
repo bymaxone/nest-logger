@@ -471,9 +471,12 @@ function walkObject(
     // and discard `logKey`, `msg` and every other field. Nested values and
     // serializer outputs DO reach `JSON.stringify`, which honours `toJSON`, so
     // they keep it.
-    // Under `errorOwnFields: 'safe'` an `Error` is written from its own fields, as the root `err`
-    // is: a library's `toJSON` (an HTTP client's, say) would otherwise carry the request it made.
-    const ownsItsForm = rules.ownFields.safe && value instanceof Error
+    // Under `errorOwnFields: 'safe'` an `Error` written as data is written from its own fields, as
+    // the root `err` is: a library's `toJSON` (an HTTP client's, say) would otherwise carry the
+    // request it made. An `Error` that stays an instance keeps its `toJSON` for `JSON.stringify`
+    // to call later, so the method is still walked and censored. One under a serializer key is
+    // the serializer's to read, as the root `err` is.
+    const ownsItsForm = rules.ownFields.safe && rules.errorsAsData && value instanceof Error
     const toJson = honorToJson && !ownsItsForm ? resolvedToJson.method : undefined
     if (toJson !== undefined) {
       // A `toJSON` can RENAME the field it exposes, carrying the value around the
