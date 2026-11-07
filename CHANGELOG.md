@@ -19,7 +19,10 @@ heading here.
   names to drop cannot name them all, so `'safe'` writes only an allow-list of operational
   names (listed in the README) plus the names in `errorOwnFieldNames`, at
   every depth and for an `Error` nested in the metadata. The default stays `'all'` in the 1.x line,
-  where every own field is written as before.
+  where every own field is written as before. Under `'safe'` the redaction also writes plain data: a
+  function or a symbol is omitted, a Buffer or typed array anywhere in the record is its size
+  marker, an `Error` is written from its own fields (its `toJSON` is not called), and a custom
+  serializer receives it as a plain error-like object instead of an `Error` instance.
 
 ### Changed
 
