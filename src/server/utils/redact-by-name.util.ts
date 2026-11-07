@@ -235,8 +235,9 @@ function cloneError(error: Error): Error {
 }
 
 /**
- * A callable that has a `toJSON` (own or inherited), handed on without it: `JSON.stringify`
- * calls the method of a function too, and the walk read it only once.
+ * A callable, handed on as one that has no `toJSON`. `JSON.stringify` reads `toJSON` of a function
+ * too, through whatever the value is (an accessor, a prototype, a Proxy trap), and the walk cannot
+ * tell by any one read of its own what that will answer, so no function is handed on as it is.
  */
 function withoutToJson(callable: CallableFunction): (...args: unknown[]) => unknown {
   const wrapped = function (this: unknown, ...args: unknown[]): unknown {
@@ -537,7 +538,7 @@ function walkObject(
     // walking it would replace it with a plain object, and `JSON.stringify`
     // omits a bare function rather than emitting `{}`.
     if (typeof value === 'function') {
-      return 'toJSON' in value ? withoutToJson(value as CallableFunction) : value
+      return withoutToJson(value as CallableFunction)
     }
 
     if (Array.isArray(value)) {

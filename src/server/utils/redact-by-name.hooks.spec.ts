@@ -96,6 +96,20 @@ const shapes: [string, () => Record<string, unknown>][] = [
     'a function that carries a toJSON accessor that answers differently the second time',
     () => ({ run: withStatefulHook(() => 1) })
   ],
+  [
+    'a function Proxy whose get trap answers a hook that its has and descriptor traps hide',
+    () => ({
+      run: new Proxy((): number => 1, {
+        get: (target, key, receiver) =>
+          key === 'toJSON'
+            ? () => ({ password: SECRET, actual: 'visible' })
+            : Reflect.get(target, key, receiver),
+        has: (target, key) => key !== 'toJSON' && Reflect.has(target, key),
+        getOwnPropertyDescriptor: (target, key) =>
+          key === 'toJSON' ? undefined : Reflect.getOwnPropertyDescriptor(target, key)
+      })
+    })
+  ],
   ['an Error under the key err', () => ({ err: errorWithHook() })],
   ['an Error under a key with a serializer', () => ({ thing: errorWithHook() })]
 ]
@@ -166,20 +180,20 @@ describe('the output of the redaction walk', () => {
 })
 
 describe('what the walk keeps beside the hooks it removes', () => {
-  it('keeps a function that is not a toJSON, and a toJSON that is not a function', () => {
-    const run = (): number => 1
+  it('keeps a function that is not a toJSON as one that still works, and a toJSON that is not a function', () => {
     const redact = createNameRedactor(['password'], 'X', undefined, undefined, ALL_OWN_FIELDS)
+    const run = (): number => 1
 
     const output = redact(
       { run, nested: Object.assign(new Error('o'), { run, toJSON: 'text' }) },
       true
     ) as {
-      run: unknown
-      nested: Record<string, unknown>
+      run: () => number
+      nested: Record<string, unknown> & { run: () => number }
     }
 
-    expect(output.run).toBe(run)
-    expect(output.nested['run']).toBe(run)
+    expect(output.run()).toBe(1)
+    expect(output.nested.run()).toBe(1)
     expect(output.nested['toJSON']).toBe('text')
   })
 
