@@ -44,7 +44,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     for what a serializer receives) +0.18; the copier of an error's own fields split to stay
 //     within the function-size rule +0.02; the width cap kept in the walk and its marker read by
 //     the sanitizer, so an `AggregateError` is not traversed in full before a serializer keeps
-//     ten members and a member shaped like a marker cannot change the count, +0.03. Savings that
+//     ten members and the count of its marker read only as a positive integer, +0.03. Savings that
 //     were tried and measured: removing duplication (one set of
 //     derived fields, one policy-only redactor, cosmetic freezes) recovered the first overrun;
 //     the later ones moved the compressed size by less than its noise (+-0.03 KiB per edit), and

@@ -331,7 +331,9 @@ describe('sanitizeError', () => {
     /*
      * The number a marker carries is trusted only when it is the last element of a list of one
      * more than the cap and is a positive number. Anything else is a member, and the members are
-     * counted, so a value that merely looks like a marker cannot change or hide the count.
+     * counted. A marker-shaped member can set the count only as the last element of a list of
+     * exactly one more than the cap, where it cannot be told from the walk's own, and only as a
+     * positive integer: a number in a log line.
      */
     'should count the members, not trust %s',
     (_label, lookalike, length, omitted) => {
