@@ -476,14 +476,33 @@ function readAggregatedErrors(value: Error): unknown[] | undefined {
 }
 
 /**
- * Remove `node_modules/` frames from a stack trace so logs surface app code.
+ * Longest stack written to an entry, in characters. A stack is built by the engine from the error's
+ * `name` and `message`, and when those are themselves errors it stringifies them recursively, so one
+ * string can reach hundreds of megabytes; no walk of the entry bounds it.
+ */
+export const MAX_STACK_LENGTH = 16_384
+
+/** Appended to a stack that was cut at {@link MAX_STACK_LENGTH}. */
+export const STACK_TRUNCATED = '…[truncated]'
+
+/**
+ * How much of a stack is read before dependency frames are dropped: enough that frames of the
+ * application survive a run of dependency frames, and small enough that the filter never splits
+ * megabytes of text.
+ */
+export const MAX_STACK_SCAN = 8 * MAX_STACK_LENGTH
+
+/**
+ * Remove `node_modules/` frames from a stack trace so logs surface app code, and cut it at
+ * {@link MAX_STACK_LENGTH}.
  *
  * @internal Exported so the semconv `exception.stacktrace` attribute carries the
  *   SAME scrubbed stack as the legacy `err.stack`. Emitting one scrubbed and one
  *   raw would mean a consumer switching to `errorFormat: 'semconv'` silently
  *   lost the scrubbing they had. NOT re-exported by the package barrel.
  * @param stack - The raw stack trace.
- * @returns The stack with dependency frames stripped.
+ * @returns The stack with dependency frames stripped, at most {@link MAX_STACK_LENGTH} characters
+ *   followed by {@link STACK_TRUNCATED} when it was longer.
  * @example
  *   scrubStack('Error: boom\n at app (/srv/src/a.ts:1:1)\n at dep (/srv/node_modules/p/i.js:2)')
  *   // → 'Error: boom\n at app (/srv/src/a.ts:1:1)'
@@ -494,12 +513,42 @@ export function scrubStack(stack: string): string {
   // repeats the error message. Without this, attacker-supplied text reaches the
   // terminal through `err.stack` even when `msg` is already pinned. Newlines are
   // preserved — a stack is legitimately multi-line.
-  return escapeControlCharacters(
+  const scrubbed = escapeControlCharacters(
     stack
+      .slice(0, MAX_STACK_SCAN)
       .split('\n')
       .filter((line) => !line.includes('node_modules'))
       .join('\n')
   )
+  return cutAtLimit(scrubbed, stack.length > MAX_STACK_SCAN)
+}
+
+/**
+ * Cut `text` at {@link MAX_STACK_LENGTH} when it is longer, or when `alreadyCut` says it is the
+ * start of something longer, and append {@link STACK_TRUNCATED}. A cut that falls between the two
+ * halves of a surrogate pair drops the first half, so the result is well-formed text.
+ */
+function cutAtLimit(text: string, alreadyCut: boolean): string {
+  if (!alreadyCut && text.length <= MAX_STACK_LENGTH) return text
+  const head = text.slice(0, MAX_STACK_LENGTH)
+  const last = head.charCodeAt(head.length - 1)
+  const whole = last >= 0xd800 && last <= 0xdbff ? head.slice(0, -1) : head
+  return whole + STACK_TRUNCATED
+}
+
+/**
+ * Cut a stack that is written as the caller gave it, such as the `stack` argument of NestJS's
+ * `error(message, stack)`, at {@link MAX_STACK_LENGTH}. Its frames are kept as given: only the
+ * length is bounded.
+ *
+ * @internal Shared with the logger service and the destination registry. NOT re-exported by the
+ *   package barrel.
+ * @param stack - The stack text.
+ * @returns The text, or its first {@link MAX_STACK_LENGTH} characters followed by
+ *   {@link STACK_TRUNCATED}.
+ */
+export function cutStack(stack: string): string {
+  return cutAtLimit(stack, false)
 }
 
 /**

@@ -338,6 +338,31 @@ describe('DestinationRegistry', () => {
     })
 
     it(/*
+     * The detail of a failed shutdown carries the thrown error's stack to stderr as given, and a
+     * stack can be megabytes long when the error's name and message are themselves errors, so it
+     * is cut at the same limit as every stack the logger writes.
+     */
+    'cuts the stack of a destination that failed to shut down', async () => {
+      const failing = makeDestination('failing', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn(() => {
+          throw Object.assign(new Error('close failed'), {
+            stack: `Error: close failed\n${'a'.repeat(3_000_000)}`
+          })
+        })
+      })
+      const registry = new DestinationRegistry([failing], logger, options, health)
+      await registry.onModuleInit()
+      stderrSpy.mockClear()
+
+      await registry.onApplicationShutdown()
+
+      const line = stderrSpy.mock.calls[0]?.[0] as string
+      expect(line.length).toBeLessThan(100_000)
+      expect(line).toContain('…[truncated]')
+    })
+
+    it(/*
      * A destination without an onShutdown hook must not break graceful shutdown.
      */
     'tolerates a destination without an onShutdown hook', async () => {
