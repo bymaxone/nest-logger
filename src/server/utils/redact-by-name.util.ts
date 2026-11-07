@@ -590,7 +590,7 @@ function walkObject(
     // `err` (a driver error held by a wrapper), or be returned by a custom serializer. Under a
     // serializer's key the instance is the serializer's to read, so nothing is dropped there.
     const scrubbed = value instanceof Error && !inSerialized
-    const written: string[] = []
+    const omitted = new Set<string>()
     for (const key of keys) {
       // Under a serializer's key the field is the serializer's to read, but a binary one is still
       // written as its size: the copy handed on would otherwise hold it as an object of indexes.
@@ -600,9 +600,9 @@ function walkObject(
       if (current === OMIT_OWN_FIELD) {
         // The clone carries the original field; the data form has none to remove.
         Reflect.deleteProperty(copy, key)
+        omitted.add(key)
         continue
       }
-      written.push(key)
       defineOwn(
         copy,
         key,
@@ -620,7 +620,10 @@ function walkObject(
             )
       )
     }
-    if (asData) addErrorParts(copy, value as Error, written, rules, depth, ancestors)
+    if (asData) {
+      const written = keys.filter((key) => !omitted.has(key))
+      addErrorParts(copy, value as Error, written, rules, depth, ancestors)
+    }
     return copy
   } finally {
     ancestors.delete(value)

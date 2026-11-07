@@ -384,6 +384,7 @@ function ownFieldsOnlyRedactor(options: ResolvedBymaxLoggerModuleOptions): Redac
   if (!ownFields.safe) {
     return PASS_THROUGH
   }
+  // Stryker disable next-line ArrayDeclaration: equivalent — the mutant adds one name to a list that is meant to be empty, and a field with that name is not one a caller logs.
   return createNameRedactor(
     [],
     options.redactCensor,
