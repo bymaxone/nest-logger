@@ -666,9 +666,25 @@ function walkChainPart(
   }
 }
 
+/** Write an added `type` or `message`: a string is cut at the text limit, anything else is walked as a chain part. */
+function cutOrWalk(
+  value: unknown,
+  level: number,
+  rules: RedactRules,
+  depth: number,
+  ancestors: Set<object>
+): unknown {
+  return typeof value === 'string'
+    ? cutText(value)
+    : walkChainPart(value, level, rules, depth, ancestors)
+}
+
 /**
  * Add the non-enumerable `type`, `message`, `stack`, `cause` and `errors`, each only where the copy
  * has no such key and each read and walked alone: a part that cannot be costs only itself.
+ * A part's `covers` names every field whose text it carries, its own included: covering any of
+ * them covers the part. `type` is the `name`; the first line of `stack` is the `name` and the
+ * `message`.
  */
 function addErrorParts(
   copy: Record<string, unknown>,
@@ -681,9 +697,6 @@ function addErrorParts(
   const taken = new Set(ownKeys)
   const level = linkDepths.get(error) ?? 0
   let incomplete = false
-  // `covers` names every field whose text the part carries, its own included: covering any of
-  // them covers the part. `type` is the `name`; the first line of `stack` is the `name` and the
-  // `message`.
   const add = (
     key: string,
     covers: readonly string[],
@@ -704,17 +717,13 @@ function addErrorParts(
     'type',
     ['type', 'name'],
     () => error.name,
-    (name) =>
-      typeof name === 'string' ? cutText(name) : walkChainPart(name, level, rules, depth, ancestors)
+    (name) => cutOrWalk(name, level, rules, depth, ancestors)
   )
   add(
     'message',
     ['message'],
     () => error.message,
-    (message) =>
-      typeof message === 'string'
-        ? cutText(message)
-        : walkChainPart(message, level, rules, depth, ancestors)
+    (message) => cutOrWalk(message, level, rules, depth, ancestors)
   )
   add(
     'stack',
