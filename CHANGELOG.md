@@ -16,9 +16,8 @@ heading here.
 - **`errorOwnFields: 'all' | 'safe'` and `errorOwnFieldNames`.** Node's own errors carry values in
   their own fields: a failed child process has its `stdout`, `stderr` and `output`, an
   `AssertionError` its `actual` and `expected`, a file system error its `path`. A list of field
-  names to drop cannot name them all, so `'safe'` writes only an allow-list (`code`, `errno`,
-  `syscall`, `signal`, `status`, `statusCode`, `address`, `port`, `hostname` and the PostgreSQL
-  `constraint`, `table`, `column`, `schema`, `routine`) plus the names in `errorOwnFieldNames`, at
+  names to drop cannot name them all, so `'safe'` writes only an allow-list of operational
+  names (listed in the README) plus the names in `errorOwnFieldNames`, at
   every depth and for an `Error` nested in the metadata. The default stays `'all'` in the 1.x line,
   where every own field is written as before.
 
