@@ -261,3 +261,82 @@ describe("errorOwnFields: 'safe'", () => {
     expect(entry().nested.flaky).toBeUndefined()
   })
 })
+
+describe("errorOwnFields: 'safe' when the name redaction does not walk the record", () => {
+  const nestedError = (): Error =>
+    Object.assign(new Error('n'), {
+      code: 'E_N',
+      orderId: 'o-9',
+      stdout: Buffer.from('SECRET-OUT')
+    })
+
+  it.each([
+    [
+      'the default coverage is off and there are no redactPaths',
+      { shouldDisableDefaultRedact: true }
+    ],
+    ['the strategy is paths', { redactStrategy: 'paths' as const }]
+  ])('filters an Error nested in the metadata when %s', (_label, redaction) => {
+    const { service, entry, line } = pipeline({ errorOwnFields: 'safe', ...redaction })
+
+    service.errorStructured('KEY', new Error('root'), 'u1', { nested: nestedError() })
+
+    expect(entry().nested).toMatchObject({ code: 'E_N' })
+    expect(entry().nested.orderId).toBeUndefined()
+    expect(entry().nested.stdout).toBeUndefined()
+    expect(line()).not.toContain('"type":"Buffer"')
+  })
+
+  it.each([
+    ['the default coverage is off', { shouldDisableDefaultRedact: true }],
+    ['the strategy is paths', { redactStrategy: 'paths' as const }]
+  ])("leaves the record alone under 'all' when %s, as before", (_label, redaction) => {
+    const { service, entry } = pipeline(redaction)
+
+    service.errorStructured('KEY', new Error('root'), 'u1', {
+      nested: Object.assign(new Error('n'), { orderId: 'o-9' })
+    })
+
+    expect(entry().nested).toEqual({ orderId: 'o-9' })
+  })
+
+  it('writes the root err and a key with a serializer as it does when the names are covered', () => {
+    const make = (): Error => {
+      const leaf = Object.assign(new Error('leaf'), { code: 'E_L', orderId: 'o-1' })
+      const mid = new Error('mid', { cause: leaf })
+      return new AggregateError([mid, Object.assign(new Error('b'), { code: 'E_B' })], 'many', {
+        cause: new Error('top', { cause: mid })
+      })
+    }
+    const error = make()
+    const covered = pipeline({ errorOwnFields: 'safe' })
+    const bare = pipeline({ errorOwnFields: 'safe', shouldDisableDefaultRedact: true })
+    const serializers = { wrapped: (input: unknown): unknown => ({ kept: input }) }
+    const coveredWithSerializer = pipeline({ errorOwnFields: 'safe', serializers })
+    const bareWithSerializer = pipeline({
+      errorOwnFields: 'safe',
+      shouldDisableDefaultRedact: true,
+      serializers
+    })
+
+    covered.service.errorStructured('KEY', error, 'u1')
+    bare.service.errorStructured('KEY', error, 'u1')
+    coveredWithSerializer.service.info('KEY', 'hello', 'u1', { wrapped: 'x' })
+    bareWithSerializer.service.info('KEY', 'hello', 'u1', { wrapped: 'x' })
+
+    expect(bare.entry().err).toEqual(covered.entry().err)
+    expect(bareWithSerializer.entry().wrapped).toEqual(coveredWithSerializer.entry().wrapped)
+  })
+
+  it('leaves what a custom serializer returns as it returned it, as before', () => {
+    const { service, entry } = pipeline({
+      errorOwnFields: 'safe',
+      shouldDisableDefaultRedact: true,
+      serializers: { thing: () => ({ inner: nestedError() }) }
+    })
+
+    service.info('KEY', 'hello', 'u1', { thing: 1 })
+
+    expect(entry().thing.inner.orderId).toBe('o-9')
+  })
+})

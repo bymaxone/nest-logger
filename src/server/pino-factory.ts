@@ -364,7 +364,7 @@ const PASS_THROUGH: Redactor = (value: unknown): unknown => value
  */
 export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
   if (options.redactStrategy !== 'names') {
-    return PASS_THROUGH
+    return ownFieldsOnlyRedactor(options)
   }
   return buildNameRedactor(options, true)
 }
@@ -372,6 +372,25 @@ export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): 
 /** The own-field policy the configuration resolves to. */
 function ownFieldPolicyOf(options: ResolvedBymaxLoggerModuleOptions): OwnFieldPolicy {
   return createOwnFieldPolicy(options.errorOwnFields, options.errorOwnFieldNames)
+}
+
+/**
+ * The redactor of the caller's record when no name is covered (the walk is off, or the strategy is
+ * `'paths'`): the pass-through, unless `errorOwnFields: 'safe'` has to filter an `Error` nested in
+ * the metadata, which only the walk reaches. It censors nothing.
+ */
+function ownFieldsOnlyRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
+  const ownFields = ownFieldPolicyOf(options)
+  if (!ownFields.safe) {
+    return PASS_THROUGH
+  }
+  return createNameRedactor(
+    [],
+    options.redactCensor,
+    ['err', ...Object.keys(options.serializers)],
+    undefined,
+    ownFields
+  )
 }
 
 /**
@@ -420,7 +439,7 @@ function buildNameRedactor(
     ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
   ]
   if (names.length === 0) {
-    return PASS_THROUGH
+    return nestedErrorsAsData ? ownFieldsOnlyRedactor(options) : PASS_THROUGH
   }
   const ownFields = ownFieldPolicyOf(options)
   return nestedErrorsAsData
