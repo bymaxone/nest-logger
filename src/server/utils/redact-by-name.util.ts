@@ -95,7 +95,7 @@ export const REDACT_DEPTH_EXCEEDED = '[REDACTION_DEPTH_EXCEEDED]'
  * Containers one redaction call visits before it stops expanding. The walk expands an object once
  * per path that reaches it, so a graph that shares references grows as 2^depth in time and in
  * output; this bounds both. A call that reaches it fills every further container with
- * {@link REDACT_BUDGET_EXCEEDED}, keeps the primitives beside them, and passes nothing through
+ * {@link REDACT_BUDGET_EXCEEDED}, keeps only the primitives beside them, and passes nothing through
  * unwalked. Measured, 200000 visits walk in about 100 to 150 ms.
  */
 export const REDACT_MAX_VISITS = 200_000
