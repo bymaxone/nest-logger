@@ -251,17 +251,7 @@ function toSanitizedError(
       result.errors = capped.map((inner) =>
         isAtDepthLimit ? createDepthMarker() : toSanitizedChild(inner, seen, depth + 1, walk)
       )
-      // A list the redaction walk already capped ends in its marker, which says how many it left
-      // out: that number is kept, not recounted with the marker as one more member. It is trusted
-      // only as the last element of a list one longer than the cap and as a positive integer;
-      // anything else is a member, and the members are counted.
-      const cut = aggregated.at(MAX_AGGREGATE_ERRORS) as Partial<TruncatedMarker> | undefined
-      const carried =
-        cut?._truncated === true && Number.isInteger(cut._omitted) ? (cut._omitted as number) : 0
-      const left =
-        carried > 0 && aggregated.length === MAX_AGGREGATE_ERRORS + 1
-          ? carried
-          : aggregated.length - MAX_AGGREGATE_ERRORS
+      const left = carriedOmitted(aggregated) || aggregated.length - MAX_AGGREGATE_ERRORS
       if (left > 0) result.errors.push(createWidthMarker(left))
     }
 
@@ -493,6 +483,29 @@ function toSanitizedChild(
     return CIRCULAR_SENTINEL
   }
   return toSanitizedError(value, seen, depth, walk)
+}
+
+/**
+ * The number of members a list the redaction walk already capped says it left out, or 0.
+ *
+ * Such a list ends in its width marker, one past the cap, and that number is kept instead of
+ * recounting the marker as one more member. The last element is caller data, so it is read only
+ * for a list of exactly that length, each field once, and trusted only as a positive integer on a
+ * marker flagged `_truncated`. Anything else, including a getter that throws, is not a marker.
+ *
+ * @param list - The `errors` of an `AggregateError`.
+ * @returns The carried count, or 0 when the last element is not a width marker.
+ */
+function carriedOmitted(list: readonly unknown[]): number {
+  // A shorter list has no element at the cut position, so only a longer one is ruled out here.
+  if (list.length > MAX_AGGREGATE_ERRORS + 1) return 0
+  try {
+    const cut = list.at(MAX_AGGREGATE_ERRORS) as Partial<TruncatedMarker> | undefined
+    const omitted = cut?._truncated === true ? cut._omitted : undefined
+    return Number.isInteger(omitted) ? Math.max(omitted as number, 0) : 0
+  } catch {
+    return 0
+  }
 }
 
 /**

@@ -349,6 +349,68 @@ describe('sanitizeError', () => {
   )
 
   it(/*
+   * The member at the cut position is caller data, so it is read once and never trusted to behave:
+   * a stateful getter cannot make the count differ from the one value read, and a getter that
+   * throws means the member is not a marker, never that the whole aggregate node is lost.
+   */
+  'should read a marker lookalike once and survive a member that throws', () => {
+    const members: unknown[] = Array.from({ length: 10 }, (_, i) => new Error(`e${i}`))
+    let reads = 0
+    members.push({
+      _truncated: true,
+      get _omitted() {
+        reads++
+        return reads === 1 ? 5 : 99
+      }
+    })
+    const stateful = sanitizeError(new AggregateError(members, 'stateful'))
+
+    expect(reads).toBe(1)
+    expect(stateful.errors?.[10]).toMatchObject({ _omitted: 5 })
+
+    const hostile: unknown[] = Array.from({ length: 12 }, (_, i) => new Error(`e${i}`))
+    hostile[10] = {
+      get _truncated(): boolean {
+        throw new Error('hostile')
+      }
+    }
+    const survived = sanitizeError(new AggregateError(hostile, 'hostile'))
+
+    expect(survived.name).toBe('AggregateError')
+    expect(survived.errors).toHaveLength(11)
+    expect(survived.errors?.[10]).toMatchObject({ _omitted: 2 })
+
+    const eleven: unknown[] = Array.from({ length: 10 }, (_, i) => new Error(`e${i}`))
+    eleven.push({
+      get _truncated(): boolean {
+        throw new Error('hostile')
+      }
+    })
+    const lone = sanitizeError(new AggregateError(eleven, 'eleven'))
+
+    expect(lone.name).toBe('AggregateError')
+    expect(lone.errors?.[10]).toMatchObject({ _omitted: 1 })
+  })
+
+  it.each([
+    ['an integer and then a Symbol', [5, Symbol('s')]],
+    ['an integer and then a numeric string', [5, '9']]
+  ] as const)('should use the one value it read when a count answers %s', (_label, answers) => {
+    let reads = 0
+    const marker = {
+      _truncated: true,
+      get _omitted(): unknown {
+        return answers[Math.min(reads++, answers.length - 1)]
+      }
+    }
+    const members: unknown[] = [...Array.from({ length: 10 }, (_, i) => new Error(`e${i}`)), marker]
+    const result = sanitizeError(new AggregateError(members, 'stateful count'))
+
+    expect(result.name).toBe('AggregateError')
+    expect(result.errors?.[10]).toMatchObject({ _omitted: 5 })
+  })
+
+  it(/*
    * Eleven real members are not a capped list: the eleventh is a member that is left out, so the
    * marker counts one, and a member that merely sits at that index is not mistaken for a marker.
    */
