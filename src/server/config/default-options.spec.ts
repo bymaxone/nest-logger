@@ -184,3 +184,35 @@ describe('applyDefaults', () => {
     expect(Object.isFrozen(result.serializers)).toBe(true)
   })
 })
+
+describe('applyDefaults: error own fields', () => {
+  it(/*
+   * 'all' is the default for the 1.x line: an existing consumer's error entries
+   * keep every own field unless it opts in to 'safe'.
+   */
+  "should default errorOwnFields to 'all' with no extra names", () => {
+    const result = applyDefaults(baseOptions)
+
+    expect(result.errorOwnFields).toBe('all')
+    expect(result.errorOwnFieldNames).toEqual([])
+  })
+
+  it(/*
+   * The mode and the names the consumer gave must reach the runtime, and the
+   * list is a frozen copy so a later change to the array they passed in does not
+   * change what the logger writes.
+   */
+  'should keep the given mode and a frozen copy of the names', () => {
+    const names = ['orderId']
+    const result = applyDefaults({
+      ...baseOptions,
+      errorOwnFields: 'safe',
+      errorOwnFieldNames: names
+    })
+    names.push('later')
+
+    expect(result.errorOwnFields).toBe('safe')
+    expect(result.errorOwnFieldNames).toEqual(['orderId'])
+    expect(Object.isFrozen(result.errorOwnFieldNames)).toBe(true)
+  })
+})

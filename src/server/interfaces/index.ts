@@ -12,6 +12,7 @@ export type {
   BymaxLoggerModuleAsyncOptions,
   BymaxLoggerModuleOptionsFactory,
   ResolvedBymaxLoggerModuleOptions,
+  ErrorOwnFieldsMode,
   HttpOptions,
   OtelOptions
 } from './logger-module-options.interface'

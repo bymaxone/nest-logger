@@ -103,6 +103,8 @@ export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxL
     }),
     otel: Object.freeze(otel),
     maxEntrySizeBytes: options.maxEntrySizeBytes ?? DEFAULT_MAX_ENTRY_SIZE_BYTES,
+    errorOwnFields: options.errorOwnFields ?? 'all',
+    errorOwnFieldNames: Object.freeze([...(options.errorOwnFieldNames ?? [])]),
     serializers: Object.freeze({ ...(options.serializers ?? {}) }),
     timestamp: options.timestamp ?? ((): string => new Date().toISOString())
   }

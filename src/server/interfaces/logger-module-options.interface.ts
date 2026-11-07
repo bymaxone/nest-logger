@@ -13,6 +13,9 @@ import type { ILogDestination } from './log-destination.interface'
 import type { LogLevel } from '../../shared/types/log-level.type'
 import type { ServiceMetadata } from '../../shared/types/service-metadata.type'
 
+/** Which of an error's own fields are written: every one, or an allow-list. See `errorOwnFields`. */
+export type ErrorOwnFieldsMode = 'all' | 'safe'
+
 /**
  * HTTP module configuration — used by the optional HTTP interceptor and filter.
  *
@@ -190,6 +193,26 @@ export interface BymaxLoggerModuleOptions {
   otel?: OtelOptions
   /** Maximum size in bytes per log entry. Default: 65536. */
   maxEntrySizeBytes?: number
+  /**
+   * Which of an error's own fields are written beside its `type`, `message`, `stack` and `cause`.
+   *
+   * - `'all'` (default) writes every own field, at every depth of the chain and for an `Error`
+   *   nested in the metadata. A binary value (a Buffer, a typed array, a DataView, or a member of an
+   *   array) is written as its size, such as `[Binary 42 bytes]`, never as bytes.
+   * - `'safe'` writes only an allow-list of operational names (`code`, `errno`, `syscall`,
+   *   `signal`, `status`, `statusCode`, `address`, `port`, `hostname`, and the PostgreSQL
+   *   `constraint`, `table`, `column`, `schema`, `routine`) plus {@link errorOwnFieldNames}. Node's
+   *   own errors carry values (a child process's `stdout`, an `AssertionError`'s `actual` and
+   *   `expected`, a file system `path`), and a list of names to drop cannot name them all.
+   *
+   * Recommended: `'safe'`. The default stays `'all'` for the 1.x line.
+   */
+  errorOwnFields?: ErrorOwnFieldsMode
+  /**
+   * Own-field names written in `'safe'` mode beside the default list, matched exactly (case
+   * included). Ignored in `'all'` mode. Default: none.
+   */
+  errorOwnFieldNames?: readonly string[]
   /** Custom Pino serializers, merged with defaults. */
   serializers?: Record<string, (input: unknown) => unknown>
   /** Custom timestamp function. Default: `() => new Date().toISOString()`. */

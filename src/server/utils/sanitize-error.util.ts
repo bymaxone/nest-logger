@@ -17,6 +17,12 @@
 
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
 import { escapeControlCharacters } from './escape-log-text.util'
+import {
+  ALL_OWN_FIELDS,
+  allowsOwnField,
+  withBinaryAsSize,
+  type OwnFieldPolicy
+} from './own-field-policy.util'
 
 /** Default number of `cause` / `AggregateError` links walked before truncating. */
 export const DEFAULT_MAX_CAUSE_DEPTH = 3
@@ -106,6 +112,12 @@ export interface SanitizeErrorOptions {
    * truncation marker. Defaults to {@link DEFAULT_MAX_CAUSE_DEPTH} (3).
    */
   maxCauseDepth?: number
+  /**
+   * Which of an error's own fields the node carries, at every depth. Defaults to all of them.
+   *
+   * @internal Resolved from `errorOwnFields` by the pino factory.
+   */
+  ownFields?: OwnFieldPolicy
 }
 
 /**
@@ -135,7 +147,10 @@ export interface SanitizeErrorOptions {
  */
 export function sanitizeError(err: unknown, options?: SanitizeErrorOptions): SanitizedError {
   const maxCauseDepth = options?.maxCauseDepth ?? DEFAULT_MAX_CAUSE_DEPTH
-  return toSanitizedError(err, new WeakSet<object>(), 0, maxCauseDepth)
+  return toSanitizedError(err, new WeakSet<object>(), 0, {
+    maxDepth: maxCauseDepth,
+    ownFields: options?.ownFields ?? ALL_OWN_FIELDS
+  })
 }
 
 /**
@@ -203,6 +218,12 @@ function isErrorInstance(value: unknown): boolean {
   }
 }
 
+/** What every node of one sanitization shares: how deep the chain is walked and which fields are kept. */
+interface ErrorWalk {
+  readonly maxDepth: number
+  readonly ownFields: OwnFieldPolicy
+}
+
 /**
  * Build a full {@link SanitizedError} for one node of the error graph. Wrapped in
  * a try/catch at every level so a hostile getter degrades only its own node
@@ -211,14 +232,14 @@ function isErrorInstance(value: unknown): boolean {
  * @param value - The candidate error value.
  * @param seen - References already visited (circular-reference guard).
  * @param depth - Current depth in the cause/aggregate graph.
- * @param maxDepth - Maximum depth to walk before truncating.
+ * @param walk - The depth budget and the own-field policy, the same for every node.
  * @returns The sanitized node (always a `SanitizedError`, never a marker).
  */
 function toSanitizedError(
   value: unknown,
   seen: WeakSet<object>,
   depth: number,
-  maxDepth: number
+  walk: ErrorWalk
 ): SanitizedError {
   try {
     if (!readsAsError(value)) {
@@ -236,19 +257,19 @@ function toSanitizedError(
       result.stack = scrubStack(stack)
     }
 
-    const isAtDepthLimit = depth >= maxDepth
+    const isAtDepthLimit = depth >= walk.maxDepth
     const cause = readOptional(() => value.cause as unknown, result)
     if (cause !== undefined) {
       result.cause = isAtDepthLimit
         ? createDepthMarker()
-        : toSanitizedChild(cause, seen, depth + 1, maxDepth)
+        : toSanitizedChild(cause, seen, depth + 1, walk)
     }
 
     const aggregated = readAggregatedErrors(value)
     if (aggregated !== undefined) {
       const capped = aggregated.slice(0, MAX_AGGREGATE_ERRORS)
       result.errors = capped.map((inner) =>
-        isAtDepthLimit ? createDepthMarker() : toSanitizedChild(inner, seen, depth + 1, maxDepth)
+        isAtDepthLimit ? createDepthMarker() : toSanitizedChild(inner, seen, depth + 1, walk)
       )
       if (aggregated.length > MAX_AGGREGATE_ERRORS) {
         result.errors.push(createWidthMarker(aggregated.length - MAX_AGGREGATE_ERRORS))
@@ -265,7 +286,7 @@ function toSanitizedError(
     // part of it one level down, and a wrapped error is the common case, not the
     // exotic one. The reporting consumer put it precisely — the human stayed
     // served, because the message survives, while the machine went blind.
-    assignOwnErrorFields(result, value)
+    assignOwnErrorFields(result, value, walk.ownFields)
 
     return result
   } catch {
@@ -313,18 +334,28 @@ function isDatabaseError(source: object): boolean {
  * structure, not by value: `args` and `parameters` go, an error with a SQLSTATE `code` loses its
  * quoting fields and keeps `code`, `constraint`, `table`, `column`, `schema` and `routine`, and a `command` object
  * keeps only its `name`. The name is read from the property descriptor, so no getter of the
- * driver's runs.
+ * driver's runs. Under `errorOwnFields: 'safe'` a field not on the policy's list is not written
+ * either, and in both modes a binary value is written as its size.
  *
  * @internal Shared with the redaction walk. NOT re-exported by the package barrel.
  * @param source - The error the field belongs to.
  * @param key - The own field's name.
  * @param value - The own field's value.
+ * @param policy - Which own fields the configuration writes; every one by default.
  * @returns The value to write, or {@link OMIT_OWN_FIELD} when the field is not written.
  */
-export function ownFieldForLog(source: object, key: string, value: unknown): unknown {
+export function ownFieldForLog(
+  source: object,
+  key: string,
+  value: unknown,
+  policy: OwnFieldPolicy = ALL_OWN_FIELDS
+): unknown {
+  if (!allowsOwnField(policy, key)) return OMIT_OWN_FIELD
   if (ARGUMENT_FIELDS.has(key.toLowerCase())) return OMIT_OWN_FIELD
   if (DATABASE_VALUE_FIELDS.has(key) && isDatabaseError(source)) return OMIT_OWN_FIELD
-  if (key !== 'command' || typeof value !== 'object' || value === null) return value
+  if (key !== 'command' || typeof value !== 'object' || value === null) {
+    return withBinaryAsSize(value)
+  }
   const name: unknown = Object.getOwnPropertyDescriptor(value, 'name')?.value
   return typeof name === 'string' ? { name } : OMIT_OWN_FIELD
 }
@@ -347,6 +378,8 @@ export function ownFieldForLog(source: object, key: string, value: unknown): unk
  * @internal Shared with `pino-factory`. NOT re-exported by the package barrel.
  * @param target - The node being built; mutated in place.
  * @param source - The object the node was derived from.
+ * @param policy - Which own fields the configuration writes; every one by default, which is right
+ *   for a node that was already built under a policy.
  * @example
  *   const node = { name: 'Error', message: 'config invalid' }
  *   assignOwnErrorFields(node, Object.assign(new Error('config invalid'), {
@@ -360,11 +393,15 @@ export function ownFieldForLog(source: object, key: string, value: unknown): unk
  *   assignOwnErrorFields(node, JSON.parse('{"__proto__":{"toJSON":1}}'))
  *   Object.getPrototypeOf(node) === Object.prototype  // true
  */
-export function assignOwnErrorFields(target: Record<string, unknown>, source: object): void {
+export function assignOwnErrorFields(
+  target: Record<string, unknown>,
+  source: object,
+  policy: OwnFieldPolicy = ALL_OWN_FIELDS
+): void {
   try {
     const own = Array.isArray(source) ? {} : (source as Record<string, unknown>)
     for (const [key, field] of Object.entries(own)) {
-      const value = ownFieldForLog(own, key, field)
+      const value = ownFieldForLog(own, key, field, policy)
       if (value === OMIT_OWN_FIELD) continue
       if (!Object.hasOwn(target, key) && !DERIVED_ERROR_FIELDS.has(key)) {
         // `defineProperty` rather than `Reflect.set`, and `__proto__` is the whole
@@ -447,19 +484,19 @@ function readOptional<T>(read: () => T, node: Record<string, unknown>): T | unde
  * @param value - The nested candidate value.
  * @param seen - References already visited.
  * @param depth - Current depth in the graph.
- * @param maxDepth - Maximum depth to walk before truncating.
+ * @param walk - The depth budget and the own-field policy.
  * @returns The sanitized child, or the circular sentinel.
  */
 function toSanitizedChild(
   value: unknown,
   seen: WeakSet<object>,
   depth: number,
-  maxDepth: number
+  walk: ErrorWalk
 ): SanitizedChild {
   if (isObject(value) && seen.has(value)) {
     return CIRCULAR_SENTINEL
   }
-  return toSanitizedError(value, seen, depth, maxDepth)
+  return toSanitizedError(value, seen, depth, walk)
 }
 
 /**

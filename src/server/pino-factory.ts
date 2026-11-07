@@ -26,6 +26,11 @@ import type { LogContextService } from './services/log-context.service'
 import { cutText } from './utils/bounded-text.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { destinationToStream } from './utils/destination-to-stream'
+import {
+  createOwnFieldPolicy,
+  type OwnFieldPolicy,
+  ALL_OWN_FIELDS
+} from './utils/own-field-policy.util'
 import { createNameRedactor } from './utils/redact-by-name.util'
 import type { Redactor } from './utils/redact-by-name.util'
 import { safeMinLevel } from './utils/report-destination-failure.util'
@@ -128,14 +133,18 @@ export function leafNameOf(path: string): string | undefined {
  *   omitted field from one written as `undefined`. Mutation testing found that
  *   gap. NOT re-exported by the package barrel.
  * @param value_ - The thrown value, in whatever shape it reached the log call.
+ * @param ownFields - Which of the error's own fields are written; every one by default.
  * @returns A JSON-safe error object.
  * @example
  *   serializeErrorValue(new Error('outer', { cause: new Error('inner') }))
  *   // → { type: 'Error', message: 'outer', stack: '…',
  *   //     cause: { name: 'Error', message: 'inner', … } }
  */
-export function serializeErrorValue(value_: unknown): Record<string, unknown> {
-  const sanitized = sanitizeError(value_)
+export function serializeErrorValue(
+  value_: unknown,
+  ownFields: OwnFieldPolicy = ALL_OWN_FIELDS
+): Record<string, unknown> {
+  const sanitized = sanitizeError(value_, { ownFields })
   const serialized: Record<string, unknown> = {
     // `type` rather than `name`: the field consumers already query.
     type: sanitized.name,
@@ -162,6 +171,7 @@ export function serializeErrorValue(value_: unknown): Record<string, unknown> {
   // at every depth, so reading the raw value again here would be the identical
   // walk written twice — and the version that drifts is always the one further
   // from the bug report.
+  // The policy already applied when `sanitized` was built, so what this copies is filtered.
   assignOwnErrorFields(serialized, sanitized)
   return serialized
 }
@@ -359,6 +369,11 @@ export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): 
   return buildNameRedactor(options, true)
 }
 
+/** The own-field policy the configuration resolves to. */
+function ownFieldPolicyOf(options: ResolvedBymaxLoggerModuleOptions): OwnFieldPolicy {
+  return createOwnFieldPolicy(options.errorOwnFields, options.errorOwnFieldNames)
+}
+
 /**
  * Build the name-walk redactor from the configured coverage.
  *
@@ -407,9 +422,16 @@ function buildNameRedactor(
   if (names.length === 0) {
     return PASS_THROUGH
   }
+  const ownFields = ownFieldPolicyOf(options)
   return nestedErrorsAsData
-    ? createNameRedactor(names, options.redactCensor, ['err', ...Object.keys(options.serializers)])
-    : createNameRedactor(names, options.redactCensor)
+    ? createNameRedactor(
+        names,
+        options.redactCensor,
+        ['err', ...Object.keys(options.serializers)],
+        undefined,
+        ownFields
+      )
+    : createNameRedactor(names, options.redactCensor, undefined, undefined, ownFields)
 }
 
 /**
@@ -478,6 +500,7 @@ export function buildPinoInstance(
   //     e2e case, which is the check that caught it.
   const redactRecord = resolveNameRedactor(options)
   const redactSerialized = buildNameRedactor(options)
+  const ownFields = ownFieldPolicyOf(options)
 
   // Every serializer (default `err` + any consumer-supplied) is composed as
   // size-bound(redact(serialize)). Two orderings matter here:
@@ -501,7 +524,7 @@ export function buildPinoInstance(
   const bound = <T>(serializer: (input: T) => unknown): ((input: T) => unknown) =>
     createSizeBoundedSerializer((input: T) => redactSerialized(serializer(input)), maxBytes)
   const serializers = {
-    err: bound(serializeErrorValue),
+    err: bound((error) => serializeErrorValue(error, ownFields)),
     ...Object.fromEntries(
       Object.entries(options.serializers).map(
         ([key, serializer]): [string, (input: unknown) => unknown] => [key, bound(serializer)]

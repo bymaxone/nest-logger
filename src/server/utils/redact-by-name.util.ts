@@ -58,6 +58,7 @@
  * @see {@link createNameRedactor}
  */
 import { cutIfText, cutText } from './bounded-text.util'
+import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import {
   createDepthMarker,
   createWidthMarker,
@@ -295,6 +296,8 @@ interface RedactRules {
   readonly errorsAsData: boolean
   /** Containers one call may visit before it stops expanding. */
   readonly maxVisits: number
+  /** Which own fields of an `Error` are written. */
+  readonly ownFields: OwnFieldPolicy
   /** Containers this call has visited, counted against {@link RedactRules.maxVisits}. */
   readonly visits: { count: number }
 }
@@ -426,7 +429,14 @@ function walkError(
     // what the serializer receives.
     // The sanitized node is the same container as `error`, which `walk` already counted.
     rules.visits.count--
-    return walk(sanitizeError(error), rules, depth, ancestors, honorToJson, inSerialized)
+    return walk(
+      sanitizeError(error, { ownFields: rules.ownFields }),
+      rules,
+      depth,
+      ancestors,
+      honorToJson,
+      inSerialized
+    )
   }
 }
 
@@ -580,15 +590,19 @@ function walkObject(
     // `err` (a driver error held by a wrapper), or be returned by a custom serializer. Under a
     // serializer's key the instance is the serializer's to read, so nothing is dropped there.
     const scrubbed = value instanceof Error && !inSerialized
+    const written: string[] = []
     for (const key of keys) {
+      // Under a serializer's key the field is the serializer's to read, but a binary one is still
+      // written as its size: the copy handed on would otherwise hold it as an object of indexes.
       const current = scrubbed
-        ? ownFieldForLog(source, key, Reflect.get(source, key))
-        : Reflect.get(source, key)
+        ? ownFieldForLog(source, key, Reflect.get(source, key), rules.ownFields)
+        : readOwnField(source, key)
       if (current === OMIT_OWN_FIELD) {
         // The clone carries the original field; the data form has none to remove.
         Reflect.deleteProperty(copy, key)
         continue
       }
+      written.push(key)
       defineOwn(
         copy,
         key,
@@ -606,11 +620,17 @@ function walkObject(
             )
       )
     }
-    if (asData) addErrorParts(copy, value as Error, keys, rules, depth, ancestors)
+    if (asData) addErrorParts(copy, value as Error, written, rules, depth, ancestors)
     return copy
   } finally {
     ancestors.delete(value)
   }
+}
+
+/** An own field as the walk reads it: a binary value of an `Error` is read as its size. */
+function readOwnField(source: object, key: string): unknown {
+  const field: unknown = Reflect.get(source, key)
+  return source instanceof Error ? withBinaryAsSize(field) : field
 }
 
 /** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */
@@ -750,6 +770,7 @@ function addErrorParts(
  *   is written as data.
  * @param maxVisits - Containers one call may visit; a seam for tests, which exercise the boundary
  *   with a small number. The package passes none.
+ * @param ownFields - Which own fields of an `Error` written as data are kept; all by default.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
  *   const redact = createNameRedactor(['password'], '[REDACTED]')
@@ -760,7 +781,8 @@ export function createNameRedactor(
   fieldNames: readonly string[],
   censor: string,
   serializedKeys?: readonly string[],
-  maxVisits: number = REDACT_MAX_VISITS
+  maxVisits: number = REDACT_MAX_VISITS,
+  ownFields: OwnFieldPolicy = ALL_OWN_FIELDS
 ): Redactor {
   // Matched case-INSENSITIVELY. HTTP header names are case-insensitive by spec,
   // and only INBOUND Node headers arrive lower-cased — a hand-built or outbound
@@ -774,7 +796,8 @@ export function createNameRedactor(
     censor,
     serializedKeys: new Set(serializedKeys),
     errorsAsData: serializedKeys !== undefined,
-    maxVisits
+    maxVisits,
+    ownFields
   }
   return (value: unknown, isRecordRoot = false): unknown => {
     try {

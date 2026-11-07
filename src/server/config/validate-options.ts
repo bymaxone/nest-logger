@@ -177,6 +177,22 @@ function validateCustomization(options: BymaxLoggerModuleOptions): void {
   }
 }
 
+/** `errorOwnFields` and the names that `'safe'` adds to its list. */
+function validateErrorFields(options: BymaxLoggerModuleOptions): void {
+  const mode: unknown = options.errorOwnFields
+  if (mode !== undefined && mode !== 'all' && mode !== 'safe') {
+    reject('errorOwnFields', "must be 'all' or 'safe'", mode)
+  }
+  const names: unknown = options.errorOwnFieldNames
+  if (names === undefined) return
+  if (!Array.isArray(names)) reject('errorOwnFieldNames', 'must be an array of strings', names)
+  names.forEach((entry: unknown, index) => {
+    if (!isNonEmptyString(entry)) {
+      reject(`errorOwnFieldNames[${String(index)}]`, 'must be a non-empty string', entry)
+    }
+  })
+}
+
 /** Marks a destination member that could not be read, which the registry tolerates. */
 const UNREADABLE = Symbol('unreadable')
 
@@ -284,6 +300,7 @@ export function validateOptions(options: BymaxLoggerModuleOptions): void {
   validateCore(options)
   validateClosedSets(options)
   validateCustomization(options)
+  validateErrorFields(options)
   validateDestinations(options)
   validateHttp(options)
   validateOtel(options)

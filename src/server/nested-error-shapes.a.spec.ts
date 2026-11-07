@@ -397,11 +397,14 @@ add('classfield-errors-root', () => {
  * `message`, as the root `err` does, so a secret placed in one is as visible as one
  * placed in a message: secrets do not belong in either. A nested Error's own `stack` text is
  * part of its node, as the root `err` writes it, so text planted there appears where 1.4.8
- * wrote `{}`.
+ * wrote `{}`. A Buffer in the own field of an Error is written as its size, `[Binary 2 bytes]`,
+ * where 1.4.8 wrote its bytes: nobody intends a byte array as log data, and it is what a failed
+ * child process carries in `stdout` and `stderr`.
  */
 const ACCEPTED: Record<string, RegExp> = {
   'cause-string': /^LEAK SECRET$/,
-  'own-stack-enum': /^LEAK STACK-secret$/
+  'own-stack-enum': /^LEAK STACK-secret$/,
+  'field-date-buffer-bigint': /^LOST "Buffer" 104 105$/
 }
 
 describe('nested Error shapes, part A, against the 1.4.8 output', () => {
