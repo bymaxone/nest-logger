@@ -471,12 +471,11 @@ function walkObject(
     // and discard `logKey`, `msg` and every other field. Nested values and
     // serializer outputs DO reach `JSON.stringify`, which honours `toJSON`, so
     // they keep it.
-    // Under `errorOwnFields: 'safe'` an `Error` written as data is written from its own fields, as
-    // the root `err` is: a library's `toJSON` (an HTTP client's, say) would otherwise carry the
-    // request it made. An `Error` that stays an instance keeps its `toJSON` for `JSON.stringify`
-    // to call later, so the method is still walked and censored. One under a serializer key is
-    // the serializer's to read, as the root `err` is.
-    const ownsItsForm = rules.ownFields.safe && rules.errorsAsData && value instanceof Error
+    // Under `errorOwnFields: 'safe'` an `Error` written as data is written from its own fields: a
+    // library's `toJSON` (an HTTP client's, say) would otherwise carry the request it made. Any
+    // other `Error` stays an instance that keeps its `toJSON`, so the method is still walked and
+    // replaced by its censored output, and nothing this walk returns holds a hook to run later.
+    const ownsItsForm = rules.ownFields.safe && isWrittenAsData(value, rules, inSerialized)
     const toJson = honorToJson && !ownsItsForm ? resolvedToJson.method : undefined
     if (toJson !== undefined) {
       // A `toJSON` can RENAME the field it exposes, carrying the value around the
@@ -552,7 +551,7 @@ function walkObject(
     // enumerable properties — exactly what `JSON.stringify` would have emitted.
     // Outside a serializer's keys an `Error` is written as data: its own fields below plus the
     // head and chain, which are only ever added.
-    const asData = value instanceof Error && rules.errorsAsData && !inSerialized
+    const asData = isWrittenAsData(value, rules, inSerialized)
     // The clone is made even when discarded: an `Error` it cannot read must reach the fallback in
     // `walkError`, which is the same node with or without the data form.
     const clone = value instanceof Error ? cloneError(value) : undefined
@@ -600,6 +599,11 @@ function walkObject(
   } finally {
     ancestors.delete(value)
   }
+}
+
+/** Whether an `Error` is written as data (its own fields plus the parts added), not kept as an instance. */
+function isWrittenAsData(value: object, rules: RedactRules, inSerialized: boolean): boolean {
+  return value instanceof Error && rules.errorsAsData && !inSerialized
 }
 
 /** What the code that writes the parts of an `Error` needs from this walk. */

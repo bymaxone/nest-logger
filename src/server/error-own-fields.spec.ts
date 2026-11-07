@@ -411,14 +411,6 @@ describe('an Error with a toJSON that a serializer returns', () => {
     }
   )
 
-  it("reaches the serializer of a root err as the Error it is, under 'safe'", () => {
-    const { service, entry } = pipeline({ errorOwnFields: 'safe' })
-
-    service.errorStructured('KEY', returned(), 'u1')
-
-    expect(entry().err).toMatchObject({ type: 'Error', message: 'n' })
-  })
-
   it.each(['all', 'safe'] as const)(
     "is still censored by name when the line is written, under '%s'",
     (mode) => {

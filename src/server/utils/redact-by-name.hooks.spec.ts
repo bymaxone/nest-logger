@@ -89,19 +89,16 @@ const configurations = [
   {
     name: 'record, all',
     coversPassword: true,
-    isRecord: true,
     build: () => createNameRedactor(['password'], 'X', ['err', 'thing'], undefined, ALL_OWN_FIELDS)
   },
   {
     name: 'record, safe',
     coversPassword: true,
-    isRecord: true,
     build: () => createNameRedactor(['password'], 'X', ['err', 'thing'], undefined, SAFE)
   },
   {
     name: 'record, safe, toJSON listed as an own field',
     coversPassword: true,
-    isRecord: true,
     build: () =>
       createNameRedactor(
         ['password'],
@@ -114,19 +111,16 @@ const configurations = [
   {
     name: 'record, safe, no names',
     coversPassword: false,
-    isRecord: true,
     build: () => createNameRedactor(new Set<string>(), 'X', ['err', 'thing'], undefined, SAFE)
   },
   {
     name: 'serializer output, all',
     coversPassword: true,
-    isRecord: false,
     build: () => createNameRedactor(['password'], 'X', undefined, undefined, ALL_OWN_FIELDS)
   },
   {
     name: 'serializer output, safe',
     coversPassword: true,
-    isRecord: false,
     build: () => createNameRedactor(['password'], 'X', undefined, undefined, SAFE)
   }
 ]
@@ -143,15 +137,9 @@ function hooksIn(value: unknown, path = '$', seen = new Set<object>()): string[]
 }
 
 describe('the output of the redaction walk', () => {
-  describe.each(configurations)('as $name', ({ build, coversPassword, isRecord }) => {
+  describe.each(configurations)('as $name', ({ build, coversPassword }) => {
     it.each(shapes)('carries no hook that runs after it, for %s', (_shape, make) => {
-      const output = build()(make(), true) as Record<string, unknown>
-      // What sits under a key with a serializer is that serializer's input, not what is written.
-      const written = isRecord
-        ? Object.fromEntries(
-            Object.entries(output).filter(([key]) => key !== 'err' && key !== 'thing')
-          )
-        : output
+      const written = build()(make(), true)
 
       expect(hooksIn(written)).toEqual([])
       if (coversPassword) expect(JSON.stringify(written)).not.toContain(SECRET)
