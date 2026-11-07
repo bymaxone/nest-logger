@@ -24,9 +24,10 @@ import {
   LOGGER_REDACTOR_TOKEN
 } from '../constants/injection-tokens.constants'
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
-import { toSingleLineMessage } from '../utils/escape-log-text.util'
+import { cutText } from '../utils/bounded-text.util'
+import { toBoundedMessage } from '../utils/escape-log-text.util'
 import type { Redactor } from '../utils/redact-by-name.util'
-import { cutStack, isErrorLike } from '../utils/sanitize-error.util'
+import { isErrorLike } from '../utils/sanitize-error.util'
 
 /** Pino level methods the NestJS-style variadic path dispatches to (error is handled separately). */
 type PinoLevelMethod = 'info' | 'warn' | 'debug' | 'trace' | 'fatal'
@@ -100,7 +101,7 @@ function withoutOwnedKeys(metadata: Record<string, unknown> | undefined): Record
  */
 function safeErrorMessage(error: Error): string {
   try {
-    return toSingleLineMessage(String(error.message))
+    return toBoundedMessage(String(error.message))
   } catch {
     return 'Unreadable error message'
   }
@@ -116,7 +117,7 @@ function safeErrorMessage(error: Error): string {
  */
 function safeLogMessage(message: unknown): string {
   try {
-    return toSingleLineMessage(typeof message === 'string' ? message : String(message))
+    return toBoundedMessage(typeof message === 'string' ? message : String(message))
   } catch {
     return 'Unreadable log message'
   }
@@ -272,7 +273,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const context = typeof optionalParams[1] === 'string' ? optionalParams[1] : this.context
     const payload: Record<string, unknown> = {}
     assignIfDefined(payload, 'context', context)
-    assignIfDefined(payload, 'stack', stack === undefined ? stack : cutStack(stack))
+    assignIfDefined(payload, 'stack', stack === undefined ? stack : cutText(stack))
     // An `Error` in the tail is attached as `err`, the same field the
     // leading-`Error` branch above writes, so `logger.error(msg, err)` and
     // `logger.error(err)` produce the same queryable shape. `stack` stays the
@@ -470,7 +471,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const payload: Record<string, unknown> = { ...withoutOwnedKeys(metadata), logKey }
     assignIfDefined(payload, 'userId', userId)
     assignIfDefined(payload, 'context', this.context)
-    const line = toSingleLineMessage(message)
+    const line = toBoundedMessage(message)
     if (level === 'info') {
       this.pino.info(payload, line)
     } else {

@@ -57,6 +57,7 @@
  *
  * @see {@link createNameRedactor}
  */
+import { cutText } from './bounded-text.util'
 import {
   createDepthMarker,
   createWidthMarker,
@@ -695,7 +696,15 @@ function addErrorParts(
     }
   }
   add('type', ['type', 'name'], () => error.name)
-  add('message', ['message'], () => error.message)
+  add(
+    'message',
+    ['message'],
+    () => error.message,
+    (message) =>
+      typeof message === 'string'
+        ? cutText(message)
+        : walkChainPart(message, level, rules, depth, ancestors)
+  )
   add(
     'stack',
     ['stack', 'name', 'message'],

@@ -15,7 +15,7 @@
  * One function rather than one per stage, so both reports share a wire shape and
  * an operator greps a single `logKey` regardless of which stage failed.
  */
-import { toSingleLineMessage } from './escape-log-text.util'
+import { toBoundedMessage, toSingleLineMessage } from './escape-log-text.util'
 import { writeStderrSafely } from './safe-stdio.util'
 import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.constants'
 import type { LogLevel } from '../../shared/types/log-level.type'
@@ -81,9 +81,9 @@ export function describeCause(cause: unknown): { type: string; message: string }
     return cause instanceof Error
       ? {
           type: toSingleLineMessage(String(cause.name)),
-          message: toSingleLineMessage(String(cause.message))
+          message: toBoundedMessage(String(cause.message))
         }
-      : { type: 'UnknownError', message: toSingleLineMessage(String(cause)) }
+      : { type: 'UnknownError', message: toBoundedMessage(String(cause)) }
   } catch {
     return UNREADABLE_CAUSE
   }

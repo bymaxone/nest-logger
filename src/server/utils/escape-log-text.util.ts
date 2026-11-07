@@ -20,6 +20,7 @@
  * `ILogDestination` too. Sanitizing inside `PrettyDevDestination` would protect
  * only the destination this library happens to ship.
  */
+import { cutText } from './bounded-text.util'
 
 /**
  * Characters a terminal treats as "start a new line": the two JavaScript line
@@ -82,6 +83,18 @@ export function toSingleLineMessage(text: string): string {
   return text.replace(UNSAFE_IN_SINGLE_LINE, (char) =>
     LINE_TERMINATORS.has(char) ? '\\n' : toEscapeSequence(char)
   )
+}
+
+/**
+ * {@link toSingleLineMessage}, then cut at the length limit of the text the logger writes. The cut
+ * comes after the escaping, so the limit counts the characters that are written.
+ *
+ * @internal Shared across the logger. NOT re-exported by the package barrel.
+ * @param text - The message text.
+ * @returns One line of at most the limit, followed by the truncation suffix when it was longer.
+ */
+export function toBoundedMessage(text: string): string {
+  return cutText(toSingleLineMessage(text))
 }
 
 /**
