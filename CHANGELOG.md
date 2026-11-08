@@ -22,7 +22,9 @@ heading here.
   property, and a function whose prototype is such a Proxy. A callable whose answer can change (a
   Proxy, a function with a `toJSON` accessor, or one with a Proxy on its prototype chain) is now
   dropped as a function with no hook is, a `toJSON` that reads as a function where the stringifier
-  would honour it is not copied, and the accessor of an `Error` clone is replaced by `undefined`.
+  would honour it is not copied, and a `toJSON` accessor, or a function an accessor put there when
+  it was read, on the clone of an `Error` is replaced by `undefined`. One rule decides it, asked of
+  the output object itself: whether a property would give the stringifier a hook to run.
   Ordinary input is unchanged, including a `toJSON` key that is not a function. These shapes need an
   object built by code that hides its hook, not a value read from data. A hook reachable only
   through the prototype chain of an `Error` is a known limitation: it needs code inside the process,
