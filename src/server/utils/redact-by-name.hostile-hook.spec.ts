@@ -280,7 +280,7 @@ describe('an Error whose descriptors disagree with its keys', () => {
       err: Record<string, unknown>
     }
 
-    expect(Object.keys(copy.err).sort()).toEqual(['code', 'status'])
+    expect(Object.keys(copy.err)).toEqual(['code', 'status'])
   })
 })
 
