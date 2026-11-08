@@ -41,8 +41,8 @@ heading here.
   arrives), was written as an object of its bytes. It is now `"[Binary 42 bytes]"`, in both modes
   and under both redaction strategies. Under `redactStrategy: 'paths'` the record is now walked once
   for this, so the walk's depth ceiling (100) and visit budget apply there. With every redaction
-  turned off (`shouldDisableDefaultRedact` and no `redactPaths`) nothing walks the record and a
-  Buffer is written as Pino writes it.
+  turned off (`shouldDisableDefaultRedact`, no `redactPaths`, and `errorOwnFields` not `'safe'`)
+  nothing walks the record and a Buffer is written as Pino writes it.
 - **A message is written at most 16384 characters long.** The `msg` of every call, the `message` of
   a serialized error and of each `cause` or `errors` link, the `message` of a nested `Error` in the
   metadata, the semconv `exception.message`, the `errorMessage` of a 4xx access-log entry, and the
