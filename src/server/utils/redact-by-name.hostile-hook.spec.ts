@@ -208,6 +208,16 @@ describe('a toJSON accessor that shadows a hook the walk did not follow', () => 
   )
 })
 
+describe('a frozen Error with a stateful toJSON accessor', () => {
+  it('does not run the hook after the clone, whose descriptors are relaxed', () => {
+    const error = statefulError(false)
+    Object.freeze(error)
+
+    expect(written({ err: error })).not.toContain(SECRET)
+    expect(written({ err: error }, true, ['err'])).not.toContain(SECRET)
+  })
+})
+
 describe('ordinary input is left as it was', () => {
   it('returns a function whose toJSON is not a function as it is', () => {
     const fn = Object.assign((): number => 1, { toJSON: 'text' })
