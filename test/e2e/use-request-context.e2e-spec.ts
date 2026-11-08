@@ -8,14 +8,13 @@
  */
 import { ArgumentsHost, Catch, Controller, Post } from '@nestjs/common'
 import type { ExceptionFilter, INestApplication } from '@nestjs/common'
-import { APP_FILTER } from '@nestjs/core'
 import { Test } from '@nestjs/testing'
 import { BymaxLoggerModule, LogContextService } from '@bymax-one/nest-logger'
 import request from 'supertest'
 
 /**
  * A consumer's catch-all filter: the envelope carries the id from the log context. It is installed
- * with `useGlobalFilters`, which is what Nest consults for an error the body parser raised.
+ * with `useGlobalFilters`; `use-request-context-filters.e2e-spec.ts` pins why.
  */
 @Catch()
 class EnvelopeFilter implements ExceptionFilter {
@@ -44,8 +43,7 @@ async function bootstrap(mountEarly: boolean): Promise<INestApplication> {
         http: { isEnabled: true }
       })
     ],
-    controllers: [EchoController],
-    providers: [{ provide: APP_FILTER, useClass: EnvelopeFilter }]
+    controllers: [EchoController]
   }).compile()
   const app = moduleRef.createNestApplication({ logger: false })
   if (mountEarly) BymaxLoggerModule.useRequestContext(app)
