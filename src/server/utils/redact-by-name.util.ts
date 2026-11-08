@@ -57,6 +57,8 @@
  *
  * @see {@link createNameRedactor}
  */
+import { types } from 'node:util'
+
 import { cutIfText } from './bounded-text.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
@@ -130,6 +132,11 @@ export interface RedactionFailedEnvelope {
 interface ResolvedToJson {
   /** The callable method, or `undefined` when the value has none. */
   method: (() => unknown) | undefined
+  /**
+   * Whether a later read may answer differently than this one: the method sits behind an
+   * accessor, or the value is a Proxy, which can answer as it likes.
+   */
+  volatile: boolean
 }
 
 /**
@@ -138,22 +145,28 @@ interface ResolvedToJson {
  *
  * @param value - A non-null object.
  * @param viaGet - Read with one `[[Get]]` through any Proxy trap, as `JSON.stringify` does.
- * @returns The callable method, or `undefined` when the value has none.
+ * @returns The callable method, or `undefined` when the value has none, and whether the answer can
+ *   change.
  */
 function resolveToJson(value: object, viaGet = false): ResolvedToJson {
   // Under 'safe' the read is the one `JSON.stringify` makes, a single `[[Get]]` through any Proxy
   // trap, which is not the descriptor walk below.
   let candidate: unknown = viaGet ? Reflect.get(value, 'toJSON') : undefined
+  let accessor = false
   let current: object | null = viaGet ? null : value
   while (current !== null) {
     const descriptor = Object.getOwnPropertyDescriptor(current, 'toJSON')
     if (descriptor !== undefined) {
+      accessor = descriptor.get !== undefined
       candidate = descriptor.get === undefined ? descriptor.value : descriptor.get.call(value)
       break
     }
     current = Object.getPrototypeOf(current)
   }
-  return { method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined }
+  return {
+    method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined,
+    volatile: accessor || types.isProxy(value)
+  }
 }
 
 /**
@@ -410,11 +423,16 @@ function walkObject(
   if (ArrayBuffer.isView(value)) {
     return withBinaryAsSize(value)
   }
-  const method = resolveToJson(value, rules.ownFields.safe).method
+  // A Proxy callable is read the way `JSON.stringify` reads it, because its descriptors can hide
+  // a hook that its `get` trap answers.
+  const resolved = resolveToJson(
+    value,
+    rules.ownFields.safe || (typeof value === 'function' && types.isProxy(value))
+  )
 
   ancestors.add(value)
   try {
-    return walkForm(value, method, rules, depth, ancestors, honorToJson, inSerialized)
+    return walkForm(value, resolved, rules, depth, ancestors, honorToJson, inSerialized)
   } finally {
     ancestors.delete(value)
   }
@@ -443,10 +461,13 @@ function walkObject(
  * its result is walked.
  *
  * A callable with no `toJSON` is handed back as it is: walking it would replace it with a plain
- * object, and `JSON.stringify` omits a bare function rather than emitting `{}`.
+ * object, and `JSON.stringify` omits a bare function rather than emitting `{}`. A callable whose
+ * answer can change, a Proxy or one with a `toJSON` accessor, is not handed back: the stringifier
+ * reads `toJSON` again after the redaction, and the second answer can be a hook the walk never saw.
+ * Dropping it writes what `JSON.stringify` writes for a function with no hook.
  *
  * @param value - The value to inspect.
- * @param method - Its `toJSON`, when it has a callable one.
+ * @param resolved - Its `toJSON`, when it has a callable one, and whether that can change.
  * @param rules - The names to censor and the root keys that have a serializer.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
  * @param ancestors - References on the current path (cycle guard).
@@ -455,7 +476,7 @@ function walkObject(
  */
 function walkForm(
   value: object,
-  method: (() => unknown) | undefined,
+  resolved: ResolvedToJson,
   rules: RedactRules,
   depth: number,
   ancestors: Set<object>,
@@ -463,12 +484,12 @@ function walkForm(
   inSerialized: boolean
 ): unknown {
   const plain = rules.ownFields.safe
-  const toJson = honorToJson && !(plain && isError(value)) ? method : undefined
+  const toJson = honorToJson && !(plain && isError(value)) ? resolved.method : undefined
   if (toJson !== undefined) {
     return walkToJsonOutput(value, toJson, rules, depth, ancestors, inSerialized)
   }
   if (typeof value === 'function') {
-    return plain ? undefined : value
+    return plain || resolved.volatile ? undefined : value
   }
   if (Array.isArray(value)) {
     return walkArray(value, rules, depth, ancestors, inSerialized)
@@ -604,6 +625,7 @@ function walkProperties(
           )
     )
   }
+  if (honorToJson) withoutHook(copy)
   if (asData) {
     const host = errorPartsHost(rules, ancestors, inSerialized)
     addErrorParts(copy, value as Error, without(keys, omitted), host, depth)
@@ -620,6 +642,21 @@ function walkProperties(
  */
 function without(keys: readonly string[], omitted: ReadonlySet<string>): string[] {
   return keys.filter((key) => !omitted.has(key))
+}
+
+/**
+ * Remove a `toJSON` the stringifier would run from a finished copy. A value with a hook it can
+ * read was followed already, so a hook found on the copy is one the walk did not see: an accessor
+ * that answered differently the second time, or a value that read as a function only now. A
+ * clone of an `Error` carries every descriptor of the original, so an accessor survives in it.
+ *
+ * @param copy - The copy the properties were written to.
+ */
+function withoutHook(copy: Record<string, unknown>): void {
+  const own = Object.getOwnPropertyDescriptor(copy, 'toJSON')
+  if (own !== undefined && (own.get !== undefined || typeof own.value === 'function')) {
+    Reflect.deleteProperty(copy, 'toJSON')
+  }
 }
 
 /**

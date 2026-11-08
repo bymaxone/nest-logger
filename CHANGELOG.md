@@ -11,6 +11,20 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **No `toJSON` hook the walk did not see survives the redaction, in the default mode.**
+  `JSON.stringify` reads `toJSON` after the redaction, with `[[Get]]`, so a hook the walk had not
+  followed ran afterwards and could write a value under a censored name in clear. Two shapes did
+  that: a function-valued Proxy whose `get` trap answers a hook that its `has` and descriptor traps
+  hide, and a `toJSON` accessor on an `Error` that answers no hook the first time and a hook
+  afterwards, which the clone of the `Error` copied along with every other descriptor. A Proxy
+  callable is now read the way the stringifier reads it, a callable whose answer can change (a
+  Proxy, or a function with a `toJSON` accessor) is dropped as a function with no hook is, and a
+  copy loses a `toJSON` accessor or function the walk did not follow. Ordinary input is unchanged.
+  Both shapes need an object built by code that hides its hook, not a value read from data.
+  **Apply to a derived backend:** nothing to do.
+
 ### Internal
 
 - **`as const` tables are now mutated entry by entry in a development check.** Stryker neither
