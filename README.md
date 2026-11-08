@@ -452,10 +452,12 @@ To open only the correlation scope ahead of the parser, without the access log, 
 a content encoding it does not support, a body over the limit) then has its `requestId` and the
 `x-request-id` response header, so an exception filter that reads the id from `LogContextService`
 puts the same value in its envelope. Register that filter with `app.useGlobalFilters(...)` after `NestFactory.create()`, which answers
-ahead of every `APP_FILTER` provider. With `http.isEnabled` (and `http.shouldCaptureExceptions`,
-which defaults to `true`) the library registers its own exception filter as an `APP_FILTER`
-provider, and the order the modules are imported decides between `APP_FILTER` providers: one in
-your root module, or in a module imported before `BymaxLoggerModule`, was answered by the library's
+ahead of every `APP_FILTER` provider. `forRoot` with `http.isEnabled` (and
+`http.shouldCaptureExceptions`, which defaults to `true`) registers the library's own exception
+filter as an `APP_FILTER` provider; `forRootAsync` never does, so there is nothing for yours to
+compete with unless you registered `HttpExceptionFilter` yourself. Where the library's filter is
+registered, the order the modules are imported decides between `APP_FILTER` providers: one in your
+root module, or in a module imported before `BymaxLoggerModule`, was answered by the library's
 filter in the measurement, with or without an injected dependency, while one in a module imported
 after it answered itself. It can be combined with `applyAccessLog(app)` or
 `applyRequestIdMiddleware(consumer)`: a second mount reuses the scope.
