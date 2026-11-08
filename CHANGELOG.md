@@ -11,6 +11,16 @@ heading here.
 
 ## [Unreleased]
 
+### Internal
+
+- **`as const` tables are now mutated entry by entry in a development check.** Stryker neither
+  removes a property or an element from a constant table nor changes a number in it, so an entry
+  could disappear with every test green. `scripts/mutate-const-tables.mjs` does it, against a test
+  command you give it, and `CLAUDE.md` has the command. It is a development tool and not a CI
+  step. Its first run found 20 entries of the default redaction set that no test pinned, from
+  `passwordHash` to `req.headers["x-auth-token"]`; a spec now pins every name and path that was
+  shipped, and censors each through the default redactor. Nothing in the package changes.
+
 ## [1.4.13] - 2026-11-08
 
 ### Fixed

@@ -1,9 +1,59 @@
+import { applyDefaults } from '../config/default-options'
+import { resolveNameRedactor } from '../pino-factory'
 import {
   DEFAULT_REDACT_PATHS,
   REDACT_ABSOLUTE_PATHS,
   REDACT_COMMON_FIELDS,
   depth
 } from './default-redact-paths.constants'
+
+/**
+ * The sensitive field names as shipped. The list is append-only, so every name here stays; a name
+ * may be added to the list without touching this one, and removing one fails the spec.
+ */
+const FLOOR_NAMES: readonly string[] = [
+  'password',
+  'passwordHash',
+  'passwordConfirm',
+  'newPassword',
+  'oldPassword',
+  'token',
+  'accessToken',
+  'refreshToken',
+  'idToken',
+  'apiKey',
+  'apiSecret',
+  'mfaSecret',
+  'mfaRecoveryCodes',
+  'totpSecret',
+  'cardNumber',
+  'cardCvv',
+  'cvv',
+  'cvc',
+  'cardExpiry',
+  'cpf',
+  'cnpj',
+  'rg',
+  'secret',
+  'clientSecret',
+  'signingSecret',
+  'privateKey',
+  'email',
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+  'x-auth-token'
+]
+
+/** The absolute header paths as shipped, with the same append-only floor. */
+const FLOOR_ABSOLUTE_PATHS: readonly string[] = [
+  'req.headers.authorization',
+  'req.headers.cookie',
+  'req.headers["x-api-key"]',
+  'req.headers["x-auth-token"]',
+  'res.headers["set-cookie"]'
+]
 
 describe('depth helper', () => {
   it(/*
@@ -109,4 +159,40 @@ describe('DEFAULT_REDACT_PATHS', () => {
       expect(path.length).toBeGreaterThan(0)
     }
   })
+})
+
+describe('the append-only floor of the default redaction set', () => {
+  it(/*
+   * The whole table, not a sample: a name removed from the list is a field that silently stopped
+   * being redacted, which no consumer would notice. Each name that was shipped must still be in it.
+   */
+  'keeps every sensitive field name that was shipped', () => {
+    expect(REDACT_COMMON_FIELDS).toEqual(expect.arrayContaining([...FLOOR_NAMES]))
+  })
+
+  it('keeps every absolute header path that was shipped', () => {
+    expect(REDACT_ABSOLUTE_PATHS).toEqual(expect.arrayContaining([...FLOOR_ABSOLUTE_PATHS]))
+  })
+
+  it('expands every shipped name at the record root and at depths 1 to 4 in the legacy set', () => {
+    for (const name of FLOOR_NAMES) {
+      expect(DEFAULT_REDACT_PATHS).toEqual(expect.arrayContaining([name, ...depth(name)]))
+    }
+    expect(DEFAULT_REDACT_PATHS).toEqual(expect.arrayContaining([...FLOOR_ABSOLUTE_PATHS]))
+  })
+
+  it.each(FLOOR_NAMES)(
+    'censors %s at the record root and nested, with the defaults and no option',
+    (name) => {
+      const redact = resolveNameRedactor(
+        applyDefaults({ service: { name: 'app', version: '1.0.0' } })
+      )
+
+      const written = JSON.stringify(
+        redact({ [name]: 'LEAK', nested: { deep: { [name]: 'LEAK' } } })
+      )
+
+      expect(written).not.toContain('LEAK')
+    }
+  )
 })
