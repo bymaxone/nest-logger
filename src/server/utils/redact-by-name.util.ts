@@ -173,6 +173,17 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
 }
 
 /**
+ * Give an object a `toJSON` of `undefined`, which the stringifier does not run. It is defined and
+ * not deleted, because a `toJSON` method further up the prototype chain that the walk never read,
+ * behind the accessor this replaces, would run in its place.
+ *
+ * @param target - The copy that must not run a hook.
+ */
+function shadowHook(target: object): void {
+  Reflect.defineProperty(target, 'toJSON', { value: undefined, configurable: true })
+}
+
+/**
  * Clone an `Error` preserving what makes it an Error.
  *
  * The walk cannot flatten an error into a plain object: Pino's `err` serializer
@@ -225,9 +236,7 @@ function cloneError(error: Error): Error {
   }
   // An accessor `toJSON` that answered no hook to the walk can answer one to `JSON.stringify`
   // after the redaction, and the clone carries every descriptor of the original.
-  if (Object.getOwnPropertyDescriptor(clone, 'toJSON')?.get !== undefined) {
-    Reflect.deleteProperty(clone, 'toJSON')
-  }
+  if (Object.getOwnPropertyDescriptor(clone, 'toJSON')?.get !== undefined) shadowHook(clone)
   return clone
 }
 
@@ -617,7 +626,8 @@ function walkProperties(
     const hook = honorToJson && key === 'toJSON' && typeof current === 'function'
     if (current === OMIT_OWN_FIELD || hook) {
       // The clone carries the original field; the data form has none to remove.
-      Reflect.deleteProperty(copy, key)
+      if (hook) shadowHook(copy)
+      else Reflect.deleteProperty(copy, key)
       omitted.add(key)
       continue
     }

@@ -149,3 +149,35 @@ describe('a hook behind the prototype chain of a callable', () => {
     expect(written({ list: [functionWithHidingPrototype()] })).not.toContain(SECRET)
   })
 })
+
+describe('a toJSON accessor that shadows a hook the walk did not follow', () => {
+  /** An `Error` class whose prototype has a `toJSON` method, which the walk never reads past a shadow. */
+  class Hooked extends Error {
+    toJSON(): object {
+      return { password: SECRET }
+    }
+  }
+
+  const shadowed = (enumerable: boolean, stateful: boolean): Error => {
+    let reads = 0
+    const error = new Hooked('boom')
+    Object.defineProperty(error, 'toJSON', {
+      enumerable,
+      get: () => (stateful && reads++ > 0 ? () => ({ password: SECRET }) : undefined)
+    })
+    return error
+  }
+
+  it.each([
+    ['not enumerable and constant', false, false],
+    ['not enumerable and stateful', false, true],
+    ['enumerable and constant', true, false],
+    ['enumerable and stateful', true, true]
+  ])(
+    'keeps the shadow, so the prototype method does not run: %s',
+    (_name, enumerable, stateful) => {
+      expect(written({ err: shadowed(enumerable, stateful) })).not.toContain(SECRET)
+      expect(written({ err: shadowed(enumerable, stateful) }, true, ['err'])).not.toContain(SECRET)
+    }
+  )
+})
