@@ -94,7 +94,9 @@ character becomes `\uXXXX`. Two rules:
 pre-publish gate. Stryker (`break: 100`) is the deeper gate against weak tests.
 
 Mocks: Pino instance and destinations are `jest.fn()`; spy on `process.stdout.write` — never real
-I/O in unit tests; use real `AsyncLocalStorage` (no I/O; mock it only to test out-of-scope); OTel is optional, so spy on `detectOtelTraceApi()`.
+I/O in unit tests (reading a committed project file, such as the README or a recorded base, and
+running one of the repository's own scripts against a temporary directory are not real I/O in this
+sense; opening a socket, starting any other process and writing outside a temporary directory are); use real `AsyncLocalStorage` (no I/O; mock it only to test out-of-scope); OTel is optional, so spy on `detectOtelTraceApi()`.
 
 Run `pnpm mutation` (Node 24) before tagging a release. A survivor is a real gap (add a test) or
 an equivalent mutant, documented in the source as
