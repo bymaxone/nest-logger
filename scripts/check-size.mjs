@@ -33,20 +33,13 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-08 — server: 33.06 KiB real -> 33.5 KiB budget (~1.3% headroom). RE-DERIVED from the
-//     artifact, per the standing rule: the budget had 0.12 KiB of headroom left (32.88 KiB real)
-//     and keeping no `toJSON` hook the redaction walk did not follow adds +0.18 KiB, every byte
-//     executable code: a Proxy anywhere on a callable's chain recorded, the callable dropped when
-//     its answer can change, the one predicate that says whether a property gives the stringifier
-//     a hook and its two callers, the `toJSON` key that reads as a function only now left out of
-//     the copy, the helper that shadows a hook with `undefined`, and the clone of an `Error`
-//     starting with no enumerable key. Measured on the way: the first attempt was 33.01 KiB;
-//     folding the helper that removed the accessor into the clone's own code recovered 0.03 KiB,
-//     which is the measurement noise (+-0.03 KiB per edit); shadowing instead of deleting, which
-//     the review required, added 0.06; dropping the separate `[[Get]]` read of a Proxy callable,
-//     which dropping it as volatile already made unnecessary, recovered 0.02; the predicate and
-//     the clone's own check, which two further findings required, added 0.04. The headroom is small
-//     because the next change of this size will have to say what it adds.
+//   - 2026-11-08 — server: 33.00 KiB real -> 33.5 KiB budget (~1.3% headroom). Re-derived from the
+//     artifact: the previous budget had 0.12 KiB of headroom left (32.88 KiB real). Keeping any
+//     `toJSON` hook the redaction walk did not follow out of the output adds executable code
+//     only: the helper that shadows a hook with `undefined`, the clone of an `Error` starting with no enumerable
+//     key and sealed with that shadow as its last step, and the handling of a callable whose
+//     answer can change. Measurement noise is +-0.03 KiB per edit. The headroom is small on
+//     purpose: the next change of this size has to say what it adds.
 //   - 2026-11-07 — server: 32.17 KiB real -> 33.0 KiB budget (~2.6% headroom). Budget = measured
 //     32.17 + 0.83 of headroom; re-derive from the artifact when it is exceeded. `main` measured
 //     31.04 KiB, and the option that chooses which own fields of an error are written adds +1.13
