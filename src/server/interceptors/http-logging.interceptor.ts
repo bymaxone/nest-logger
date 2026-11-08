@@ -26,6 +26,7 @@ import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-modu
 import { PinoLoggerService } from '../services/pino-logger.service'
 import { cutIfText } from '../utils/bounded-text.util'
 import { readExposedClientError } from '../utils/exposed-client-error.util'
+import type { ExposedClientError } from '../utils/exposed-client-error.util'
 import {
   HTTP_CLIENT_ERROR_MIN,
   HTTP_REDIRECT_MIN,
@@ -228,18 +229,7 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     // An error with the `http-errors` shape that exposes a 4xx is a client error, as the filter answers it.
     const clientError = readExposedClientError(err)
     if (clientError !== undefined) {
-      this.logger.warnStructured(
-        RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR,
-        `${method} ${url} → ${clientError.status}`,
-        userId,
-        {
-          method,
-          url,
-          statusCode: clientError.status,
-          duration,
-          errorMessage: cutIfText(clientError.message)
-        }
-      )
+      this.logClientError(clientError, method, url, userId, duration)
       return
     }
 
@@ -250,5 +240,35 @@ export class HttpLoggingInterceptor implements NestInterceptor {
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       duration
     })
+  }
+
+  /**
+   * Log an exposed `http-errors` client error as CLIENT_ERROR at warn level.
+   *
+   * @param clientError - The status and message the error exposes.
+   * @param method - The HTTP method.
+   * @param url - The normalized request URL.
+   * @param userId - The acting user id, when known.
+   * @param duration - The elapsed time in milliseconds.
+   */
+  private logClientError(
+    clientError: ExposedClientError,
+    method: string,
+    url: string,
+    userId: string | undefined,
+    duration: number
+  ): void {
+    this.logger.warnStructured(
+      RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR,
+      `${method} ${url} → ${clientError.status}`,
+      userId,
+      {
+        method,
+        url,
+        statusCode: clientError.status,
+        duration,
+        errorMessage: cutIfText(clientError.message)
+      }
+    )
   }
 }

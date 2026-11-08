@@ -21,15 +21,15 @@ const MAX_CLIENT_STATUS = 499
 /**
  * Read an exposed client error, or nothing.
  *
- * The error is the thrower's own object, so every read is guarded: a getter that throws, or a Proxy
- * that does, makes it not an exposed client error, and the caller treats it as any other failure.
+ * The error is the thrower's own object, so every read is guarded: a getter that throws, a Proxy
+ * that does, or a value that cannot be read at all (`null`, `undefined`) makes it not an exposed
+ * client error, and the caller treats it as any other failure.
  *
  * @param value - The thrown value.
  * @returns The status and message when `expose` is `true`, the status (`status`, else `statusCode`)
  *   is an integer from 400 to 499 and the message is a string; `undefined` otherwise. Never throws.
  */
 export function readExposedClientError(value: unknown): ExposedClientError | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
   try {
     const candidate = value as { status?: unknown; statusCode?: unknown; expose?: unknown }
     const status = candidate.status ?? candidate.statusCode

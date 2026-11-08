@@ -30,8 +30,16 @@ import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.cons
 import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
 import { PinoLoggerService } from '../services/pino-logger.service'
 import { readExposedClientError } from '../utils/exposed-client-error.util'
+import type { ExposedClientError } from '../utils/exposed-client-error.util'
 import { stripQueryString } from '../utils/normalize-url.util'
 import { sanitizeError } from '../utils/sanitize-error.util'
+
+/** The request facts every entry the filter writes carries. */
+interface RequestFacts {
+  readonly method: string
+  readonly url: string
+  readonly userId: string | undefined
+}
 
 /** Body returned when a non-`HttpException` reaches the filter. */
 const INTERNAL_ERROR_BODY = {
@@ -101,30 +109,54 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // how the body parser refuses a body over the limit or in an unsupported encoding.
     const clientError = readExposedClientError(exception)
     if (clientError !== undefined) {
-      this.logger.warnStructured(
-        RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED,
-        clientError.message,
-        userId,
-        { method: req.method, url, status: clientError.status }
-      )
-      res.status(clientError.status).json({
-        statusCode: clientError.status,
-        message: clientError.message
-      })
+      this.answerClientError(clientError, res, { method: req.method, url, userId })
       return
     }
 
     // Any other non-HttpException is an unhandled 500.
+    this.answerUnhandled(exception, res, { method: req.method, url, userId })
+  }
+
+  /**
+   * Log an exposed client error as handled and answer it with its own status and message.
+   *
+   * @param clientError - The status and message the error exposes.
+   * @param res - The response to write.
+   * @param request - The request facts every entry carries.
+   */
+  private answerClientError(
+    clientError: ExposedClientError,
+    res: LoggableResponse,
+    request: RequestFacts
+  ): void {
+    const { method, url, userId } = request
+    this.logger.warnStructured(
+      RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED,
+      clientError.message,
+      userId,
+      { method, url, status: clientError.status }
+    )
+    res.status(clientError.status).json({
+      statusCode: clientError.status,
+      message: clientError.message
+    })
+  }
+
+  /**
+   * Log any other non-`HttpException` as unhandled and answer it with the fixed 500 body.
+   *
+   * @param exception - The thrown value.
+   * @param res - The response to write.
+   * @param request - The request facts every entry carries.
+   */
+  private answerUnhandled(exception: unknown, res: LoggableResponse, request: RequestFacts): void {
+    const { method, url, userId } = request
     const status = HttpStatus.INTERNAL_SERVER_ERROR
     this.logger.errorStructured(
       RESERVED_LOG_KEYS.HTTP_EXCEPTION_UNHANDLED,
       sanitizeError(exception),
       userId,
-      {
-        method: req.method,
-        url,
-        status
-      }
+      { method, url, status }
     )
     res.status(status).json(INTERNAL_ERROR_BODY)
   }
