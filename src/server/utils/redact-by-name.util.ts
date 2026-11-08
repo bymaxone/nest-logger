@@ -651,9 +651,8 @@ function walkProperties(
     // `JSON.stringify` would run after the redaction.
     const hook = honorToJson && key === 'toJSON' && runsAHook({ value: current })
     if (current === OMIT_OWN_FIELD || hook) {
-      // The clone carries the original field; the data form has none to remove.
+      // Neither copy carries the key: the clone starts with no enumerable key, the data form has none.
       if (hook) shadowHook(copy)
-      else Reflect.deleteProperty(copy, key)
       omitted.add(key)
       continue
     }
