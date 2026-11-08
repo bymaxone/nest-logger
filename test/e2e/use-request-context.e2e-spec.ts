@@ -15,7 +15,8 @@ import request from 'supertest'
 
 /**
  * A consumer's catch-all filter: the envelope carries the id from the log context. It is installed
- * with `useGlobalFilters`, which is what Nest consults for an error the body parser raised.
+ * with `useGlobalFilters`, which takes precedence over the library's own exception filter; an
+ * `APP_FILTER` provider that injects a dependency was answered by that filter instead.
  */
 @Catch()
 class EnvelopeFilter implements ExceptionFilter {
