@@ -24,9 +24,10 @@ heading here.
 
 ### Changed
 
-- **Under `errorOwnFields: 'all'` with `redactStrategy: 'paths'`, an `Error` whose `toJSON` is a
-  hostile accessor is written as `UnknownError`,** as `redactStrategy: 'names'` already did, and no
-  longer as the accessor's output.
+- **1.4.11 behaviour its notes did not list.** Under `errorOwnFields: 'all'` with
+  `redactStrategy: 'paths'`, an `Error` whose `toJSON` is a hostile accessor has been written as
+  `UnknownError` since 1.4.11, as `redactStrategy: 'names'` already did; 1.4.10 wrote it as an
+  `Error`. Nothing changes here; this records it.
 
 ## [1.4.11] - 2026-11-08
 
