@@ -253,6 +253,37 @@ describe('an Error that changes what it holds between the walk and the clone', (
   })
 })
 
+describe('an Error whose descriptors disagree with its keys', () => {
+  it('keeps no enumerable value the property loop did not walk', () => {
+    let descriptorReads = 0
+    const proxy = new Proxy(new Error('boom'), {
+      ownKeys: (target) => [...Reflect.ownKeys(target), 'leak'],
+      getOwnPropertyDescriptor: (target, key) =>
+        key === 'leak'
+          ? {
+              configurable: true,
+              enumerable: descriptorReads++ > 0,
+              value: { password: SECRET },
+              writable: true
+            }
+          : Reflect.getOwnPropertyDescriptor(target, key)
+    })
+
+    expect(written({ err: proxy })).not.toContain(SECRET)
+    expect(written({ err: proxy }, true, ['err'])).not.toContain(SECRET)
+  })
+
+  it('keeps every enumerable own field of an ordinary Error', () => {
+    const error = Object.assign(new Error('boom'), { code: 'E_X', status: 502 })
+
+    const copy = createNameRedactor(['password'], 'X')({ err: error }, false) as {
+      err: Record<string, unknown>
+    }
+
+    expect(Object.keys(copy.err).sort()).toEqual(['code', 'status'])
+  })
+})
+
 describe('a frozen Error with a stateful toJSON accessor', () => {
   it('does not run the hook after the clone, whose descriptors are relaxed', () => {
     const error = statefulError(false)

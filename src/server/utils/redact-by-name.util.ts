@@ -200,6 +200,21 @@ function shadowHook(target: object): void {
 }
 
 /**
+ * Remove from a clone every enumerable own key the property loop will not write. The clone is
+ * built from descriptors read after the keys were taken, so an object whose reads disagree, a
+ * Proxy, can hand it an enumerable value the walk never saw and never redacted. Like
+ * {@link runsAHook}, this is asked of the output object, not of what the walk read earlier.
+ *
+ * @param clone - The clone of an `Error`.
+ * @param walked - The own enumerable keys the walk took, which the property loop writes.
+ */
+function withoutUnwalkedKeys(clone: object, walked: readonly string[]): void {
+  for (const key of Object.keys(clone)) {
+    if (!walked.includes(key)) Reflect.deleteProperty(clone, key)
+  }
+}
+
+/**
  * Clone an `Error` preserving what makes it an Error.
  *
  * The walk cannot flatten an error into a plain object: Pino's `err` serializer
@@ -209,9 +224,10 @@ function shadowHook(target: object): void {
  * caller redefines the enumerable properties it censored.
  *
  * @param error - The error to clone.
+ * @param walked - The own enumerable keys the walk took, the only enumerable ones the clone keeps.
  * @returns A structurally identical error with its own descriptors copied.
  */
-function cloneError(error: Error): Error {
+function cloneError(error: Error, walked: readonly string[]): Error {
   // Descriptors are copied for their SHAPE, not their immutability. A consumer
   // that freezes its errors — a deliberate, documented practice, so nobody mutates
   // an issue list after the throw — hands us properties that are neither writable
@@ -254,6 +270,7 @@ function cloneError(error: Error): Error {
   // `toJSON` accessor, or a function an accessor put there when it was read, would run in
   // `JSON.stringify` after the redaction.
   if (runsAHook(Object.getOwnPropertyDescriptor(clone, 'toJSON'))) shadowHook(clone)
+  withoutUnwalkedKeys(clone, walked)
   return clone
 }
 
@@ -627,7 +644,7 @@ function walkProperties(
   const keys = Object.keys(source)
   const { safe } = rules.ownFields
   const asData = isError(value) && (safe || (rules.errorsAsData && !inSerialized))
-  const copy = startCopy(value, asData)
+  const copy = startCopy(value, asData, keys)
   const scrubbed = isError(value) && (safe || !inSerialized)
   const omitted = new Set<string>()
   for (const key of keys) {
@@ -684,10 +701,15 @@ function without(keys: readonly string[], omitted: ReadonlySet<string>): string[
  *
  * @param value - The object being copied.
  * @param asData - Whether an `Error` is written as plain data.
+ * @param walked - The own enumerable keys the walk took.
  * @returns The object the properties are defined on.
  */
-function startCopy(value: object, asData: boolean): Record<string, unknown> {
-  const clone = isError(value) ? cloneError(value) : undefined
+function startCopy(
+  value: object,
+  asData: boolean,
+  walked: readonly string[]
+): Record<string, unknown> {
+  const clone = isError(value) ? cloneError(value, walked) : undefined
   return clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
 }
 

@@ -1,16 +1,17 @@
 /**
- * Pins the rule behind the hostile-hook cases as a property: whatever shape an object takes to hide
- * a `toJSON` hook from the redaction walk, `JSON.stringify` of the walk's output neither writes the
- * secret nor runs a hook. The shapes are generated from a fixed seed, so a shape nobody listed
- * fails here and not in a review. A hook the walk follows itself is called during the walk and its
- * output is redacted; only a call made by the stringifier afterwards counts.
+ * Pins the rule behind the hostile-hook cases as a property: for each shape in `shapes()`, however
+ * it is nested and whether or not its key is a serializer key, `JSON.stringify` of the walk's
+ * output neither writes the secret nor runs a hook. The nesting is drawn from a fixed seed, so a
+ * failure names a case that can be run again; a new way to hide a hook needs a new entry in
+ * `shapes()`. A hook the walk follows itself is called during the walk and its output is redacted;
+ * only a call made by the stringifier afterwards counts.
  *
  * Layer: server, utils, tests.
  */
 import { createNameRedactor } from './redact-by-name.util'
 
 const SECRET = 'SECRET-VALUE'
-const CASES = 1500
+const CASES = 2200
 const SEED = 20261108
 
 /** A deterministic generator, so a failure names a case that can be run again. */
@@ -127,6 +128,38 @@ function shapes(counter: Counter): Array<(pick: () => number) => Planted> {
           key === 'toJSON' ? undefined : Reflect.get(target, key, receiver)
       })
       return { value: proxy, kind: 'error, Proxy with changing descriptors' }
+    },
+    (): Planted => {
+      const target = new Error('boom')
+      Object.defineProperty(target, 'a', {
+        configurable: true,
+        enumerable: true,
+        get() {
+          Object.defineProperty(target, 'leak', {
+            configurable: true,
+            enumerable: true,
+            value: { password: SECRET }
+          })
+          return 1
+        }
+      })
+      return { value: target, kind: 'error, getter that defines a property when read' }
+    },
+    (): Planted => {
+      let descriptorReads = 0
+      const proxy = new Proxy(new Error('boom'), {
+        ownKeys: (target) => [...Reflect.ownKeys(target), 'leak'],
+        getOwnPropertyDescriptor: (target, key) =>
+          key === 'leak'
+            ? {
+                configurable: true,
+                enumerable: descriptorReads++ > 0,
+                value: { password: SECRET },
+                writable: true
+              }
+            : Reflect.getOwnPropertyDescriptor(target, key)
+      })
+      return { value: proxy, kind: 'error, Proxy whose descriptors disagree with its keys' }
     }
   ]
 }
