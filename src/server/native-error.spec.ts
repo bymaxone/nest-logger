@@ -1,7 +1,7 @@
 /**
  * Pins that an error from another realm is written as the error it is. `instanceof Error` is false
- * for an `Error` made in a `vm` context or by a Node core module under a test runner, so it was
- * read as a plain object whose `name` and `message` (non-enumerable) were lost.
+ * for an `Error` made in a `vm` context or by a Node core module under a test runner, and its
+ * `name` and `message` are non-enumerable, so it must be recognised as a native error to keep them.
  *
  * Layer: server, tests.
  */

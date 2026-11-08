@@ -65,6 +65,28 @@ describe.each(configurations)('a binary value in the record, with %s', (_name, e
     expect(line()).not.toContain('"data"')
   })
 
+  it('is written as its real size when a subclass overrides byteLength', () => {
+    class Lying extends Uint8Array {
+      override get byteLength(): number {
+        return 'SECRET' as unknown as number
+      }
+    }
+    class LyingView extends (DataView as new (buffer: ArrayBuffer) => DataView) {
+      override get byteLength(): number {
+        return 'SECRET' as unknown as number
+      }
+    }
+    const { service, entry, line } = pipeline(extra)
+
+    service.info('KEY', 'hello', 'u1', {
+      meta: { typed: new Lying(3), view: new LyingView(new ArrayBuffer(4)) }
+    })
+
+    expect(entry().meta.typed).toBe('[Binary 3 bytes]')
+    expect(entry().meta.view).toBe('[Binary 4 bytes]')
+    expect(line()).not.toContain('SECRET')
+  })
+
   it('is written as its size in the own field of an Error nested in the metadata', () => {
     const { service, entry, line } = pipeline(extra)
 

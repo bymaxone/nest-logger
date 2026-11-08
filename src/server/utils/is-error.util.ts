@@ -2,9 +2,9 @@
  * Whether a value is an error, in any realm.
  *
  * Layer: server, utils. `instanceof Error` is false for an `Error` made in another realm: a `vm`
- * context, a worker, or a Node core module under a test runner. Such a value was read as a plain
- * object whose `name` and `message` (non-enumerable) were lost. `util.types.isNativeError` is true
- * for it, and `instanceof` still covers an object that only inherits from this realm's `Error`.
+ * context, a worker, or a Node core module under a test runner. Its `name` and `message` are
+ * non-enumerable, so it is recognised with `util.types.isNativeError`, and `instanceof` still
+ * covers an object that only inherits from this realm's `Error`.
  */
 import { types } from 'node:util'
 
