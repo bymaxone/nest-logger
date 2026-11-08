@@ -34,4 +34,17 @@ describe('isError', () => {
 
     expect(() => isError(proxy)).not.toThrow()
   })
+
+  it('rejects a Proxy whose getPrototypeOf trap throws', () => {
+    const proxy = new Proxy(
+      {},
+      {
+        getPrototypeOf: () => {
+          throw new Error('trap')
+        }
+      }
+    )
+
+    expect(isError(proxy)).toBe(false)
+  })
 })

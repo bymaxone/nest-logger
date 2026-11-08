@@ -10,8 +10,13 @@ import { types } from 'node:util'
 
 /**
  * @param value - Any value.
- * @returns `true` when the value is a native error of any realm or inherits from this realm's `Error`.
+ * @returns `true` when the value is a native error of any realm or inherits from this realm's
+ *   `Error`. `false` for a Proxy whose `getPrototypeOf` trap throws. Never throws.
  */
 export function isError(value: unknown): value is Error {
-  return types.isNativeError(value) || value instanceof Error
+  try {
+    return types.isNativeError(value) || value instanceof Error
+  } catch {
+    return false
+  }
 }
