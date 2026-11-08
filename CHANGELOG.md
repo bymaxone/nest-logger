@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.12] - 2026-11-08
+
 ### Added
 
 - **`BymaxLoggerModule.useRequestContext(app)`.** Opens the request-id correlation scope ahead of
@@ -2534,7 +2536,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.11...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.12...HEAD
+[1.4.12]: https://github.com/bymaxone/nest-logger/compare/v1.4.11...v1.4.12
 [1.4.11]: https://github.com/bymaxone/nest-logger/compare/v1.4.10...v1.4.11
 [1.4.10]: https://github.com/bymaxone/nest-logger/compare/v1.4.9...v1.4.10
 [1.4.9]: https://github.com/bymaxone/nest-logger/compare/v1.4.8...v1.4.9
