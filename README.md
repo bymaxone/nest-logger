@@ -451,10 +451,10 @@ To open only the correlation scope ahead of the parser, without the access log, 
 `BymaxLoggerModule.useRequestContext(app)` at the same point. A request the parser refuses (truncated JSON,
 a content encoding it does not support, a body over the limit) then has its `requestId` and the
 `x-request-id` response header, so an exception filter that reads the id from `LogContextService`
-puts the same value in its envelope. Register that filter with `app.useGlobalFilters(...)`: it takes
-precedence over the library's own exception filter, while an `APP_FILTER` provider of yours competes
-with it (measured: one that injects `LogContextService` was answered by the library's filter). It can
-be combined with `applyAccessLog(app)` or
+puts the same value in its envelope. Register that filter with `app.useGlobalFilters(...)` after `NestFactory.create()`: with
+`http.isEnabled` the library registers its own exception filter as an `APP_FILTER` provider, and an
+`APP_FILTER` provider of yours was answered by it in the measurement, with or without an injected
+dependency, while a filter registered with `useGlobalFilters` answered instead. It can be combined with `applyAccessLog(app)` or
 `applyRequestIdMiddleware(consumer)`: a second mount reuses the scope.
 
 `applyRequestIdMiddleware(consumer)` remains supported and unchanged; it is the right choice when

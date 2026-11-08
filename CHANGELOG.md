@@ -36,10 +36,11 @@ Nothing is required: `BymaxLoggerModule.useRequestContext(app)` is a new static 
 application that does not call it behaves as before. To have a request the body parser refuses
 (truncated JSON, an unsupported content encoding, a body over the limit) carry its `requestId` and
 the `x-request-id` response header, call it in `main.ts` right after `NestFactory.create()` and
-before `app.init()` / `app.listen()`. Register the filter that writes the id into your envelope with
-`app.useGlobalFilters(...)`, which takes precedence over the library's own exception filter; an
-`APP_FILTER` provider competes with it, and one that injects `LogContextService` was answered by the
-library's filter when measured.
+before `app.init()` / `app.listen()`. Register the filter that writes the id into your envelope with `app.useGlobalFilters(...)` after
+`NestFactory.create()`: with `http.isEnabled` the library registers its own exception filter as an
+`APP_FILTER` provider, and an `APP_FILTER` provider of yours was answered by it in the measurement,
+with or without an injected dependency, while a filter registered with `useGlobalFilters` answered
+instead.
 
 ## [1.4.11] - 2026-11-08
 
