@@ -15,14 +15,18 @@ heading here.
 
 - **No `toJSON` hook the walk did not see survives the redaction, in the default mode.**
   `JSON.stringify` reads `toJSON` after the redaction, with `[[Get]]`, so a hook the walk had not
-  followed ran afterwards and could write a value under a censored name in clear. Two shapes did
+  followed ran afterwards and could write a value under a censored name in clear. Shapes that did
   that: a function-valued Proxy whose `get` trap answers a hook that its `has` and descriptor traps
-  hide, and a `toJSON` accessor on an `Error` that answers no hook the first time and a hook
-  afterwards, which the clone of the `Error` copied along with every other descriptor. A Proxy
-  callable is now read the way the stringifier reads it, a callable whose answer can change (a
-  Proxy, or a function with a `toJSON` accessor) is dropped as a function with no hook is, and a
-  copy loses a `toJSON` accessor or function the walk did not follow. Ordinary input is unchanged.
-  Both shapes need an object built by code that hides its hook, not a value read from data.
+  hide, a `toJSON` accessor on an `Error` or on any object that answers no hook the first time and a
+  hook afterwards, which the property loop or the clone of an `Error` copied along with every other
+  property, and a function whose prototype is such a Proxy. A callable whose answer can change (a
+  Proxy, a function with a `toJSON` accessor, or one with a Proxy on its prototype chain) is now
+  dropped as a function with no hook is, a `toJSON` that reads as a function where the stringifier
+  would honour it is not copied, and the accessor of an `Error` clone is replaced by `undefined`.
+  Ordinary input is unchanged, including a `toJSON` key that is not a function. Both shapes need an
+  object built by code that hides its hook, not a value read from data. A hook reachable only
+  through the prototype chain of an `Error` is a known limitation: it needs code inside the process,
+  and shadowing `toJSON` on every clone would change the own keys of every logged error.
   **Apply to a derived backend:** nothing to do.
 
 ### Internal

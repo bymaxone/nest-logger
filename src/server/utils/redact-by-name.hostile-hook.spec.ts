@@ -207,3 +207,50 @@ describe('a toJSON accessor that shadows a hook the walk did not follow', () => 
     }
   )
 })
+
+describe('ordinary input is left as it was', () => {
+  it('returns a function whose toJSON is not a function as it is', () => {
+    const fn = Object.assign((): number => 1, { toJSON: 'text' })
+
+    const copy = createNameRedactor(['password'], 'X')({ run: fn }, false) as Record<
+      string,
+      unknown
+    >
+
+    expect(copy['run']).toBe(fn)
+  })
+
+  it('adds no own property to the clone of an Error that has no toJSON', () => {
+    const error = Object.assign(new Error('boom'), { code: 'E_X' })
+
+    const copy = createNameRedactor(['password'], 'X')({ err: error }, false) as {
+      err: Error
+    }
+
+    expect(Object.getOwnPropertyNames(copy.err).sort()).toEqual(
+      Object.getOwnPropertyNames(error).sort()
+    )
+  })
+
+  it('lands the censor on a toJSON key that is a sensitive name, over the shadow', () => {
+    const error = new Error('boom')
+    Object.defineProperty(error, 'toJSON', { enumerable: true, get: () => undefined })
+
+    const copy = createNameRedactor(['toJSON'], 'X')({ err: error }, false) as {
+      err: Record<string, unknown>
+    }
+
+    expect(copy.err['toJSON']).toBe('X')
+  })
+
+  it('keeps the toJSON key of an Error enumerable when its accessor answers undefined each time', () => {
+    const error = new Error('boom')
+    Object.defineProperty(error, 'toJSON', { enumerable: true, get: () => undefined })
+
+    const copy = createNameRedactor(['password'], 'X')({ err: error }, false) as {
+      err: Record<string, unknown>
+    }
+
+    expect(Object.keys(copy.err)).toContain('toJSON')
+  })
+})
