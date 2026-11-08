@@ -383,6 +383,15 @@ function walkError(
  * The inspection of an object or callable that is not an `Error`, or an `Error` that reads
  * cleanly: the body of {@link walk} after its guards.
  *
+ * `ArrayBuffer` views (`Buffer`, typed arrays, `DataView`) are indexed byte containers, and nobody
+ * intends the bytes as log data: the output of a failed child process is the usual case. They are
+ * written as their size, whatever `toJSON` a subclass defines, and before anything reads `toJSON`.
+ * Pino's own path redaction cannot walk a `Buffer` at all.
+ *
+ * Under 'safe' the output is plain data, and `toJSON` is read once through the same operation
+ * `JSON.stringify` uses, so a Proxy that answers differently to a descriptor read than to a get is
+ * read the way the stringifier would read it.
+ *
  * @param value - The value to inspect.
  * @param rules - The names to censor and the root keys that have a serializer.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
@@ -398,171 +407,234 @@ function walkObject(
   honorToJson: boolean,
   inSerialized: boolean
 ): unknown {
-  // `ArrayBuffer` views (`Buffer`, typed arrays, `DataView`) are indexed byte containers, and
-  // nobody intends the bytes as log data: the output of a failed child process is the usual
-  // case. They are written as their size, whatever `toJSON` a subclass defines, and before
-  // anything reads `toJSON`. Pino's own path redaction cannot walk a `Buffer` at all.
   if (ArrayBuffer.isView(value)) {
     return withBinaryAsSize(value)
   }
-  // Under 'safe' the output is plain data, and `toJSON` is read once through the same operation
-  // `JSON.stringify` uses, so a Proxy that answers differently to a descriptor read than to a get
-  // is read the way the stringifier would read it.
-  const plain = rules.ownFields.safe
-  const resolvedToJson = resolveToJson(value, plain)
+  const method = resolveToJson(value, rules.ownFields.safe).method
 
   ancestors.add(value)
   try {
-    // `toJSON` is checked BEFORE the array branch, because `JSON.stringify` gives
-    // the method precedence over array serialization too — an `Array` subclass
-    // with a `toJSON()` that returns `{ accessToken }` would otherwise be walked
-    // as an ordinary array (finding nothing) and then emit the token in clear.
-    //
-    // A value with `toJSON` decides its own serialized form, so walking its own
-    // properties would inspect something that never reaches the log — while
-    // skipping it entirely leaves whatever the method SYNTHESIZES unredacted.
-    // Walk the method's output instead, and substitute it only when something was
-    // actually censored: a clean `Date` / `Decimal` / Luxon value is returned by
-    // reference, so serializers downstream still receive the original object.
-    // `honorToJson` is false for exactly one caller: the ROOT of a log record.
-    // Pino ITERATES that object — it never calls `toJSON` on it — so honouring the
-    // method there would replace the whole record with the method's return value
-    // and discard `logKey`, `msg` and every other field. Nested values and
-    // serializer outputs DO reach `JSON.stringify`, which honours `toJSON`, so
-    // they keep it.
-    // Under `errorOwnFields: 'safe'` the output is plain data, so nothing in it can run after the
-    // redaction. An `Error` is written from its own fields and its `toJSON` is not called: a
-    // library's (an HTTP client's, say) would carry the request it made. Any other `toJSON` is
-    // called once and its result is walked.
-    const ownsItsForm = rules.ownFields.safe && isError(value)
-    const toJson = honorToJson && !ownsItsForm ? resolvedToJson.method : undefined
-    if (toJson !== undefined) {
-      // A `toJSON` can RENAME the field it exposes, carrying the value around the
-      // matcher: `{ password, toJSON() { return { value: this.password } } }`
-      // emitted the secret under `value`, because only the OUTPUT is walked and
-      // the source key `password` is never seen. So when the SOURCE itself
-      // carries a sensitive own key, the method is not trusted to preserve it and
-      // the whole value is censored — fail closed.
-      //
-      // The obvious alternative, calling `toJSON` against a sanitized copy, was
-      // rejected: it breaks every method that reads an internal slot rather than
-      // an own property. `Date.prototype.toJSON.call({ ...new Date() })` throws
-      // `toISOString is not a function`, and `Decimal` / Luxon behave the same —
-      // that would trade a narrow leak for a crash on the COMMON case.
-      //
-      // `Object.keys` reads names only; no getter is invoked, so the source is
-      // not observed twice. The check is shallow by design: a method that reaches
-      // into NESTED state (`this.inner.password`) to rename it is not caught, and
-      // cannot be — that is the same limitation as a caller writing
-      // `{ renamed: obj.inner.password }` by hand, which no name matcher sees.
-      // Documented in PINO-REDACTION-GUIDELINES.md under the engine's limits.
-      if (Object.keys(value).some((key) => rules.sensitive.has(key.toLowerCase()))) {
-        return rules.censor
-      }
-      // The INSPECTED result is what gets returned, always — never the original
-      // object. Returning the original when the probe came back clean left
-      // `JSON.stringify` to call `toJSON()` a SECOND time (with the property key,
-      // which this call does not pass), so a stateful or key-dependent method
-      // could answer clean here and `{ password }` at serialization. The cost is
-      // that a clean `Date` / `Decimal` is substituted by its serialized form
-      // rather than passed through by reference; the JSON output is identical,
-      // and determinism is worth more than the reference.
-      // `depth + 1`: following the output is a recursive step like any other.
-      // Leaving the counter let a chain of methods each returning a FRESH
-      // `toJSON`-bearing object recurse forever — nothing repeats, so the ancestor
-      // set never matches and the ceiling was never reached. The stack exhausted
-      // instead: contained by the root catch, but at the cost of the WHOLE record.
-      return walk(toJson.call(value), rules, depth + 1, ancestors, true, inSerialized)
-    }
-
-    // A callable with no `toJSON` reaches here. It must be handed back as-is:
-    // walking it would replace it with a plain object, and `JSON.stringify`
-    // omits a bare function rather than emitting `{}`.
-    if (typeof value === 'function') {
-      return plain ? undefined : value
-    }
-
-    if (Array.isArray(value)) {
-      return walkArray(value, rules, depth, ancestors, inSerialized)
-    }
-
-    // No `toJSON` decides its form (that branch returned), and `JSON.stringify` writes `{}`.
-    const source = value as Record<string, unknown>
-    // No fast path for an empty key list. Returning the original would reopen the
-    // very window the snapshot closes: a Proxy can answer `[]` to this
-    // `Object.keys` and expose an enumerable `password` when Pino serializes the
-    // reference afterwards. An empty object costs one allocation; the alternative
-    // costs the guarantee.
-    const keys = Object.keys(source)
-
-    // Every property is SNAPSHOT into a fresh object, even when nothing was
-    // censored. Returning a clean subtree by reference was the allocation-free
-    // fast path, but it left any accessor in that subtree to be evaluated a
-    // SECOND time by `JSON.stringify` — and a stateful getter can answer `{}` to
-    // the walk and `{ password }` to the serializer. Reading each value once and
-    // pinning it as a data property removes that window by construction, which
-    // no amount of inspection could.
-    //
-    // The copy is built from the values already read rather than by spreading
-    // `source`: a spread would re-invoke every getter, reopening the same window.
-    // An Error is cloned through its prototype and descriptors so it stays an
-    // Error; anything else becomes a plain object carrying the same own
-    // enumerable properties — exactly what `JSON.stringify` would have emitted.
-    // Outside a serializer's keys an `Error` is written as data: its own fields below plus the
-    // head and chain, which are only ever added.
-    const asData = isError(value) && (plain || (rules.errorsAsData && !inSerialized))
-    // The clone is made even when discarded: an `Error` it cannot read must reach the fallback in
-    // `walkError`, which is the same node with or without the data form.
-    const clone = isError(value) ? cloneError(value) : undefined
-    const copy = clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
-    // What a failed driver call quoted or was given is not written, whether the `Error` is written
-    // as data or kept an instance: it can sit in the serializer's output as a field of the root
-    // `err` (a driver error held by a wrapper), or be returned by a custom serializer. Under a
-    // serializer's key the instance is the serializer's to read, so nothing is dropped there.
-    const scrubbed = isError(value) && (plain || !inSerialized)
-    const omitted = new Set<string>()
-    for (const key of keys) {
-      // Under a serializer's key the field is the serializer's to read; a binary one is still
-      // written as its size by the walk of the value below.
-      const read = Reflect.get(source, key)
-      const current = scrubbed ? ownFieldForLog(source, key, read, rules.ownFields) : read
-      if (current === OMIT_OWN_FIELD) {
-        // The clone carries the original field; the data form has none to remove.
-        Reflect.deleteProperty(copy, key)
-        omitted.add(key)
-        continue
-      }
-      defineOwn(
-        copy,
-        key,
-        rules.sensitive.has(key.toLowerCase())
-          ? rules.censor
-          : walk(
-              // An own enumerable `name`, `message` or `stack` of an `Error` is the same text as
-              // the part the walk would add, so it is cut the same way.
-              scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
-              rules,
-              depth + 1,
-              ancestors,
-              true,
-              inSerialized || (!honorToJson && rules.serializedKeys.has(key))
-            )
-      )
-    }
-    if (asData) {
-      const written = keys.filter((key) => !omitted.has(key))
-      addErrorParts(
-        copy,
-        value as Error,
-        written,
-        errorPartsHost(rules, ancestors, inSerialized),
-        depth
-      )
-    }
-    return copy
+    return walkForm(value, method, rules, depth, ancestors, honorToJson, inSerialized)
   } finally {
     ancestors.delete(value)
   }
+}
+
+/**
+ * Pick the form a value is written in: the output of its `toJSON`, a callable as it is, an array
+ * walked by member, or an object snapshot into a copy.
+ *
+ * `toJSON` is checked BEFORE the array branch, because `JSON.stringify` gives the method
+ * precedence over array serialization too: an `Array` subclass with a `toJSON()` that returns
+ * `{ accessToken }` would otherwise be walked as an ordinary array (finding nothing) and then emit
+ * the token in clear.
+ *
+ * A value with `toJSON` decides its own serialized form, so walking its own properties would
+ * inspect something that never reaches the log, while skipping it entirely leaves whatever the
+ * method SYNTHESIZES unredacted. Walk the method's output instead. `honorToJson` is false for
+ * exactly one caller: the ROOT of a log record. Pino ITERATES that object and never calls `toJSON`
+ * on it, so honouring the method there would replace the whole record with the method's return
+ * value and discard `logKey`, `msg` and every other field. Nested values and serializer outputs DO
+ * reach `JSON.stringify`, which honours `toJSON`, so they keep it.
+ *
+ * Under `errorOwnFields: 'safe'` the output is plain data, so nothing in it can run after the
+ * redaction. An `Error` is written from its own fields and its `toJSON` is not called: a library's
+ * (an HTTP client's, say) would carry the request it made. Any other `toJSON` is called once and
+ * its result is walked.
+ *
+ * A callable with no `toJSON` is handed back as it is: walking it would replace it with a plain
+ * object, and `JSON.stringify` omits a bare function rather than emitting `{}`.
+ *
+ * @param value - The value to inspect.
+ * @param method - Its `toJSON`, when it has a callable one.
+ * @param rules - The names to censor and the root keys that have a serializer.
+ * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
+ * @param ancestors - References on the current path (cycle guard).
+ * @param honorToJson - `false` only for the root of a log record.
+ * @returns The value, or a redacted copy of it.
+ */
+function walkForm(
+  value: object,
+  method: (() => unknown) | undefined,
+  rules: RedactRules,
+  depth: number,
+  ancestors: Set<object>,
+  honorToJson: boolean,
+  inSerialized: boolean
+): unknown {
+  const plain = rules.ownFields.safe
+  const toJson = honorToJson && !(plain && isError(value)) ? method : undefined
+  if (toJson !== undefined) {
+    return walkToJsonOutput(value, toJson, rules, depth, ancestors, inSerialized)
+  }
+  if (typeof value === 'function') {
+    return plain ? undefined : value
+  }
+  if (Array.isArray(value)) {
+    return walkArray(value, rules, depth, ancestors, inSerialized)
+  }
+  return walkProperties(value, rules, depth, ancestors, honorToJson, inSerialized)
+}
+
+/**
+ * Walk what a value's `toJSON` returns.
+ *
+ * A `toJSON` can RENAME the field it exposes, carrying the value around the matcher:
+ * `{ password, toJSON() { return { value: this.password } } }` emitted the secret under `value`,
+ * because only the OUTPUT is walked and the source key `password` is never seen. So when the SOURCE
+ * itself carries a sensitive own key, the method is not trusted to preserve it and the whole value
+ * is censored: fail closed.
+ *
+ * The obvious alternative, calling `toJSON` against a sanitized copy, was rejected: it breaks every
+ * method that reads an internal slot rather than an own property.
+ * `Date.prototype.toJSON.call({ ...new Date() })` throws `toISOString is not a function`, and
+ * `Decimal` / Luxon behave the same: that would trade a narrow leak for a crash on the COMMON case.
+ *
+ * `Object.keys` reads names only; no getter is invoked, so the source is not observed twice. The
+ * check is shallow by design: a method that reaches into NESTED state (`this.inner.password`) to
+ * rename it is not caught, and cannot be: that is the same limitation as a caller writing
+ * `{ renamed: obj.inner.password }` by hand, which no name matcher sees. Documented in
+ * PINO-REDACTION-GUIDELINES.md under the engine's limits.
+ *
+ * The INSPECTED result is what gets returned, always, never the original object. Returning the
+ * original when the probe came back clean left `JSON.stringify` to call `toJSON()` a SECOND time
+ * (with the property key, which this call does not pass), so a stateful or key-dependent method
+ * could answer clean here and `{ password }` at serialization. The cost is that a clean `Date` /
+ * `Decimal` is substituted by its serialized form rather than passed through by reference; the
+ * JSON output is identical, and determinism is worth more than the reference.
+ *
+ * `depth + 1`: following the output is a recursive step like any other. Leaving the counter let a
+ * chain of methods each returning a FRESH `toJSON`-bearing object recurse forever: nothing
+ * repeats, so the ancestor set never matches and the ceiling was never reached. The stack
+ * exhausted instead: contained by the root catch, but at the cost of the WHOLE record.
+ *
+ * @param value - The value whose `toJSON` is followed.
+ * @param toJson - Its `toJSON`.
+ * @param rules - The names to censor and the root keys that have a serializer.
+ * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
+ * @param ancestors - References on the current path (cycle guard).
+ * @returns The censor when the source holds a sensitive key, else the walked output.
+ */
+function walkToJsonOutput(
+  value: object,
+  toJson: () => unknown,
+  rules: RedactRules,
+  depth: number,
+  ancestors: Set<object>,
+  inSerialized: boolean
+): unknown {
+  if (Object.keys(value).some((key) => rules.sensitive.has(key.toLowerCase()))) {
+    return rules.censor
+  }
+  return walk(toJson.call(value), rules, depth + 1, ancestors, true, inSerialized)
+}
+
+/**
+ * Snapshot an object's own enumerable properties into a copy, censoring the sensitive ones and
+ * walking the rest.
+ *
+ * No `toJSON` decides its form, and `JSON.stringify` writes `{}`. There is no fast path for an
+ * empty key list: returning the original would reopen the very window the snapshot closes. A Proxy
+ * can answer `[]` to `Object.keys` and expose an enumerable `password` when Pino serializes the
+ * reference afterwards. An empty object costs one allocation; the alternative costs the guarantee.
+ *
+ * Every property is SNAPSHOT into a fresh object, even when nothing was censored. Returning a clean
+ * subtree by reference was the allocation-free fast path, but it left any accessor in that subtree
+ * to be evaluated a SECOND time by `JSON.stringify`, and a stateful getter can answer `{}` to the
+ * walk and `{ password }` to the serializer. Reading each value once and pinning it as a data
+ * property removes that window by construction, which no amount of inspection could.
+ *
+ * The copy is built from the values already read rather than by spreading `source`: a spread would
+ * re-invoke every getter, reopening the same window. An Error is cloned through its prototype and
+ * descriptors so it stays an Error; anything else becomes a plain object carrying the same own
+ * enumerable properties, exactly what `JSON.stringify` would have emitted. Outside a serializer's
+ * keys an `Error` is written as data: its own fields plus the head and chain, which are only ever
+ * added.
+ *
+ * What a failed driver call quoted or was given is not written, whether the `Error` is written as
+ * data or kept an instance: it can sit in the serializer's output as a field of the root `err` (a
+ * driver error held by a wrapper), or be returned by a custom serializer. Under a serializer's key
+ * the instance is the serializer's to read, so nothing is dropped there; a binary field is still
+ * written as its size by the walk of the value. An own enumerable `name`, `message` or `stack` of
+ * an `Error` is the same text as the part the walk would add, so it is cut the same way.
+ *
+ * @param value - The object to copy.
+ * @param rules - The names to censor and the root keys that have a serializer.
+ * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
+ * @param ancestors - References on the current path (cycle guard).
+ * @param honorToJson - `false` only for the root of a log record.
+ * @returns The copy.
+ */
+function walkProperties(
+  value: object,
+  rules: RedactRules,
+  depth: number,
+  ancestors: Set<object>,
+  honorToJson: boolean,
+  inSerialized: boolean
+): unknown {
+  const source = value as Record<string, unknown>
+  const keys = Object.keys(source)
+  const { safe } = rules.ownFields
+  const asData = isError(value) && (safe || (rules.errorsAsData && !inSerialized))
+  const copy = startCopy(value, asData)
+  const scrubbed = isError(value) && (safe || !inSerialized)
+  const omitted = new Set<string>()
+  for (const key of keys) {
+    const read = Reflect.get(source, key)
+    const current = scrubbed ? ownFieldForLog(source, key, read, rules.ownFields) : read
+    if (current === OMIT_OWN_FIELD) {
+      // The clone carries the original field; the data form has none to remove.
+      Reflect.deleteProperty(copy, key)
+      omitted.add(key)
+      continue
+    }
+    defineOwn(
+      copy,
+      key,
+      rules.sensitive.has(key.toLowerCase())
+        ? rules.censor
+        : walk(
+            scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
+            rules,
+            depth + 1,
+            ancestors,
+            true,
+            inSerialized || (!honorToJson && rules.serializedKeys.has(key))
+          )
+    )
+  }
+  if (asData) {
+    const host = errorPartsHost(rules, ancestors, inSerialized)
+    addErrorParts(copy, value as Error, without(keys, omitted), host, depth)
+  }
+  return copy
+}
+
+/**
+ * The keys that were not omitted, in their order.
+ *
+ * @param keys - The own enumerable keys of the object.
+ * @param omitted - The keys whose field is not written.
+ * @returns The keys that are written.
+ */
+function without(keys: readonly string[], omitted: ReadonlySet<string>): string[] {
+  return keys.filter((key) => !omitted.has(key))
+}
+
+/**
+ * The object a snapshot starts from: a clone of an `Error`, so it stays one, unless it is written
+ * as data; a fresh object otherwise. The clone is made even when discarded, because an `Error` it
+ * cannot read must reach the fallback in `walkError`, which is the same node with or without the
+ * data form.
+ *
+ * @param value - The object being copied.
+ * @param asData - Whether an `Error` is written as plain data.
+ * @returns The object the properties are defined on.
+ */
+function startCopy(value: object, asData: boolean): Record<string, unknown> {
+  const clone = isError(value) ? cloneError(value) : undefined
+  return clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
 }
 
 /** What the code that writes the parts of an `Error` needs from this walk. */
