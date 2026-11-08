@@ -208,6 +208,51 @@ describe('a toJSON accessor that shadows a hook the walk did not follow', () => 
   )
 })
 
+describe('an Error that changes what it holds between the walk and the clone', () => {
+  it.each([
+    ['not enumerable', false],
+    ['enumerable', true]
+  ])('does not run a function its accessor put there when read, %s', (_name, enumerable) => {
+    const rewriting = (): Error => {
+      const error = new Error('boom')
+      Object.defineProperty(error, 'toJSON', {
+        configurable: true,
+        enumerable: false,
+        get: () => {
+          Object.defineProperty(error, 'toJSON', {
+            configurable: true,
+            enumerable,
+            value: () => ({ password: SECRET })
+          })
+          return undefined
+        }
+      })
+      return error
+    }
+
+    expect(written({ err: rewriting() })).not.toContain(SECRET)
+    expect(written({ err: rewriting() }, true, ['err'])).not.toContain(SECRET)
+  })
+
+  it('does not run a hook that a Proxy shows only to the second descriptor read', () => {
+    let reads = 0
+    const proxy = new Proxy(new Error('boom'), {
+      ownKeys: (target) => [...Reflect.ownKeys(target), 'toJSON'],
+      getOwnPropertyDescriptor: (target, key) =>
+        key === 'toJSON'
+          ? reads++ === 0
+            ? undefined
+            : { configurable: true, enumerable: false, value: () => ({ password: SECRET }) }
+          : Reflect.getOwnPropertyDescriptor(target, key),
+      has: (target, key) => key !== 'toJSON' && key in target,
+      get: (target, key, receiver) =>
+        key === 'toJSON' ? undefined : Reflect.get(target, key, receiver)
+    })
+
+    expect(written({ err: proxy })).not.toContain(SECRET)
+  })
+})
+
 describe('a frozen Error with a stateful toJSON accessor', () => {
   it('does not run the hook after the clone, whose descriptors are relaxed', () => {
     const error = statefulError(false)

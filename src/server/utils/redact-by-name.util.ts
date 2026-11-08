@@ -173,6 +173,22 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
 }
 
 /**
+ * Whether a property would give the stringifier a hook to run: an accessor, which can answer a
+ * function at the next read, or a function. Every place that builds an output object asks this of
+ * what it is about to hold, so the rule is about the output and not about what the walk read
+ * earlier, which the original can change before the output is built.
+ *
+ * @param descriptor - The descriptor the output object holds or is about to hold, if any.
+ * @returns `true` when the stringifier could run it.
+ */
+function runsAHook(descriptor: PropertyDescriptor | undefined): boolean {
+  return (
+    descriptor !== undefined &&
+    (descriptor.get !== undefined || typeof descriptor.value === 'function')
+  )
+}
+
+/**
  * Give an object a `toJSON` of `undefined`, which the stringifier does not run. It is defined and
  * not deleted, because a `toJSON` method further up the prototype chain that the walk never read,
  * behind the accessor this replaces, would run in its place.
@@ -234,9 +250,10 @@ function cloneError(error: Error): Error {
     // defaults: nothing downstream rewrites or deletes a stack.
     Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false })
   }
-  // An accessor `toJSON` that answered no hook to the walk can answer one to `JSON.stringify`
-  // after the redaction, and the clone carries every descriptor of the original.
-  if (Object.getOwnPropertyDescriptor(clone, 'toJSON')?.get !== undefined) shadowHook(clone)
+  // The clone carries every descriptor of the original, read after the walk's own read, so a
+  // `toJSON` accessor, or a function an accessor put there when it was read, would run in
+  // `JSON.stringify` after the redaction.
+  if (runsAHook(Object.getOwnPropertyDescriptor(clone, 'toJSON'))) shadowHook(clone)
   return clone
 }
 
@@ -618,7 +635,7 @@ function walkProperties(
     const current = scrubbed ? ownFieldForLog(source, key, read, rules.ownFields) : read
     // A `toJSON` that reads as a function only now is a hook the walk did not follow, which
     // `JSON.stringify` would run after the redaction.
-    const hook = honorToJson && key === 'toJSON' && typeof current === 'function'
+    const hook = honorToJson && key === 'toJSON' && runsAHook({ value: current })
     if (current === OMIT_OWN_FIELD || hook) {
       // The clone carries the original field; the data form has none to remove.
       if (hook) shadowHook(copy)
