@@ -447,6 +447,14 @@ reading `statusCode` and `writableFinished`, so it never depends on a route matc
 running or a filter catching anything. One line in, one line out, for the parser rejection, the
 unmatched-route 404, the guard rejection and the aborted connection alike.
 
+To open only the correlation scope ahead of the parser, without the access log, call
+`BymaxLoggerModule.useRequestContext(app)` at the same point. A request the parser refuses (truncated JSON,
+a content encoding it does not support, a body over the limit) then has its `requestId` and the
+`x-request-id` response header, so an exception filter that reads the id from `LogContextService`
+puts the same value in its envelope. Install that filter with `app.useGlobalFilters(...)`, which is
+what Nest consults for an error the parser raised. It can be combined with `applyAccessLog(app)` or
+`applyRequestIdMiddleware(consumer)`: a second mount reuses the scope.
+
 `applyRequestIdMiddleware(consumer)` remains supported and unchanged; it is the right choice when
 correlation should be scoped to a route subtree rather than the whole application. **Wiring both is
 safe** — the correlation middleware adopts an id already in scope instead of minting a second one,
@@ -1610,6 +1618,7 @@ Two kinds of failure, and they surface differently. A **thrown `Error`** carries
 | `[BymaxLoggerModule] options.`                           | `forRoot` / `forRootAsync`, at module setup | any option fails validation: a missing `service`, a `level` outside the set, a bad type | Fix the option the message names; it prints the path and what it received |
 | `[BymaxLoggerModule] useNestLogger(app) called but`      | `BymaxLoggerModule.useNestLogger`           | the module was never imported into the application                                      | Import `BymaxLoggerModule` before calling it                              |
 | `[BymaxLoggerModule] applyAccessLog(app) called but`     | `applyAccessLog`                            | the module was never imported into the application                                      | Import `BymaxLoggerModule` before calling it                              |
+| `[BymaxLoggerModule] useRequestContext(app) called but`  | `useRequestContext`                         | the module was never imported into the application                                      | Import `BymaxLoggerModule` before calling it                              |
 | `[PrettyDevDestination] pino-pretty is not installed`    | `PrettyDevDestination.onInit`               | the destination is registered and resolving `pino-pretty` itself fails                  | Install `pino-pretty` or drop the destination                             |
 | `[PrettyDevDestination] pino-pretty failed to start`     | `PrettyDevDestination.onInit`               | `pino-pretty` is found but importing it or building the transform throws                | Read the message and the error's `cause`: it is the real failure          |
 | `[PrettyDevDestination] refused in production`           | `PrettyDevDestination.onInit`               | `NODE_ENV` is exactly `production`                                                      | Use `DefaultStdoutDestination` in production                              |

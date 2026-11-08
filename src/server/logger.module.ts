@@ -34,6 +34,7 @@ import type {
 } from './interfaces/logger-module-options.interface'
 import { BymaxLoggerModuleBase, BUILDER_OPTIONS_TOKEN } from './logger.module.builder'
 import type { ASYNC_OPTIONS_TYPE, OPTIONS_TYPE } from './logger.module.builder'
+import { applyRequestContext } from './middlewares/apply-request-context'
 import { buildPinoInstance, resolveNameRedactor } from './pino-factory'
 import { DestinationHealth } from './services/destination-health.service'
 import { DestinationRegistry } from './services/destination-registry.service'
@@ -278,5 +279,26 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
     }
     app.useLogger(logger)
     app.flushLogs()
+  }
+
+  /**
+   * Open the request-id correlation scope ahead of the body parser, so a request the parser
+   * refuses (malformed JSON, an unsupported content encoding, a body over the limit) still has its
+   * `requestId`, and the `x-request-id` response header, where an exception filter reads it.
+   *
+   * Call once in `main.ts` AFTER creating the app and BEFORE `app.init()` / `app.listen(...)`.
+   * It mounts only the scope. `applyAccessLog(app)` and `applyRequestIdMiddleware(consumer)` can
+   * be used as well: a second mount of the middleware reuses the scope this one opened.
+   *
+   * @param app - The Nest application returned by `NestFactory.create()`.
+   * @throws Error When `BymaxLoggerModule` was not imported.
+   * @example
+   *   const app = await NestFactory.create(AppModule, { bufferLogs: true })
+   *   BymaxLoggerModule.useNestLogger(app)
+   *   BymaxLoggerModule.useRequestContext(app)
+   *   await app.listen(3000)
+   */
+  static useRequestContext(app: INestApplication): void {
+    applyRequestContext(app)
   }
 }

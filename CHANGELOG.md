@@ -11,6 +11,24 @@ heading here.
 
 ## [Unreleased]
 
+### Added
+
+- **`BymaxLoggerModule.useRequestContext(app)`.** Opens the request-id correlation scope ahead of
+  the body parser, from `main.ts`, like `useNestLogger(app)`. A request the parser refuses
+  (truncated JSON, an unsupported content encoding, a body over the limit) now has its `requestId`
+  and the `x-request-id` response header, so a consumer's exception filter that reads the id from
+  `LogContextService` writes the same value in its envelope. It mounts only the scope and can be
+  combined with `applyAccessLog(app)` or `applyRequestIdMiddleware(consumer)`. Additive: nothing
+  changes for an application that does not call it.
+  **Apply:** call it right after `NestFactory.create()` and before `app.init()` / `app.listen()`.
+
+### Changed
+
+- **1.4.11 behaviour its notes did not list.** Under `errorOwnFields: 'all'` with
+  `redactStrategy: 'paths'`, an `Error` whose `toJSON` is a hostile accessor has been written as
+  `UnknownError` since 1.4.11, as `redactStrategy: 'names'` already did; 1.4.10 wrote it as an
+  `Error`. Nothing changes here; this records it.
+
 ## [1.4.11] - 2026-11-08
 
 ### Added
