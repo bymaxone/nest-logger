@@ -131,6 +131,17 @@ describe('a hook behind an enumerable accessor on a copy', () => {
     )
   })
 
+  it('keeps a toJSON function key at the record root, which Pino iterates and never stringifies', () => {
+    const hook = (): number => 1
+
+    const copy = createNameRedactor(['password'], 'X')({ a: 1, toJSON: hook }, true) as Record<
+      string,
+      unknown
+    >
+
+    expect(copy['toJSON']).toBe(hook)
+  })
+
   it('keeps the other own fields of the object', () => {
     const copy = createNameRedactor(['password'], 'X')(
       withStatefulAccessor({ a: 1, password: 'p' }),
