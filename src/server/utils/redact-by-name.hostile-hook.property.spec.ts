@@ -146,6 +146,48 @@ function shapes(counter: Counter): Array<(pick: () => number) => Planted> {
       return { value: target, kind: 'error, getter that defines a property when read' }
     },
     (): Planted => {
+      class Hooked extends Error {
+        toJSON(): object {
+          return { password: SECRET }
+        }
+      }
+      const base = new Hooked('boom')
+      Object.defineProperty(base, 'toJSON', {
+        configurable: true,
+        enumerable: true,
+        value: undefined
+      })
+      let ownKeysReads = 0
+      const proxy = new Proxy(base, {
+        ownKeys: (target) =>
+          ownKeysReads++ === 0
+            ? Reflect.ownKeys(target).filter((key) => key !== 'toJSON')
+            : Reflect.ownKeys(target)
+      })
+      return { value: proxy, kind: 'error, prototype hook under a shadow the key read misses' }
+    },
+    (): Planted => {
+      const target = new Error('boom')
+      const proto = Object.create(Error.prototype) as object
+      Object.defineProperty(proto, 'toJSON', { get: laterHook() })
+      Object.setPrototypeOf(target, proto)
+      return { value: target, kind: 'error, prototype accessor' }
+    },
+    (): Planted => {
+      const target = new Error('boom')
+      Object.setPrototypeOf(
+        target,
+        new Proxy(Error.prototype, {
+          get: (base, key, receiver) =>
+            key === 'toJSON' ? hook : Reflect.get(base, key, receiver),
+          getOwnPropertyDescriptor: (base, key) =>
+            key === 'toJSON' ? undefined : Reflect.getOwnPropertyDescriptor(base, key),
+          has: (base, key) => key !== 'toJSON' && Reflect.has(base, key)
+        })
+      )
+      return { value: target, kind: 'error, Proxy prototype' }
+    },
+    (): Planted => {
       let descriptorReads = 0
       const proxy = new Proxy(new Error('boom'), {
         ownKeys: (target) => [...Reflect.ownKeys(target), 'leak'],

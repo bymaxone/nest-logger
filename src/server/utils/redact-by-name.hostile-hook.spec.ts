@@ -295,6 +295,34 @@ describe('a frozen Error with a stateful toJSON accessor', () => {
   })
 })
 
+describe('an Error whose prototype carries a hook and whose own shadow hides from the key snapshot', () => {
+  it.each([
+    ['without a serializer key', undefined],
+    ['under a serializer key', ['err']]
+  ])('keeps the hook from running %s', (_name, keys) => {
+    class Hooked extends Error {
+      toJSON(): object {
+        return { password: SECRET }
+      }
+    }
+    const base = new Hooked('boom')
+    Object.defineProperty(base, 'toJSON', {
+      configurable: true,
+      enumerable: true,
+      value: undefined
+    })
+    let reads = 0
+    const proxy = new Proxy(base, {
+      ownKeys: (target) =>
+        reads++ === 0
+          ? Reflect.ownKeys(target).filter((key) => key !== 'toJSON')
+          : Reflect.ownKeys(target)
+    })
+
+    expect(written({ err: proxy }, true, keys)).not.toContain(SECRET)
+  })
+})
+
 describe('ordinary input is left as it was', () => {
   it('returns a function whose toJSON is not a function as it is', () => {
     const fn = Object.assign((): number => 1, { toJSON: 'text' })
@@ -307,7 +335,15 @@ describe('ordinary input is left as it was', () => {
     expect(copy['run']).toBe(fn)
   })
 
-  it('adds no own property to the clone of an Error that has no toJSON', () => {
+  it('adds no own property to the copy of a plain object', () => {
+    const copy = createNameRedactor(['password'], 'X')({ box: { a: 1, b: [2] } }, false) as {
+      box: object
+    }
+
+    expect(Object.getOwnPropertyNames(copy.box).sort()).toEqual(['a', 'b'])
+  })
+
+  it('adds only a non-enumerable toJSON to the clone of an Error that has none', () => {
     const error = Object.assign(new Error('boom'), { code: 'E_X' })
 
     const copy = createNameRedactor(['password'], 'X')({ err: error }, false) as {
@@ -315,8 +351,15 @@ describe('ordinary input is left as it was', () => {
     }
 
     expect(Object.getOwnPropertyNames(copy.err).sort()).toEqual(
-      Object.getOwnPropertyNames(error).sort()
+      [...Object.getOwnPropertyNames(error), 'toJSON'].sort()
     )
+    expect(Object.keys(copy.err)).toEqual(Object.keys(error))
+    expect(Object.getOwnPropertyDescriptor(copy.err, 'toJSON')).toEqual({
+      configurable: false,
+      enumerable: false,
+      value: undefined,
+      writable: false
+    })
   })
 
   it('lands the censor on a toJSON key that is a sensitive name, over the shadow', () => {

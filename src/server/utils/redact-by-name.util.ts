@@ -173,25 +173,12 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
 }
 
 /**
- * Whether a property would give the stringifier a hook to run: an accessor, which can answer a
- * function at the next read, or a function. Every place that builds an output object asks this of
- * what it is about to hold, so the rule is about the output and not about what the walk read
- * earlier, which the original can change before the output is built.
- *
- * @param descriptor - The descriptor the output object holds or is about to hold, if any.
- * @returns `true` when the stringifier could run it.
- */
-function runsAHook(descriptor: PropertyDescriptor | undefined): boolean {
-  return (
-    descriptor !== undefined &&
-    (descriptor.get !== undefined || typeof descriptor.value === 'function')
-  )
-}
-
-/**
  * Give an object a `toJSON` of `undefined`, which the stringifier does not run. It is defined and
- * not deleted, because a `toJSON` method further up the prototype chain that the walk never read,
- * behind the accessor this replaces, would run in its place.
+ * not deleted, because deleting would leave a `toJSON` method further up the prototype chain to
+ * run in its place. The clone of an `Error` gets it as the
+ * last step of its copy: an own property of an object only this walk can reach is read by
+ * `JSON.stringify` before any hook on the prototype chain, whatever that hook answers later. A
+ * `toJSON` value the property loop wrote is non-configurable, so the call leaves it as written.
  *
  * @param target - The copy that must not run a hook.
  */
@@ -203,8 +190,7 @@ function shadowHook(target: object): void {
  * Remove every enumerable own key from a clone. The property loop writes each key the walk took, so
  * what the clone holds afterwards is exactly what the walk produced for it. The clone is built
  * from descriptors read after the keys were taken, so an object whose reads disagree, a Proxy, can
- * hand it an enumerable value the walk never saw and never redacted. Like {@link runsAHook}, this
- * is asked of the output object and not of what the walk read earlier.
+ * hand it an enumerable value the walk never saw and never redacted.
  *
  * @param clone - The clone of an `Error`.
  */
@@ -263,11 +249,10 @@ function cloneError(error: Error): Error {
     // defaults: nothing downstream rewrites or deletes a stack.
     Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false })
   }
-  // The clone carries every descriptor of the original, read after the walk's own read, so a
-  // `toJSON` accessor, or a function an accessor put there when it was read, would run in
-  // `JSON.stringify` after the redaction.
+  // The clone carries every descriptor of the original, read after the walk's own read, so it can
+  // hold an enumerable value the walk never saw. The shadow over a hook comes after the property
+  // loop, in `walkProperties`.
   withoutEnumerableKeys(clone)
-  if (runsAHook(Object.getOwnPropertyDescriptor(clone, 'toJSON'))) shadowHook(clone)
   return clone
 }
 
@@ -649,10 +634,9 @@ function walkProperties(
     const current = scrubbed ? ownFieldForLog(source, key, read, rules.ownFields) : read
     // A `toJSON` that reads as a function only now is a hook the walk did not follow, which
     // `JSON.stringify` would run after the redaction.
-    const hook = honorToJson && key === 'toJSON' && runsAHook({ value: current })
+    const hook = honorToJson && key === 'toJSON' && typeof current === 'function'
     if (current === OMIT_OWN_FIELD || hook) {
       // Neither copy carries the key: the clone starts with no enumerable key, the data form has none.
-      if (hook) shadowHook(copy)
       omitted.add(key)
       continue
     }
@@ -674,7 +658,7 @@ function walkProperties(
   if (asData) {
     const host = errorPartsHost(rules, ancestors, inSerialized)
     addErrorParts(copy, value as Error, without(keys, omitted), host, depth)
-  }
+  } else if (isError(value)) shadowHook(copy)
   return copy
 }
 

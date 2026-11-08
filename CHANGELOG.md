@@ -22,13 +22,14 @@ heading here.
   property, and a function whose prototype is such a Proxy. A callable whose answer can change (a
   Proxy, a function with a `toJSON` accessor, or one with a Proxy on its prototype chain) is now
   dropped as a function with no hook is, a `toJSON` that reads as a function where the stringifier
-  would honour it is not copied, and a `toJSON` accessor, or a function an accessor put there when
-  it was read, on the clone of an `Error` is replaced by `undefined`. One rule decides it, asked of
-  the output object itself: whether a property would give the stringifier a hook to run.
+  would honour it is not copied, and the clone of an `Error` ends with an own, non-enumerable
+  `toJSON` set to `undefined`, which the stringifier reads before any hook on the prototype chain.
+  The rule is about the output object, not about what the walk read earlier, which the original
+  can change before the output is built.
   Ordinary input is unchanged, including a `toJSON` key that is not a function. These shapes need an
-  object built by code that hides its hook, not a value read from data. A hook reachable only
-  through the prototype chain of an `Error` is a known limitation: it needs code inside the process,
-  and shadowing `toJSON` on every clone would change the own keys of every logged error.
+  object built by code that hides its hook, not a value read from data. The one visible change is
+  that `Object.getOwnPropertyNames` of a logged `Error` clone lists `toJSON`; `Object.keys`, `for...in`
+  and the JSON output are the same.
   **Apply to a derived backend:** nothing to do.
 
 ### Internal
