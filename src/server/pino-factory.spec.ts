@@ -730,9 +730,10 @@ describe('resolveNameRedactor', () => {
         redactPaths: ['*', '*.*']
       })
     )
-    const input = { password: 'kept' }
+    const input = { password: 'kept', error: new Error('kept') }
     expect(redact(input)).not.toBe(input)
     expect(redact(input)).toEqual(input)
+    expect((redact(input) as typeof input).error).toBeInstanceOf(Error)
   })
 
   it(/*

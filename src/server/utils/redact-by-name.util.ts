@@ -126,34 +126,21 @@ export interface RedactionFailedEnvelope {
   _logKey: typeof RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
 }
 
-/** A `toJSON` resolved off a value, and how it was stored. */
+/** A `toJSON` resolved off a value. */
 interface ResolvedToJson {
   /** The callable method, or `undefined` when the value has none. */
   method: (() => unknown) | undefined
-  /**
-   * `true` when `toJSON` is an ACCESSOR, so a second read can yield a different
-   * function. Nothing may be decided from the identity of such a method.
-   */
-  fromAccessor?: boolean
 }
 
 /**
- * Resolve `toJSON` along the prototype chain, reading it exactly ONCE and
- * reporting whether it came from an accessor. A plain `value.toJSON` read gave
- * neither, and both matter.
- *
- * Reading once is the design's premise — the walk used to read the property
- * twice, invoking a getter twice per value. Reporting the accessor case closes a
- * live leak: a getter answers differently on every read, so identity says nothing
- * about what `JSON.stringify` reads later, and an accessor returning
- * `Buffer.prototype.toJSON` took the fast path that hands back the ORIGINAL
- * object — the stringifier then read a `{ password }` factory from it.
+ * Resolve `toJSON` along the prototype chain, reading it exactly ONCE. A plain `value.toJSON`
+ * read twice invokes a getter twice per value, and a getter can answer differently each time.
  *
  * @param value - A non-null object.
- * @returns The resolved method and whether it came from an accessor.
+ * @param viaGet - Read with one `[[Get]]` through any Proxy trap, as `JSON.stringify` does.
+ * @returns The callable method, or `undefined` when the value has none.
  */
 function resolveToJson(value: object, viaGet = false): ResolvedToJson {
-  let getter: (() => unknown) | undefined
   // Under 'safe' the read is the one `JSON.stringify` makes, a single `[[Get]]` through any Proxy
   // trap, which is not the descriptor walk below.
   let candidate: unknown = viaGet ? Reflect.get(value, 'toJSON') : undefined
@@ -161,21 +148,12 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
   while (current !== null) {
     const descriptor = Object.getOwnPropertyDescriptor(current, 'toJSON')
     if (descriptor !== undefined) {
-      getter = descriptor.get
-      candidate = getter === undefined ? descriptor.value : getter.call(value)
+      candidate = descriptor.get === undefined ? descriptor.value : descriptor.get.call(value)
       break
     }
     current = Object.getPrototypeOf(current)
   }
-  // One exit, deliberately. A separate `{ method: undefined, fromAccessor: false }`
-  // for the no-`toJSON` case carried a boolean nothing reads — the flag is only
-  // ever consulted alongside a method — so it was an equivalent mutant by
-  // construction. Falling through with both locals unset says the same thing
-  // without the dead literal.
-  return {
-    method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined,
-    fromAccessor: getter !== undefined
-  }
+  return { method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined }
 }
 
 /**
