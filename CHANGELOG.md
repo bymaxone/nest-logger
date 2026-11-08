@@ -19,7 +19,7 @@ heading here.
   command you give it, and `CLAUDE.md` has the command. It is a development tool and not a CI
   step. Its first run found 20 entries of the default redaction set that no test pinned, from
   `passwordHash` to `req.headers["x-auth-token"]`; a spec now pins every name and path that was
-  shipped, and censors each through the default redactor. Nothing in the package changes.
+  shipped, and censors each name through the default redactor. Nothing in the package changes.
 
 ## [1.4.13] - 2026-11-08
 

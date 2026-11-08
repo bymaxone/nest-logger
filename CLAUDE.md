@@ -84,7 +84,7 @@ pnpm mutation:full        # cold — deletes the baseline first, measures the tr
 `as const` value tables are not mutated by Stryker (it neither removes a property nor changes a
 number). `scripts/mutate-const-tables.mjs` does, one entry at a time, against a test command you
 give it; it is a development tool, not a CI step (usage in its header). Run it on a clean working
-tree, one slot, with the type check off:
+tree, with the type check off:
 `node scripts/mutate-const-tables.mjs -- pnpm exec jest --config jest.mutants.config.ts --findRelatedTests {file} --coverage=false --silent --bail=1`.
 
 Equivalent mutants are documented **in the source**, as
