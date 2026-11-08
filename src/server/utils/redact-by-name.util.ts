@@ -579,16 +579,16 @@ function walkProperties(
   const asData = isError(value) && (safe || (rules.errorsAsData && !inSerialized))
   const copy = startCopy(value, asData)
   const scrubbed = isError(value) && (safe || !inSerialized)
-  const written: string[] = []
+  const omitted = new Set<string>()
   for (const key of keys) {
     const read = Reflect.get(source, key)
     const current = scrubbed ? ownFieldForLog(source, key, read, rules.ownFields) : read
     if (current === OMIT_OWN_FIELD) {
       // The clone carries the original field; the data form has none to remove.
       Reflect.deleteProperty(copy, key)
+      omitted.add(key)
       continue
     }
-    written.push(key)
     defineOwn(
       copy,
       key,
@@ -606,9 +606,20 @@ function walkProperties(
   }
   if (asData) {
     const host = errorPartsHost(rules, ancestors, inSerialized)
-    addErrorParts(copy, value as Error, written, host, depth)
+    addErrorParts(copy, value as Error, without(keys, omitted), host, depth)
   }
   return copy
+}
+
+/**
+ * The keys that were not omitted, in their order.
+ *
+ * @param keys - The own enumerable keys of the object.
+ * @param omitted - The keys whose field is not written.
+ * @returns The keys that are written.
+ */
+function without(keys: readonly string[], omitted: ReadonlySet<string>): string[] {
+  return keys.filter((key) => !omitted.has(key))
 }
 
 /**
