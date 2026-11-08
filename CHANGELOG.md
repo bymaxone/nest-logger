@@ -30,8 +30,8 @@ heading here.
 - **A client error the body parser raises keeps its status.** An error with the `http-errors` shape,
   a `status` or `statusCode` from 400 to 499 and `expose: true`, such as a body over the limit
   (413) or an unsupported content encoding (415), was answered by `HttpExceptionFilter` as a 500
-  `{ statusCode, message }`. That filter is registered by `forRoot` with `http.isEnabled`, or by
-  hand; `forRootAsync` does not register it, and an application that uses it without the filter was
+  `{ statusCode, message }`. That filter is registered by `forRoot` with `http.isEnabled` and
+  `http.shouldCaptureExceptions` (default `true`), or by hand; `forRootAsync` does not register it, and an application that uses it without the filter was
   answered by Nest's own handler, with the right status, before and after. It is now answered
   with its own status and message, `{ statusCode: 413, message: 'request entity too large' }`, and
   logged as `HTTP_EXCEPTION_HANDLED` at warn level. The same error thrown inside a route is no
@@ -40,7 +40,8 @@ heading here.
   **Apply to a derived backend:** nothing to do; a client that read the 500 for these cases now
   reads the 413 or 415 the parser meant.
 - **The README says which filter answers a parser error, and for whom.** `forRoot` with
-  `http.isEnabled` registers the library's own exception filter as an `APP_FILTER` provider, so the
+  `http.isEnabled` and `http.shouldCaptureExceptions` (default `true`) registers the library's own
+  exception filter as an `APP_FILTER` provider, so the
   import order of the modules decides between `APP_FILTER` providers, and `app.useGlobalFilters(...)`
   always answers ahead of them. `forRootAsync` registers no filter, so none of that applies to it
   unless the filter is registered by hand. The 1.4.12 note on this was written without that scope.
