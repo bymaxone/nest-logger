@@ -1,6 +1,7 @@
 /**
- * Pins `applyRequestContext`: the correlation scope runs ahead of the body parser, a second mount
- * reuses it, and calling it without the module imported fails with a clear message.
+ * Pins `BymaxLoggerModule.useRequestContext`, which delegates to `applyRequestContext`: the
+ * correlation scope runs ahead of the body parser, a second mount reuses it, and calling it
+ * without the module imported fails with a clear message.
  *
  * Layer: server/middlewares, tests.
  */
@@ -14,7 +15,6 @@ import type {
 import { Test } from '@nestjs/testing'
 import request from 'supertest'
 
-import { applyRequestContext } from './apply-request-context'
 import { applyRequestIdMiddleware } from './apply-request-id-middleware'
 import { BymaxLoggerModule } from '../logger.module'
 import { LogContextService } from '../services/log-context.service'
@@ -61,7 +61,7 @@ function envelopeFilter(logContext: LogContextService): {
 async function create(module: new () => unknown, mount: boolean): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({ imports: [module] }).compile()
   const app = moduleRef.createNestApplication({ logger: false })
-  if (mount) applyRequestContext(app)
+  if (mount) BymaxLoggerModule.useRequestContext(app)
   app.useGlobalFilters(envelopeFilter(app.get(LogContextService)))
   await app.init()
   return app
@@ -70,7 +70,7 @@ async function create(module: new () => unknown, mount: boolean): Promise<INestA
 const refuse = (app: INestApplication): request.Test =>
   request(app.getHttpServer()).post('/echo').set('content-type', 'application/json').send('{"a":')
 
-describe('applyRequestContext', () => {
+describe('BymaxLoggerModule.useRequestContext', () => {
   it('opens the scope ahead of the body parser, so a refused body has its request id', async () => {
     const app = await create(PlainModule, true)
 
@@ -107,7 +107,7 @@ describe('applyRequestContext', () => {
     const moduleRef = await Test.createTestingModule({}).compile()
     const app = moduleRef.createNestApplication({ logger: false })
 
-    expect(() => applyRequestContext(app)).toThrow(
+    expect(() => BymaxLoggerModule.useRequestContext(app)).toThrow(
       expect.objectContaining({
         message: expect.stringContaining('useRequestContext(app) called but BymaxLoggerModule'),
         cause: expect.any(Error)
