@@ -77,3 +77,75 @@ describe('a hook the walk could not see', () => {
     expect(written({ err: statefulError(false) }, true, ['err'])).not.toContain(SECRET)
   })
 })
+
+/** An object with an enumerable `toJSON` accessor that answers no hook the first time. */
+const withStatefulAccessor = <T extends object>(target: T): T => {
+  let reads = 0
+  Object.defineProperty(target, 'toJSON', {
+    enumerable: true,
+    get: () => (reads++ === 0 ? undefined : () => ({ password: SECRET }))
+  })
+  return target
+}
+
+/** A function whose prototype is a Proxy that hides a hook from descriptors. */
+const functionWithHidingPrototype = (): object => {
+  const fn = (): number => 1
+  Object.setPrototypeOf(
+    fn,
+    new Proxy(
+      {},
+      {
+        get: (target, key) =>
+          key === 'toJSON' ? () => ({ password: SECRET }) : Reflect.get(target, key),
+        has: (target, key) => key !== 'toJSON' && Reflect.has(target, key),
+        getOwnPropertyDescriptor: (target, key) =>
+          key === 'toJSON' ? undefined : Reflect.getOwnPropertyDescriptor(target, key)
+      }
+    )
+  )
+  return fn
+}
+
+describe('a hook behind an enumerable accessor on a copy', () => {
+  class Instance {
+    readonly a = 1
+  }
+
+  it.each([
+    ['a plain object', (): object => withStatefulAccessor({})],
+    ['a class instance', (): object => withStatefulAccessor(new Instance())],
+    ['a Map', (): object => withStatefulAccessor(new Map())],
+    ['an array', (): object => withStatefulAccessor([])]
+  ])('is not run after %s', (_name, make) => {
+    expect(written({ x: make() })).not.toContain(SECRET)
+    expect(written({ list: [make()] })).not.toContain(SECRET)
+  })
+
+  it.each([
+    ['under a serializer key', ['err']],
+    ['with no serializer key', undefined]
+  ])('is not run after an Error written as data, %s', (_name, keys) => {
+    expect(written({ other: withStatefulAccessor(new Error('boom')) }, true, keys)).not.toContain(
+      SECRET
+    )
+  })
+
+  it('keeps the other own fields of the object', () => {
+    const copy = createNameRedactor(['password'], 'X')(
+      withStatefulAccessor({ a: 1, password: 'p' }),
+      false
+    ) as Record<string, unknown>
+
+    expect(copy['a']).toBe(1)
+    expect(copy['password']).toBe('X')
+    expect(Object.keys(copy)).not.toContain('toJSON')
+  })
+})
+
+describe('a hook behind the prototype chain of a callable', () => {
+  it('is not run after a function whose prototype is a Proxy that hides it', () => {
+    expect(written({ run: functionWithHidingPrototype() })).not.toContain(SECRET)
+    expect(written({ list: [functionWithHidingPrototype()] })).not.toContain(SECRET)
+  })
+})

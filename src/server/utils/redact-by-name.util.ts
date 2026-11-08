@@ -134,7 +134,8 @@ interface ResolvedToJson {
   method: (() => unknown) | undefined
   /**
    * Whether a later read may answer differently than this one: the method sits behind an
-   * accessor, or the value is a Proxy, which can answer as it likes.
+   * accessor, or the value or something on its prototype chain is a Proxy, which can answer as it
+   * likes.
    */
   volatile: boolean
 }
@@ -153,8 +154,10 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
   // trap, which is not the descriptor walk below.
   let candidate: unknown = viaGet ? Reflect.get(value, 'toJSON') : undefined
   let accessor = false
+  let proxied = viaGet && types.isProxy(value)
   let current: object | null = viaGet ? null : value
   while (current !== null) {
+    proxied = proxied || types.isProxy(current)
     const descriptor = Object.getOwnPropertyDescriptor(current, 'toJSON')
     if (descriptor !== undefined) {
       accessor = descriptor.get !== undefined
@@ -165,7 +168,7 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
   }
   return {
     method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined,
-    volatile: accessor || types.isProxy(value)
+    volatile: accessor || proxied
   }
 }
 
@@ -219,6 +222,11 @@ function cloneError(error: Error): Error {
     // redacted error. `writable` / `configurable` are left at their `false`
     // defaults: nothing downstream rewrites or deletes a stack.
     Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false })
+  }
+  // An accessor `toJSON` that answered no hook to the walk can answer one to `JSON.stringify`
+  // after the redaction, and the clone carries every descriptor of the original.
+  if (Object.getOwnPropertyDescriptor(clone, 'toJSON')?.get !== undefined) {
+    Reflect.deleteProperty(clone, 'toJSON')
   }
   return clone
 }
@@ -604,7 +612,10 @@ function walkProperties(
   for (const key of keys) {
     const read = Reflect.get(source, key)
     const current = scrubbed ? ownFieldForLog(source, key, read, rules.ownFields) : read
-    if (current === OMIT_OWN_FIELD) {
+    // A `toJSON` that reads as a function only now is a hook the walk did not follow, which
+    // `JSON.stringify` would run after the redaction.
+    const hook = honorToJson && key === 'toJSON' && typeof current === 'function'
+    if (current === OMIT_OWN_FIELD || hook) {
       // The clone carries the original field; the data form has none to remove.
       Reflect.deleteProperty(copy, key)
       omitted.add(key)
@@ -625,7 +636,6 @@ function walkProperties(
           )
     )
   }
-  if (honorToJson) withoutHook(copy)
   if (asData) {
     const host = errorPartsHost(rules, ancestors, inSerialized)
     addErrorParts(copy, value as Error, without(keys, omitted), host, depth)
@@ -642,21 +652,6 @@ function walkProperties(
  */
 function without(keys: readonly string[], omitted: ReadonlySet<string>): string[] {
   return keys.filter((key) => !omitted.has(key))
-}
-
-/**
- * Remove a `toJSON` the stringifier would run from a finished copy. A value with a hook it can
- * read was followed already, so a hook found on the copy is one the walk did not see: an accessor
- * that answered differently the second time, or a value that read as a function only now. A
- * clone of an `Error` carries every descriptor of the original, so an accessor survives in it.
- *
- * @param copy - The copy the properties were written to.
- */
-function withoutHook(copy: Record<string, unknown>): void {
-  const own = Object.getOwnPropertyDescriptor(copy, 'toJSON')
-  if (own !== undefined && (own.get !== undefined || typeof own.value === 'function')) {
-    Reflect.deleteProperty(copy, 'toJSON')
-  }
 }
 
 /**
