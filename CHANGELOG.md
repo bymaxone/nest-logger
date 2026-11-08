@@ -13,6 +13,10 @@ heading here.
 
 ### Internal
 
+- **A source file over 800 lines now fails CI unless it is on a frozen baseline.**
+  `scripts/check-file-length.mjs` (`pnpm check:file-length`) runs in the `verify` job and, in a
+  pull request, also compares the baseline with the base branch's, so the baseline cannot widen. It
+  starts with the three files that are already over the limit. Nothing in the package changes.
 - **The redaction walk is split into functions of at most 50 lines.** `walkObject` was 174 lines;
   it is now a short function that delegates to smaller ones, with the rationale kept as their
   documentation. No behaviour changes: 48000 comparisons of the old and the new walk over

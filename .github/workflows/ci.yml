@@ -73,6 +73,17 @@ jobs:
         # introduced by editing a document, so the pull request that edits one is
         # where it has to fail.
         run: pnpm check:docs
+      - name: Source files stay within the length limit
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # A pull request is also compared with the baseline on its base branch, so the baseline
+          # it carries cannot admit the offender it adds. The checkout above is not shallow.
+          if [ -n "$BASE_REF" ]; then
+            pnpm check:file-length --base "origin/$BASE_REF"
+          else
+            pnpm check:file-length
+          fi
       - name: Build all subpaths
         run: pnpm build
       - name: Verify build output integrity
