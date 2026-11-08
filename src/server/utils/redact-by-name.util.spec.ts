@@ -653,8 +653,8 @@ describe('createNameRedactor', () => {
   })
 
   it(/*
-   * An ordinary binary payload no longer renders as the bytes the native serializer would write:
-   * it renders as its size, which is what keeps a failed child process's output out of a line.
+   * An ordinary binary payload renders as its size, never as its bytes, which is what keeps a
+   * failed child process's output out of a line.
    */
   'should render pristine binary views as their size and not as their bytes', () => {
     const pristine = { b: Buffer.from('hi'), u: new Uint8Array([1, 2]) }

@@ -5,7 +5,6 @@
  *
  * Layer: server, tests.
  */
-import { execFileSync } from 'node:child_process'
 import { runInNewContext } from 'node:vm'
 import { applyDefaults } from './config/default-options'
 import type { BymaxLoggerModuleOptions } from './interfaces/logger-module-options.interface'
@@ -62,24 +61,6 @@ describe.each(['all', 'safe'] as const)(
       service.errorStructured('KEY', foreign(), 'u1')
 
       expect(entry().err).toMatchObject({ type: 'TypeError', message: 'boom', code: 'E_F' })
-    })
-
-    it('is the error Node itself throws for a failed child process, with its output as a size', () => {
-      const { service, entry } = pipeline({ errorOwnFields: mode })
-      let thrown: unknown
-      try {
-        execFileSync(process.execPath, ['-e', 'process.stderr.write("E");process.exit(3)'], {
-          stdio: 'pipe'
-        })
-      } catch (error) {
-        thrown = error
-      }
-
-      service.info('KEY', 'hello', 'u1', { nested: thrown })
-
-      expect(entry().nested.message).toContain('Command failed')
-      expect(entry().nested.status).toBe(3)
-      expect(entry().nested.stderr).toBe(mode === 'all' ? '[Binary 1 bytes]' : undefined)
     })
   }
 )

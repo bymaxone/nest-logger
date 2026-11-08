@@ -353,8 +353,8 @@ add('r5-own-cause-object', () => ({
  * Shapes that are worse by decision, with the decision. A string `cause` is written like a
  * `message`, as the root `err` does, so a secret placed in one is as visible as one
  * placed in a message: secrets do not belong in either. An `Error` of another realm is the root
- * err as the error it is; the recorded base holds what it was read as before, `UnknownError` and
- * `[object Object]`, and those two values are the difference.
+ * err as the error it is, so its `type` and `message` are written and neither is `UnknownError`
+ * nor `[object Object]`.
  */
 const ACCEPTED: Record<string, RegExp> = {
   'cause-string': /^LEAK SECRET$/,

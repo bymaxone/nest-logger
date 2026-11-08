@@ -66,15 +66,10 @@ describe.each(configurations)('a binary value in the record, with %s', (_name, e
   })
 
   it('is written as its real size when a subclass overrides byteLength', () => {
-    class Lying extends Uint8Array {
-      override get byteLength(): number {
-        return 'SECRET' as unknown as number
-      }
-    }
-    class LyingView extends (DataView as new (buffer: ArrayBuffer) => DataView) {
-      override get byteLength(): number {
-        return 'SECRET' as unknown as number
-      }
+    class Lying extends Uint8Array {}
+    class LyingView extends (DataView as new (buffer: ArrayBuffer) => DataView) {}
+    for (const hostile of [Lying, LyingView]) {
+      Object.defineProperty(hostile.prototype, 'byteLength', { get: () => 'SECRET' })
     }
     const { service, entry, line } = pipeline(extra)
 
