@@ -25,6 +25,8 @@ import type { LoggableRequest, LoggableResponse } from '../interfaces/http-conte
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { PinoLoggerService } from '../services/pino-logger.service'
 import { cutIfText } from '../utils/bounded-text.util'
+import { readExposedClientError } from '../utils/exposed-client-error.util'
+import type { ExposedClientError } from '../utils/exposed-client-error.util'
 import {
   HTTP_CLIENT_ERROR_MIN,
   HTTP_REDIRECT_MIN,
@@ -188,8 +190,8 @@ export class HttpLoggingInterceptor implements NestInterceptor {
 
   /**
    * Log a thrown completion: SERVER_ERROR (error level, with stack) for 5xx,
-   * CLIENT_ERROR (warn level) for an `HttpException` below 500. A non-`HttpException`
-   * always maps to 500, so it is reported as a server error.
+   * CLIENT_ERROR (warn level) for an `HttpException` below 500 or an exposed `http-errors`
+   * client error. Any other non-`HttpException` maps to 500, so it is reported as a server error.
    *
    * @param err - The thrown value (anything).
    * @param method - The HTTP method.
@@ -224,12 +226,49 @@ export class HttpLoggingInterceptor implements NestInterceptor {
       return
     }
 
-    // A non-HttpException never carries a status, so it is always a 500.
+    // An error with the `http-errors` shape that exposes a 4xx is a client error, as the filter answers it.
+    const clientError = readExposedClientError(err)
+    if (clientError !== undefined) {
+      this.logClientError(clientError, method, url, userId, duration)
+      return
+    }
+
+    // Any other non-HttpException carries no status, so it is a 500.
     this.logger.errorStructured(RESERVED_LOG_KEYS.HTTP_REQUEST_SERVER_ERROR, toError(err), userId, {
       method,
       url,
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       duration
     })
+  }
+
+  /**
+   * Log an exposed `http-errors` client error as CLIENT_ERROR at warn level.
+   *
+   * @param clientError - The status and message the error exposes.
+   * @param method - The HTTP method.
+   * @param url - The normalized request URL.
+   * @param userId - The acting user id, when known.
+   * @param duration - The elapsed time in milliseconds.
+   */
+  private logClientError(
+    clientError: ExposedClientError,
+    method: string,
+    url: string,
+    userId: string | undefined,
+    duration: number
+  ): void {
+    this.logger.warnStructured(
+      RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR,
+      `${method} ${url} → ${clientError.status}`,
+      userId,
+      {
+        method,
+        url,
+        statusCode: clientError.status,
+        duration,
+        errorMessage: cutIfText(clientError.message)
+      }
+    )
   }
 }
