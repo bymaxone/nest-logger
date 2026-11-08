@@ -696,17 +696,6 @@ describe('resolveNameRedactor', () => {
   })
 
   it(/*
-   * The legacy `'paths'` strategy must turn the walk OFF — otherwise the escape
-   * hatch would silently keep the new semantics (unbounded depth) while claiming
-   * to restore the old ones, and a consumer who chose it to reproduce a specific
-   * behaviour would not get it.
-   */
-  'returns a pass-through under the legacy paths strategy', () => {
-    const redact = resolveNameRedactor(applyDefaults({ ...baseOptions, redactStrategy: 'paths' }))
-    expect(redact(deep)).toBe(deep)
-  })
-
-  it(/*
    * `shouldDisableDefaultRedact` must turn the walk off too — the opt-out has to
    * disable the DEFAULT engine whichever engine that currently is.
    */
@@ -715,23 +704,6 @@ describe('resolveNameRedactor', () => {
       applyDefaults({ ...baseOptions, shouldDisableDefaultRedact: true })
     )
     expect(redact(deep)).toBe(deep)
-  })
-
-  it(/*
-   * A path with no nameable segment yields no leaf, and with the defaults off
-   * that leaves nothing for the walk to match — so it must fall back to the
-   * pass-through rather than build an empty matcher and pay for the traversal.
-   */
-  'returns a pass-through when no path yields a leaf name and defaults are off', () => {
-    const redact = resolveNameRedactor(
-      applyDefaults({
-        ...baseOptions,
-        shouldDisableDefaultRedact: true,
-        redactPaths: ['*', '*.*']
-      })
-    )
-    const input = { password: 'kept' }
-    expect(redact(input)).toBe(input)
   })
 
   it(/*

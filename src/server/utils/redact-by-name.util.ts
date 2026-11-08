@@ -58,12 +58,12 @@
  * @see {@link createNameRedactor}
  */
 import { cutIfText } from './bounded-text.util'
+import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import {
   addErrorParts,
   defineOwn,
   ERROR_TEXT_FIELDS,
-  readOwnField,
   type ErrorPartsHost
 } from './redact-error-parts.util'
 import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
@@ -126,34 +126,21 @@ export interface RedactionFailedEnvelope {
   _logKey: typeof RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
 }
 
-/** A `toJSON` resolved off a value, and how it was stored. */
+/** A `toJSON` resolved off a value. */
 interface ResolvedToJson {
   /** The callable method, or `undefined` when the value has none. */
   method: (() => unknown) | undefined
-  /**
-   * `true` when `toJSON` is an ACCESSOR, so a second read can yield a different
-   * function. Nothing may be decided from the identity of such a method.
-   */
-  fromAccessor?: boolean
 }
 
 /**
- * Resolve `toJSON` along the prototype chain, reading it exactly ONCE and
- * reporting whether it came from an accessor. A plain `value.toJSON` read gave
- * neither, and both matter.
- *
- * Reading once is the design's premise — the walk used to read the property
- * twice, invoking a getter twice per value. Reporting the accessor case closes a
- * live leak: a getter answers differently on every read, so identity says nothing
- * about what `JSON.stringify` reads later, and an accessor returning
- * `Buffer.prototype.toJSON` took the fast path that hands back the ORIGINAL
- * object — the stringifier then read a `{ password }` factory from it.
+ * Resolve `toJSON` along the prototype chain, reading it exactly ONCE. A plain `value.toJSON`
+ * read twice invokes a getter twice per value, and a getter can answer differently each time.
  *
  * @param value - A non-null object.
- * @returns The resolved method and whether it came from an accessor.
+ * @param viaGet - Read with one `[[Get]]` through any Proxy trap, as `JSON.stringify` does.
+ * @returns The callable method, or `undefined` when the value has none.
  */
 function resolveToJson(value: object, viaGet = false): ResolvedToJson {
-  let getter: (() => unknown) | undefined
   // Under 'safe' the read is the one `JSON.stringify` makes, a single `[[Get]]` through any Proxy
   // trap, which is not the descriptor walk below.
   let candidate: unknown = viaGet ? Reflect.get(value, 'toJSON') : undefined
@@ -161,21 +148,12 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
   while (current !== null) {
     const descriptor = Object.getOwnPropertyDescriptor(current, 'toJSON')
     if (descriptor !== undefined) {
-      getter = descriptor.get
-      candidate = getter === undefined ? descriptor.value : getter.call(value)
+      candidate = descriptor.get === undefined ? descriptor.value : descriptor.get.call(value)
       break
     }
     current = Object.getPrototypeOf(current)
   }
-  // One exit, deliberately. A separate `{ method: undefined, fromAccessor: false }`
-  // for the no-`toJSON` case carried a boolean nothing reads — the flag is only
-  // ever consulted alongside a method — so it was an equivalent mutant by
-  // construction. Falling through with both locals unset says the same thing
-  // without the dead literal.
-  return {
-    method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined,
-    fromAccessor: getter !== undefined
-  }
+  return { method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined }
 }
 
 /**
@@ -243,14 +221,6 @@ function cloneError(error: Error): Error {
  *   `JSON.stringify` and keep it.
  */
 export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
-
-/**
- * `Buffer.prototype.toJSON`, captured once for an identity comparison.
- *
- * Held as a reference rather than re-read per call so the fast-path check is a
- * pointer compare, and so a later reassignment of the global cannot redirect it.
- */
-const BUFFER_TO_JSON: unknown = Buffer.prototype.toJSON
 
 /** What one walk needs besides the value. */
 interface RedactRules {
@@ -355,7 +325,7 @@ function walk(
   }
   // An Error is the one value whose unreadable parts are isolated: it degrades on its own and
   // its siblings survive. See `walkError`.
-  if (value instanceof Error) {
+  if (isError(value)) {
     return walkError(value, rules, depth, ancestors, honorToJson, inSerialized)
   }
   return walkObject(value, rules, depth, ancestors, honorToJson, inSerialized)
@@ -428,39 +398,18 @@ function walkObject(
   honorToJson: boolean,
   inSerialized: boolean
 ): unknown {
-  // `ArrayBuffer` views (`Buffer`, typed arrays) are indexed byte containers: a
-  // key-name match is meaningless and a copy would be enormous. Checked BEFORE
-  // `toJSON` because `Buffer` has one.
-  // The ONE fast path for binary data, and it is an identity check rather than a
-  // shape test. Every looser formulation leaked:
-  //   - `ArrayBuffer.isView(value)` alone also matched extended views — an own
-  //     `toJSON` synthesizing a payload, or an enumerable property on a
-  //     `Uint8Array` / `DataView`, neither of which has a `toJSON` to hide it
-  //     (`JSON.stringify(new Uint8Array([1]))` is `{"0":1}`, so a custom key
-  //     lands right beside the indices);
-  //   - adding "and no OWN `toJSON`" still admitted a SUBCLASS that defines one
-  //     on its own prototype, e.g. `class V extends Uint8Array { toJSON() {…} }`.
-  // Only `Buffer.prototype.toJSON` ITSELF is known to produce a canonical
-  // `{ type, data }` that cannot carry a caller's key, so that exact function is
-  // what the check accepts. It is worth keeping: walking a binary payload
-  // recurses over every byte and copies the lot. Anything else — including any
-  // subclass that overrides it — falls through and is inspected.
-  // Resolved ONCE for both the fast path and the `toJSON` branch below: every
-  // extra read is another chance for an accessor to answer differently.
-  // `fromAccessor` disqualifies the fast path even when the method IS
-  // `Buffer.prototype.toJSON`, because this path hands back the ORIGINAL
-  // reference and `JSON.stringify` reads `toJSON` again from it.
-  // Under 'safe' the output is plain data: binary is its size, and `toJSON` is read once through
-  // the same operation `JSON.stringify` uses, so a Proxy that answers differently to a descriptor
-  // read than to a get is read the way the stringifier would read it.
-  const plain = rules.ownFields.safe
-  if (plain && ArrayBuffer.isView(value)) {
+  // `ArrayBuffer` views (`Buffer`, typed arrays, `DataView`) are indexed byte containers, and
+  // nobody intends the bytes as log data: the output of a failed child process is the usual
+  // case. They are written as their size, whatever `toJSON` a subclass defines, and before
+  // anything reads `toJSON`. Pino's own path redaction cannot walk a `Buffer` at all.
+  if (ArrayBuffer.isView(value)) {
     return withBinaryAsSize(value)
   }
+  // Under 'safe' the output is plain data, and `toJSON` is read once through the same operation
+  // `JSON.stringify` uses, so a Proxy that answers differently to a descriptor read than to a get
+  // is read the way the stringifier would read it.
+  const plain = rules.ownFields.safe
   const resolvedToJson = resolveToJson(value, plain)
-  if (!plain && !resolvedToJson.fromAccessor && resolvedToJson.method === BUFFER_TO_JSON) {
-    return value
-  }
 
   ancestors.add(value)
   try {
@@ -485,7 +434,7 @@ function walkObject(
     // redaction. An `Error` is written from its own fields and its `toJSON` is not called: a
     // library's (an HTTP client's, say) would carry the request it made. Any other `toJSON` is
     // called once and its result is walked.
-    const ownsItsForm = rules.ownFields.safe && value instanceof Error
+    const ownsItsForm = rules.ownFields.safe && isError(value)
     const toJson = honorToJson && !ownsItsForm ? resolvedToJson.method : undefined
     if (toJson !== undefined) {
       // A `toJSON` can RENAME the field it exposes, carrying the value around the
@@ -561,23 +510,22 @@ function walkObject(
     // enumerable properties — exactly what `JSON.stringify` would have emitted.
     // Outside a serializer's keys an `Error` is written as data: its own fields below plus the
     // head and chain, which are only ever added.
-    const asData = value instanceof Error && (plain || (rules.errorsAsData && !inSerialized))
+    const asData = isError(value) && (plain || (rules.errorsAsData && !inSerialized))
     // The clone is made even when discarded: an `Error` it cannot read must reach the fallback in
     // `walkError`, which is the same node with or without the data form.
-    const clone = value instanceof Error ? cloneError(value) : undefined
+    const clone = isError(value) ? cloneError(value) : undefined
     const copy = clone !== undefined && !asData ? (clone as unknown as Record<string, unknown>) : {}
     // What a failed driver call quoted or was given is not written, whether the `Error` is written
     // as data or kept an instance: it can sit in the serializer's output as a field of the root
     // `err` (a driver error held by a wrapper), or be returned by a custom serializer. Under a
     // serializer's key the instance is the serializer's to read, so nothing is dropped there.
-    const scrubbed = value instanceof Error && (plain || !inSerialized)
+    const scrubbed = isError(value) && (plain || !inSerialized)
     const omitted = new Set<string>()
     for (const key of keys) {
-      // Under a serializer's key the field is the serializer's to read, but a binary one is still
-      // written as its size: the copy handed on would otherwise hold it as an object of indexes.
-      const current = scrubbed
-        ? ownFieldForLog(source, key, Reflect.get(source, key), rules.ownFields)
-        : readOwnField(source, key)
+      // Under a serializer's key the field is the serializer's to read; a binary one is still
+      // written as its size by the walk of the value below.
+      const read = Reflect.get(source, key)
+      const current = scrubbed ? ownFieldForLog(source, key, read, rules.ownFields) : read
       if (current === OMIT_OWN_FIELD) {
         // The clone carries the original field; the data form has none to remove.
         Reflect.deleteProperty(copy, key)

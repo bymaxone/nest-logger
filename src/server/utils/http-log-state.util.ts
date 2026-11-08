@@ -14,6 +14,8 @@
  * state belongs to one request, and providers here are singletons.
  */
 
+import { isError } from './is-error.util'
+
 /** Lower bound of the HTTP redirect (3xx) range. */
 export const HTTP_REDIRECT_MIN = 300
 /** Lower bound of the HTTP client-error (4xx) range. */
@@ -163,7 +165,7 @@ export function readRecordedError(req: object): RecordedError | undefined {
  * @returns `thrown` itself when it is an `Error`, or one wrapping its text.
  */
 export function toError(thrown: unknown): Error {
-  return thrown instanceof Error ? thrown : new Error(String(thrown))
+  return isError(thrown) ? thrown : new Error(String(thrown))
 }
 
 /**

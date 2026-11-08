@@ -24,12 +24,25 @@ heading here.
   marker, an `Error` is written from its own fields (its `toJSON` is not called), and a custom
   serializer receives it as a plain error-like object instead of an `Error` instance.
 
+### Fixed
+
+- **A Buffer in the metadata no longer makes the log call throw under `redactStrategy: 'paths'`.**
+  Pino's path redaction cannot read a `Buffer`; the record is now walked first, so it never meets
+  one.
+- **An error from another realm is written as the error it is.** An `Error` made in a `vm` context,
+  or by a Node core module under a test runner, is not an `instanceof Error`, so it was read as a
+  plain object whose `name` and `message` were lost and came out as `UnknownError`. It is now
+  recognised with `util.types.isNativeError` as well as `instanceof`.
+
 ### Changed
 
-- **A binary own field of an error is written as its size.** A Buffer, a typed array or a `DataView`
-  in an error's own fields, or as a member of an array there (how a child process's `output`
-  arrives), was written as an object of its bytes. It is now `"[Binary 42 bytes]"`, in both modes.
-  Nothing deeper than the field or a member of it is read.
+- **A binary value is written as its size.** A Buffer, a typed array or a `DataView` anywhere in the
+  record, in an error's own fields, or as a member of an array there (how a child process's `output`
+  arrives), was written as an object of its bytes. It is now `"[Binary 42 bytes]"`, in both modes
+  and under both redaction strategies. Under `redactStrategy: 'paths'` the record is now walked once
+  for this, so the walk's depth ceiling (100) and visit budget apply there. With every redaction
+  turned off (`shouldDisableDefaultRedact`, no `redactPaths`, and `errorOwnFields` not `'safe'`)
+  nothing walks the record and a Buffer is written as Pino writes it.
 - **A message is written at most 16384 characters long.** The `msg` of every call, the `message` of
   a serialized error and of each `cause` or `errors` link, the `message` of a nested `Error` in the
   metadata, the semconv `exception.message`, the `errorMessage` of a 4xx access-log entry, and the
@@ -46,6 +59,9 @@ heading here.
 Set `errorOwnFields: 'safe'`, and list in `errorOwnFieldNames` any own field you alert on that is
 not in the default list (`orderId`, or `path` if a path is not data to you). Without it the error
 entries keep every own field, as before, except that bytes are written as a size.
+
+A Buffer you log on purpose is now written as `"[Binary N bytes]"` wherever it sits in the record;
+convert it first (`buffer.toString('base64')`) to keep its content in the line.
 
 A message longer than 16384 characters, such as the message of an
 `assert` failure over two large objects, is cut and ends with `…[truncated]`; an ordinary message

@@ -733,7 +733,7 @@ matches key names and cannot see a value inside a string.
 
 **Own fields of an error: `errorOwnFields`.** Node's own errors carry values: a failed child process has its `stdout`, `stderr` and `output` (Buffers), an `AssertionError` its `actual` and `expected`, a file system error its `path`, a `URL` error its `input`. A list of names to drop cannot name them all, so the choice is yours:
 
-- `errorOwnFields: 'all'` (the default in 1.x) writes every own field as above. The one change is that a binary value (a Buffer, a typed array, a `DataView`, or a member of an array, which is how `output` arrives) is written as its size, such as `"[Binary 42 bytes]"`, never as bytes. Nothing deeper than a field's own value or a member of it is read, so an object that holds a Buffer is not covered.
+- `errorOwnFields: 'all'` (the default in 1.x) writes every own field as above. A binary value (a Buffer, a typed array or a `DataView`) is written as its size, such as `"[Binary 42 bytes]"`, never as bytes: as an own field of an error (a failed child process carries its `stdout`, `stderr` and `output` there), as a member of an array, and anywhere else in the record. See _Binary values_ below.
 - `errorOwnFields: 'safe'` writes only `code`, `errno`, `syscall`, `signal`, `status`, `statusCode`, `address`, `port`, `hostname` and the PostgreSQL `constraint`, `table`, `column`, `schema` and `routine`, plus the names in `errorOwnFieldNames`, at every depth and for an `Error` nested in the metadata. `path` is not on the list: add it if a path is not data to you. Under `'safe'` what the redaction writes is plain data, with nothing left to run later. An `Error` is written from its own fields: a `toJSON` it has (an HTTP client's, which may carry the request) is not called, and a serializer receives it as a plain error-like object (`name`, `message`, `stack`, `cause`, `errors` and the allowed fields) instead of an `Error` instance. Any other `toJSON` is called once, as `JSON.stringify` would, and its result is censored. A function or a symbol is omitted as `JSON.stringify` omits it, and a Buffer or a typed array anywhere in the record is written as its `[Binary N bytes]` marker. The `type`, `message`, `stack`, `cause` and `errors` the logger derives are always written. Names are matched exactly, case included. The recommended setting.
 
 ```typescript
@@ -743,6 +743,8 @@ BymaxLoggerModule.forRoot({
   errorOwnFieldNames: ['orderId']
 })
 ```
+
+**Binary values.** A Buffer, a typed array or a `DataView` anywhere in the record is written as its size (`"[Binary 42 bytes]"`), in both modes and under both redaction strategies, whatever `toJSON` a subclass defines. This holds whenever the record is walked: with the default coverage, with any entry in `redactPaths`, and under `redactStrategy: 'paths'`, where the record is walked once for this and the walk's depth ceiling (100) and visit budget apply. If you turn every redaction off (`shouldDisableDefaultRedact: true`, no `redactPaths`, and `errorOwnFields` not `'safe'`), nothing walks the record, so the marker is off with it and a Buffer is written the way Pino writes it. To log the bytes of a Buffer on purpose, convert it first, for example `buffer.toString('base64')`.
 
 Neither setting covers the `message`: Node writes the command line of a failed child process, arguments included, and what it printed to stderr into it, and the redaction matches key names, not text.
 

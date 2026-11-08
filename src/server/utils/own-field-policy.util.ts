@@ -4,6 +4,8 @@
  * Layer: server, utils. Shared by the error sanitizer and the redaction walk, so the serializer
  * and the walk answer the same question the same way.
  */
+import { types } from 'node:util'
+
 import type { ErrorOwnFieldsMode } from '../interfaces/logger-module-options.interface'
 
 /**
@@ -88,9 +90,23 @@ export function allowsOwnField(policy: OwnFieldPolicy, key: string): boolean {
   )
 }
 
+/**
+ * The engine's own `byteLength` getters. A subclass can override the property with text that
+ * should have been redacted, so the size is never read from the value's own `byteLength`.
+ */
+const TYPED_ARRAY_BYTE_LENGTH = Reflect.getOwnPropertyDescriptor(
+  Object.getPrototypeOf(Uint8Array.prototype) as object,
+  'byteLength'
+)?.get as (this: ArrayBufferView) => number
+const DATA_VIEW_BYTE_LENGTH = Reflect.getOwnPropertyDescriptor(DataView.prototype, 'byteLength')
+  ?.get as (this: ArrayBufferView) => number
+
 /** The size marker written in place of a Buffer, a typed array or a DataView. */
 function binaryMarker(view: ArrayBufferView): string {
-  return `[Binary ${view.byteLength} bytes]`
+  const size = types.isDataView(view)
+    ? DATA_VIEW_BYTE_LENGTH.call(view)
+    : TYPED_ARRAY_BYTE_LENGTH.call(view)
+  return `[Binary ${size} bytes]`
 }
 
 /**

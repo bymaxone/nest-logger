@@ -17,6 +17,7 @@
 
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
 import { escapeControlCharacters } from './escape-log-text.util'
+import { isError } from './is-error.util'
 import {
   ALL_OWN_FIELDS,
   allowsOwnField,
@@ -168,7 +169,7 @@ export function isErrorLike(value: unknown): value is Error {
   } catch {
     // The shape could not be read, which is a property of a hostile `Error` and not a reason
     // to throw out of a logging call. A real `Error` stays one, so its cause is not dropped.
-    return isErrorInstance(value)
+    return isError(value)
   }
 }
 
@@ -187,15 +188,6 @@ function readsAsError(value: unknown): value is Error {
   }
   const candidate = value as { name?: unknown; message?: unknown }
   return typeof candidate.name === 'string' && typeof candidate.message === 'string'
-}
-
-/** `value instanceof Error`, which a Proxy `getPrototypeOf` trap can make throw. */
-function isErrorInstance(value: unknown): boolean {
-  try {
-    return value instanceof Error
-  } catch {
-    return false
-  }
 }
 
 /** What every node of one sanitization shares: how deep the chain is walked and which fields are kept. */
