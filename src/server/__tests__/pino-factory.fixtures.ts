@@ -47,4 +47,5 @@ export function createCapture(name = 'capture'): {
   }
 }
 
+/** The minimal module options the `pino-factory` specs extend: only the service identity. */
 export const baseOptions = { service: { name: 'app', version: '1.0.0' } }
