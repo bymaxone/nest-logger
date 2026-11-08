@@ -187,6 +187,15 @@ function shapes(counter: Counter): Array<(pick: () => number) => Planted> {
       )
       return { value: target, kind: 'error, Proxy prototype' }
     },
+    (pick): Planted => {
+      const answers = 1 + Math.floor(pick() * 8)
+      let reads = 0
+      const hooked = Object.setPrototypeOf({ toJSON: hook }, null) as object
+      const proxy = new Proxy(new Error('boom'), {
+        getPrototypeOf: () => (reads++ < answers ? Error.prototype : hooked)
+      })
+      return { value: proxy, kind: 'error, Proxy whose prototype changes after some reads' }
+    },
     (): Planted => {
       let descriptorReads = 0
       const proxy = new Proxy(new Error('boom'), {

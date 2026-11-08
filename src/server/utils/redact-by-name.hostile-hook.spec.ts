@@ -323,6 +323,18 @@ describe('an Error whose prototype carries a hook and whose own shadow hides fro
   })
 })
 
+describe('an Error that is a Proxy whose prototype changes after some reads', () => {
+  it.each([1, 2, 3, 4, 5, 6, 7, 8])('keeps the hook from running after %i answers', (answers) => {
+    const hooked = Object.setPrototypeOf({ toJSON: () => ({ password: SECRET }) }, null) as object
+    let reads = 0
+    const proxy = new Proxy(new Error('boom'), {
+      getPrototypeOf: () => (reads++ < answers ? Error.prototype : hooked)
+    })
+
+    expect(written({ err: proxy })).not.toContain(SECRET)
+  })
+})
+
 describe('ordinary input is left as it was', () => {
   it('returns a function whose toJSON is not a function as it is', () => {
     const fn = Object.assign((): number => 1, { toJSON: 'text' })
