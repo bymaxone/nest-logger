@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.11] - 2026-11-08
+
 ### Added
 
 - **`errorOwnFields: 'all' | 'safe'` and `errorOwnFieldNames`.** Node's own errors carry values in
@@ -2514,7 +2516,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.10...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.11...HEAD
+[1.4.11]: https://github.com/bymaxone/nest-logger/compare/v1.4.10...v1.4.11
 [1.4.10]: https://github.com/bymaxone/nest-logger/compare/v1.4.9...v1.4.10
 [1.4.9]: https://github.com/bymaxone/nest-logger/compare/v1.4.8...v1.4.9
 [1.4.8]: https://github.com/bymaxone/nest-logger/compare/v1.4.7...v1.4.8
