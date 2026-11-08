@@ -22,7 +22,6 @@ heading here.
   `LogContextService` writes the same value in its envelope. It mounts only the scope and can be
   combined with `applyAccessLog(app)` or `applyRequestIdMiddleware(consumer)`. Additive: nothing
   changes for an application that does not call it.
-  **Apply:** call it right after `NestFactory.create()` and before `app.init()` / `app.listen()`.
 
 ### Changed
 
@@ -30,6 +29,16 @@ heading here.
   `redactStrategy: 'paths'`, an `Error` whose `toJSON` is a hostile accessor has been written as
   `UnknownError` since 1.4.11, as `redactStrategy: 'names'` already did; 1.4.10 wrote it as an
   `Error`. Nothing changes here; this records it.
+
+#### Apply to a derived backend
+
+Nothing is required: `BymaxLoggerModule.useRequestContext(app)` is a new static method and an
+application that does not call it behaves as before. To have a request the body parser refuses
+(truncated JSON, an unsupported content encoding, a body over the limit) carry its `requestId` and
+the `x-request-id` response header, call it in `main.ts` right after `NestFactory.create()` and
+before `app.init()` / `app.listen()`. Install the exception filter that writes the id into your
+envelope with `app.useGlobalFilters(...)`: an `APP_FILTER` provider is not consulted for an error
+the body parser raised.
 
 ## [1.4.11] - 2026-11-08
 
