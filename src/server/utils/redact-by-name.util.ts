@@ -196,7 +196,7 @@ function runsAHook(descriptor: PropertyDescriptor | undefined): boolean {
  * @param target - The copy that must not run a hook.
  */
 function shadowHook(target: object): void {
-  Reflect.defineProperty(target, 'toJSON', { value: undefined, configurable: true })
+  Reflect.defineProperty(target, 'toJSON', { value: undefined })
 }
 
 /**
