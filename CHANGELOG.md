@@ -23,7 +23,7 @@ heading here.
   Proxy, a function with a `toJSON` accessor, or one with a Proxy on its prototype chain) is now
   dropped as a function with no hook is, a `toJSON` that reads as a function where the stringifier
   would honour it is not copied, and the accessor of an `Error` clone is replaced by `undefined`.
-  Ordinary input is unchanged, including a `toJSON` key that is not a function. Both shapes need an
+  Ordinary input is unchanged, including a `toJSON` key that is not a function. These shapes need an
   object built by code that hides its hook, not a value read from data. A hook reachable only
   through the prototype chain of an `Error` is a known limitation: it needs code inside the process,
   and shadowing `toJSON` on every clone would change the own keys of every logged error.
