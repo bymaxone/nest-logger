@@ -11,18 +11,6 @@ heading here.
 
 ## [Unreleased]
 
-### Internal
-
-- **A source file over 800 lines now fails CI unless it is on a frozen baseline.**
-  `scripts/check-file-length.mjs` (`pnpm check:file-length`) runs in the `verify` job and, in a
-  pull request, also compares the baseline with the base branch's, so the baseline cannot widen. It
-  starts with the three files that are already over the limit. Nothing in the package changes.
-- **The redaction walk is split into functions of at most 50 lines.** `walkObject` was 174 lines;
-  it is now a short function that delegates to smaller ones, with the rationale kept as their
-  documentation. No behaviour changes: 48000 comparisons of the old and the new walk over
-  generated records (six configurations, as record root and not), and the existing suite, give
-  identical output.
-
 ## [1.4.13] - 2026-11-08
 
 ### Fixed
@@ -46,6 +34,18 @@ heading here.
   always answers ahead of them. `forRootAsync` registers no filter, so none of that applies to it
   unless the filter is registered by hand. The 1.4.12 note on this was written without that scope.
   Pinned by `use-request-context-filters.e2e-spec.ts`.
+
+### Internal
+
+- **A source file over 800 lines now fails CI unless it is on a frozen baseline.**
+  `scripts/check-file-length.mjs` (`pnpm check:file-length`) runs in the `verify` job and, in a
+  pull request, also compares the baseline with the base branch's, so the baseline cannot widen. It
+  starts with the three files that are already over the limit. Nothing in the package changes.
+- **The redaction walk is split into functions of at most 50 lines.** `walkObject` was 174 lines;
+  it is now a short function that delegates to smaller ones, with the rationale kept as their
+  documentation. No behaviour changes: 48000 comparisons of the old and the new walk over
+  generated records (six configurations, as record root and not), and the existing suite, give
+  identical output.
 
 ## [1.4.12] - 2026-11-08
 
