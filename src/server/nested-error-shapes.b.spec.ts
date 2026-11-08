@@ -11,10 +11,16 @@
  * Layer: server, tests. To record a base, run this file with `RECORD_SHAPES=<path>` on the tree
  * whose output is the reference.
  */
-import { writeFileSync } from 'node:fs'
 import vm from 'node:vm'
 
-import { axios, judge, loadBase, run, type Shape } from './__tests__/nested-error-shapes.runner'
+import {
+  type Shape,
+  axios,
+  judge,
+  loadBase,
+  recordBase,
+  run
+} from './__tests__/nested-error-shapes.runner'
 
 const cases: Record<string, () => Shape> = {}
 const add = (name: string, make: () => any): void => {
@@ -364,8 +370,7 @@ const ACCEPTED: Record<string, RegExp> = {
 describe('nested Error shapes, part B, against the 1.4.8 output', () => {
   if (process.env.RECORD_SHAPES) {
     it('records the output of this tree as the base', () => {
-      const out = Object.fromEntries(Object.entries(cases).map(([name, make]) => [name, run(make)]))
-      writeFileSync(process.env.RECORD_SHAPES as string, JSON.stringify(out, null, 1))
+      recordBase(cases)
     })
     return
   }

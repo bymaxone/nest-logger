@@ -4,7 +4,7 @@
  *
  * Layer: server, test support. Excluded from coverage and mutation with the rest of `__tests__`.
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { applyDefaults } from '../config/default-options'
@@ -143,6 +143,17 @@ export function problem(base: unknown, now: unknown): string {
     .filter(([leaf, count]) => (kept.get(leaf) ?? 0) < count && !LEAK.test(leaf))
     .map(([leaf]) => leaf)
   return lost.length > 0 ? 'LOST ' + lost.sort().join(' ') : ''
+}
+
+/**
+ * Write the output of the shapes of one spec to the path in `RECORD_SHAPES`, which is how a base is
+ * recorded on the tree that is to be the base.
+ *
+ * @param cases - The shapes of the spec by name.
+ */
+export function recordBase(cases: Record<string, () => Shape>): void {
+  const out = Object.fromEntries(Object.entries(cases).map(([name, make]) => [name, run(make)]))
+  writeFileSync(process.env.RECORD_SHAPES as string, JSON.stringify(out, null, 1))
 }
 
 /**

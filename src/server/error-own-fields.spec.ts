@@ -2,11 +2,11 @@
  * Pins what an error's own fields do to a line: `errorOwnFields: 'all'` (the default) writes every
  * own field and replaces a binary value by its size marker, and `'safe'` writes only an
  * allow-list of operational names plus the consumer's. Driven through the real Pino pipeline, on
- * the line a destination receives, with the error Node itself throws when a child process fails.
+ * the line a destination receives, with an error shaped like the one Node throws when a child process
+ * fails.
  *
  * Layer: server, tests.
  */
-import { execFileSync } from 'node:child_process'
 import { applyDefaults } from './config/default-options'
 import type { BymaxLoggerModuleOptions } from './interfaces/logger-module-options.interface'
 import { buildPinoInstance, resolveNameRedactor } from './pino-factory'
@@ -35,24 +35,22 @@ function pipeline(extra: Partial<BymaxLoggerModuleOptions> = {}): {
 }
 
 /**
- * The error Node throws when a child process exits with a status: its output is on the error as
- * Buffers. Node's own `Error` belongs to another realm than the one Jest runs the test in, so the
- * fields are copied onto an `Error` of this realm, which is what an application sees.
+ * An error shaped like the one Node throws when a child process exits with a status: its output is
+ * on the error as Buffers, in `stdout`, `stderr` and `output`, beside `status`, `signal` and `pid`.
+ * It is built here and not by running a process, because a unit test does no real I/O; the real
+ * process is exercised by `test/e2e/child-process-error.e2e-spec.ts`.
  */
 function childProcessError(): Error {
-  try {
-    execFileSync(
-      process.execPath,
-      [
-        '-e',
-        'process.stdout.write("SECRET-OUT");process.stderr.write("SECRET-ERR");process.exit(3)'
-      ],
-      { stdio: 'pipe' }
-    )
-  } catch (error) {
-    return Object.assign(new Error('Command failed'), error)
-  }
-  throw new Error('the child process was expected to fail')
+  const stdout = Buffer.from('SECRET-OUT')
+  const stderr = Buffer.from('SECRET-ERR')
+  return Object.assign(new Error('Command failed'), {
+    status: 3,
+    signal: null,
+    output: [null, stdout, stderr],
+    pid: 4242,
+    stdout,
+    stderr
+  })
 }
 
 const writes: [string, (s: PinoLoggerService, error: Error) => void][] = [
