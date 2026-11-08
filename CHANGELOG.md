@@ -11,6 +11,14 @@ heading here.
 
 ## [Unreleased]
 
+### Internal
+
+- **The redaction walk is split into functions of at most 50 lines.** `walkObject` was 174 lines;
+  it is now an orchestrator over `walkForm`, `walkToJsonOutput`, `walkProperties` and `startCopy`,
+  with the rationale kept as their documentation. No behaviour changes: 48000 comparisons of the
+  old and the new walk over generated records (six configurations, as record root and not), and the
+  existing suite, give identical output. The server bundle is 0.03 KiB smaller.
+
 ## [1.4.13] - 2026-11-08
 
 ### Fixed
