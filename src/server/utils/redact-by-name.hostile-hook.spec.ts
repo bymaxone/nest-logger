@@ -6,6 +6,7 @@
  *
  * Layer: server, utils, tests.
  */
+import { createOwnFieldPolicy } from './own-field-policy.util'
 import { createNameRedactor } from './redact-by-name.util'
 
 const SECRET = 'SECRET-VALUE'
@@ -338,5 +339,23 @@ describe('ordinary input is left as it was', () => {
     }
 
     expect(Object.keys(copy.err)).toContain('toJSON')
+  })
+
+  it.each([
+    ['an Error written as data', ['err']],
+    ['a clone of an Error', undefined]
+  ])('leaves no toJSON key on %s when a field is omitted and no hook is there', (_name, keys) => {
+    const error = Object.assign(new Error('boom'), { extra: 'not on the safe list' })
+
+    const copy = createNameRedactor(
+      ['password'],
+      'X',
+      keys,
+      undefined,
+      createOwnFieldPolicy('safe', [])
+    )({ err: error }, false) as { err: object }
+
+    expect(Object.getOwnPropertyNames(copy.err)).not.toContain('extra')
+    expect(Object.getOwnPropertyNames(copy.err)).not.toContain('toJSON')
   })
 })
