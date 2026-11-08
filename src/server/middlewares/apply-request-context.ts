@@ -3,7 +3,7 @@
  *
  * Layer: server/middlewares. NestJS registers the body parser one step before module middleware,
  * and Express dispatches in registration order, so a request the parser refuses (malformed JSON,
- * an unsupported content type, a body over the limit) never reaches a middleware mounted through
+ * an unsupported content encoding, a body over the limit) never reaches a middleware mounted through
  * `configure(consumer)`. An exception filter then answers it outside any correlation scope, and
  * its envelope cannot carry the request id. `INestApplication.use()` lands in the Express stack at
  * call time, so a handler mounted before `init()` runs ahead of the parser.

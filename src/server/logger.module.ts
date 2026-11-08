@@ -283,7 +283,7 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
 
   /**
    * Open the request-id correlation scope ahead of the body parser, so a request the parser
-   * refuses (malformed JSON, an unsupported content type, a body over the limit) still has its
+   * refuses (malformed JSON, an unsupported content encoding, a body over the limit) still has its
    * `requestId`, and the `x-request-id` response header, where an exception filter reads it.
    *
    * Call once in `main.ts` AFTER creating the app and BEFORE `app.init()` / `app.listen(...)`.
