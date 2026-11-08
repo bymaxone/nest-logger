@@ -8,7 +8,7 @@
  *
  * Layer: end-to-end tests (boots the module through `@nestjs/testing`).
  */
-import { ArgumentsHost, Catch, Controller, Inject, Post } from '@nestjs/common'
+import { ArgumentsHost, Catch, Controller, Inject, Module, Post } from '@nestjs/common'
 import type { ExceptionFilter, INestApplication, Type } from '@nestjs/common'
 import { APP_FILTER } from '@nestjs/core'
 import { Test } from '@nestjs/testing'
@@ -112,5 +112,45 @@ describe('Logger E2E — the filter that answers a parser error', () => {
     expect(res.body.answeredBy).toBeUndefined()
     expect(res.body.statusCode).toBe(400)
     await app.close()
+  })
+
+  describe('by the order the modules are imported', () => {
+    const logger = (): ReturnType<typeof BymaxLoggerModule.forRoot> =>
+      BymaxLoggerModule.forRoot({
+        service: { name: 'e2e-order', version: '0.0.0' },
+        http: { isEnabled: true }
+      })
+
+    @Module({ providers: [{ provide: APP_FILTER, useClass: PlainFilter }] })
+    class FilterModule {}
+
+    async function mount(imports: unknown[]): Promise<INestApplication> {
+      const moduleRef = await Test.createTestingModule({
+        imports: imports as never[],
+        controllers: [EchoController]
+      }).compile()
+      const app = moduleRef.createNestApplication({ logger: false })
+      BymaxLoggerModule.useRequestContext(app)
+      await app.init()
+      return app
+    }
+
+    it("is the library's filter for an APP_FILTER module imported before the logger", async () => {
+      const app = await mount([FilterModule, logger()])
+
+      const res = await refuse(app)
+
+      expect(res.body.answeredBy).toBeUndefined()
+      await app.close()
+    })
+
+    it('is the consumer filter for an APP_FILTER module imported after the logger', async () => {
+      const app = await mount([logger(), FilterModule])
+
+      const res = await refuse(app)
+
+      expect(res.body).toEqual({ answeredBy: 'consumer' })
+      await app.close()
+    })
   })
 })

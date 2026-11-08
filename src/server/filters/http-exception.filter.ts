@@ -3,14 +3,16 @@
  *
  * Layer: server/filters — a universal `@Catch()` filter that logs any exception
  * escaping the request pipeline and writes a JSON error response. `HttpException`
- * carries its own status/body; anything else is treated as an unhandled 500.
+ * carries its own status/body; an error with the `http-errors` shape that exposes a 4xx
+ * (`status` or `statusCode` from 400 to 499 and `expose: true`, as the body parser raises for a
+ * body over the limit) keeps that status and its message; anything else is an unhandled 500.
  * The level follows the status: 5xx → error (with a sanitized stack), 4xx → warn.
  *
  * For an `HttpException` the response body is the exception's own `getResponse()`
  * payload (standard NestJS behavior), so callers control what a client sees —
  * never put internal detail in a thrown `HttpException`. A non-`HttpException`
  * always returns the fixed, detail-free `{ statusCode: 500, message: 'Internal
- * server error' }`.
+ * server error' }`. The `http-errors` shape answers `{ statusCode, message }`.
  *
  * The logged `url` has its query string stripped (`stripQueryString`): query
  * params routinely carry secrets (reset tokens, OAuth codes, signed-URL
@@ -27,6 +29,7 @@ import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
 import { PinoLoggerService } from '../services/pino-logger.service'
+import { readExposedClientError } from '../utils/exposed-client-error.util'
 import { stripQueryString } from '../utils/normalize-url.util'
 import { sanitizeError } from '../utils/sanitize-error.util'
 
@@ -94,7 +97,24 @@ export class HttpExceptionFilter implements ExceptionFilter {
       return
     }
 
-    // A non-HttpException is always an unhandled 500.
+    // An error with the `http-errors` shape that exposes a 4xx keeps its status and message: that is
+    // how the body parser refuses a body over the limit or in an unsupported encoding.
+    const clientError = readExposedClientError(exception)
+    if (clientError !== undefined) {
+      this.logger.warnStructured(
+        RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED,
+        clientError.message,
+        userId,
+        { method: req.method, url, status: clientError.status }
+      )
+      res.status(clientError.status).json({
+        statusCode: clientError.status,
+        message: clientError.message
+      })
+      return
+    }
+
+    // Any other non-HttpException is an unhandled 500.
     const status = HttpStatus.INTERNAL_SERVER_ERROR
     this.logger.errorStructured(
       RESERVED_LOG_KEYS.HTTP_EXCEPTION_UNHANDLED,

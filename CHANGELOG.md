@@ -11,6 +11,23 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A client error the body parser raises keeps its status.** An error with the `http-errors` shape,
+  a `status` or `statusCode` from 400 to 499 and `expose: true`, such as a body over the limit
+  (413) or an unsupported content encoding (415), was answered by `HttpExceptionFilter` as a 500
+  `{ statusCode, message }` while the library's exception filter was registered. It is now answered
+  with its own status and message, `{ statusCode: 413, message: 'request entity too large' }`, and
+  logged as `HTTP_EXCEPTION_HANDLED` at warn level. The same error thrown inside a route is no
+  longer logged as `HTTP_REQUEST_SERVER_ERROR` but as `HTTP_REQUEST_CLIENT_ERROR`. An error
+  without `expose: true`, or with a status outside 400 to 499, stays a 500 with the fixed body.
+  **Apply to a derived backend:** nothing to do; a client that read the 500 for these cases now
+  reads the 413 or 415 the parser meant.
+- **The README says which filter answers a parser error.** With `http.isEnabled` the library's own
+  exception filter is an `APP_FILTER` provider, so the import order of the modules decides between
+  `APP_FILTER` providers, and `app.useGlobalFilters(...)` always answers ahead of them. Pinned by
+  `use-request-context-filters.e2e-spec.ts`.
+
 ## [1.4.12] - 2026-11-08
 
 ### Added
