@@ -1,0 +1,7 @@
+{
+  "files": {
+    "scripts/check-published-surface.mjs": 882,
+    "src/server/services/destination-registry.service.spec.ts": 1036,
+    "src/server/utils/redact-by-name.util.spec.ts": 890
+  }
+}
