@@ -154,7 +154,7 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
   // trap, which is not the descriptor walk below.
   let candidate: unknown = viaGet ? Reflect.get(value, 'toJSON') : undefined
   let accessor = false
-  let proxied = viaGet && types.isProxy(value)
+  let proxied = false
   let current: object | null = viaGet ? null : value
   while (current !== null) {
     proxied = proxied || types.isProxy(current)
@@ -440,12 +440,7 @@ function walkObject(
   if (ArrayBuffer.isView(value)) {
     return withBinaryAsSize(value)
   }
-  // A Proxy callable is read the way `JSON.stringify` reads it, because its descriptors can hide
-  // a hook that its `get` trap answers.
-  const resolved = resolveToJson(
-    value,
-    rules.ownFields.safe || (typeof value === 'function' && types.isProxy(value))
-  )
+  const resolved = resolveToJson(value, rules.ownFields.safe)
 
   ancestors.add(value)
   try {

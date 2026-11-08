@@ -142,6 +142,21 @@ describe('a hook behind an enumerable accessor on a copy', () => {
     expect(copy['toJSON']).toBe(hook)
   })
 
+  it.each([
+    ['a string', 'text'],
+    ['a number', 7],
+    ['an object', { nested: 1 }],
+    ['null', null]
+  ])('copies a toJSON key that is %s, which no stringifier runs', (_name, value) => {
+    const copy = createNameRedactor(['password'], 'X')({ a: 1, toJSON: value }, false) as Record<
+      string,
+      unknown
+    >
+
+    expect(copy['toJSON']).toEqual(value)
+    expect(Object.keys(copy)).toContain('toJSON')
+  })
+
   it('keeps the other own fields of the object', () => {
     const copy = createNameRedactor(['password'], 'X')(
       withStatefulAccessor({ a: 1, password: 'p' }),
