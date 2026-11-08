@@ -1,3 +1,10 @@
+/**
+ * Pins how the error Node itself throws for a failed child process is written: with its message and
+ * status, and its output (Buffers in own fields) as a size, never as bytes. Needs a real process,
+ * so it runs here and not in the unit suite.
+ *
+ * Layer: end-to-end tests (boots the module through `@nestjs/testing`).
+ */
 import { execFileSync } from 'node:child_process'
 
 import { Test } from '@nestjs/testing'
@@ -5,10 +12,6 @@ import { BymaxLoggerModule, PinoLoggerService } from '@bymax-one/nest-logger'
 
 import { parseLogEntries } from './fixtures/parse-log-entries'
 
-/**
- * The error Node itself throws for a failed child process carries its output as Buffers in own
- * fields. It is written with its message and status, and the output as a size, never as bytes.
- */
 describe.each(['all', 'safe'] as const)(
   'Logger E2E — a failed child process, errorOwnFields %s',
   (mode) => {
