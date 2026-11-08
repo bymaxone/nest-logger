@@ -16,8 +16,12 @@ import { Test } from '@nestjs/testing'
 import request from 'supertest'
 
 import { applyRequestIdMiddleware } from './apply-request-id-middleware'
+import type { ILogDestination } from '../interfaces/log-destination.interface'
 import { BymaxLoggerModule } from '../logger.module'
 import { LogContextService } from '../services/log-context.service'
+
+/** Swallows every entry: the module's default destination would write to the real stdout. */
+const SINK: ILogDestination = { name: 'sink', write: (): void => undefined }
 
 @Controller()
 class EchoController {
@@ -28,13 +32,17 @@ class EchoController {
 }
 
 @Module({
-  imports: [BymaxLoggerModule.forRoot({ service: { name: 'app', version: '1.0.0' } })],
+  imports: [
+    BymaxLoggerModule.forRoot({ service: { name: 'app', version: '1.0.0' }, destinations: [SINK] })
+  ],
   controllers: [EchoController]
 })
 class PlainModule {}
 
 @Module({
-  imports: [BymaxLoggerModule.forRoot({ service: { name: 'app', version: '1.0.0' } })],
+  imports: [
+    BymaxLoggerModule.forRoot({ service: { name: 'app', version: '1.0.0' }, destinations: [SINK] })
+  ],
   controllers: [EchoController]
 })
 class ModuleWithMiddleware implements NestModule {
@@ -101,6 +109,17 @@ describe('BymaxLoggerModule.useRequestContext', () => {
 
     expect(res.body.correlationId).toBeNull()
     await app.close()
+  })
+
+  it('writes nothing to the real stdout', async () => {
+    const stdout = jest.spyOn(process.stdout, 'write')
+
+    const app = await create(PlainModule, true)
+    await refuse(app)
+    await app.close()
+
+    expect(stdout).not.toHaveBeenCalledWith(expect.stringContaining('"service"'))
+    stdout.mockRestore()
   })
 
   it('throws a clear error, with the DI failure as the cause, when the module is not imported', async () => {
