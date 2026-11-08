@@ -7,7 +7,6 @@
  * over what it needs as an {@link ErrorPartsHost}.
  */
 import { cutText } from './bounded-text.util'
-import { withBinaryAsSize } from './own-field-policy.util'
 import {
   createDepthMarker,
   createWidthMarker,
@@ -57,12 +56,6 @@ export function defineOwn(target: Record<string, unknown>, key: string, value: u
   // `Reflect.defineProperty` reports failure by returning `false`, not by throwing, so a check
   // of the result would be a branch no input can take: untested code claiming a guarantee.
   Reflect.defineProperty(target, key, { value, enumerable: true })
-}
-
-/** An own field as the walk reads it: a binary value of an `Error` is read as its size. */
-export function readOwnField(source: object, key: string): unknown {
-  const field: unknown = Reflect.get(source, key)
-  return source instanceof Error ? withBinaryAsSize(field) : field
 }
 
 /** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */

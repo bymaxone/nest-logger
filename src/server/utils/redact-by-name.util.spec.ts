@@ -598,7 +598,7 @@ describe('createNameRedactor', () => {
    * types) must not be flattened to their own properties — the walk would
    * otherwise change what reaches the sink.
    */
-  'should serialize toJSON-bearing values and leave binary views untouched', () => {
+  'should serialize toJSON-bearing values and write a binary view as its size', () => {
     const when = new Date('2020-01-01T00:00:00.000Z')
     const buf = Buffer.from('hi')
     const result = redact({ when, buf }) as Record<string, unknown>
@@ -607,67 +607,58 @@ describe('createNameRedactor', () => {
     // The emitted JSON is identical either way.
     expect(result['when']).toBe('2020-01-01T00:00:00.000Z')
     expect(JSON.stringify(result['when'])).toBe(JSON.stringify(when))
-    // A pristine `Buffer` keeps the fast path: its JSON form comes from a
-    // PROTOTYPE `toJSON` that cannot carry a caller's key.
-    expect(result['buf']).toBe(buf)
+    // A `Buffer` is nobody's log data: it is written as its size, not as its bytes.
+    expect(result['buf']).toBe('[Binary 2 bytes]')
   })
 
   it(/*
-   * REGRESSION — `ArrayBuffer.isView` alone was too wide a fast path. It also
-   * matched views a caller had extended, and three shapes leaked straight through
-   * both redaction hooks. Each is asserted against what `JSON.stringify` produces
-   * natively, so the walk cannot drift from the serializer.
+   * A binary view a caller has extended can carry a secret in an own `toJSON` or in an own
+   * property, and `JSON.stringify` would write it. Every view is written as its size, whatever it
+   * carries, so none of those shapes can reach the sink.
    */
-  'should inspect binary views a caller has extended', () => {
+  'should write a binary view a caller has extended as its size, whatever it carries', () => {
     const withOwnToJson = Object.assign(Buffer.from('hi'), {
       toJSON: (): unknown => ({ password: 'SECRET' })
     })
     const typedArray = Object.assign(new Uint8Array([1, 2]), { password: 'SECRET' })
     const dataView = Object.assign(new DataView(new ArrayBuffer(2)), { password: 'SECRET' })
 
-    expect(JSON.stringify(redact({ b: withOwnToJson }))).toBe(`{"b":{"password":"${CENSOR}"}}`)
-    expect(JSON.stringify(redact({ u: typedArray }))).toBe(
-      `{"u":{"0":1,"1":2,"password":"${CENSOR}"}}`
-    )
-    expect(JSON.stringify(redact({ d: dataView }))).toBe(`{"d":{"password":"${CENSOR}"}}`)
+    expect(JSON.stringify(redact({ b: withOwnToJson }))).toBe('{"b":"[Binary 2 bytes]"}')
+    expect(JSON.stringify(redact({ u: typedArray }))).toBe('{"u":"[Binary 2 bytes]"}')
+    expect(JSON.stringify(redact({ d: dataView }))).toBe('{"d":"[Binary 2 bytes]"}')
   })
 
   it(/*
-   * REGRESSION — a shape test on the fast path was not enough. Checking "is a
-   * view AND has no OWN toJSON" still admitted a SUBCLASS that defines one on its
-   * own prototype, which is neither own nor canonical. The check is now an
-   * identity comparison against `Buffer.prototype.toJSON` itself, the one
-   * function known to produce a `{ type, data }` output that cannot carry a
-   * caller's key.
+   * A SUBCLASS of a view can define `toJSON` on its own prototype, which is neither own nor
+   * canonical. It is a view like any other and is written as its size, so what its `toJSON`
+   * returns never reaches the sink.
    */
-  'should inspect a view subclass that overrides toJSON', () => {
+  'should write a view subclass that overrides toJSON as its size', () => {
     class SecretView extends Uint8Array {
       toJSON(): unknown {
         return { password: 'SECRET' }
       }
     }
 
-    expect(JSON.stringify(redact({ v: new SecretView([1, 2]) }))).toBe(
-      `{"v":{"password":"${CENSOR}"}}`
-    )
+    expect(JSON.stringify(redact({ v: new SecretView([1, 2]) }))).toBe('{"v":"[Binary 2 bytes]"}')
   })
 
   it(/*
-   * The fast path must still hold for a real `Buffer`, by REFERENCE — that is
-   * what keeps a binary payload from being recursed over byte by byte.
+   * A real `Buffer` is not recursed over byte by byte, and it is not handed on: the marker is a
+   * string that holds no reference to it.
    */
-  'should return a pristine Buffer by reference', () => {
+  'should write a Buffer as its size and not by reference', () => {
     const buf = Buffer.from('hi')
-    expect((redact({ buf }) as Record<string, unknown>)['buf']).toBe(buf)
+    expect((redact({ buf }) as Record<string, unknown>)['buf']).toBe('[Binary 2 bytes]')
   })
 
   it(/*
-   * A pristine view must still serialize exactly as the native serializer renders
-   * it — the narrowing must not change what an ordinary binary payload looks like.
+   * An ordinary binary payload no longer renders as the bytes the native serializer would write:
+   * it renders as its size, which is what keeps a failed child process's output out of a line.
    */
-  'should render pristine binary views exactly as JSON.stringify does', () => {
+  'should render pristine binary views as their size and not as their bytes', () => {
     const pristine = { b: Buffer.from('hi'), u: new Uint8Array([1, 2]) }
-    expect(JSON.stringify(redact(pristine))).toBe(JSON.stringify(pristine))
+    expect(JSON.stringify(redact(pristine))).toBe('{"b":"[Binary 2 bytes]","u":"[Binary 2 bytes]"}')
   })
 
   it(/*

@@ -18,6 +18,7 @@ import type { Transform } from 'node:stream'
 import type { LogLevel } from '../../shared/types/log-level.type'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
+import { isError } from '../utils/is-error.util'
 import { writeStdoutSafely } from '../utils/safe-stdio.util'
 
 /**
@@ -205,7 +206,7 @@ function isPinoPrettyMissing(cause: unknown): boolean {
  */
 function describeFailure(cause: unknown): string {
   try {
-    return toBoundedMessage(cause instanceof Error ? cause.message : String(cause))
+    return toBoundedMessage(isError(cause) ? cause.message : String(cause))
   } catch {
     return 'unreadable value'
   }

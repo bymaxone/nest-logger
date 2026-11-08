@@ -17,6 +17,7 @@
 
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
 import { escapeControlCharacters } from './escape-log-text.util'
+import { isError } from './is-error.util'
 import {
   ALL_OWN_FIELDS,
   allowsOwnField,
@@ -189,10 +190,10 @@ function readsAsError(value: unknown): value is Error {
   return typeof candidate.name === 'string' && typeof candidate.message === 'string'
 }
 
-/** `value instanceof Error`, which a Proxy `getPrototypeOf` trap can make throw. */
+/** Whether the value is an error of any realm; a Proxy `getPrototypeOf` trap can make `instanceof` throw. */
 function isErrorInstance(value: unknown): boolean {
   try {
-    return value instanceof Error
+    return isError(value)
   } catch {
     return false
   }

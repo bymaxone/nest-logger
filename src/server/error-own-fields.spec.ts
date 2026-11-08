@@ -116,12 +116,12 @@ describe("errorOwnFields: 'all' (the default)", () => {
     expect(entry().err).toMatchObject({ orderId: 'o-1', retries: 2 })
   })
 
-  it('leaves a Buffer in the caller metadata as it was', () => {
+  it('writes a Buffer in the caller metadata as its size', () => {
     const { service, entry } = pipeline()
 
     service.info('KEY', 'hello', 'u1', { raw: Buffer.from('ab') })
 
-    expect(entry().raw).toEqual({ type: 'Buffer', data: [97, 98] })
+    expect(entry().raw).toBe('[Binary 2 bytes]')
   })
 })
 

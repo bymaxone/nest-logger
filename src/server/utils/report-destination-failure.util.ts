@@ -16,6 +16,7 @@
  * an operator greps a single `logKey` regardless of which stage failed.
  */
 import { toBoundedMessage, toSingleLineMessage } from './escape-log-text.util'
+import { isError } from './is-error.util'
 import { writeStderrSafely } from './safe-stdio.util'
 import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.constants'
 import type { LogLevel } from '../../shared/types/log-level.type'
@@ -78,7 +79,7 @@ const UNREADABLE_CAUSE = { type: 'UnknownError', message: 'unreadable value' } a
  */
 export function describeCause(cause: unknown): { type: string; message: string } {
   try {
-    return cause instanceof Error
+    return isError(cause)
       ? {
           type: toBoundedMessage(String(cause.name)),
           message: toBoundedMessage(String(cause.message))
