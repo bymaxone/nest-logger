@@ -14,7 +14,7 @@ describe('readExposedClientError', () => {
     ['the highest client status', { status: 499, expose: true, message: 'm' }, 499],
     ['status before statusCode', { status: 404, statusCode: 413, expose: true, message: 'm' }, 404]
   ])('reads %s', (_name, value, status) => {
-    expect(readExposedClientError(value)).toEqual({ status, message: 'm' })
+    expect(readExposedClientError(value)).toEqual({ status, message: 'm', logMessage: 'm' })
   })
 
   it.each([
@@ -65,16 +65,50 @@ describe('readExposedClientError', () => {
     [
       'encoding.unsupported',
       'unsupported content encoding "x-CLIENT"',
+      'unsupported content encoding',
       'unsupported content encoding'
     ],
-    ['charset.unsupported', 'unsupported charset "CLIENT"', 'unsupported charset'],
-    ['entity.too.large', 'request entity too large', 'request entity too large'],
-    ['something.else', 'a message of its own', 'a message of its own']
-  ])('words an error of type %s as %j', (type, thrown, sent) => {
+    [
+      'charset.unsupported',
+      'unsupported charset "CLIENT"',
+      'unsupported charset',
+      'unsupported charset'
+    ],
+    [
+      'entity.parse.failed',
+      `Unexpected token 'h', "hunter2" is not valid JSON`,
+      `Unexpected token 'h', "hunter2" is not valid JSON`,
+      'request body could not be parsed'
+    ],
+    [
+      'entity.verify.failed',
+      'verify says hunter2',
+      'verify says hunter2',
+      'request body verification failed'
+    ]
+  ])('words an error of type %s for the client and for the log', (type, thrown, sent, logged) => {
     const error = { status: 415, expose: true, type, message: thrown }
 
-    expect(readExposedClientError(error)).toEqual({ status: 415, message: sent })
+    expect(readExposedClientError(error)).toEqual({
+      status: 415,
+      message: sent,
+      logMessage: logged,
+      bodyParserType: type
+    })
   })
+
+  it.each([
+    ['entity.too.large', 'request entity too large'],
+    ['request.aborted', 'request aborted'],
+    ['something.else', 'a message of its own']
+  ])(
+    'passes the message of an error of type %s through, to the client and to the log',
+    (type, m) => {
+      const error = { status: 413, expose: true, type, message: m }
+
+      expect(readExposedClientError(error)).toEqual({ status: 413, message: m, logMessage: m })
+    }
+  )
 
   it('keeps the message of an error with no type, or a type that is not text', () => {
     expect(readExposedClientError({ status: 415, expose: true, message: 'm' })?.message).toBe('m')

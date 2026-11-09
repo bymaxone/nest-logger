@@ -130,11 +130,19 @@ export class HttpExceptionFilter implements ExceptionFilter {
     request: RequestFacts
   ): void {
     const { method, url, userId } = request
+    // The entry carries the log text, never the message: a body parser words some of its messages
+    // with a piece of the request body, and the name redaction cannot censor free text. The
+    // response keeps the message, which is the application's concern.
     this.logger.warnStructured(
       RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED,
-      clientError.message,
+      clientError.logMessage,
       userId,
-      { method, url, status: clientError.status }
+      {
+        method,
+        url,
+        status: clientError.status,
+        bodyParserType: clientError.bodyParserType
+      }
     )
     res.status(clientError.status).json({
       statusCode: clientError.status,

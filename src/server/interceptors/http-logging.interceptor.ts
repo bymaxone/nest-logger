@@ -267,7 +267,8 @@ export class HttpLoggingInterceptor implements NestInterceptor {
         url,
         statusCode: clientError.status,
         duration,
-        errorMessage: cutIfText(clientError.message)
+        errorMessage: cutIfText(clientError.logMessage),
+        bodyParserType: clientError.bodyParserType
       }
     )
   }
