@@ -13,6 +13,14 @@ heading here.
 
 ### Fixed
 
+- **A log call no longer throws under `redactStrategy: 'paths'` on JSON-shaped metadata.** A
+  `token` or `password` inside an object held under `cookie` or `authorization` made `@pinojs/redact` throw `TypeError: Cannot assign to read only property`, which the
+  call surfaced to the application. That module assigns its censor into the object it is given, in
+  strict mode, and the copies the name walk builds had non-writable properties. They are
+  writable now, and so is the clone of an `Error`, which a consumer path aimed at its `stack`,
+  `message` or `cause` could also make throw. The secret is still censored, and the output of
+  every other input is the same. The default `'names'` strategy was never affected.
+  **Apply to a derived backend:** nothing to do.
 - **No `toJSON` hook the walk did not see survives the redaction, in the default mode.**
   `JSON.stringify` reads `toJSON` after the redaction, with `[[Get]]`, so a hook the walk had not
   followed ran afterwards and could write a value under a censored name in clear. Shapes that did

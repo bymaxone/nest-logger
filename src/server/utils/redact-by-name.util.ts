@@ -178,8 +178,8 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
  * run in its place. The clone of an `Error` gets it before it leaves `cloneError`, with no condition
  * and no read of the original, which a Proxy can answer differently each time it is asked: an own
  * property of an object only this walk can reach is read by `JSON.stringify` before any hook on the
- * prototype chain. It is configurable so the property loop can still write a `toJSON` value of
- * its own over it.
+ * prototype chain. It is configurable so the property loop can delete it and write a `toJSON`
+ * value of its own.
  *
  * @param target - The copy that must not run a hook.
  */
@@ -227,14 +227,14 @@ function cloneError(error: Error): Error {
   // reads its descriptors, so relaxing them changes only whether this function can
   // finish its job. Freezing is the CALLER's guarantee about the CALLER's object,
   // which is untouched either way.
-  // `configurable` alone: `Reflect.defineProperty` redefines a configurable property
-  // whatever its `writable` flag says, and nothing here ever ASSIGNS to the clone.
-  // Relaxing `writable` too was in the first version of this fix and mutation testing
-  // showed it — four surviving mutants on that line, because no input can tell the
-  // difference.
+  // `configurable` lets `Reflect.defineProperty` redefine a property the original froze. `writable`
+  // is relaxed on data properties too: under `redactStrategy: 'paths'` the clone reaches
+  // `@pinojs/redact`, which assigns its censor into the object it is given, in strict mode, and a
+  // non-writable property throws there. An accessor has no `writable` to relax.
   const descriptors = Object.getOwnPropertyDescriptors(error)
   for (const descriptor of Object.values(descriptors)) {
     descriptor.configurable = true
+    if ('value' in descriptor) descriptor.writable = true
   }
   const clone = Object.create(Object.getPrototypeOf(error) as object, descriptors) as Error
   // V8 exposes `stack` as an own ACCESSOR bound to the original error's internal
@@ -246,9 +246,9 @@ function cloneError(error: Error): Error {
   if (typeof stack === 'string') {
     // `enumerable: false` matches how a real Error carries its stack — making it
     // enumerable would push the whole trace into `JSON.stringify` output for every
-    // redacted error. `writable` / `configurable` are left at their `false`
-    // defaults: nothing downstream rewrites or deletes a stack.
-    Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false })
+    // redacted error. `writable` is stated for the reason given above; `configurable` is left at
+    // its `false` default: nothing downstream deletes a stack.
+    Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false, writable: true })
   }
   // The clone carries every descriptor of the original, read after the walk's own read, so it can
   // hold an enumerable value the walk never saw and a `toJSON` that answers a hook later.
