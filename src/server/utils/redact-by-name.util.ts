@@ -641,6 +641,9 @@ function walkProperties(
       omitted.add(key)
       continue
     }
+    // The clone's shadow already holds the `toJSON` slot, which would keep the key first. Deleting
+    // a key the copy does not hold changes nothing.
+    Reflect.deleteProperty(copy, key)
     defineOwn(
       copy,
       key,

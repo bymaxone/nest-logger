@@ -405,6 +405,14 @@ describe('ordinary input is left as it was', () => {
     })
   })
 
+  it('keeps the order of the keys of an Error that has an enumerable toJSON that is not a function', () => {
+    const error = Object.assign(new Error('boom'), { a: 1, toJSON: 'text', b: 2 })
+
+    const copy = createNameRedactor(['password'], 'X')({ err: error }, false) as { err: Error }
+
+    expect(Object.keys(copy.err)).toEqual(['a', 'toJSON', 'b'])
+  })
+
   it('lands the censor on a toJSON key that is a sensitive name, over the shadow', () => {
     const error = new Error('boom')
     Object.defineProperty(error, 'toJSON', { enumerable: true, get: () => undefined })
