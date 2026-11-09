@@ -366,6 +366,43 @@ describe('an Error clone whose prototype is plain, or a Proxy that answers one o
   )
 })
 
+describe('an Error whose prototype has a hook and whose own enumerable toJSON is a function', () => {
+  class Hooked extends Error {
+    toJSON(): object {
+      return { password: SECRET }
+    }
+  }
+
+  it('writes no secret when the own toJSON is a function from the start', () => {
+    const error = new Hooked('boom')
+    Object.defineProperty(error, 'toJSON', {
+      configurable: true,
+      enumerable: true,
+      value: () => ({ password: SECRET })
+    })
+
+    expect(written({ err: error })).not.toContain(SECRET)
+  })
+
+  it('keeps the shadow when the own toJSON answers a function only to the read of the loop', () => {
+    const error = new Hooked('boom')
+    let reads = 0
+    Object.defineProperty(error, 'toJSON', {
+      configurable: true,
+      enumerable: true,
+      get: () => (reads++ === 0 ? undefined : () => ({ password: SECRET }))
+    })
+
+    const copy = createNameRedactor(['password'], 'X')({ err: error }, true) as { err: object }
+
+    expect(JSON.stringify(copy)).not.toContain(SECRET)
+    expect(Object.getOwnPropertyDescriptor(copy.err, 'toJSON')).toMatchObject({
+      enumerable: false,
+      value: undefined
+    })
+  })
+})
+
 describe('ordinary input is left as it was', () => {
   it('returns a function whose toJSON is not a function as it is', () => {
     const fn = Object.assign((): number => 1, { toJSON: 'text' })
