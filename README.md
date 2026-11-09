@@ -373,6 +373,8 @@ in a guard, and at that point there is no principal yet. The acting user is on t
 entry, where the guard has populated it. Both entries carry the same `requestId`, so joining on
 that gives the whole request.
 
+For the parser errors listed here the request body's text stays out of the library's own entry. For a body that does not parse (`entity.parse.failed`), a body the `verify` function of the parser refuses (`entity.verify.failed`) and an unsupported content encoding or charset, `HTTP_EXCEPTION_HANDLED` carries a fixed message and the parser `type` in a `bodyParserType` field, because the parser's message can quote part of the body and no key-name redaction can censor a string. The response body is the application's concern: for a body that does not parse or that `verify` refuses, the parser's own message still reaches the client unless the application answers the error itself. A `verify` function that gives its error a `type` of its own is outside this list.
+
 URLs are automatically normalized — `/users/550e8400-e29b-41d4-a716-446655440000` becomes `/users/:id` so Loki/Grafana cardinality stays bounded. The query string is stripped from every logged URL, because a magic-link token or reset code in a query parameter is a secret no key-name redaction can scrub out of a string value.
 
 > [!IMPORTANT]

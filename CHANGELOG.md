@@ -34,12 +34,23 @@ heading here.
   `unsupported content encoding` or `unsupported charset`. The status and every other message are
   unchanged.
   **Apply to a derived backend:** nothing to do.
+- **The library's entry for a body the parser refused no longer quotes the body.** The parser
+  words the message of a JSON syntax error with a piece of the body, or a partial value when one is
+  left unquoted, and a `verify` function's message is the application's own text.
+  `HttpExceptionFilter` wrote that message as the `msg` of `HTTP_EXCEPTION_HANDLED`, where
+  name-based redaction cannot censor it. For `entity.parse.failed`, `entity.verify.failed` and the
+  two unsupported 415 types the entry now carries a fixed message and the parser `type` as
+  `bodyParserType`; the interceptor's `errorMessage` does the same. Any other exposed client error
+  is logged with its own message, as before. The response body is unchanged, and stays the application's concern.
+  **Apply to a derived backend:** an alert or query that matched the old `msg` text of these
+  entries matches `bodyParserType` now.
 - **A log call no longer throws under `redactStrategy: 'paths'` on JSON-shaped metadata.** A
   `token` or `password` inside an object held under `cookie` or `authorization` made `@pinojs/redact` throw `TypeError: Cannot assign to read only property`, which the
   call surfaced to the application. That module assigns its censor into the object it is given, in
   strict mode, and the copies the name walk builds had non-writable properties. They are
-  writable now, and so is the clone of an `Error`, which a consumer path aimed at its `stack`,
-  `message` or `cause` could also make throw. The secret is still censored, and the output of
+  writable now, and so is the clone of an `Error`, which could also throw on 1.4.13 when a consumer
+  path with a wildcard aimed at its `stack`, `message` or `cause` (`a.*.err.stack`) came together
+  with a second path (a lone path did not throw). The secret is still censored, and the output of
   every other input is the same. The default `'names'` strategy was never affected.
   **Apply to a derived backend:** nothing to do.
 - **No `toJSON` hook the walk did not see survives the redaction, in the default mode.**

@@ -12,6 +12,10 @@ export interface ExposedClientError {
   readonly status: number
   /** The message the error exposes to the client. */
   readonly message: string
+  /** The message the library writes to its own log entry for it: a fixed one for a known type. */
+  readonly logMessage: string
+  /** The parser `type`, present only when `logMessage` is a fixed text standing in for `message`. */
+  readonly bodyParserType?: string
 }
 
 /** The lowest and highest status of a client error. */
@@ -29,6 +33,18 @@ const FIXED_MESSAGES: ReadonlyMap<string, string> = new Map([
 ])
 
 /**
+ * The `type` of an exposed error whose message may quote the request body, and the fixed text the
+ * library's own log entry carries in place of it. The client still receives the message itself:
+ * the response body is the application's concern. A JSON syntax error words its message with a
+ * snippet of the body, and a `verify` function's message is the application's own text.
+ */
+const FIXED_LOG_MESSAGES: ReadonlyMap<string, string> = new Map([
+  ...FIXED_MESSAGES,
+  ['entity.parse.failed', 'request body could not be parsed'],
+  ['entity.verify.failed', 'request body verification failed']
+])
+
+/**
  * Read an exposed client error, or nothing.
  *
  * The error is the thrower's own object, so every read is guarded: a getter that throws, a Proxy
@@ -38,7 +54,8 @@ const FIXED_MESSAGES: ReadonlyMap<string, string> = new Map([
  * @param value - The thrown value.
  * @returns The status and message when `expose` is `true`, the status (`status`, else `statusCode`)
  *   is an integer from 400 to 499 and the message is a string; `undefined` otherwise. The message is
- *   the fixed one for an error whose own would repeat what the client sent. Never throws.
+ *   the fixed one for an error whose own would repeat what the client sent; `logMessage` is the fixed
+ *   one for a type that may quote the body, with the `type` beside it. Never throws.
  */
 export function readExposedClientError(value: unknown): ExposedClientError | undefined {
   try {
@@ -57,8 +74,12 @@ export function readExposedClientError(value: unknown): ExposedClientError | und
       status <= MAX_CLIENT_STATUS
     if (candidate.expose !== true || !isClientStatus || typeof message !== 'string')
       return undefined
-    const fixed = FIXED_MESSAGES.get(candidate.type as string)
-    return { status, message: fixed ?? message }
+    const type = candidate.type as string
+    const sent = FIXED_MESSAGES.get(type) ?? message
+    const logged = FIXED_LOG_MESSAGES.get(type)
+    return logged === undefined
+      ? { status, message: sent, logMessage: sent }
+      : { status, message: sent, logMessage: logged, bodyParserType: type }
   } catch {
     return undefined
   }

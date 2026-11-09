@@ -33,7 +33,11 @@ class ThrowingController {
       high: httpError({ status: 600, expose: true }),
       fraction: httpError({ status: 413.5, expose: true }),
       text: httpError({ status: '413', expose: true }),
-      'no-expose': httpError({ status: 413 })
+      'no-expose': httpError({ status: 413 }),
+      'parse-failed': httpError(
+        { status: 400, expose: true, type: 'entity.parse.failed' },
+        `Unexpected token 'h', "hunter2-SENTINEL" is not valid JSON`
+      )
     }
     throw shapes[name]
   }
@@ -95,6 +99,23 @@ describe('HttpExceptionFilter, a client error that is not an HttpException', () 
       expect.objectContaining({ statusCode: status })
     )
     expect(errorSpy).not.toHaveBeenCalled()
+  })
+
+  it('logs the fixed text, not the message, for an exposed error of a type that quotes the body', async () => {
+    const res = await request(app.getHttpServer()).get('/shape/parse-failed')
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('hunter2-SENTINEL')
+    expect(warnSpy).toHaveBeenCalledWith(
+      'HTTP_REQUEST_CLIENT_ERROR',
+      expect.any(String),
+      undefined,
+      expect.objectContaining({
+        errorMessage: 'request body could not be parsed',
+        bodyParserType: 'entity.parse.failed'
+      })
+    )
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain('hunter2')
   })
 
   it.each(['hidden', 'server', 'low', 'high', 'fraction', 'text', 'no-expose'])(
