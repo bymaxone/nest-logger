@@ -807,7 +807,7 @@ The bundled `RequestIdMiddleware` does not trust the headers it reads. A request
 
 **A `tenantId` read from the header is what the client asserted.** Any client can send any tenant in `x-tenant-id`, and every entry of its requests will carry it. The 256-character rule above keeps the value safe to write; it does not make it true. Do not use a header-derived `tenantId` to decide whose data an entry is about unless something in front of the application sets or overwrites the header. A host that authenticates its tenants has two options, and both leave the default unchanged for everyone else:
 
-- `http: { tenantIdHeader: false }` reads no header, so no `tenantId` is attached by the middleware.
+- `http: { tenantIdHeader: false }` reads no header, so the middleware takes no `tenantId` from the request.
 - `http: { tenantIdResolver: (req) => ... }` takes the tenant from what the host trusts, for example a value an earlier middleware put on the request after verifying a token. When a resolver is given it is the only source: the header is not read even if the resolver answers nothing, so a client cannot fall back to it. The answer passes the same 256-character rule, and a resolver that throws gives no `tenantId`. The middleware runs before guards, so a tenant known only after authentication is set later with `LogContextService.set('tenantId', ...)`.
 
 An accepted id is echoed back on the response `x-request-id` header and written to every entry the request produces, which is why the set is narrow. The example above reads the header raw to stay short; use `RequestIdMiddleware` through `applyAccessLog(app)` or `applyRequestIdMiddleware(consumer)` unless you apply the same rule yourself.

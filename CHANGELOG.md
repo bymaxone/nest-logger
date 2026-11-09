@@ -20,8 +20,7 @@ heading here.
   `http.tenantIdResolver: (request) => string | undefined` takes the tenant from what the host
   trusts. When a resolver is given it is the only source: the header is not read, whether the
   resolver answers or not. Its answer passes the same 256-character rule as the header, and a
-  resolver that throws gives no `tenantId`. The README now says that a header-derived `tenantId` is
-  client-asserted.
+  resolver that throws gives no `tenantId`.
   #### Apply to a derived backend
   A backend that authenticates its tenants sets `tenantIdHeader: false` or supplies
   `tenantIdResolver`; otherwise nothing changes.
