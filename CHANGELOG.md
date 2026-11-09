@@ -40,8 +40,8 @@ heading here.
   `HttpExceptionFilter` wrote that message as the `msg` of `HTTP_EXCEPTION_HANDLED`, where
   name-based redaction cannot censor it. For `entity.parse.failed`, `entity.verify.failed` and the
   two unsupported 415 types the entry now carries a fixed message and the parser `type` as
-  `bodyParserType`; the interceptor's `errorMessage` does the same. Every other parser type has a
-  constant message in `body-parser` and `raw-body`, and is logged as it is. The response body is unchanged, and stays the application's concern.
+  `bodyParserType`; the interceptor's `errorMessage` does the same. Any other exposed client error
+  is logged with its own message, as before. The response body is unchanged, and stays the application's concern.
   **Apply to a derived backend:** an alert or query that matched the old `msg` text of these
   entries matches `bodyParserType` now.
 - **A log call no longer throws under `redactStrategy: 'paths'` on JSON-shaped metadata.** A
