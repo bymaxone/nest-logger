@@ -14,8 +14,7 @@ heading here.
 ### Fixed
 
 - **A log call no longer throws under `redactStrategy: 'paths'` on JSON-shaped metadata.** A
-  `token` or `password` inside an object held under `cookie` or `authorization`, at depth two or
-  more, made `@pinojs/redact` throw `TypeError: Cannot assign to read only property`, which the
+  `token` or `password` inside an object held under `cookie` or `authorization` made `@pinojs/redact` throw `TypeError: Cannot assign to read only property`, which the
   call surfaced to the application. That module assigns its censor into the object it is given, in
   strict mode, and the copies the name walk builds had non-writable properties. They are
   writable now. The secret is still censored, and the output of
