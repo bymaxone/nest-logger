@@ -62,6 +62,7 @@ import { types } from 'node:util'
 import { cutIfText } from './bounded-text.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
+import { cloneError } from './redact-error-clone.util'
 import {
   addErrorParts,
   defineOwn,
@@ -173,98 +174,6 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
 }
 
 /**
- * Give an object a `toJSON` of `undefined`, which the stringifier does not run. It is defined and
- * not deleted, because deleting would leave a `toJSON` method further up the prototype chain to
- * run in its place. The clone of an `Error` gets it before it leaves `cloneError`, with no condition
- * and no read of the original, which a Proxy can answer differently each time it is asked: an own
- * property of an object only this walk can reach is read by `JSON.stringify` before any hook on the
- * prototype chain. It is configurable so the property loop can delete it and write a `toJSON`
- * value of its own.
- *
- * @param target - The copy that must not run a hook.
- */
-function shadowHook(target: object): void {
-  Reflect.defineProperty(target, 'toJSON', { value: undefined, configurable: true })
-}
-
-/**
- * Remove every enumerable own key from a clone. The property loop writes each key the walk took, so
- * what the clone holds afterwards is exactly what the walk produced for it. The clone is built
- * from descriptors read after the keys were taken, so an object whose reads disagree, a Proxy, can
- * hand it an enumerable value the walk never saw and never redacted.
- *
- * @param clone - The clone of an `Error`.
- */
-function withoutEnumerableKeys(clone: object): void {
-  for (const key of Object.keys(clone)) Reflect.deleteProperty(clone, key)
-}
-
-/** The setter of a clone's accessor that had none: the write is dropped, never thrown. */
-function discardWrite(): void {
-  // Nothing to keep: the clone is read once and discarded.
-}
-
-/**
- * Clone an `Error` preserving what makes it an Error.
- *
- * The walk cannot flatten an error into a plain object: Pino's `err` serializer
- * keys off the instance, and `message` / `stack` are own but NON-enumerable, so
- * a spread would silently drop them. Copying the prototype and the full
- * descriptor set keeps `instanceof`, the message and the stack intact while the
- * caller redefines the enumerable properties it censored.
- *
- * @param error - The error to clone.
- * @returns A structurally identical error with its own descriptors copied.
- */
-function cloneError(error: Error): Error {
-  // Descriptors are copied for their SHAPE, not their immutability. A consumer
-  // that freezes its errors — a deliberate, documented practice, so nobody mutates
-  // an issue list after the throw — hands us properties that are neither writable
-  // nor configurable, and the clone inherited that. Every own enumerable key is
-  // then rewritten below with its walked value, and redefining a non-configurable
-  // property fails whenever that value is a fresh object rather than the original
-  // reference: a censored secret, or simply the structural copy the walk makes of
-  // a nested array. The failure used to reach the caller's guard and drop the
-  // WHOLE record, so a frozen error carrying an array lost every field including
-  // its own message — total silent loss of the one thing worth logging.
-  //
-  // The clone is transient: built here, serialized, discarded. Nothing downstream
-  // reads its descriptors, so relaxing them changes only whether this function can
-  // finish its job. Freezing is the CALLER's guarantee about the CALLER's object,
-  // which is untouched either way.
-  // `configurable` lets `Reflect.defineProperty` redefine a property the original froze. `writable`
-  // is relaxed on data properties too: under `redactStrategy: 'paths'` the clone reaches
-  // `@pinojs/redact`, which assigns its censor into the object it is given, in strict mode, and a
-  // non-writable property throws there. An accessor has no `writable`; one with no setter throws the
-  // same way, so it is given a setter that discards the write.
-  const descriptors = Object.getOwnPropertyDescriptors(error)
-  for (const descriptor of Object.values(descriptors)) {
-    descriptor.configurable = true
-    if ('value' in descriptor) descriptor.writable = true
-    else descriptor.set ??= discardWrite
-  }
-  const clone = Object.create(Object.getPrototypeOf(error) as object, descriptors) as Error
-  // V8 exposes `stack` as an own ACCESSOR bound to the original error's internal
-  // state, so copying the descriptor hands the clone a getter that resolves to a
-  // near-empty string. Pin the already-resolved trace as a plain data property —
-  // without this the redacted error reaches the sink with its stack erased,
-  // which is worse than the leak the clone exists to close.
-  const { stack } = error
-  if (typeof stack === 'string') {
-    // `enumerable: false` matches how a real Error carries its stack — making it
-    // enumerable would push the whole trace into `JSON.stringify` output for every
-    // redacted error. `writable` is stated for the reason given above; `configurable` is left at
-    // its `false` default: nothing downstream deletes a stack.
-    Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false, writable: true })
-  }
-  // The clone carries every descriptor of the original, read after the walk's own read, so it can
-  // hold an enumerable value the walk never saw and a `toJSON` that answers a hook later.
-  withoutEnumerableKeys(clone)
-  shadowHook(clone)
-  return clone
-}
-
-/**
  * A configured redactor.
  *
  * @param value - The value to redact.
@@ -286,6 +195,13 @@ interface RedactRules {
   readonly serializedKeys: ReadonlySet<string>
   /** Whether an `Error` outside those keys is written as data; off, it stays an `Error`. */
   readonly errorsAsData: boolean
+  /**
+   * The rules that apply inside an `Error`, however it is written (as data, as what its `toJSON`
+   * returns, or kept an instance), when they differ from the rest of the record: the names to
+   * censor there, which the record outside does not have. Absent, one set of rules covers the
+   * whole walk.
+   */
+  readonly insideErrors?: RedactRules | undefined
   /** Containers one call may visit before it stops expanding. */
   readonly maxVisits: number
   /** Which own fields of an `Error` are written. */
@@ -336,6 +252,18 @@ function walkArray(
 }
 
 /**
+ * The rules an `Error` is walked under: its own when the redactor holds names for the inside of an
+ * `Error`, and the rules of the walk otherwise. The `Error` is then walked whole under them,
+ * whichever way it is written: as data, or as what its `toJSON` returns.
+ *
+ * @param rules - The rules of the walk.
+ * @returns The rules to walk an `Error` under.
+ */
+function errorRules(rules: RedactRules): RedactRules {
+  return rules.insideErrors ?? rules
+}
+
+/**
  * Recursive snapshotting walk. Every value is read exactly once and pinned into
  * a fresh structure, so the result is guaranteed to equal what was inspected.
  *
@@ -380,7 +308,7 @@ function walk(
   // An Error is the one value whose unreadable parts are isolated: it degrades on its own and
   // its siblings survive. See `walkError`.
   if (isError(value)) {
-    return walkError(value, rules, depth, ancestors, honorToJson, inSerialized)
+    return walkError(value, errorRules(rules), depth, ancestors, honorToJson, inSerialized)
   }
   return walkObject(value, rules, depth, ancestors, honorToJson, inSerialized)
 }
@@ -722,6 +650,10 @@ function errorPartsHost(
  * Build a redactor that censors every value whose key name is in `fieldNames`,
  * to {@link REDACT_MAX_TRAVERSAL_DEPTH}, in a single snapshotting traversal.
  *
+ * Under `redactStrategy: 'paths'`, an `Error` anywhere in the record is converted with the default
+ * names censored in its own fields and its cause chain at any depth; non-`Error` data is matched
+ * only by the configured paths (`errorOnlyNames`).
+ *
  * @param fieldNames - Sensitive field names, matched case-INSENSITIVELY so a
  *   header bag carrying `Authorization` is covered as well as `authorization`.
  *   Matching applies down to {@link REDACT_MAX_TRAVERSAL_DEPTH}; a container
@@ -733,6 +665,11 @@ function errorPartsHost(
  * @param maxVisits - Containers one call may visit; a seam for tests, which exercise the boundary
  *   with a small number. The package passes none.
  * @param ownFields - Which own fields of an `Error` written as data are kept; all by default.
+ * @param errorOnlyNames - Field names censored only inside an `Error`, however it is written: in
+ *   its own fields and in its chain of causes, at any depth. Given, `fieldNames` still covers the rest of
+ *   the walk, usually nothing. This is the rule of `redactStrategy: 'paths'`: an `Error` anywhere
+ *   in the record is converted with the default names censored inside it, and data that is not an
+ *   `Error` is matched only by the configured paths.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
  *   const redact = createNameRedactor(['password'], '[REDACTED]')
@@ -744,7 +681,8 @@ export function createNameRedactor(
   censor: string,
   serializedKeys?: readonly string[],
   maxVisits: number = REDACT_MAX_VISITS,
-  ownFields: OwnFieldPolicy = ALL_OWN_FIELDS
+  ownFields: OwnFieldPolicy = ALL_OWN_FIELDS,
+  errorOnlyNames?: Iterable<string>
 ): Redactor {
   // Matched case-INSENSITIVELY. HTTP header names are case-insensitive by spec,
   // and only INBOUND Node headers arrive lower-cased — a hand-built or outbound
@@ -761,9 +699,21 @@ export function createNameRedactor(
     maxVisits,
     ownFields
   }
+  const insideNames =
+    errorOnlyNames === undefined
+      ? undefined
+      : new Set(Array.from(errorOnlyNames, (name) => name.toLowerCase()))
   return (value: unknown, isRecordRoot = false): unknown => {
     try {
-      const call: RedactRules = { ...rules, visits: { count: 0 } }
+      const visits = { count: 0 }
+      const call: RedactRules = {
+        ...rules,
+        visits,
+        insideErrors:
+          insideNames === undefined
+            ? undefined
+            : { ...rules, sensitive: insideNames, visits, insideErrors: undefined }
+      }
       return walk(value, call, 0, new Set<object>(), !isRecordRoot)
     } catch {
       // The record resisted traversal (a throwing getter, a hostile proxy). It

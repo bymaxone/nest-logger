@@ -33,6 +33,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-09 — server: 34.08 KiB real -> 35.0 KiB budget (~2.7% headroom). Measured with an
+//     `Error` converted to data under `redactStrategy: 'paths'`, with the default names censored
+//     inside it (`errorOnlyNames` in the walk and its helper in the factory): 33.91 KiB before,
+//     34.08 KiB after. The three raises before this one each left under 1% of headroom, so the next
+//     change failed the gate by a hair; this one leaves room for ordinary growth.
 //   - 2026-11-09 — server: 33.70 KiB real -> 34.0 KiB budget (~0.9% headroom). Measured with the
 //     error layer that keeps a body-parser error's type for the filter (module `configure`, the
 //     layer and the request state accessors), the fixed log texts and `bodyParserType`: 33.39 KiB
@@ -217,7 +222,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 34.0 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 35.0 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 
