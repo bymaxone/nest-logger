@@ -286,9 +286,10 @@ interface RedactRules {
   /** Whether an `Error` outside those keys is written as data; off, it stays an `Error`. */
   readonly errorsAsData: boolean
   /**
-   * The rules that apply inside an `Error` written as data, when they differ from the rest of the
-   * record: the names to censor there, which the record outside does not have. Absent, one set of
-   * rules covers the whole walk.
+   * The rules that apply inside an `Error`, however it is written (as data, as what its `toJSON`
+   * returns, or kept an instance), when they differ from the rest of the record: the names to
+   * censor there, which the record outside does not have. Absent, one set of rules covers the
+   * whole walk.
    */
   readonly insideErrors?: RedactRules | undefined
   /** Containers one call may visit before it stops expanding. */
@@ -754,8 +755,8 @@ function errorPartsHost(
  * @param maxVisits - Containers one call may visit; a seam for tests, which exercise the boundary
  *   with a small number. The package passes none.
  * @param ownFields - Which own fields of an `Error` written as data are kept; all by default.
- * @param errorOnlyNames - Field names censored only inside an `Error` written as data: in its own
- *   fields and in its chain of causes, at any depth. Given, `fieldNames` still covers the rest of
+ * @param errorOnlyNames - Field names censored only inside an `Error`, however it is written: in
+ *   its own fields and in its chain of causes, at any depth. Given, `fieldNames` still covers the rest of
  *   the walk, usually nothing. This is the rule of `redactStrategy: 'paths'`: an `Error` anywhere
  *   in the record is converted with the default names censored inside it, and data that is not an
  *   `Error` is matched only by the configured paths.
