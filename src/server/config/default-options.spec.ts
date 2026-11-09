@@ -86,6 +86,7 @@ describe('applyDefaults', () => {
     expect(result.http.shouldCaptureExceptions).toBe(true)
     expect(result.http.shouldGenerateRequestId).toBe(true)
     expect(result.http.tenantIdHeader).toBe('x-tenant-id')
+    expect(result.http.tenantIdResolver).toBeUndefined()
     expect(result.otel.shouldAutoInjectTraceContext).toBe(false)
     expect(result.otel.traceIdField).toBe('traceId')
   })

@@ -300,7 +300,32 @@ describe('validateOptions: http', () => {
     'rejects http.tenantIdHeader %p',
     (value) => {
       expect(() => validateOptions(withOption('http', { tenantIdHeader: value }))).toThrow(
-        /options\.http\.tenantIdHeader must be a non-empty string/
+        /options\.http\.tenantIdHeader must be a non-empty string or false/
+      )
+    }
+  )
+})
+
+describe('validateOptions: http.tenantIdHeader and http.tenantIdResolver', () => {
+  it('accepts a header name, false, and a function', () => {
+    expect(() => validateOptions(withOption('http', { tenantIdHeader: 'x-org-id' }))).not.toThrow()
+    expect(() => validateOptions(withOption('http', { tenantIdHeader: false }))).not.toThrow()
+    expect(() =>
+      validateOptions(withOption('http', { tenantIdResolver: () => undefined }))
+    ).not.toThrow()
+  })
+
+  it.each([[true], ['']])('rejects http.tenantIdHeader %p as neither a name nor false', (value) => {
+    expect(() => validateOptions(withOption('http', { tenantIdHeader: value }))).toThrow(
+      /options\.http\.tenantIdHeader must be a non-empty string or false/
+    )
+  })
+
+  it.each([['x-tenant-id'], [42], [null], [{}]])(
+    'rejects http.tenantIdResolver %p as not a function',
+    (value) => {
+      expect(() => validateOptions(withOption('http', { tenantIdResolver: value }))).toThrow(
+        /options\.http\.tenantIdResolver must be a function/
       )
     }
   )

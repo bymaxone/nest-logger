@@ -11,6 +11,20 @@ heading here.
 
 ## [Unreleased]
 
+### Added
+
+- **A host can stop the tenant id from being whatever the client sent.** The bundled
+  `RequestIdMiddleware` copies the `x-tenant-id` header into `tenantId` on every entry of the
+  request, so any client could attribute its requests to another tenant. The default is unchanged.
+  `http.tenantIdHeader` now also accepts `false`, which reads no header, and the new
+  `http.tenantIdResolver: (request) => string | undefined` takes the tenant from what the host
+  trusts. When a resolver is given it is the only source: the header is not read, whether the
+  resolver answers or not. Its answer passes the same 256-character rule as the header, and a
+  resolver that throws gives no `tenantId`.
+  #### Apply to a derived backend
+  A backend that authenticates its tenants sets `tenantIdHeader: false` or supplies
+  `tenantIdResolver`; otherwise nothing changes.
+
 ### Fixed
 
 - **The 415 the body parser raises no longer repeats what the client sent.** `HttpExceptionFilter`

@@ -10,17 +10,18 @@
  */
 import type {
   BymaxLoggerModuleOptions,
-  HttpOptions,
   OtelOptions,
-  ResolvedBymaxLoggerModuleOptions
+  ResolvedBymaxLoggerModuleOptions,
+  ResolvedHttpOptions
 } from '../interfaces/logger-module-options.interface'
 
-const DEFAULT_HTTP: Required<HttpOptions> = {
+const DEFAULT_HTTP: ResolvedHttpOptions = {
   isEnabled: false,
   shouldCaptureExceptions: true,
   shouldGenerateRequestId: true,
   excludePaths: [/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/],
-  tenantIdHeader: 'x-tenant-id'
+  tenantIdHeader: 'x-tenant-id',
+  tenantIdResolver: undefined
 }
 
 const DEFAULT_OTEL: Required<OtelOptions> = {
@@ -70,14 +71,14 @@ function applyOtelFieldFormat(
 export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxLoggerModuleOptions {
   const isProduction = process.env['NODE_ENV'] === 'production'
 
-  const http: Required<HttpOptions> = { ...DEFAULT_HTTP, ...(options.http ?? {}) }
+  const http: ResolvedHttpOptions = { ...DEFAULT_HTTP, ...(options.http ?? {}) }
   const otel: Required<OtelOptions> = applyOtelFieldFormat(
     { ...DEFAULT_OTEL, ...(options.otel ?? {}) },
     options.otel
   )
 
   const merged: Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel'>> & {
-    http: Required<HttpOptions>
+    http: ResolvedHttpOptions
     otel: Required<OtelOptions>
   } = {
     service: Object.freeze({ ...options.service }),
