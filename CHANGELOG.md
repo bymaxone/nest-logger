@@ -15,8 +15,8 @@ heading here.
 
 - **The 415 the body parser raises no longer repeats what the client sent.** `HttpExceptionFilter`
   answered an exposed client error with the parser's own message, and for an unsupported
-  `Content-Encoding` or charset that message carries the header value, `unsupported content
-encoding "<value>"`, into the response and into the `HTTP_EXCEPTION_HANDLED` entry. Both now say
+  `Content-Encoding` or charset that message carries the header value inside quotes. The value
+  reached the response and the `HTTP_EXCEPTION_HANDLED` entry. Both now say
   `unsupported content encoding` or `unsupported charset`. The status and every other message are
   unchanged.
   **Apply to a derived backend:** nothing to do.
