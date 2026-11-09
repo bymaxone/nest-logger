@@ -82,3 +82,43 @@ export function stripQueryString(url: string): string {
   const queryStart = url.indexOf('?')
   return queryStart === -1 ? url : url.slice(0, queryStart)
 }
+
+/**
+ * Remove the raw query string of the request from a text that is about to be logged.
+ *
+ * Nest words its not-found message as `Cannot GET /path?code=...`, with the whole URL, and an
+ * application may echo the URL in a message of its own. A `url` field has the query stripped, but a
+ * message is free text, which no key-name redaction can censor, so the query is cut out of it by
+ * exact substring. Only the bytes the request carried are matched: a query a message words in
+ * another encoding is not found, and is the application's own text.
+ *
+ * @param text - The text to be logged.
+ * @param urls - The request URLs (`originalUrl` and `url`, which differ for a mounted request).
+ * @returns The text without the `?`-led query of any of the URLs; a bare `?` is not a query.
+ */
+export function withoutRequestQuery(text: string, ...urls: Array<string | undefined>): string {
+  let result = text
+  for (const url of urls) {
+    if (url === undefined) continue
+    const queryStart = url.indexOf('?')
+    if (queryStart !== -1 && url.length - queryStart > 1) {
+      result = result.split(url.slice(queryStart)).join('')
+    }
+  }
+  return result
+}
+
+/**
+ * {@link withoutRequestQuery} for a field that is usually text: a value that is not a string is
+ * returned as it is.
+ *
+ * @param value - A field that is usually text.
+ * @param urls - The request URLs.
+ * @returns The text without the query of the request, or `value` unchanged when it is not a string.
+ */
+export function withoutRequestQueryIfText(
+  value: unknown,
+  ...urls: Array<string | undefined>
+): unknown {
+  return typeof value === 'string' ? withoutRequestQuery(value, ...urls) : value
+}

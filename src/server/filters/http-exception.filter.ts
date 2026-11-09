@@ -32,7 +32,7 @@ import { PinoLoggerService } from '../services/pino-logger.service'
 import { readExposedClientError } from '../utils/exposed-client-error.util'
 import type { ExposedClientError } from '../utils/exposed-client-error.util'
 import { readRecordedParserError } from '../utils/http-log-state.util'
-import { stripQueryString } from '../utils/normalize-url.util'
+import { stripQueryString, withoutRequestQuery } from '../utils/normalize-url.util'
 import { sanitizeError } from '../utils/sanitize-error.util'
 
 /** The request facts every entry the filter writes carries. */
@@ -105,7 +105,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
       } else {
         this.logger.warnStructured(
           RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED,
-          parserError?.logMessage ?? exception.message,
+          parserError?.logMessage ??
+            withoutRequestQuery(exception.message, req.originalUrl, req.url),
           userId,
           metadata
         )
@@ -118,7 +119,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // how the body parser refuses a body over the limit or in an unsupported encoding.
     const clientError = readExposedClientError(exception)
     if (clientError !== undefined) {
-      this.answerClientError(clientError, res, { method: req.method, url, userId })
+      this.answerClientError(clientError, res, { method: req.method, url, userId }, [
+        req.originalUrl,
+        req.url
+      ])
       return
     }
 
@@ -132,11 +136,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
    * @param clientError - The status and message the error exposes.
    * @param res - The response to write.
    * @param request - The request facts every entry carries.
+   * @param rawUrls - The request's own URLs, whose query string a logged message must not carry.
    */
   private answerClientError(
     clientError: ExposedClientError,
     res: LoggableResponse,
-    request: RequestFacts
+    request: RequestFacts,
+    rawUrls: ReadonlyArray<string | undefined>
   ): void {
     const { method, url, userId } = request
     // The entry carries the log text, never the message: a body parser words some of its messages
@@ -144,7 +150,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // response keeps the message, which is the application's concern.
     this.logger.warnStructured(
       RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED,
-      clientError.logMessage,
+      withoutRequestQuery(clientError.logMessage, ...rawUrls),
       userId,
       {
         method,

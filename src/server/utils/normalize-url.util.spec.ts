@@ -1,4 +1,4 @@
-import { normalizeUrl } from './normalize-url.util'
+import { normalizeUrl, withoutRequestQuery } from './normalize-url.util'
 
 describe('normalizeUrl', () => {
   it(/*
@@ -161,5 +161,40 @@ describe('normalizeUrl', () => {
    */
   'should strip a query string from an id-free path', () => {
     expect(normalizeUrl('/search?q=hello')).toBe('/search')
+  })
+})
+
+describe('withoutRequestQuery', () => {
+  const QUERY = '?code=SECRET-CODE&state=SECRET-STATE'
+
+  it.each([
+    ['a Nest not-found message', `Cannot GET /missing${QUERY}`, 'Cannot GET /missing'],
+    ['a message that echoes the URL twice', `${QUERY} and again ${QUERY}`, ' and again '],
+    ['a message without the query', 'Cannot GET /missing', 'Cannot GET /missing']
+  ])('removes the query of the request from %s', (_name, text, expected) => {
+    expect(withoutRequestQuery(text, `/missing${QUERY}`)).toBe(expected)
+  })
+
+  it('removes the query of every URL given, so a mounted request is covered by either', () => {
+    expect(withoutRequestQuery('a?x=1 b?y=2', '/api/a?x=1', '/a?y=2')).toBe('a b')
+  })
+
+  it.each([
+    ['no URL', []],
+    ['an undefined URL', [undefined]],
+    ['a URL with no query', ['/missing']],
+    ['a URL whose query is only the mark', ['/missing?']]
+  ])('leaves the text as it is for %s', (_name, urls) => {
+    expect(withoutRequestQuery('is it? yes?', ...urls)).toBe('is it? yes?')
+  })
+
+  it('removes the raw bytes of the query, which is how Nest words its message', () => {
+    expect(withoutRequestQuery('Cannot GET /x?t=a%20b%2Fc', '/x?t=a%20b%2Fc')).toBe('Cannot GET /x')
+  })
+
+  it('does not remove a query written in another encoding than the request carried', () => {
+    expect(withoutRequestQuery('Cannot GET /x?t=a b/c', '/x?t=a%20b%2Fc')).toBe(
+      'Cannot GET /x?t=a b/c'
+    )
   })
 })

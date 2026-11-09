@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   InternalServerErrorException,
+  NotFoundException,
   Param
 } from '@nestjs/common'
 import type { CallHandler, ExecutionContext, INestApplication } from '@nestjs/common'
@@ -487,6 +488,56 @@ describe('HttpLoggingInterceptor unit', () => {
     expect(keys).not.toContain(RESERVED_LOG_KEYS.HTTP_REQUEST_SUCCESS)
     expect(keys).not.toContain(RESERVED_LOG_KEYS.HTTP_REQUEST_REDIRECT)
   })
+
+  it.each([
+    ['an HttpException', (message: string): unknown => new NotFoundException(message)],
+    [
+      'an exposed http-errors client error',
+      (message: string): unknown => Object.assign(new Error(message), { status: 404, expose: true })
+    ]
+  ])(
+    /*
+     * A handler that words its error with the URL it was called on puts the query string in
+     * `errorMessage`, which no key-name redaction can censor out of a string. The request carries
+     * the query in `originalUrl` and in the relative `url` of a mounted request, and both are cut.
+     */
+    'cuts the query string of the request out of errorMessage on a 4xx, for %s',
+    async (_name, make) => {
+      const warn = jest.fn()
+      const logger = { info: jest.fn(), warnStructured: warn, errorStructured: jest.fn() } as never
+      const interceptor = new HttpLoggingInterceptor(logger, {
+        http: { excludePaths: [] }
+      } as never)
+      const query = '?code=SECRET-CODE&token=SECRET-TOKEN'
+      const ctx = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method: 'GET',
+            url: `/x${query}`,
+            originalUrl: `/api/x${query}`,
+            ip: '127.0.0.1',
+            headers: {}
+          }),
+          getResponse: () => ({ statusCode: 404 })
+        })
+      } as never
+      const callHandler: CallHandler = {
+        handle: () => throwError(() => make(`Cannot GET /api/x${query}`))
+      }
+
+      await new Promise<void>((resolve) => {
+        interceptor.intercept(ctx, callHandler).subscribe({ error: () => resolve() })
+      })
+
+      expect(warn).toHaveBeenCalledWith(
+        RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR,
+        expect.any(String),
+        undefined,
+        expect.objectContaining({ errorMessage: 'Cannot GET /api/x' })
+      )
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('SECRET')
+    }
+  )
 
   /** Context whose request the access-log middleware already claimed. */
   function makeClaimedCtx(req: object): ExecutionContext {
