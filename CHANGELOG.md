@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.14] - 2026-11-09
+
 ### Added
 
 - **A host can stop the tenant id from being whatever the client sent.** The bundled
@@ -32,11 +34,13 @@ heading here.
   `defineProperty` with `get` and no `set`) met a path that censors it, and the assignment of the
   censor threw out of the log call. The copy of the `Error` the walk makes now discards the write.
   The secret was never written; the call used to fail.
+  **Apply to a derived backend:** nothing to do.
 - **A `tenantIdResolver` written as `async` no longer ends the process.** Its answer is a promise,
   which is no tenant id, and one that later rejected was an unhandled rejection. The answer is
   still ignored, and its rejection is now absorbed. Resolve the tenant synchronously, or set it
   later with `LogContextService.set('tenantId', ...)`.
-
+  **Apply to a derived backend:** a resolver that is `async` gave no tenant id before and gives
+  none now; read the tenant synchronously, or set it with `LogContextService.set`.
 - **The 415 the body parser raises no longer repeats what the client sent.** `HttpExceptionFilter`
   answered an exposed client error with the parser's own message, and for an unsupported
   `Content-Encoding` or charset that message carries the header value inside quotes. The value
@@ -106,6 +110,11 @@ heading here.
   step. Its first run found 20 entries of the default redaction set that no test pinned, from
   `passwordHash` to `req.headers["x-auth-token"]`; a spec now pins every name and path that was
   shipped, and censors each name through the default redactor. Nothing in the package changes.
+- **The `minimatch` denial-of-service advisory is closed in the dev tree.** The vulnerable range
+  (>= 7.0.0 < 11.0.1) was reachable through the TypeScript ESLint parser, Stryker and Jest coverage. The
+  10.x copies resolve to 11 and `test-exclude` moves to 8, which uses a `glob` that accepts it.
+  Development dependencies only: the published package has no dependencies and its `dist/` does
+  not change.
 
 ## [1.4.13] - 2026-11-08
 
@@ -2679,7 +2688,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.13...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.14...HEAD
+[1.4.14]: https://github.com/bymaxone/nest-logger/compare/v1.4.13...v1.4.14
 [1.4.13]: https://github.com/bymaxone/nest-logger/compare/v1.4.12...v1.4.13
 [1.4.12]: https://github.com/bymaxone/nest-logger/compare/v1.4.11...v1.4.12
 [1.4.11]: https://github.com/bymaxone/nest-logger/compare/v1.4.10...v1.4.11
