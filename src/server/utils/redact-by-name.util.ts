@@ -175,16 +175,16 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
 /**
  * Give an object a `toJSON` of `undefined`, which the stringifier does not run. It is defined and
  * not deleted, because deleting would leave a `toJSON` method further up the prototype chain to
- * run in its place. A copy that keeps a prototype of its own, the clone of an `Error`, gets it as
- * the last step, decided from the copy and not from the original, which a Proxy can answer
- * differently each time it is asked: an own property of an object only this walk can reach is read
- * by `JSON.stringify` before any hook on the prototype chain. A `toJSON` value the property loop
- * wrote is non-configurable, so the call leaves it as written.
+ * run in its place. The clone of an `Error` gets it before it leaves `cloneError`, with no condition
+ * and no read of the original, which a Proxy can answer differently each time it is asked: an own
+ * property of an object only this walk can reach is read by `JSON.stringify` before any hook on the
+ * prototype chain. It is configurable so the property loop can still write a `toJSON` value of
+ * its own over it.
  *
  * @param target - The copy that must not run a hook.
  */
 function shadowHook(target: object): void {
-  Reflect.defineProperty(target, 'toJSON', { value: undefined })
+  Reflect.defineProperty(target, 'toJSON', { value: undefined, configurable: true })
 }
 
 /**
@@ -251,9 +251,9 @@ function cloneError(error: Error): Error {
     Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false })
   }
   // The clone carries every descriptor of the original, read after the walk's own read, so it can
-  // hold an enumerable value the walk never saw. The shadow over a hook comes after the property
-  // loop, in `walkProperties`.
+  // hold an enumerable value the walk never saw and a `toJSON` that answers a hook later.
   withoutEnumerableKeys(clone)
+  shadowHook(clone)
   return clone
 }
 
@@ -659,7 +659,7 @@ function walkProperties(
   if (asData) {
     const host = errorPartsHost(rules, ancestors, inSerialized)
     addErrorParts(copy, value as Error, without(keys, omitted), host, depth)
-  } else if (Object.getPrototypeOf(copy) !== Object.prototype) shadowHook(copy)
+  }
   return copy
 }
 

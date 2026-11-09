@@ -335,6 +335,37 @@ describe('an Error that is a Proxy whose prototype changes after some reads', ()
   })
 })
 
+describe('an Error clone whose prototype is plain, or a Proxy that answers one on one read', () => {
+  const stateful = (): Error => {
+    const error = new Error('boom')
+    let reads = 0
+    Object.defineProperty(error, 'toJSON', {
+      configurable: true,
+      enumerable: false,
+      get: () => (reads++ === 0 ? undefined : () => ({ password: SECRET }))
+    })
+    return error
+  }
+
+  it('keeps the hook from running when the prototype is Object.prototype', () => {
+    const error = Object.setPrototypeOf(stateful(), Object.prototype) as Error
+
+    expect(written({ err: error })).not.toContain(SECRET)
+  })
+
+  it.each([0, 1, 2, 3, 4, 5, 6, 7, 8])(
+    'keeps the hook from running when read %i of the prototype is plain',
+    (plainAt) => {
+      let reads = 0
+      const proxy = new Proxy(stateful(), {
+        getPrototypeOf: () => (reads++ === plainAt ? Object.prototype : Error.prototype)
+      })
+
+      expect(written({ err: proxy })).not.toContain(SECRET)
+    }
+  )
+})
+
 describe('ordinary input is left as it was', () => {
   it('returns a function whose toJSON is not a function as it is', () => {
     const fn = Object.assign((): number => 1, { toJSON: 'text' })
@@ -367,7 +398,7 @@ describe('ordinary input is left as it was', () => {
     )
     expect(Object.keys(copy.err)).toEqual(Object.keys(error))
     expect(Object.getOwnPropertyDescriptor(copy.err, 'toJSON')).toEqual({
-      configurable: false,
+      configurable: true,
       enumerable: false,
       value: undefined,
       writable: false
