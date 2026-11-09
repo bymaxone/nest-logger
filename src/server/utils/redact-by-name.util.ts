@@ -341,6 +341,18 @@ function walkArray(
 }
 
 /**
+ * The rules an `Error` is walked under: its own when the redactor holds names for the inside of an
+ * `Error`, and the rules of the walk otherwise. The `Error` is then walked whole under them,
+ * whichever way it is written: as data, or as what its `toJSON` returns.
+ *
+ * @param rules - The rules of the walk.
+ * @returns The rules to walk an `Error` under.
+ */
+function errorRules(rules: RedactRules): RedactRules {
+  return rules.insideErrors ?? rules
+}
+
+/**
  * Recursive snapshotting walk. Every value is read exactly once and pinned into
  * a fresh structure, so the result is guaranteed to equal what was inspected.
  *
@@ -385,7 +397,7 @@ function walk(
   // An Error is the one value whose unreadable parts are isolated: it degrades on its own and
   // its siblings survive. See `walkError`.
   if (isError(value)) {
-    return walkError(value, rules, depth, ancestors, honorToJson, inSerialized)
+    return walkError(value, errorRules(rules), depth, ancestors, honorToJson, inSerialized)
   }
   return walkObject(value, rules, depth, ancestors, honorToJson, inSerialized)
 }
@@ -639,7 +651,6 @@ function walkProperties(
   const keys = Object.keys(source)
   const { safe } = rules.ownFields
   const asData = isError(value) && (safe || (rules.errorsAsData && !inSerialized))
-  const inner = asData && rules.insideErrors !== undefined ? rules.insideErrors : rules
   const copy = startCopy(value, asData)
   const scrubbed = isError(value) && (safe || !inSerialized)
   const omitted = new Set<string>()
@@ -660,11 +671,11 @@ function walkProperties(
     defineOwn(
       copy,
       key,
-      inner.sensitive.has(key.toLowerCase())
-        ? inner.censor
+      rules.sensitive.has(key.toLowerCase())
+        ? rules.censor
         : walk(
             scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
-            inner,
+            rules,
             depth + 1,
             ancestors,
             true,
@@ -673,7 +684,7 @@ function walkProperties(
     )
   }
   if (asData) {
-    const host = errorPartsHost(inner, ancestors, inSerialized)
+    const host = errorPartsHost(rules, ancestors, inSerialized)
     addErrorParts(copy, value as Error, without(keys, omitted), host, depth)
   }
   return copy

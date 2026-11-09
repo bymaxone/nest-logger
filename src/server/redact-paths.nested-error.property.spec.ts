@@ -41,20 +41,55 @@ interface Drawn {
   readonly plain: { readonly value: string; readonly path: string }
 }
 
-/** One `Error` with a chain of causes, own fields drawn from the default names. */
+/**
+ * One `Error` with a chain of causes, own fields drawn from the default names. Some links write
+ * themselves with `toJSON`, which hides the links below them, and whose output is censored whole
+ * when the Error holds a default name; some hold a part that cannot be read. A message is required
+ * only for the plain links the walk can still reach.
+ */
 function drawError(pick: () => number, id: number, secrets: string[], messages: string[]): Error {
   const links = 1 + Math.floor(pick() * MAX_CHAIN)
+  const kinds = Array.from({ length: links }, () => {
+    const draw = pick()
+    return draw < 0.1 ? 'unreadable' : draw < 0.35 ? 'json' : 'plain'
+  })
+  // The head is link 1. Required: the links down to the first that hides what is below it.
+  let reachable = true
+  kinds.forEach((kind, index) => {
+    const link = index + 1
+    if (reachable && link <= DEFAULT_MAX_CAUSE_DEPTH && kind === 'plain') {
+      messages.push(`message-${id}-${link}`)
+    }
+    if (kind !== 'plain') reachable = false
+  })
   let cause: Error | undefined
   for (let link = links; link >= 1; link--) {
     const message = `message-${id}-${link}`
-    if (link <= DEFAULT_MAX_CAUSE_DEPTH) messages.push(message)
+    const kind = kinds[link - 1]
     const error = new Error(message, cause === undefined ? undefined : { cause })
+    if (kind === 'unreadable') {
+      // A part the walk cannot read: the Error degrades to a sanitized node, which is still an Error.
+      Object.defineProperty(error, 'unreadable', {
+        enumerable: true,
+        get: () => {
+          throw new Error('unreadable')
+        }
+      })
+    }
     const fields = 1 + Math.floor(pick() * 3)
     for (let index = 0; index < fields; index++) {
       const name = REDACT_COMMON_FIELDS[Math.floor(pick() * REDACT_COMMON_FIELDS.length)] as string
       const secret = `SECRET-${id}-${link}-${index}`
       secrets.push(secret)
       Reflect.set(error, name, pick() < 0.3 ? { headers: { [name]: secret }, note: 'ok' } : secret)
+    }
+    if (kind === 'json') {
+      // An Error that writes itself, as an HTTP client's error does: its toJSON output holds a
+      // secret deeper than the default paths reach.
+      const hidden = `SECRET-${id}-${link}-json`
+      secrets.push(hidden)
+      const config = { a: { b: { c: { d: { headers: { authorization: hidden } } } } } }
+      Reflect.set(error, 'toJSON', () => ({ message, config }))
     }
     cause = error
   }
@@ -120,7 +155,7 @@ describe("an Error anywhere in the record, under redactStrategy 'paths'", () => 
       for (const secret of item.secrets)
         expect([index, line.includes(secret)]).toEqual([index, false])
       for (const message of item.messages)
-        expect([index, line.includes(message)]).toEqual([index, true])
+        expect([index, message, line.includes(message)]).toEqual([index, message, true])
     }
   })
 

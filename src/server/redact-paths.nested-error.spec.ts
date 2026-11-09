@@ -91,6 +91,31 @@ describe('an Error under paths, beside the paths of the consumer', () => {
   })
 })
 
+describe('an Error that writes itself with toJSON, under paths', () => {
+  const selfWriting = (): Error => {
+    const error = Object.assign(new Error('x'), {
+      config: { a: { b: { c: { d: { headers: { authorization: 'LEAK-JSON' } } } } } }
+    })
+    Reflect.set(error, 'toJSON', function (this: Error & { config: unknown }) {
+      return { message: this.message, config: this.config }
+    })
+    return error
+  }
+
+  it.each([
+    ['nested', (e: Error) => ({ a: { b: { err: e } } })],
+    ['at the top of the metadata', (e: Error) => ({ e })],
+    ['in a list', (e: Error) => ({ list: [1, e] })]
+  ])('censors the default names in what it writes, for one %s', (_where, meta) => {
+    const paths = written({ redactStrategy: 'paths' }, meta(selfWriting()))
+    const names = written({}, meta(selfWriting()))
+
+    expect(paths.line).not.toContain('LEAK-JSON')
+    expect(paths.line).toContain('"message":"x"')
+    expect(names.line).not.toContain('LEAK-JSON')
+  })
+})
+
 describe('data that is not an Error, under paths', () => {
   const deep = (): Record<string, unknown> => ({
     a: { b: { c: { d: { e: { f: { password: 'KEEP-ME' } } } } } }
