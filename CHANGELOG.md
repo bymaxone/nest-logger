@@ -13,6 +13,13 @@ heading here.
 
 ### Fixed
 
+- **The 415 the body parser raises no longer repeats what the client sent.** `HttpExceptionFilter`
+  answered an exposed client error with the parser's own message, and for an unsupported
+  `Content-Encoding` or charset that message carries the header value inside quotes. The value
+  reached the response and the `HTTP_EXCEPTION_HANDLED` entry. Both now say
+  `unsupported content encoding` or `unsupported charset`. The status and every other message are
+  unchanged.
+  **Apply to a derived backend:** nothing to do.
 - **A log call no longer throws under `redactStrategy: 'paths'` on JSON-shaped metadata.** A
   `token` or `password` inside an object held under `cookie` or `authorization` made `@pinojs/redact` throw `TypeError: Cannot assign to read only property`, which the
   call surfaced to the application. That module assigns its censor into the object it is given, in
