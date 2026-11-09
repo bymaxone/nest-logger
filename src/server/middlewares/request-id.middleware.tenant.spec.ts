@@ -65,7 +65,7 @@ describe('http.tenantIdResolver', () => {
     ).toBeUndefined()
   })
 
-  it('is read again by a second mount on the same request, never replaced by the header', () => {
+  it('keeps the tenant of the first mount when a second one runs on the same request', () => {
     const logContext = new LogContextService()
     const options = applyDefaults({
       service: { name: 'tenant-test', version: '1.0.0' },
@@ -118,4 +118,35 @@ describe('http.tenantIdResolver', () => {
 
     expect(seen).toEqual(['GET'])
   })
+  it.each([
+    ['a rejected promise', () => Promise.reject(new Error('session store down'))],
+    [
+      'a thenable whose then throws',
+      () => ({
+        then: (): never => {
+          throw new Error('hostile then')
+        }
+      })
+    ],
+    [
+      'a thenable that rejects',
+      () => ({ then: (_ok: unknown, no: (e: Error) => void) => no(new Error('no')) })
+    ]
+  ])(
+    'gives no tenant id and leaves no unhandled rejection when it answers %s',
+    async (_name, answer) => {
+      const unhandled = jest.fn()
+      process.on('unhandledRejection', unhandled)
+      try {
+        const tenant = tenantOf({ tenantIdResolver: answer as unknown as () => string })
+        await new Promise((resolve) => setImmediate(resolve))
+        await new Promise((resolve) => setImmediate(resolve))
+
+        expect(tenant).toBeUndefined()
+        expect(unhandled).not.toHaveBeenCalled()
+      } finally {
+        process.off('unhandledRejection', unhandled)
+      }
+    }
+  )
 })

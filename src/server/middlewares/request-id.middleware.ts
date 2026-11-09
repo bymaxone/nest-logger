@@ -58,6 +58,15 @@ const MAX_CORRELATION_ID_LENGTH = 256
 const CORRELATION_ID_CHARSET = /^[A-Za-z0-9._:/+=-]+$/
 
 /**
+ * Absorb the rejection of an answer the resolver gave although it is not text. A resolver written
+ * as `async` answers a promise, which is no tenant id, and one that later rejects would end the
+ * process as an unhandled rejection; the middleware has already moved on without it.
+ */
+function settleLate(answer: unknown): void {
+  Promise.resolve(answer).catch(() => undefined)
+}
+
+/**
  * The only fields a request scope inherits from an enclosing scope.
  *
  * An ALLOWLIST, and the choice is the whole safety property. `LogContext`
@@ -332,7 +341,9 @@ export class RequestIdMiddleware implements NestMiddleware {
   ): string | undefined {
     try {
       const answer: unknown = resolver(req)
-      return isAcceptableHeaderValue(answer) ? answer : undefined
+      if (isAcceptableHeaderValue(answer)) return answer
+      settleLate(answer)
+      return undefined
     } catch {
       return undefined
     }

@@ -27,6 +27,17 @@ heading here.
 
 ### Fixed
 
+- **A log call no longer throws for an `Error` that holds an accessor with no setter, under
+  `redactStrategy: 'paths'`.** A non-enumerable getter-only property on an `Error` (a
+  `defineProperty` with `get` and no `set`) met a path that censors it, and the assignment of the
+  censor threw out of the log call. The copy of the `Error` the walk makes now discards the write.
+  The secret was never written; the call used to fail. The `cause` of the original is the caller's
+  own object and is left untouched.
+- **A `tenantIdResolver` written as `async` no longer ends the process.** Its answer is a promise,
+  which is no tenant id, and one that later rejected was an unhandled rejection. The answer is
+  still ignored, and its rejection is now absorbed. Resolve the tenant synchronously, or set it
+  later with `LogContextService.set('tenantId', ...)`.
+
 - **The 415 the body parser raises no longer repeats what the client sent.** `HttpExceptionFilter`
   answered an exposed client error with the parser's own message, and for an unsupported
   `Content-Encoding` or charset that message carries the header value inside quotes. The value
