@@ -33,6 +33,13 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-08 — server: 33.00 KiB real -> 33.5 KiB budget (~1.3% headroom). Re-derived from the
+//     artifact: the previous budget had 0.12 KiB of headroom left (32.88 KiB real). Keeping any
+//     `toJSON` hook the redaction walk did not follow out of the output adds executable code
+//     only: the helper that shadows a hook with `undefined`, the clone of an `Error` starting with no enumerable
+//     key and sealed with that shadow as its last step, and the handling of a callable whose
+//     answer can change. Measurement noise is +-0.03 KiB per edit. The headroom is small on
+//     purpose: the next change of this size has to say what it adds.
 //   - 2026-11-07 — server: 32.17 KiB real -> 33.0 KiB budget (~2.6% headroom). Budget = measured
 //     32.17 + 0.83 of headroom; re-derive from the artifact when it is exceeded. `main` measured
 //     31.04 KiB, and the option that chooses which own fields of an error are written adds +1.13
@@ -208,7 +215,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 33 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 33.5 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 

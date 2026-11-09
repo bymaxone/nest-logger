@@ -1,0 +1,492 @@
+/**
+ * Pins that no callable `toJSON` survives the redaction walk under `errorOwnFields: 'all'`.
+ * `JSON.stringify` reads `toJSON` with `[[Get]]` after the redaction, so a hook the walk did not
+ * see (because the object hid it from a descriptor read, or answered differently the second time)
+ * runs afterwards and can write a field under a censored name in clear.
+ *
+ * Layer: server, utils, tests.
+ */
+import { createOwnFieldPolicy } from './own-field-policy.util'
+import { createNameRedactor } from './redact-by-name.util'
+
+const SECRET = 'SECRET-VALUE'
+
+/** The output of the redactor, serialized the way the log line is. */
+function written(value: unknown, isRecordRoot = true, serializedKeys?: readonly string[]): string {
+  return JSON.stringify(createNameRedactor(['password'], 'X', serializedKeys)(value, isRecordRoot))
+}
+
+/** A function-valued Proxy whose `get` trap answers a hook that `has` and descriptors hide. */
+const hidingProxy = (): object =>
+  new Proxy(() => 1, {
+    get: (target, key) =>
+      key === 'toJSON' ? () => ({ password: SECRET }) : Reflect.get(target, key),
+    has: (target, key) => key !== 'toJSON' && Reflect.has(target, key),
+    getOwnPropertyDescriptor: (target, key) =>
+      key === 'toJSON' ? undefined : Reflect.getOwnPropertyDescriptor(target, key)
+  })
+
+/** A function-valued Proxy that answers no hook the first time and a hook afterwards. */
+const statefulProxy = (): object => {
+  let reads = 0
+  return new Proxy(() => 1, {
+    get: (target, key) =>
+      key === 'toJSON' && reads++ > 0 ? () => ({ password: SECRET }) : Reflect.get(target, key)
+  })
+}
+
+/** A function with an accessor `toJSON` that answers no hook the first time. */
+const statefulFunction = (): object => {
+  let reads = 0
+  const fn = (): number => 1
+  Object.defineProperty(fn, 'toJSON', {
+    get: () => (reads++ === 0 ? undefined : () => ({ password: SECRET }))
+  })
+  return fn
+}
+
+/** An `Error` with an accessor `toJSON` that answers no hook the first time. */
+const statefulError = (enumerable: boolean): Error => {
+  let reads = 0
+  const error = new Error('boom')
+  Object.defineProperty(error, 'toJSON', {
+    enumerable,
+    get: () => (reads++ === 0 ? undefined : () => ({ password: SECRET }))
+  })
+  return error
+}
+
+describe('a hook the walk could not see', () => {
+  it.each([
+    ['a Proxy that hides its hook from descriptors', hidingProxy],
+    ['a Proxy that answers a hook only after the first read', statefulProxy],
+    ['a function with a stateful accessor', statefulFunction]
+  ])('does not run in the stringifier after a callable: %s', (_name, make) => {
+    expect(written({ run: make() })).not.toContain(SECRET)
+    expect(written({ list: [make()] })).not.toContain(SECRET)
+  })
+
+  it.each([
+    ['not enumerable', false],
+    ['enumerable', true]
+  ])('does not run after an Error with a stateful accessor that is %s', (_name, enumerable) => {
+    expect(written({ err: statefulError(enumerable) })).not.toContain(SECRET)
+    expect(written({ meta: { cause: statefulError(enumerable) } })).not.toContain(SECRET)
+  })
+
+  it('does not run after an Error under a serializer key', () => {
+    expect(written({ err: statefulError(false) }, true, ['err'])).not.toContain(SECRET)
+  })
+})
+
+/** An object with an enumerable `toJSON` accessor that answers no hook the first time. */
+const withStatefulAccessor = <T extends object>(target: T): T => {
+  let reads = 0
+  Object.defineProperty(target, 'toJSON', {
+    enumerable: true,
+    get: () => (reads++ === 0 ? undefined : () => ({ password: SECRET }))
+  })
+  return target
+}
+
+/** A function whose prototype is a Proxy that hides a hook from descriptors. */
+const functionWithHidingPrototype = (): object => {
+  const fn = (): number => 1
+  Object.setPrototypeOf(
+    fn,
+    new Proxy(
+      {},
+      {
+        get: (target, key) =>
+          key === 'toJSON' ? () => ({ password: SECRET }) : Reflect.get(target, key),
+        has: (target, key) => key !== 'toJSON' && Reflect.has(target, key),
+        getOwnPropertyDescriptor: (target, key) =>
+          key === 'toJSON' ? undefined : Reflect.getOwnPropertyDescriptor(target, key)
+      }
+    )
+  )
+  return fn
+}
+
+describe('a hook behind an enumerable accessor on a copy', () => {
+  class Instance {
+    readonly a = 1
+  }
+
+  it.each([
+    ['a plain object', (): object => withStatefulAccessor({})],
+    ['a class instance', (): object => withStatefulAccessor(new Instance())],
+    ['a Map', (): object => withStatefulAccessor(new Map())],
+    ['an array', (): object => withStatefulAccessor([])]
+  ])('is not run after %s', (_name, make) => {
+    expect(written({ x: make() })).not.toContain(SECRET)
+    expect(written({ list: [make()] })).not.toContain(SECRET)
+  })
+
+  it.each([
+    ['under a serializer key', ['err']],
+    ['with no serializer key', undefined]
+  ])('is not run after an Error written as data, %s', (_name, keys) => {
+    expect(written({ other: withStatefulAccessor(new Error('boom')) }, true, keys)).not.toContain(
+      SECRET
+    )
+  })
+
+  it('keeps a toJSON function key at the record root, which Pino iterates and never stringifies', () => {
+    const hook = (): number => 1
+
+    const copy = createNameRedactor(['password'], 'X')({ a: 1, toJSON: hook }, true) as Record<
+      string,
+      unknown
+    >
+
+    expect(copy['toJSON']).toBe(hook)
+  })
+
+  it.each([
+    ['a string', 'text'],
+    ['a number', 7],
+    ['an object', { nested: 1 }],
+    ['null', null]
+  ])('copies a toJSON key that is %s, which no stringifier runs', (_name, value) => {
+    const copy = createNameRedactor(['password'], 'X')({ a: 1, toJSON: value }, false) as Record<
+      string,
+      unknown
+    >
+
+    expect(copy['toJSON']).toEqual(value)
+    expect(Object.keys(copy)).toContain('toJSON')
+  })
+
+  it('keeps the other own fields of the object', () => {
+    const copy = createNameRedactor(['password'], 'X')(
+      withStatefulAccessor({ a: 1, password: 'p' }),
+      false
+    ) as Record<string, unknown>
+
+    expect(copy['a']).toBe(1)
+    expect(copy['password']).toBe('X')
+    expect(Object.keys(copy)).not.toContain('toJSON')
+  })
+})
+
+describe('a hook behind the prototype chain of a callable', () => {
+  it('is not run after a function whose prototype is a Proxy that hides it', () => {
+    expect(written({ run: functionWithHidingPrototype() })).not.toContain(SECRET)
+    expect(written({ list: [functionWithHidingPrototype()] })).not.toContain(SECRET)
+  })
+})
+
+describe('a toJSON accessor that shadows a hook the walk did not follow', () => {
+  /** An `Error` class whose prototype has a `toJSON` method, which the walk never reads past a shadow. */
+  class Hooked extends Error {
+    toJSON(): object {
+      return { password: SECRET }
+    }
+  }
+
+  const shadowed = (enumerable: boolean, stateful: boolean): Error => {
+    let reads = 0
+    const error = new Hooked('boom')
+    Object.defineProperty(error, 'toJSON', {
+      enumerable,
+      get: () => (stateful && reads++ > 0 ? () => ({ password: SECRET }) : undefined)
+    })
+    return error
+  }
+
+  it.each([
+    ['not enumerable and constant', false, false],
+    ['not enumerable and stateful', false, true],
+    ['enumerable and constant', true, false],
+    ['enumerable and stateful', true, true]
+  ])(
+    'keeps the shadow, so the prototype method does not run: %s',
+    (_name, enumerable, stateful) => {
+      expect(written({ err: shadowed(enumerable, stateful) })).not.toContain(SECRET)
+      expect(written({ err: shadowed(enumerable, stateful) }, true, ['err'])).not.toContain(SECRET)
+    }
+  )
+})
+
+describe('an Error that changes what it holds between the walk and the clone', () => {
+  it.each([
+    ['not enumerable', false],
+    ['enumerable', true]
+  ])('does not run a function its accessor put there when read, %s', (_name, enumerable) => {
+    const rewriting = (): Error => {
+      const error = new Error('boom')
+      Object.defineProperty(error, 'toJSON', {
+        configurable: true,
+        enumerable: false,
+        get: () => {
+          Object.defineProperty(error, 'toJSON', {
+            configurable: true,
+            enumerable,
+            value: () => ({ password: SECRET })
+          })
+          return undefined
+        }
+      })
+      return error
+    }
+
+    expect(written({ err: rewriting() })).not.toContain(SECRET)
+    expect(written({ err: rewriting() }, true, ['err'])).not.toContain(SECRET)
+  })
+
+  it('does not run a hook that a Proxy shows only to the second descriptor read', () => {
+    let reads = 0
+    const proxy = new Proxy(new Error('boom'), {
+      ownKeys: (target) => [...Reflect.ownKeys(target), 'toJSON'],
+      getOwnPropertyDescriptor: (target, key) =>
+        key === 'toJSON'
+          ? reads++ === 0
+            ? undefined
+            : { configurable: true, enumerable: false, value: () => ({ password: SECRET }) }
+          : Reflect.getOwnPropertyDescriptor(target, key),
+      has: (target, key) => key !== 'toJSON' && key in target,
+      get: (target, key, receiver) =>
+        key === 'toJSON' ? undefined : Reflect.get(target, key, receiver)
+    })
+
+    expect(written({ err: proxy })).not.toContain(SECRET)
+  })
+})
+
+describe('an Error whose descriptors disagree with its keys', () => {
+  it('keeps no enumerable value the property loop did not walk', () => {
+    let descriptorReads = 0
+    const proxy = new Proxy(new Error('boom'), {
+      ownKeys: (target) => [...Reflect.ownKeys(target), 'leak'],
+      getOwnPropertyDescriptor: (target, key) =>
+        key === 'leak'
+          ? {
+              configurable: true,
+              enumerable: descriptorReads++ > 0,
+              value: { password: SECRET },
+              writable: true
+            }
+          : Reflect.getOwnPropertyDescriptor(target, key)
+    })
+
+    expect(written({ err: proxy })).not.toContain(SECRET)
+    expect(written({ err: proxy }, true, ['err'])).not.toContain(SECRET)
+  })
+
+  it('keeps every enumerable own field of an ordinary Error', () => {
+    const error = Object.assign(new Error('boom'), { code: 'E_X', status: 502 })
+
+    const copy = createNameRedactor(['password'], 'X')({ err: error }, false) as {
+      err: Record<string, unknown>
+    }
+
+    expect(Object.keys(copy.err)).toEqual(['code', 'status'])
+  })
+})
+
+describe('a frozen Error with a stateful toJSON accessor', () => {
+  it('does not run the hook after the clone, whose descriptors are relaxed', () => {
+    const error = statefulError(false)
+    Object.freeze(error)
+
+    expect(written({ err: error })).not.toContain(SECRET)
+    expect(written({ err: error }, true, ['err'])).not.toContain(SECRET)
+  })
+})
+
+describe('an Error whose prototype carries a hook and whose own shadow hides from the key snapshot', () => {
+  it.each([
+    ['without a serializer key', undefined],
+    ['under a serializer key', ['err']]
+  ])('keeps the hook from running %s', (_name, keys) => {
+    class Hooked extends Error {
+      toJSON(): object {
+        return { password: SECRET }
+      }
+    }
+    const base = new Hooked('boom')
+    Object.defineProperty(base, 'toJSON', {
+      configurable: true,
+      enumerable: true,
+      value: undefined
+    })
+    let reads = 0
+    const proxy = new Proxy(base, {
+      ownKeys: (target) =>
+        reads++ === 0
+          ? Reflect.ownKeys(target).filter((key) => key !== 'toJSON')
+          : Reflect.ownKeys(target)
+    })
+
+    expect(written({ err: proxy }, true, keys)).not.toContain(SECRET)
+  })
+})
+
+describe('an Error that is a Proxy whose prototype changes after some reads', () => {
+  it.each([1, 2, 3, 4, 5, 6, 7, 8])('keeps the hook from running after %i answers', (answers) => {
+    const hooked = Object.setPrototypeOf({ toJSON: () => ({ password: SECRET }) }, null) as object
+    let reads = 0
+    const proxy = new Proxy(new Error('boom'), {
+      getPrototypeOf: () => (reads++ < answers ? Error.prototype : hooked)
+    })
+
+    expect(written({ err: proxy })).not.toContain(SECRET)
+  })
+})
+
+describe('an Error clone whose prototype is plain, or a Proxy that answers one on one read', () => {
+  const stateful = (): Error => {
+    const error = new Error('boom')
+    let reads = 0
+    Object.defineProperty(error, 'toJSON', {
+      configurable: true,
+      enumerable: false,
+      get: () => (reads++ === 0 ? undefined : () => ({ password: SECRET }))
+    })
+    return error
+  }
+
+  it('keeps the hook from running when the prototype is Object.prototype', () => {
+    const error = Object.setPrototypeOf(stateful(), Object.prototype) as Error
+
+    expect(written({ err: error })).not.toContain(SECRET)
+  })
+
+  it.each([0, 1, 2, 3, 4, 5, 6, 7, 8])(
+    'keeps the hook from running when read %i of the prototype is plain',
+    (plainAt) => {
+      let reads = 0
+      const proxy = new Proxy(stateful(), {
+        getPrototypeOf: () => (reads++ === plainAt ? Object.prototype : Error.prototype)
+      })
+
+      expect(written({ err: proxy })).not.toContain(SECRET)
+    }
+  )
+})
+
+describe('an Error whose prototype has a hook and whose own enumerable toJSON is a function', () => {
+  class Hooked extends Error {
+    toJSON(): object {
+      return { password: SECRET }
+    }
+  }
+
+  it('writes no secret when the own toJSON is a function from the start', () => {
+    const error = new Hooked('boom')
+    Object.defineProperty(error, 'toJSON', {
+      configurable: true,
+      enumerable: true,
+      value: () => ({ password: SECRET })
+    })
+
+    expect(written({ err: error })).not.toContain(SECRET)
+  })
+
+  it('keeps the shadow when the own toJSON answers a function only to the read of the loop', () => {
+    const error = new Hooked('boom')
+    let reads = 0
+    Object.defineProperty(error, 'toJSON', {
+      configurable: true,
+      enumerable: true,
+      get: () => (reads++ === 0 ? undefined : () => ({ password: SECRET }))
+    })
+
+    const copy = createNameRedactor(['password'], 'X')({ err: error }, true) as { err: object }
+
+    expect(JSON.stringify(copy)).not.toContain(SECRET)
+    expect(Object.getOwnPropertyDescriptor(copy.err, 'toJSON')).toMatchObject({
+      enumerable: false,
+      value: undefined
+    })
+  })
+})
+
+describe('ordinary input is left as it was', () => {
+  it('returns a function whose toJSON is not a function as it is', () => {
+    const fn = Object.assign((): number => 1, { toJSON: 'text' })
+
+    const copy = createNameRedactor(['password'], 'X')({ run: fn }, false) as Record<
+      string,
+      unknown
+    >
+
+    expect(copy['run']).toBe(fn)
+  })
+
+  it('adds no own property to the copy of a plain object', () => {
+    const copy = createNameRedactor(['password'], 'X')({ box: { a: 1, b: [2] } }, false) as {
+      box: object
+    }
+
+    expect(Object.getOwnPropertyNames(copy.box).sort()).toEqual(['a', 'b'])
+  })
+
+  it('adds only a non-enumerable toJSON to the clone of an Error that has none', () => {
+    const error = Object.assign(new Error('boom'), { code: 'E_X' })
+
+    const copy = createNameRedactor(['password'], 'X')({ err: error }, false) as {
+      err: Error
+    }
+
+    expect(Object.getOwnPropertyNames(copy.err).sort()).toEqual(
+      [...Object.getOwnPropertyNames(error), 'toJSON'].sort()
+    )
+    expect(Object.keys(copy.err)).toEqual(Object.keys(error))
+    expect(Object.getOwnPropertyDescriptor(copy.err, 'toJSON')).toEqual({
+      configurable: true,
+      enumerable: false,
+      value: undefined,
+      writable: false
+    })
+  })
+
+  it('keeps the order of the keys of an Error that has an enumerable toJSON that is not a function', () => {
+    const error = Object.assign(new Error('boom'), { a: 1, toJSON: 'text', b: 2 })
+
+    const copy = createNameRedactor(['password'], 'X')({ err: error }, false) as { err: Error }
+
+    expect(Object.keys(copy.err)).toEqual(['a', 'toJSON', 'b'])
+  })
+
+  it('lands the censor on a toJSON key that is a sensitive name, over the shadow', () => {
+    const error = new Error('boom')
+    Object.defineProperty(error, 'toJSON', { enumerable: true, get: () => undefined })
+
+    const copy = createNameRedactor(['toJSON'], 'X')({ err: error }, false) as {
+      err: Record<string, unknown>
+    }
+
+    expect(copy.err['toJSON']).toBe('X')
+  })
+
+  it('keeps the toJSON key of an Error enumerable when its accessor answers undefined each time', () => {
+    const error = new Error('boom')
+    Object.defineProperty(error, 'toJSON', { enumerable: true, get: () => undefined })
+
+    const copy = createNameRedactor(['password'], 'X')({ err: error }, false) as {
+      err: Record<string, unknown>
+    }
+
+    expect(Object.keys(copy.err)).toContain('toJSON')
+  })
+
+  it.each([
+    ['an Error written as data', ['err']],
+    ['a clone of an Error', undefined]
+  ])('leaves no toJSON key on %s when a field is omitted and no hook is there', (_name, keys) => {
+    const error = Object.assign(new Error('boom'), { extra: 'not on the safe list' })
+
+    const copy = createNameRedactor(
+      ['password'],
+      'X',
+      keys,
+      undefined,
+      createOwnFieldPolicy('safe', [])
+    )({ err: error }, false) as { err: object }
+
+    expect(Object.getOwnPropertyNames(copy.err)).not.toContain('extra')
+    expect(Object.getOwnPropertyNames(copy.err)).not.toContain('toJSON')
+  })
+})

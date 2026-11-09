@@ -57,6 +57,8 @@
  *
  * @see {@link createNameRedactor}
  */
+import { types } from 'node:util'
+
 import { cutIfText } from './bounded-text.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
@@ -130,6 +132,12 @@ export interface RedactionFailedEnvelope {
 interface ResolvedToJson {
   /** The callable method, or `undefined` when the value has none. */
   method: (() => unknown) | undefined
+  /**
+   * Whether a later read may answer differently than this one: the method sits behind an
+   * accessor, or the value or something on its prototype chain is a Proxy, which can answer as it
+   * likes.
+   */
+  volatile: boolean
 }
 
 /**
@@ -138,22 +146,57 @@ interface ResolvedToJson {
  *
  * @param value - A non-null object.
  * @param viaGet - Read with one `[[Get]]` through any Proxy trap, as `JSON.stringify` does.
- * @returns The callable method, or `undefined` when the value has none.
+ * @returns The callable method, or `undefined` when the value has none, and whether the answer can
+ *   change.
  */
 function resolveToJson(value: object, viaGet = false): ResolvedToJson {
   // Under 'safe' the read is the one `JSON.stringify` makes, a single `[[Get]]` through any Proxy
   // trap, which is not the descriptor walk below.
   let candidate: unknown = viaGet ? Reflect.get(value, 'toJSON') : undefined
+  let accessor = false
+  let proxied = false
   let current: object | null = viaGet ? null : value
   while (current !== null) {
+    proxied = proxied || types.isProxy(current)
     const descriptor = Object.getOwnPropertyDescriptor(current, 'toJSON')
     if (descriptor !== undefined) {
+      accessor = descriptor.get !== undefined
       candidate = descriptor.get === undefined ? descriptor.value : descriptor.get.call(value)
       break
     }
     current = Object.getPrototypeOf(current)
   }
-  return { method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined }
+  return {
+    method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined,
+    volatile: accessor || proxied
+  }
+}
+
+/**
+ * Give an object a `toJSON` of `undefined`, which the stringifier does not run. It is defined and
+ * not deleted, because deleting would leave a `toJSON` method further up the prototype chain to
+ * run in its place. The clone of an `Error` gets it before it leaves `cloneError`, with no condition
+ * and no read of the original, which a Proxy can answer differently each time it is asked: an own
+ * property of an object only this walk can reach is read by `JSON.stringify` before any hook on the
+ * prototype chain. It is configurable so the property loop can still write a `toJSON` value of
+ * its own over it.
+ *
+ * @param target - The copy that must not run a hook.
+ */
+function shadowHook(target: object): void {
+  Reflect.defineProperty(target, 'toJSON', { value: undefined, configurable: true })
+}
+
+/**
+ * Remove every enumerable own key from a clone. The property loop writes each key the walk took, so
+ * what the clone holds afterwards is exactly what the walk produced for it. The clone is built
+ * from descriptors read after the keys were taken, so an object whose reads disagree, a Proxy, can
+ * hand it an enumerable value the walk never saw and never redacted.
+ *
+ * @param clone - The clone of an `Error`.
+ */
+function withoutEnumerableKeys(clone: object): void {
+  for (const key of Object.keys(clone)) Reflect.deleteProperty(clone, key)
 }
 
 /**
@@ -207,6 +250,10 @@ function cloneError(error: Error): Error {
     // defaults: nothing downstream rewrites or deletes a stack.
     Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false })
   }
+  // The clone carries every descriptor of the original, read after the walk's own read, so it can
+  // hold an enumerable value the walk never saw and a `toJSON` that answers a hook later.
+  withoutEnumerableKeys(clone)
+  shadowHook(clone)
   return clone
 }
 
@@ -410,11 +457,11 @@ function walkObject(
   if (ArrayBuffer.isView(value)) {
     return withBinaryAsSize(value)
   }
-  const method = resolveToJson(value, rules.ownFields.safe).method
+  const resolved = resolveToJson(value, rules.ownFields.safe)
 
   ancestors.add(value)
   try {
-    return walkForm(value, method, rules, depth, ancestors, honorToJson, inSerialized)
+    return walkForm(value, resolved, rules, depth, ancestors, honorToJson, inSerialized)
   } finally {
     ancestors.delete(value)
   }
@@ -443,10 +490,13 @@ function walkObject(
  * its result is walked.
  *
  * A callable with no `toJSON` is handed back as it is: walking it would replace it with a plain
- * object, and `JSON.stringify` omits a bare function rather than emitting `{}`.
+ * object, and `JSON.stringify` omits a bare function rather than emitting `{}`. A callable whose
+ * answer can change, a Proxy or one with a `toJSON` accessor, is not handed back: the stringifier
+ * reads `toJSON` again after the redaction, and the second answer can be a hook the walk never saw.
+ * Dropping it writes what `JSON.stringify` writes for a function with no hook.
  *
  * @param value - The value to inspect.
- * @param method - Its `toJSON`, when it has a callable one.
+ * @param resolved - Its `toJSON`, when it has a callable one, and whether that can change.
  * @param rules - The names to censor and the root keys that have a serializer.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
  * @param ancestors - References on the current path (cycle guard).
@@ -455,7 +505,7 @@ function walkObject(
  */
 function walkForm(
   value: object,
-  method: (() => unknown) | undefined,
+  resolved: ResolvedToJson,
   rules: RedactRules,
   depth: number,
   ancestors: Set<object>,
@@ -463,12 +513,12 @@ function walkForm(
   inSerialized: boolean
 ): unknown {
   const plain = rules.ownFields.safe
-  const toJson = honorToJson && !(plain && isError(value)) ? method : undefined
+  const toJson = honorToJson && !(plain && isError(value)) ? resolved.method : undefined
   if (toJson !== undefined) {
     return walkToJsonOutput(value, toJson, rules, depth, ancestors, inSerialized)
   }
   if (typeof value === 'function') {
-    return plain ? undefined : value
+    return plain || resolved.volatile ? undefined : value
   }
   if (Array.isArray(value)) {
     return walkArray(value, rules, depth, ancestors, inSerialized)
@@ -583,12 +633,17 @@ function walkProperties(
   for (const key of keys) {
     const read = Reflect.get(source, key)
     const current = scrubbed ? ownFieldForLog(source, key, read, rules.ownFields) : read
-    if (current === OMIT_OWN_FIELD) {
-      // The clone carries the original field; the data form has none to remove.
-      Reflect.deleteProperty(copy, key)
+    // A `toJSON` that reads as a function only now is a hook the walk did not follow, which
+    // `JSON.stringify` would run after the redaction.
+    const hook = honorToJson && key === 'toJSON' && typeof current === 'function'
+    if (current === OMIT_OWN_FIELD || hook) {
+      // Neither copy carries the key: the clone starts with no enumerable key, the data form has none.
       omitted.add(key)
       continue
     }
+    // The clone's shadow already holds the `toJSON` slot, which would keep the key first. Deleting
+    // a key the copy does not hold changes nothing.
+    Reflect.deleteProperty(copy, key)
     defineOwn(
       copy,
       key,
