@@ -127,4 +127,32 @@ describe('HttpExceptionFilter, a client error that is not an HttpException', () 
     expect(res.status).toBe(code)
     expect(res.body.statusCode).toBe(code)
   })
+
+  it.each([
+    [
+      'a content encoding',
+      { 'content-type': 'application/json', 'content-encoding': 'x-CLIENT-MARKER' },
+      'unsupported content encoding'
+    ],
+    [
+      'a charset',
+      { 'content-type': 'application/json; charset=CLIENT-MARKER' },
+      'unsupported charset'
+    ]
+  ])(
+    'echoes nothing of the client when it names %s the body parser does not support',
+    async (_name, headers, message) => {
+      const res = await request(app.getHttpServer()).post('/echo').set(headers).send('{"a":1}')
+
+      expect(res.status).toBe(415)
+      expect(res.body).toEqual({ statusCode: 415, message })
+      expect(warnSpy).toHaveBeenCalledWith(
+        'HTTP_EXCEPTION_HANDLED',
+        message,
+        undefined,
+        expect.objectContaining({ status: 415 })
+      )
+      expect(JSON.stringify([res.body, warnSpy.mock.calls])).not.toMatch(/marker/i)
+    }
+  )
 })

@@ -60,4 +60,26 @@ describe('readExposedClientError', () => {
 
     expect(readExposedClientError(proxy)).toBeUndefined()
   })
+
+  it.each([
+    [
+      'encoding.unsupported',
+      'unsupported content encoding "x-CLIENT"',
+      'unsupported content encoding'
+    ],
+    ['charset.unsupported', 'unsupported charset "CLIENT"', 'unsupported charset'],
+    ['entity.too.large', 'request entity too large', 'request entity too large'],
+    ['something.else', 'a message of its own', 'a message of its own']
+  ])('words an error of type %s as %j', (type, thrown, sent) => {
+    const error = { status: 415, expose: true, type, message: thrown }
+
+    expect(readExposedClientError(error)).toEqual({ status: 415, message: sent })
+  })
+
+  it('keeps the message of an error with no type, or a type that is not text', () => {
+    expect(readExposedClientError({ status: 415, expose: true, message: 'm' })?.message).toBe('m')
+    expect(
+      readExposedClientError({ status: 415, expose: true, type: 7, message: 'm' })?.message
+    ).toBe('m')
+  })
 })
