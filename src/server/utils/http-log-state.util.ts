@@ -14,6 +14,7 @@
  * state belongs to one request, and providers here are singletons.
  */
 
+import type { ExposedClientError } from './exposed-client-error.util'
 import { isError } from './is-error.util'
 
 /** Lower bound of the HTTP redirect (3xx) range. */
@@ -30,6 +31,8 @@ const UNKNOWN_USER_AGENT = 'unknown'
 const RECORDER_ACTIVE = Symbol('bymax-one/nest-logger:recorder')
 /** Holds the error the interceptor observed, for the middleware to serialize. */
 const RECORDED_ERROR = Symbol('bymax-one/nest-logger:error')
+/** Holds the body-parser error that Nest's router turns into another exception. */
+const PARSER_ERROR = Symbol('bymax-one/nest-logger:parser-error')
 /** Holds the correlation id `RequestIdMiddleware` itself minted or accepted. */
 const OWN_REQUEST_ID = Symbol('bymax-one/nest-logger:request-id')
 /** Marks a request whose correlation scope `RequestIdMiddleware` itself opened. */
@@ -152,6 +155,27 @@ export function readRecordedError(req: object): RecordedError | undefined {
   // the ternary that used to be here returned the same value down both arms —
   // an equivalent mutant by construction rather than a check.
   return Reflect.get(req, RECORDED_ERROR) as RecordedError | undefined
+}
+
+/**
+ * Keep the body-parser error Nest's router is about to turn into a `BadRequestException`, which
+ * has lost the parser's `type`; the filter reads it back.
+ *
+ * @param req - The request the error belongs to.
+ * @param error - The exposed client error read from the parser's error.
+ */
+export function recordParserError(req: object, error: ExposedClientError): void {
+  Reflect.set(req, PARSER_ERROR, error)
+}
+
+/**
+ * Read back the body-parser error kept for this request.
+ *
+ * @param req - The request object to inspect.
+ * @returns The exposed client error, or `undefined` when none was kept.
+ */
+export function readRecordedParserError(req: object): ExposedClientError | undefined {
+  return Reflect.get(req, PARSER_ERROR) as ExposedClientError | undefined
 }
 
 /**
