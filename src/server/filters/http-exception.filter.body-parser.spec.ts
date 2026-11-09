@@ -8,6 +8,7 @@
  *
  * Layer: server/filters, tests.
  */
+import { BadRequestException } from '@nestjs/common'
 import type { ArgumentsHost } from '@nestjs/common'
 import { json, urlencoded } from 'express'
 import type { RequestHandler } from 'express'
@@ -15,6 +16,7 @@ import { Readable } from 'node:stream'
 
 import { applyDefaults } from '../config/default-options'
 import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
+import { recordParserErrorMiddleware } from '../middlewares/record-parser-error.middleware'
 import { buildPinoInstance } from '../pino-factory'
 import { DestinationHealth } from '../services/destination-health.service'
 import { LogContextService } from '../services/log-context.service'
@@ -43,7 +45,10 @@ function parserError(
 }
 
 /** The entry and the response the filter produces for `exception`. */
-function handled(exception: unknown): {
+function handled(
+  exception: unknown,
+  request: object = {}
+): {
   entry: Record<string, unknown>
   line: string
   sent: { status: number; body: Record<string, unknown> }
@@ -60,7 +65,7 @@ function handled(exception: unknown): {
     status: (code: number) => ((sent.status = code), res),
     json: (body: Record<string, unknown>) => void (sent.body = body)
   } as unknown as LoggableResponse
-  const req = { method: 'POST', url: '/pay', headers: {} } as LoggableRequest
+  const req = { method: 'POST', url: '/pay', headers: {}, ...request } as LoggableRequest
   const host = {
     switchToHttp: () => ({ getResponse: () => res, getRequest: () => req })
   } as unknown as ArgumentsHost
@@ -80,8 +85,13 @@ describe('HttpExceptionFilter, the log entry for an error of the body parser', (
     ['an unquoted value in a list', `{"items":[${SECRET}]}`]
   ])('writes a fixed text and the type for malformed JSON, %s', async (_name, body) => {
     const error = await parserError(json(), body, JSON_HEADERS)
+    const req = {}
+    recordParserErrorMiddleware(error, req, {}, jest.fn())
 
-    const { entry, line, sent } = handled(error)
+    // Nest's router turns a SyntaxError into this before any filter runs
+    // (`RoutesResolver.mapExternalException`); test/e2e/body-parser-errors.e2e-spec.ts drives the
+    // real thing.
+    const { entry, line, sent } = handled(new BadRequestException((error as Error).message), req)
 
     expect(sent.status).toBe(400)
     expect(entry['msg']).toBe('request body could not be parsed')
@@ -89,6 +99,13 @@ describe('HttpExceptionFilter, the log entry for an error of the body parser', (
     expect(entry['status']).toBe(400)
     expect(line).not.toContain('hunter')
     expect(String(sent.body['message'])).toContain('is not valid JSON')
+  })
+
+  it('logs the message of a 400 the application raised, when no parser error was recorded', () => {
+    const { entry } = handled(new BadRequestException('own message'), {})
+
+    expect(entry['msg']).toBe('own message')
+    expect(entry).not.toHaveProperty('bodyParserType')
   })
 
   it('writes a fixed text and the type when the verify function refuses the body', async () => {

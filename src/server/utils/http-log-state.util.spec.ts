@@ -2,9 +2,11 @@ import {
   isRecorderActive,
   markRecorderActive,
   readRecordedError,
+  readRecordedParserError,
   readUserAgent,
   readUserId,
   recordError,
+  recordParserError,
   toError
 } from './http-log-state.util'
 
@@ -134,5 +136,18 @@ describe('http-log-state', () => {
         expect(readUserAgent({ headers })).toBe('unknown')
       }
     )
+  })
+
+  describe('body-parser error', () => {
+    it('reads back the error recorded for this request, and nothing for another', () => {
+      const req = {}
+      const other = {}
+      const error = { status: 400, message: 'm', logMessage: 'fixed', bodyParserType: 't' }
+
+      recordParserError(req, error)
+
+      expect(readRecordedParserError(req)).toBe(error)
+      expect(readRecordedParserError(other)).toBeUndefined()
+    })
   })
 })

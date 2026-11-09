@@ -6,9 +6,16 @@
  * the bootstrap log. Both the synchronous `forRoot` and asynchronous
  * `forRootAsync` registration paths live here and share a common provider set.
  */
-import { Module } from '@nestjs/common'
-import type { DynamicModule, INestApplication, NestInterceptor, Provider } from '@nestjs/common'
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core'
+import { Inject, Module } from '@nestjs/common'
+import type {
+  DynamicModule,
+  INestApplication,
+  MiddlewareConsumer,
+  NestInterceptor,
+  NestModule,
+  Provider
+} from '@nestjs/common'
+import { APP_FILTER, APP_INTERCEPTOR, HttpAdapterHost } from '@nestjs/core'
 
 import { applyDefaults } from './config/default-options'
 import { validateOptions } from './config/validate-options'
@@ -35,6 +42,7 @@ import type {
 import { BymaxLoggerModuleBase, BUILDER_OPTIONS_TOKEN } from './logger.module.builder'
 import type { ASYNC_OPTIONS_TYPE, OPTIONS_TYPE } from './logger.module.builder'
 import { applyRequestContext } from './middlewares/apply-request-context'
+import { recordParserErrorMiddleware } from './middlewares/record-parser-error.middleware'
 import { buildPinoInstance, resolveNameRedactor } from './pino-factory'
 import { DestinationHealth } from './services/destination-health.service'
 import { DestinationRegistry } from './services/destination-registry.service'
@@ -177,7 +185,28 @@ export function augmentLoggerModule(base: DynamicModule, providers: Provider[]):
 }
 
 @Module({})
-export class BymaxLoggerModule extends BymaxLoggerModuleBase {
+export class BymaxLoggerModule extends BymaxLoggerModuleBase implements NestModule {
+  /**
+   * @param httpAdapterHost - The HTTP adapter, absent in an application with no HTTP server.
+   */
+  constructor(@Inject(HttpAdapterHost) private readonly httpAdapterHost: HttpAdapterHost) {
+    super()
+  }
+
+  /**
+   * Mount the error layer that keeps the type of a body-parser error for the exception filter.
+   * It runs after the body parser, which Nest registers first, and before Nest's exception
+   * handler, and it passes every error on. Only the Express adapter has such a layer.
+   *
+   * @param _consumer - The middleware consumer, unused: an error layer is not consumer middleware.
+   */
+  configure(_consumer: MiddlewareConsumer): void {
+    const adapter = this.httpAdapterHost.httpAdapter
+    if (adapter?.getType() === 'express') {
+      adapter.getInstance<{ use(layer: unknown): void }>().use(recordParserErrorMiddleware)
+    }
+  }
+
   /**
    * Synchronous registration.
    *

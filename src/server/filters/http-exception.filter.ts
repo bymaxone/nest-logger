@@ -31,6 +31,7 @@ import type { LoggableRequest, LoggableResponse } from '../interfaces/http-conte
 import { PinoLoggerService } from '../services/pino-logger.service'
 import { readExposedClientError } from '../utils/exposed-client-error.util'
 import type { ExposedClientError } from '../utils/exposed-client-error.util'
+import { readRecordedParserError } from '../utils/http-log-state.util'
 import { stripQueryString } from '../utils/normalize-url.util'
 import { sanitizeError } from '../utils/sanitize-error.util'
 
@@ -79,7 +80,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus()
-      const metadata = { method: req.method, url, status }
+      // Nest rebuilds a parser's SyntaxError as a BadRequestException that quotes the body; the
+      // error layer kept what to log instead.
+      const parserError = readRecordedParserError(req)
+      const metadata = {
+        method: req.method,
+        url,
+        status,
+        bodyParserType: parserError?.bodyParserType
+      }
       if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
         // sanitizeError guarantees (1) no-throw on a hostile exception and (2)
         // node_modules/ stack scrubbing. The node it produces keeps the cause chain,
@@ -96,7 +105,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       } else {
         this.logger.warnStructured(
           RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED,
-          exception.message,
+          parserError?.logMessage ?? exception.message,
           userId,
           metadata
         )
