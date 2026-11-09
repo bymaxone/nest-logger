@@ -76,6 +76,7 @@ export interface HttpOptions {
    * so the resolver sees only what an earlier middleware set; a tenant known later is set with
    * `LogContextService.set('tenantId', ...)`. An answer that is not a string of at most 256
    * characters drawn from `A-Z a-z 0-9 . _ : / + = -`, and a resolver that throws, give no tenant id.
+   * The resolver is synchronous: a promise it answers is no tenant id, and its rejection is absorbed.
    */
   tenantIdResolver?: (request: LoggableRequest) => string | undefined
 }

@@ -128,4 +128,41 @@ describe('an Error in the metadata, under redactStrategy paths', () => {
       expect(() => service.info('KEY', 'hello', 'u1', { a: { x: { err: error } } })).not.toThrow()
     }
   )
+
+  it.each([
+    ['non-enumerable', false],
+    ['enumerable', true]
+  ])(
+    'does not throw and writes no secret for a %s accessor with no setter, beside a wildcard path',
+    (_kind, enumerable) => {
+      const { service, line } = pipeline({
+        redactStrategy: 'paths',
+        redactPaths: ['a.x.unrelated', 'a.*.err.stack']
+      })
+      const error = new Error('boom')
+      Object.defineProperty(error, 'password', { get: () => SECRET, enumerable })
+
+      expect(() => service.info('KEY', 'hello', 'u1', { a: { x: { err: error } } })).not.toThrow()
+
+      expect(line()).not.toContain(SECRET)
+      if (enumerable) expect(line()).toContain('"password":"[REDACTED]"')
+    }
+  )
+
+  it('leaves the cause of the caller as it was, the same object with its own descriptors', () => {
+    const { service, line } = pipeline({
+      redactStrategy: 'paths',
+      redactPaths: ['a.x.unrelated', 'a.*.err.cause']
+    })
+    const cause = Object.assign(new Error('inner'), { password: SECRET })
+    const error = new Error('outer', { cause })
+    const before = Object.getOwnPropertyDescriptors(cause)
+
+    service.info('KEY', 'hello', 'u1', { a: { x: { err: error } } })
+
+    expect(error.cause).toBe(cause)
+    expect(Object.getOwnPropertyDescriptors(cause)).toEqual(before)
+    expect(cause.password).toBe(SECRET)
+    expect(line()).not.toContain(SECRET)
+  })
 })

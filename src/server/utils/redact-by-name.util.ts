@@ -199,6 +199,11 @@ function withoutEnumerableKeys(clone: object): void {
   for (const key of Object.keys(clone)) Reflect.deleteProperty(clone, key)
 }
 
+/** The setter of a clone's accessor that had none: the write is dropped, never thrown. */
+function discardWrite(): void {
+  // Nothing to keep: the clone is read once and discarded.
+}
+
 /**
  * Clone an `Error` preserving what makes it an Error.
  *
@@ -230,11 +235,13 @@ function cloneError(error: Error): Error {
   // `configurable` lets `Reflect.defineProperty` redefine a property the original froze. `writable`
   // is relaxed on data properties too: under `redactStrategy: 'paths'` the clone reaches
   // `@pinojs/redact`, which assigns its censor into the object it is given, in strict mode, and a
-  // non-writable property throws there. An accessor has no `writable` to relax.
+  // non-writable property throws there. An accessor has no `writable`; one with no setter throws the
+  // same way, so it is given a setter that discards the write.
   const descriptors = Object.getOwnPropertyDescriptors(error)
   for (const descriptor of Object.values(descriptors)) {
     descriptor.configurable = true
     if ('value' in descriptor) descriptor.writable = true
+    else descriptor.set ??= discardWrite
   }
   const clone = Object.create(Object.getPrototypeOf(error) as object, descriptors) as Error
   // V8 exposes `stack` as an own ACCESSOR bound to the original error's internal
