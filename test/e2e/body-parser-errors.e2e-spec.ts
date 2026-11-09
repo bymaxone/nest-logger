@@ -1,3 +1,15 @@
+/**
+ * E2E: a request body the parser refuses, through a real Nest application and real HTTP.
+ *
+ * Nest rebuilds the body parser's `SyntaxError` as a `BadRequestException` before any filter runs,
+ * so a test that hands the filter a parser error directly proves nothing about what a host sees.
+ * These cases start the application with `NestFactory` and Nest's default body parser, and read
+ * the lines the logger writes: a fixed text and `bodyParserType` for a body that does not parse,
+ * for a refused `verify` and for an unsupported encoding or charset, and the application's own
+ * errors left alone. Run for the module alone and with `applyAccessLog`.
+ *
+ * Layer: E2E, server (`HttpExceptionFilter` and the error layer `BymaxLoggerModule` mounts).
+ */
 import { BadRequestException, Body, Controller, Module, Post } from '@nestjs/common'
 import type { INestApplication } from '@nestjs/common'
 import { NestFactory } from '@nestjs/core'
@@ -10,10 +22,10 @@ import { parseLogEntries } from './fixtures/parse-log-entries'
 const SECRET = 'hunter2-SENTINEL'
 
 @Controller()
-class EchoController {
+class BodyController {
   @Post('echo')
-  echo(@Body() body: unknown): unknown {
-    return body
+  echo(@Body() _body: unknown): { ok: boolean } {
+    return { ok: true }
   }
 
   /** The application's own 400, worded with text of its own. */
@@ -24,8 +36,9 @@ class EchoController {
 
   /** The application parsing JSON itself: a SyntaxError raised inside a handler. */
   @Post('own-parse')
-  ownParse(@Body() body: { text?: string }): unknown {
-    return JSON.parse(body.text ?? '')
+  ownParse(@Body() body: { text?: string }): { ok: boolean } {
+    JSON.parse(body.text ?? '')
+    return { ok: true }
   }
 }
 
@@ -37,7 +50,7 @@ class EchoController {
       http: { isEnabled: true, shouldCaptureExceptions: true }
     })
   ],
-  controllers: [EchoController]
+  controllers: [BodyController]
 })
 class AppModule {}
 
