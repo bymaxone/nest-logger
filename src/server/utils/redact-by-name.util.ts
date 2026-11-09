@@ -178,8 +178,8 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
  * run in its place. The clone of an `Error` gets it before it leaves `cloneError`, with no condition
  * and no read of the original, which a Proxy can answer differently each time it is asked: an own
  * property of an object only this walk can reach is read by `JSON.stringify` before any hook on the
- * prototype chain. It is configurable so the property loop can still write a `toJSON` value of
- * its own over it.
+ * prototype chain. It is configurable so the property loop can delete it and write a `toJSON`
+ * value of its own.
  *
  * @param target - The copy that must not run a hook.
  */

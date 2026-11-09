@@ -33,7 +33,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-08 — server: 33.00 KiB real -> 33.5 KiB budget (~1.3% headroom). Re-derived from the
+//   - 2026-11-08 — server: 33.02 KiB real -> 33.5 KiB budget (~1.3% headroom). Re-derived from the
 //     artifact: the previous budget had 0.12 KiB of headroom left (32.88 KiB real). Keeping any
 //     `toJSON` hook the redaction walk did not follow out of the output adds executable code
 //     only: the helper that shadows a hook with `undefined`, the clone of an `Error` starting with no enumerable

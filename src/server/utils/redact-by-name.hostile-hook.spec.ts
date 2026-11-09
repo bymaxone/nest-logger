@@ -473,20 +473,23 @@ describe('ordinary input is left as it was', () => {
   })
 
   it.each([
-    ['an Error written as data', ['err']],
-    ['a clone of an Error', undefined]
-  ])('leaves no toJSON key on %s when a field is omitted and no hook is there', (_name, keys) => {
-    const error = Object.assign(new Error('boom'), { extra: 'not on the safe list' })
+    ['a serializer key', ['err']],
+    ['no serializer key', undefined]
+  ])(
+    'leaves no toJSON key on the data form of an Error with %s when a field is omitted',
+    (_name, keys) => {
+      const error = Object.assign(new Error('boom'), { extra: 'not on the safe list' })
 
-    const copy = createNameRedactor(
-      ['password'],
-      'X',
-      keys,
-      undefined,
-      createOwnFieldPolicy('safe', [])
-    )({ err: error }, false) as { err: object }
+      const copy = createNameRedactor(
+        ['password'],
+        'X',
+        keys,
+        undefined,
+        createOwnFieldPolicy('safe', [])
+      )({ err: error }, false) as { err: object }
 
-    expect(Object.getOwnPropertyNames(copy.err)).not.toContain('extra')
-    expect(Object.getOwnPropertyNames(copy.err)).not.toContain('toJSON')
-  })
+      expect(Object.getOwnPropertyNames(copy.err)).not.toContain('extra')
+      expect(Object.getOwnPropertyNames(copy.err)).not.toContain('toJSON')
+    }
+  )
 })
