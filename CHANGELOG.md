@@ -34,6 +34,17 @@ heading here.
   `unsupported content encoding` or `unsupported charset`. The status and every other message are
   unchanged.
   **Apply to a derived backend:** nothing to do.
+- **The query string of a request no longer reaches a logged exception message.** The `url` fields
+  of the access log, the interceptor and the filter always had the query stripped, but Nest words
+  its not-found message as `Cannot GET /path?code=...&token=...`, with the whole URL, and
+  `HttpExceptionFilter` wrote that message as the `msg` of `HTTP_EXCEPTION_HANDLED`. Any request to
+  a route that does not exist, such as an OAuth callback or a reset link on a mistyped path,
+  put its `code`, `state` or `token` in the log, where name-based redaction cannot censor free
+  text. The request's own query string (`originalUrl` and `url`, as a mounted request differs) is
+  now cut out of the message by exact substring, in the filter's `msg` and in the `errorMessage` of
+  the interceptor and of the access log. The response is unchanged. A secret in the path itself
+  (`;jsessionid=...`, a token segment, a percent-encoded `%3F`) is part of the path and stays.
+  **Apply to a derived backend:** nothing to do.
 - **The library's entry for a body the parser refused no longer quotes the body.** The parser
   words the message of a JSON syntax error with a piece of the body, or a partial value when one is
   left unquoted, and a `verify` function's message is the application's own text.

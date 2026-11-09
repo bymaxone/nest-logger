@@ -38,7 +38,11 @@ import {
   toError
 } from '../utils/http-log-state.util'
 import { matchesExcludePath } from '../utils/matches-exclude-path.util'
-import { normalizeUrl, stripQueryString } from '../utils/normalize-url.util'
+import {
+  normalizeUrl,
+  stripQueryString,
+  withoutRequestQueryIfText
+} from '../utils/normalize-url.util'
 
 /** Lower bound of the HTTP success (2xx) range. */
 const HTTP_SUCCESS_MIN = 200
@@ -125,7 +129,10 @@ export class HttpLoggingInterceptor implements NestInterceptor {
         this.logSuccess(res.statusCode, method, normalizedUrl, userId, Date.now() - start)
       }),
       catchError((err: unknown) => {
-        this.logError(err, method, normalizedUrl, userId, Date.now() - start)
+        this.logError(err, method, normalizedUrl, userId, Date.now() - start, [
+          req.originalUrl,
+          url
+        ])
         return throwError(() => err)
       })
     )
@@ -198,13 +205,15 @@ export class HttpLoggingInterceptor implements NestInterceptor {
    * @param url - The normalized request URL.
    * @param userId - The acting user id, when known.
    * @param duration - The elapsed time in milliseconds.
+   * @param rawUrls - The request's own URLs, whose query string a logged message must not carry.
    */
   private logError(
     err: unknown,
     method: string,
     url: string,
     userId: string | undefined,
-    duration: number
+    duration: number,
+    rawUrls: ReadonlyArray<string | undefined>
   ): void {
     if (err instanceof HttpException) {
       const statusCode = err.getStatus()
@@ -220,7 +229,13 @@ export class HttpLoggingInterceptor implements NestInterceptor {
           RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR,
           `${method} ${url} → ${statusCode}`,
           userId,
-          { method, url, statusCode, duration, errorMessage: cutIfText(err.message) }
+          {
+            method,
+            url,
+            statusCode,
+            duration,
+            errorMessage: cutIfText(withoutRequestQueryIfText(err.message, ...rawUrls))
+          }
         )
       }
       return
@@ -229,7 +244,7 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     // An error with the `http-errors` shape that exposes a 4xx is a client error, as the filter answers it.
     const clientError = readExposedClientError(err)
     if (clientError !== undefined) {
-      this.logClientError(clientError, method, url, userId, duration)
+      this.logClientError(clientError, method, url, userId, duration, rawUrls)
       return
     }
 
@@ -250,13 +265,15 @@ export class HttpLoggingInterceptor implements NestInterceptor {
    * @param url - The normalized request URL.
    * @param userId - The acting user id, when known.
    * @param duration - The elapsed time in milliseconds.
+   * @param rawUrls - The request's own URLs, whose query string a logged message must not carry.
    */
   private logClientError(
     clientError: ExposedClientError,
     method: string,
     url: string,
     userId: string | undefined,
-    duration: number
+    duration: number,
+    rawUrls: ReadonlyArray<string | undefined>
   ): void {
     this.logger.warnStructured(
       RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR,
@@ -267,7 +284,7 @@ export class HttpLoggingInterceptor implements NestInterceptor {
         url,
         statusCode: clientError.status,
         duration,
-        errorMessage: cutIfText(clientError.logMessage),
+        errorMessage: cutIfText(withoutRequestQueryIfText(clientError.logMessage, ...rawUrls)),
         bodyParserType: clientError.bodyParserType
       }
     )

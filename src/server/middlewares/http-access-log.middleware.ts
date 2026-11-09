@@ -61,7 +61,11 @@ import {
   readUserId
 } from '../utils/http-log-state.util'
 import { matchesExcludePath } from '../utils/matches-exclude-path.util'
-import { normalizeUrl, stripQueryString } from '../utils/normalize-url.util'
+import {
+  normalizeUrl,
+  stripQueryString,
+  withoutRequestQueryIfText
+} from '../utils/normalize-url.util'
 
 /**
  * Records the HTTP access log for every request, including the ones no
@@ -257,7 +261,14 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
         RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR,
         `${method} ${url} → ${statusCode}`,
         userId,
-        recorded === undefined ? meta : { ...meta, errorMessage: cutIfText(recorded.error.message) }
+        recorded === undefined
+          ? meta
+          : {
+              ...meta,
+              errorMessage: cutIfText(
+                withoutRequestQueryIfText(recorded.error.message, req.originalUrl, req.url)
+              )
+            }
       )
       return
     }

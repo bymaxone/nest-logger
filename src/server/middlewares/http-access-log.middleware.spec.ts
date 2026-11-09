@@ -284,6 +284,28 @@ describe('HttpAccessLogMiddleware', () => {
   })
 
   it(/*
+   * A message that echoes the URL carries the query string of the request, which no key-name
+   * redaction can censor out of a string; it is cut by the raw bytes of the request, whether the
+   * request is mounted (relative `url`, full `originalUrl`) or not.
+   */
+  'cuts the query string of the request out of errorMessage on a 4xx', () => {
+    const { logger, warnStructured } = createLogger()
+    const middleware = new HttpAccessLogMiddleware(logger, new LogContextService(), createOptions())
+    const req = createRequest({
+      url: '/x?code=SECRET-CODE',
+      originalUrl: '/api/x?code=SECRET-CODE'
+    })
+    const { res, fireClose } = createResponse(404)
+
+    middleware.use(req, res, jest.fn())
+    recordError(req, new Error('Cannot GET /api/x?code=SECRET-CODE'))
+    fireClose()
+
+    expect(warnStructured.mock.calls[0]?.[3]).toMatchObject({ errorMessage: 'Cannot GET /api/x' })
+    expect(JSON.stringify(warnStructured.mock.calls)).not.toContain('SECRET')
+  })
+
+  it(/*
    * The library builds `errorMessage` from the thrown value, so it is cut at the same limit as
    * every other message it copies from a value it does not own.
    */
