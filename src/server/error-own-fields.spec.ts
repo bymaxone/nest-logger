@@ -327,17 +327,24 @@ describe("errorOwnFields: 'safe' when the name redaction does not walk the recor
     expect(line()).not.toContain('"type":"Buffer"')
   })
 
-  it.each([
-    ['the default coverage is off', { shouldDisableDefaultRedact: true }],
-    ['the strategy is paths', { redactStrategy: 'paths' as const }]
-  ])("leaves the record alone under 'all' when %s, as before", (_label, redaction) => {
-    const { service, entry } = pipeline(redaction)
+  it("leaves the record alone under 'all' when the default coverage is off, as before", () => {
+    const { service, entry } = pipeline({ shouldDisableDefaultRedact: true })
 
     service.errorStructured('KEY', new Error('root'), 'u1', {
       nested: Object.assign(new Error('n'), { orderId: 'o-9' })
     })
 
     expect(entry().nested).toEqual({ orderId: 'o-9' })
+  })
+
+  it("writes an Error nested in the record with its parts under 'all' when the strategy is paths", () => {
+    const { service, entry } = pipeline({ redactStrategy: 'paths' })
+
+    service.errorStructured('KEY', new Error('root'), 'u1', {
+      nested: Object.assign(new Error('n'), { orderId: 'o-9' })
+    })
+
+    expect(entry().nested).toMatchObject({ orderId: 'o-9', type: 'Error', message: 'n' })
   })
 
   it('writes the root err and a key with a serializer as it does when the names are covered', () => {

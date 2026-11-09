@@ -233,10 +233,9 @@ function cloneError(error: Error): Error {
   // finish its job. Freezing is the CALLER's guarantee about the CALLER's object,
   // which is untouched either way.
   // `configurable` lets `Reflect.defineProperty` redefine a property the original froze. `writable`
-  // is relaxed on data properties too: under `redactStrategy: 'paths'` the clone reaches
-  // `@pinojs/redact`, which assigns its censor into the object it is given, in strict mode, and a
-  // non-writable property throws there. An accessor has no `writable`; one with no setter throws the
-  // same way, so it is given a setter that discards the write.
+  // is relaxed on data properties too, so that an assignment into the clone, in strict mode, lands
+  // whatever the original froze. An accessor has no `writable`; one with no setter throws on an
+  // assignment, so it is given a setter that discards the write.
   const descriptors = Object.getOwnPropertyDescriptors(error)
   for (const descriptor of Object.values(descriptors)) {
     descriptor.configurable = true
@@ -286,6 +285,12 @@ interface RedactRules {
   readonly serializedKeys: ReadonlySet<string>
   /** Whether an `Error` outside those keys is written as data; off, it stays an `Error`. */
   readonly errorsAsData: boolean
+  /**
+   * The rules that apply inside an `Error` written as data, when they differ from the rest of the
+   * record: the names to censor there, which the record outside does not have. Absent, one set of
+   * rules covers the whole walk.
+   */
+  readonly insideErrors?: RedactRules | undefined
   /** Containers one call may visit before it stops expanding. */
   readonly maxVisits: number
   /** Which own fields of an `Error` are written. */
@@ -634,6 +639,7 @@ function walkProperties(
   const keys = Object.keys(source)
   const { safe } = rules.ownFields
   const asData = isError(value) && (safe || (rules.errorsAsData && !inSerialized))
+  const inner = asData && rules.insideErrors !== undefined ? rules.insideErrors : rules
   const copy = startCopy(value, asData)
   const scrubbed = isError(value) && (safe || !inSerialized)
   const omitted = new Set<string>()
@@ -654,11 +660,11 @@ function walkProperties(
     defineOwn(
       copy,
       key,
-      rules.sensitive.has(key.toLowerCase())
-        ? rules.censor
+      inner.sensitive.has(key.toLowerCase())
+        ? inner.censor
         : walk(
             scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
-            rules,
+            inner,
             depth + 1,
             ancestors,
             true,
@@ -667,7 +673,7 @@ function walkProperties(
     )
   }
   if (asData) {
-    const host = errorPartsHost(rules, ancestors, inSerialized)
+    const host = errorPartsHost(inner, ancestors, inSerialized)
     addErrorParts(copy, value as Error, without(keys, omitted), host, depth)
   }
   return copy
@@ -722,6 +728,10 @@ function errorPartsHost(
  * Build a redactor that censors every value whose key name is in `fieldNames`,
  * to {@link REDACT_MAX_TRAVERSAL_DEPTH}, in a single snapshotting traversal.
  *
+ * Under `redactStrategy: 'paths'`, an `Error` anywhere in the record is converted with the default
+ * names censored in its own fields and its cause chain at any depth; non-`Error` data is matched
+ * only by the configured paths (`errorOnlyNames`).
+ *
  * @param fieldNames - Sensitive field names, matched case-INSENSITIVELY so a
  *   header bag carrying `Authorization` is covered as well as `authorization`.
  *   Matching applies down to {@link REDACT_MAX_TRAVERSAL_DEPTH}; a container
@@ -733,6 +743,11 @@ function errorPartsHost(
  * @param maxVisits - Containers one call may visit; a seam for tests, which exercise the boundary
  *   with a small number. The package passes none.
  * @param ownFields - Which own fields of an `Error` written as data are kept; all by default.
+ * @param errorOnlyNames - Field names censored only inside an `Error` written as data: in its own
+ *   fields and in its chain of causes, at any depth. Given, `fieldNames` still covers the rest of
+ *   the walk, usually nothing. This is the rule of `redactStrategy: 'paths'`: an `Error` anywhere
+ *   in the record is converted with the default names censored inside it, and data that is not an
+ *   `Error` is matched only by the configured paths.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
  *   const redact = createNameRedactor(['password'], '[REDACTED]')
@@ -744,7 +759,8 @@ export function createNameRedactor(
   censor: string,
   serializedKeys?: readonly string[],
   maxVisits: number = REDACT_MAX_VISITS,
-  ownFields: OwnFieldPolicy = ALL_OWN_FIELDS
+  ownFields: OwnFieldPolicy = ALL_OWN_FIELDS,
+  errorOnlyNames?: Iterable<string>
 ): Redactor {
   // Matched case-INSENSITIVELY. HTTP header names are case-insensitive by spec,
   // and only INBOUND Node headers arrive lower-cased — a hand-built or outbound
@@ -761,9 +777,21 @@ export function createNameRedactor(
     maxVisits,
     ownFields
   }
+  const insideNames =
+    errorOnlyNames === undefined
+      ? undefined
+      : new Set(Array.from(errorOnlyNames, (name) => name.toLowerCase()))
   return (value: unknown, isRecordRoot = false): unknown => {
     try {
-      const call: RedactRules = { ...rules, visits: { count: 0 } }
+      const visits = { count: 0 }
+      const call: RedactRules = {
+        ...rules,
+        visits,
+        insideErrors:
+          insideNames === undefined
+            ? undefined
+            : { ...rules, sensitive: insideNames, visits, insideErrors: undefined }
+      }
       return walk(value, call, 0, new Set<object>(), !isRecordRoot)
     } catch {
       // The record resisted traversal (a throwing getter, a hostile proxy). It

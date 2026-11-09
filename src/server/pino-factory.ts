@@ -374,6 +374,17 @@ function ownFieldPolicyOf(options: ResolvedBymaxLoggerModuleOptions): OwnFieldPo
 }
 
 /**
+ * The names censored inside an `Error` under `redactStrategy: 'paths'`: the record's names belong to
+ * `fast-redact` there, but an `Error` is converted by the walk, so the default names are censored
+ * in its own fields and its causes at any depth, beyond what `fast-redact`'s wildcards reach.
+ */
+function namesInsideErrors(
+  options: ResolvedBymaxLoggerModuleOptions
+): readonly string[] | undefined {
+  return options.shouldDisableDefaultRedact ? undefined : REDACT_COMMON_FIELDS
+}
+
+/**
  * Build the name-walk redactor from the configured coverage.
  *
  * This is what SERIALIZER output is redacted with, ungated — it ignores
@@ -433,13 +444,14 @@ function buildNameRedactor(
   if (!walks && resolveRedactOption(options) === undefined) {
     return PASS_THROUGH
   }
-  return nestedErrorsAsData && walks
+  return nestedErrorsAsData && (walks || !coversNames)
     ? createNameRedactor(
         names,
         options.redactCensor,
         ['err', ...Object.keys(options.serializers)],
         undefined,
-        ownFields
+        ownFields,
+        coversNames ? undefined : namesInsideErrors(options)
       )
     : createNameRedactor(names, options.redactCensor, undefined, undefined, ownFields)
 }

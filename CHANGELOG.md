@@ -11,6 +11,21 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Under `redactStrategy: 'paths'`, an `Error` in the record is no longer written as `{}`.** A
+  nested `Error`, or one held as metadata, lost its `type`, `message`, `stack` and `cause` and kept
+  only its enumerable own fields, because those parts are not enumerable and the record reached
+  Pino as an `Error` instance. It is now written the way the default `'names'` strategy writes it:
+  `type`, `message`, `stack`, its own fields and its chain of `cause`s, with your `redactPaths`
+  applied on top. The default names are censored in its own fields and its causes at any depth,
+  past the four-level ceiling of `fast-redact`; data that is not an `Error` is still matched only
+  by your configured paths, which is what the strategy is for. Found by measuring 1.4.13: a nested
+  `Error` was `{}` even with no `redactPaths` at all.
+  **Apply to a derived backend:** a host on `redactStrategy: 'paths'` now sees `type`, `message`,
+  `stack` and `cause` where it saw `{}`, so a query or alert that matched the empty object matches
+  the fields instead. Hosts on the default strategy are unaffected.
+
 ## [1.4.14] - 2026-11-09
 
 ### Added
