@@ -113,8 +113,10 @@ function isAcceptableHeaderValue(value: unknown): value is string {
  */
 @Injectable()
 export class RequestIdMiddleware implements NestMiddleware {
-  /** Header name carrying the tenant id, resolved from module options. */
-  private readonly tenantIdHeader: string
+  /** Header name carrying the tenant id, or `false` when no header is read. */
+  private readonly tenantIdHeader: string | false
+  /** Server-side resolver of the tenant id; when set, the header is not read. */
+  private readonly tenantIdResolver: ResolvedBymaxLoggerModuleOptions['http']['tenantIdResolver']
   /** Whether to mint a `requestId` when the inbound header is absent. */
   private readonly shouldGenerateRequestId: boolean
 
@@ -130,6 +132,7 @@ export class RequestIdMiddleware implements NestMiddleware {
     @Inject(LOGGER_OPTIONS_TOKEN) options: ResolvedBymaxLoggerModuleOptions
   ) {
     this.tenantIdHeader = options.http.tenantIdHeader
+    this.tenantIdResolver = options.http.tenantIdResolver
     this.shouldGenerateRequestId = options.http.shouldGenerateRequestId
   }
 
@@ -300,18 +303,38 @@ export class RequestIdMiddleware implements NestMiddleware {
   }
 
   /**
-   * The tenant id carried by the configured header, when it is acceptable.
+   * The tenant id of the request, when it is acceptable.
    *
-   * Never minted: a tenant is an assertion about who the request belongs to, and
-   * inventing one would be a fabricated claim rather than a correlation aid.
+   * From the host's resolver when it gave one, else from the configured header, else none. Never
+   * minted: a tenant is an assertion about who the request belongs to, and inventing one would be a
+   * fabricated claim rather than a correlation aid.
    *
    * @param req - The incoming request.
    * @returns The tenant id, or `undefined`.
    */
   private resolveTenantId(req: LoggableRequest): string | undefined {
+    if (this.tenantIdResolver !== undefined)
+      return this.resolvedTenantId(this.tenantIdResolver, req)
+    if (this.tenantIdHeader === false) return undefined
     // `Reflect.get` keeps the lookup off the `security/detect-object-injection`
     // sink list (the name is runtime configuration, not an inline literal).
     const raw: unknown = Reflect.get(req.headers, this.tenantIdHeader)
     return isAcceptableHeaderValue(raw) ? raw : undefined
+  }
+
+  /**
+   * The answer of the host's resolver, when it is acceptable. A resolver that throws gives none: a
+   * log context never costs the request.
+   */
+  private resolvedTenantId(
+    resolver: (request: LoggableRequest) => string | undefined,
+    req: LoggableRequest
+  ): string | undefined {
+    try {
+      const answer: unknown = resolver(req)
+      return isAcceptableHeaderValue(answer) ? answer : undefined
+    } catch {
+      return undefined
+    }
   }
 }

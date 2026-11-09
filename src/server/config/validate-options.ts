@@ -261,7 +261,18 @@ function validateHttp(options: BymaxLoggerModuleOptions): void {
       }
     })
   }
-  checkNonEmptyString('http.tenantIdHeader', http['tenantIdHeader'])
+  const tenantIdHeader = http['tenantIdHeader']
+  if (
+    tenantIdHeader !== undefined &&
+    tenantIdHeader !== false &&
+    !isNonEmptyString(tenantIdHeader)
+  ) {
+    reject('http.tenantIdHeader', 'must be a non-empty string or false', tenantIdHeader)
+  }
+  const tenantIdResolver = http['tenantIdResolver']
+  if (tenantIdResolver !== undefined && typeof tenantIdResolver !== 'function') {
+    reject('http.tenantIdResolver', 'must be a function', tenantIdResolver)
+  }
 }
 
 /** The `otel` group. */

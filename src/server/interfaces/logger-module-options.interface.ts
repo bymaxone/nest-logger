@@ -9,6 +9,7 @@
  */
 import type { ModuleMetadata, Type } from '@nestjs/common'
 
+import type { LoggableRequest } from './http-context.interface'
 import type { ILogDestination } from './log-destination.interface'
 import type { LogLevel } from '../../shared/types/log-level.type'
 import type { ServiceMetadata } from '../../shared/types/service-metadata.type'
@@ -58,8 +59,33 @@ export interface HttpOptions {
    * crafted URL into a ReDoS vector. The defaults are anchored and safe.
    */
   excludePaths?: readonly RegExp[]
-  /** Header name carrying the tenant identifier. Default: `x-tenant-id`. */
-  tenantIdHeader?: string
+  /**
+   * Header name carrying the tenant identifier, or `false` to read no header. Default:
+   * `x-tenant-id`.
+   *
+   * SECURITY: a `tenantId` taken from a header is what the CLIENT asserted. Any client can send any
+   * tenant, and every entry of its requests will carry it, so do not read it as who the request
+   * belongs to. A host that authenticates the tenant sets `false` or supplies
+   * {@link HttpOptions.tenantIdResolver}.
+   */
+  tenantIdHeader?: string | false
+  /**
+   * Resolves the tenant id of a request on the server side, from what the host trusts (a session,
+   * a verified token an earlier middleware put on the request). When given it is the only source:
+   * the header is not read, whether the resolver answers or not. The middleware runs before guards,
+   * so the resolver sees only what an earlier middleware set; a tenant known later is set with
+   * `LogContextService.set('tenantId', ...)`. An answer that is not a string of at most 256
+   * characters drawn from `A-Z a-z 0-9 . _ : / + = -`, and a resolver that throws, give no tenant id.
+   */
+  tenantIdResolver?: (request: LoggableRequest) => string | undefined
+}
+
+/**
+ * The `http` options after defaults: every field is filled but the resolver, whose absence means the
+ * header is read.
+ */
+export type ResolvedHttpOptions = Required<Omit<HttpOptions, 'tenantIdResolver'>> & {
+  tenantIdResolver: HttpOptions['tenantIdResolver']
 }
 
 /**
@@ -230,7 +256,7 @@ export interface BymaxLoggerModuleOptions {
  */
 export type ResolvedBymaxLoggerModuleOptions = Readonly<
   Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel'>> & {
-    http: Required<HttpOptions>
+    http: ResolvedHttpOptions
     otel: Required<OtelOptions>
   }
 >
