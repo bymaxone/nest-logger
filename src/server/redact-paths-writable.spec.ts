@@ -109,4 +109,23 @@ describe('an Error in the metadata, under redactStrategy paths', () => {
       expect(line()).not.toContain(SECRET)
     }
   )
+
+  it.each([
+    ['stack', false],
+    ['stack', true],
+    ['message', true],
+    ['cause', true]
+  ])(
+    'does not throw when a consumer path targets the %s of an Error (frozen: %s) beside a specific path',
+    (field, frozen) => {
+      const { service, line } = pipeline({
+        redactStrategy: 'paths',
+        redactPaths: ['a.x.unrelated', `a.*.err.${field}`]
+      })
+      const error = new Error(SECRET, { cause: { q: SECRET } })
+      if (frozen) Object.freeze(error)
+
+      expect(() => service.info('KEY', 'hello', 'u1', { a: { x: { err: error } } })).not.toThrow()
+    }
+  )
 })
