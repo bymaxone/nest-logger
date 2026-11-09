@@ -43,19 +43,17 @@ export interface ErrorPartsHost {
  * @param value - The value to store.
  */
 export function defineOwn(target: Record<string, unknown>, key: string, value: unknown): void {
-  // Only `enumerable` is specified. `writable` / `configurable` would default to
-  // `false`, and nothing here can tell the difference: `Object.keys` yields each
-  // key once so a copy never redefines one, and the copy is serialized and
-  // discarded without further mutation (verified against Pino's `redact`, which
-  // tolerates a non-writable property on the record it censors). Stating them
-  // would be two more literals no test could ever pin.
+  // `writable` is stated: under `redactStrategy: 'paths'` the copy reaches `@pinojs/redact`, which
+  // assigns its censor into the object it is given, in strict mode, and a non-writable property
+  // throws there. `configurable` is not, because nothing deletes or redefines a key of a copy that
+  // has been handed on.
   //
   // The write cannot fail, and that is established at CONSTRUCTION rather than
   // checked here. Every target is either a fresh `{}` or an error clone whose
   // descriptors `cloneError` relaxes precisely so a censor always lands.
   // `Reflect.defineProperty` reports failure by returning `false`, not by throwing, so a check
   // of the result would be a branch no input can take: untested code claiming a guarantee.
-  Reflect.defineProperty(target, key, { value, enumerable: true })
+  Reflect.defineProperty(target, key, { value, enumerable: true, writable: true })
 }
 
 /** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */
