@@ -31,6 +31,14 @@ overrides:
   'brace-expansion@1': '^1.1.21'
   'brace-expansion@2': '^2.1.7'
   'brace-expansion@5': '^5.0.12'
+  # minimatch: denial of service through globparts amplification, vulnerable >= 7.0.0 < 11.0.1 and
+  # patched only in 11.0.1, with no backport. Dev-only. The 10.x copies (typescript-estree, stryker
+  # core, glob 13) are floored to 11, which glob 13 accepts: it still matches the same files. The 9.x
+  # copy came through glob 10 (jest coverage's test-exclude 7), and glob 10 on minimatch 11 matches
+  # NOTHING and says nothing, so it is not floored: test-exclude is moved to 8, which uses glob 13.
+  # Never floor minimatch under a glob 10. REMOVE when the parents above ask for >= 11.0.1.
+  'minimatch@10': '^11.0.1'
+  'test-exclude@7': '^8.0.0'
   'esbuild': '^0.28.1'
   # A range here is NOT evidence that a package is patched. An override is a floor
   # on resolution, and nothing re-resolves a lockfile that already satisfies the
