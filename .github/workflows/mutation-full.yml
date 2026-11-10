@@ -34,11 +34,13 @@ jobs:
     uses: bymaxone/.github/.github/workflows/mutation-full.yml@v1
     with:
       # Measured cold, with 2 runner processes: 41 min on 1ba3af2 (2412 mutants), more than 60 min
-      # on 991d519 (2427 mutants; the run was cancelled at 94%), about 66 min on a laptop. Generous
-      # on purpose — nothing blocks on this job, so an over-wide ceiling costs only the minutes it
-      # uses, while an under-tight one costs the whole run and leaves the week without a measured
-      # baseline. A cancelled run writes no report and so no inventory result.
-      timeout-minutes: 90
+      # on 991d519 (cancelled at 94%), 89 min 42 s on 137ab5b (2427 mutants; cancelled by the 90
+      # minute ceiling 9 s into the inventory step, after the score), and 66 min on a laptop. On one
+      # machine the suite's test time moved by 9% between the first and the last of these, so most
+      # of the spread is the runner. Generous on purpose — nothing blocks on this job, so an
+      # over-wide ceiling costs only the minutes it uses, while an under-tight one costs the whole
+      # run and leaves the week without a measured baseline. A cancelled run writes no baseline.
+      timeout-minutes: 150
       # A unit test the cold run did not run fails the job. The specs that judge no mutant are
       # listed, with the reason, in scripts/mutation-inventory.exempt.json.
       inventory: enforce
