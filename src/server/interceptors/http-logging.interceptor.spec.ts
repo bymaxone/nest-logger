@@ -1,186 +1,98 @@
 import {
   BadRequestException,
-  Controller,
-  Get,
-  HttpCode,
   InternalServerErrorException,
-  NotFoundException,
-  Param
+  NotFoundException
 } from '@nestjs/common'
-import type { CallHandler, ExecutionContext, INestApplication } from '@nestjs/common'
-import { Test } from '@nestjs/testing'
-import type { NextFunction, Request, Response } from 'express'
+import type { CallHandler, ExecutionContext } from '@nestjs/common'
 import { of, throwError } from 'rxjs'
-import request from 'supertest'
 
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
-import { BymaxLoggerModule } from '../logger.module'
-import { PinoLoggerService } from '../services/pino-logger.service'
+import { applyDefaults } from '../config/default-options'
+import type { PinoLoggerService } from '../services/pino-logger.service'
 import { markRecorderActive, readRecordedError } from '../utils/http-log-state.util'
 
 import { HttpLoggingInterceptor } from './http-logging.interceptor'
 
-/**
- * Fixture controller exercising every interceptor branch through real HTTP:
- * 2xx / 3xx / non-2xx-3xx success, 4xx and 5xx HttpExceptions, a plain Error,
- * and a non-Error throw.
- */
-@Controller()
-class FixtureController {
-  @Get('ok/:id')
-  ok(@Param('id') id: string): { id: string } {
-    return { id }
-  }
-
-  @Get('redirect')
-  @HttpCode(302)
-  redirect(): { ok: boolean } {
-    return { ok: true }
-  }
-
-  @Get('teapot')
-  @HttpCode(418)
-  teapot(): { ok: boolean } {
-    return { ok: true }
-  }
-
-  @Get('moved')
-  @HttpCode(300)
-  moved(): { ok: boolean } {
-    return { ok: true }
-  }
-
-  @Get('noncontent400')
-  @HttpCode(400)
-  nonThrowing400(): { ok: boolean } {
-    return { ok: true }
-  }
-
-  @Get('numeric')
-  numeric(): never {
-    throw Object.assign(new BadRequestException('x'), { message: 42 })
-  }
-
-  @Get('long')
-  long(): never {
-    throw new BadRequestException('x'.repeat(100_000))
-  }
-
-  @Get('bad')
-  bad(): never {
-    throw new BadRequestException('bad input')
-  }
-
-  @Get('boom')
-  boom(): never {
-    throw new Error('kaboom')
-  }
-
-  @Get('server-http')
-  serverHttp(): never {
-    throw new InternalServerErrorException('explicit 500')
-  }
-
-  @Get('throw-string')
-  throwString(): never {
-    // Throwing a non-Error value exercises the `err instanceof Error` false path.
-    throw 'plain string failure'
-  }
-
-  @Get('me')
-  me(): { ok: boolean } {
-    return { ok: true }
-  }
-
-  @Get('me-jwt')
-  meJwt(): { ok: boolean } {
-    return { ok: true }
-  }
-
-  @Get('me-both')
-  meBoth(): { ok: boolean } {
-    return { ok: true }
-  }
-
-  @Get('health')
-  health(): { ok: boolean } {
-    return { ok: true }
-  }
+interface Run {
+  readonly info: jest.Mock
+  readonly warn: jest.Mock
+  readonly error: jest.Mock
+  /** What the stream raised, or `undefined` when it completed. */
+  readonly raised: unknown
 }
 
-describe('HttpLoggingInterceptor (integration)', () => {
-  let app: INestApplication
-  let logger: PinoLoggerService
-  let infoSpy: jest.SpyInstance
-  let warnSpy: jest.SpyInstance
-  let errorSpy: jest.SpyInstance
+interface RequestSpec {
+  readonly url?: string
+  readonly status?: number
+  readonly headers?: Record<string, string>
+  readonly user?: { sub?: string; id?: string }
+  readonly fails?: unknown
+}
 
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        BymaxLoggerModule.forRoot({
-          service: { name: 'interceptor-test', version: '1.0.0' },
-          // Filter disabled so the interceptor is tested in isolation; thrown
-          // exceptions fall through to Nest's default handler.
-          http: { isEnabled: true, shouldCaptureExceptions: false }
-        })
-      ],
-      controllers: [FixtureController]
-    }).compile()
-
-    // `logger: false` silences Nest's internal logger so the deliberate 5xx
-    // tests do not print exception stacks to the suite output.
-    app = moduleRef.createNestApplication({ logger: false })
-    // Simulate an upstream auth layer populating req.user for one route.
-    app.use((req: Request, _res: Response, next: NextFunction) => {
-      if (req.url.startsWith('/me-both')) {
-        // Both fields present: the JWT subject must win over the ORM id.
-        ;(req as Request & { user?: { sub?: string; id?: string } }).user = {
-          sub: 's_2',
-          id: 'u_2'
-        }
-      } else if (req.url.startsWith('/me-jwt')) {
-        // A JWT principal (every nest-auth token) names its subject `sub`, not `id`.
-        ;(req as Request & { user?: { sub?: string } }).user = { sub: 's_1' }
-      } else if (req.url.startsWith('/me')) {
-        ;(req as Request & { user?: { id?: string } }).user = { id: 'u_1' }
-      }
-      next()
+/**
+ * Drives `HttpLoggingInterceptor.intercept` for one request with a logger double and request,
+ * response and handler doubles: the handler completes, or raises `fails`; the response carries
+ * `status`. The options are the module defaults with HTTP logging on.
+ */
+async function run(spec: RequestSpec = {}): Promise<Run> {
+  const info = jest.fn()
+  const warn = jest.fn()
+  const error = jest.fn()
+  const logger = {
+    info,
+    warnStructured: warn,
+    errorStructured: error
+  } as unknown as PinoLoggerService
+  const options = applyDefaults({
+    service: { name: 'interceptor-test', version: '1.0.0' },
+    http: { isEnabled: true, shouldCaptureExceptions: false }
+  })
+  const interceptor = new HttpLoggingInterceptor(logger, options)
+  const context = {
+    switchToHttp: () => ({
+      getRequest: () => ({
+        method: 'GET',
+        url: spec.url ?? '/probe',
+        ip: '127.0.0.1',
+        headers: spec.headers ?? {},
+        ...(spec.user === undefined ? {} : { user: spec.user })
+      }),
+      getResponse: () => ({ statusCode: spec.status ?? 200 })
     })
-    await app.init()
-    logger = app.get(PinoLoggerService)
+  } as unknown as ExecutionContext
+  const handler: CallHandler = {
+    handle: () => ('fails' in spec ? throwError(() => spec.fails) : of(undefined))
+  }
+
+  const raised = await new Promise<unknown>((resolve) => {
+    interceptor.intercept(context, handler).subscribe({
+      error: (error_: unknown) => resolve(error_),
+      complete: () => resolve(undefined)
+    })
   })
 
-  beforeEach(() => {
-    // Spies are (re)created here because `restoreMocks: true` resets them between
-    // tests; mockImplementation keeps the suite output silent.
-    infoSpy = jest.spyOn(logger, 'info').mockImplementation()
-    warnSpy = jest.spyOn(logger, 'warnStructured').mockImplementation()
-    errorSpy = jest.spyOn(logger, 'errorStructured').mockImplementation()
-  })
+  return { info, warn, error, raised }
+}
 
-  afterAll(async () => {
-    await app.close()
-  })
-
+describe('HttpLoggingInterceptor', () => {
   it(/*
    * A 2xx response must emit START then SUCCESS, and the high-cardinality id in
    * the path must be normalized to `/:id` in both entries.
    */
   'logs START and SUCCESS with a normalized URL for a 2xx response', async () => {
-    await request(app.getHttpServer())
-      .get('/ok/123e4567-e89b-12d3-a456-426614174000')
-      .set('User-Agent', 'jest-agent/9.9')
-      .expect(200)
+    const { info } = await run({
+      url: '/ok/123e4567-e89b-12d3-a456-426614174000',
+      headers: { 'user-agent': 'jest-agent/9.9' }
+    })
 
-    expect(infoSpy).toHaveBeenCalledWith(
+    expect(info).toHaveBeenCalledWith(
       'HTTP_REQUEST_START',
       expect.any(String),
       undefined,
       // A provided User-Agent must be captured verbatim (covers the string branch).
       expect.objectContaining({ method: 'GET', url: '/ok/:id', userAgent: 'jest-agent/9.9' })
     )
-    expect(infoSpy).toHaveBeenCalledWith(
+    expect(info).toHaveBeenCalledWith(
       'HTTP_REQUEST_SUCCESS',
       expect.any(String),
       undefined,
@@ -193,9 +105,9 @@ describe('HttpLoggingInterceptor (integration)', () => {
    * of the success logger.
    */
   'logs REDIRECT for a 3xx response', async () => {
-    await request(app.getHttpServer()).get('/redirect').expect(302)
+    const { info } = await run({ status: 302 })
 
-    expect(infoSpy).toHaveBeenCalledWith(
+    expect(info).toHaveBeenCalledWith(
       'HTTP_REQUEST_REDIRECT',
       expect.stringContaining('→ 302'),
       undefined,
@@ -208,15 +120,15 @@ describe('HttpLoggingInterceptor (integration)', () => {
    * the "neither success nor redirect" fall-through with no terminal log.
    */
   'logs only START for a non-2xx/3xx non-throwing response', async () => {
-    await request(app.getHttpServer()).get('/teapot').expect(418)
+    const { info } = await run({ url: '/teapot', status: 418 })
 
-    expect(infoSpy).toHaveBeenCalledWith(
+    expect(info).toHaveBeenCalledWith(
       'HTTP_REQUEST_START',
       expect.any(String),
       undefined,
       expect.objectContaining({ url: '/teapot' })
     )
-    const terminalKeys = infoSpy.mock.calls.map((call) => call[0])
+    const terminalKeys = info.mock.calls.map((call) => call[0])
     expect(terminalKeys).not.toContain('HTTP_REQUEST_SUCCESS')
     expect(terminalKeys).not.toContain('HTTP_REQUEST_REDIRECT')
   })
@@ -226,9 +138,9 @@ describe('HttpLoggingInterceptor (integration)', () => {
    * every other message it copies from a value it does not own.
    */
   'cuts errorMessage on a 4xx at the message limit', async () => {
-    await request(app.getHttpServer()).get('/long').expect(400)
+    const { warn } = await run({ status: 400, fails: new BadRequestException('x'.repeat(100_000)) })
 
-    expect(warnSpy).toHaveBeenCalledWith(
+    expect(warn).toHaveBeenCalledWith(
       'HTTP_REQUEST_CLIENT_ERROR',
       expect.stringContaining('→ 400'),
       undefined,
@@ -238,48 +150,109 @@ describe('HttpLoggingInterceptor (integration)', () => {
 
   it(/*
    * `message` is typed as a string, but a thrown value can carry anything. The cut applies only
-   * to a string, and the interceptor still answers the request with the 400.
+   * to a string, and the interceptor still raises the error it was given.
    */
   'copies errorMessage as given when the message of the error is not a string', async () => {
-    await request(app.getHttpServer()).get('/numeric').expect(400)
+    const failure = Object.assign(new BadRequestException('x'), { message: 42 })
 
-    expect(warnSpy).toHaveBeenCalledWith(
+    const { warn, raised } = await run({ status: 400, fails: failure })
+
+    expect(warn).toHaveBeenCalledWith(
       'HTTP_REQUEST_CLIENT_ERROR',
       expect.stringContaining('→ 400'),
       undefined,
       expect.objectContaining({ errorMessage: 42 })
     )
+    expect(raised).toBe(failure)
   })
 
   it(/*
    * A 4xx HttpException must emit CLIENT_ERROR at warn level (with the error
-   * message) and the exception must still propagate to a 400 response.
+   * message) and the exception must still propagate.
    */
   'logs CLIENT_ERROR (warn) for a 4xx and propagates it', async () => {
-    await request(app.getHttpServer()).get('/bad').expect(400)
+    const failure = new BadRequestException('bad input')
 
-    expect(warnSpy).toHaveBeenCalledWith(
+    const { warn, error, raised } = await run({ status: 400, fails: failure })
+
+    expect(warn).toHaveBeenCalledWith(
       'HTTP_REQUEST_CLIENT_ERROR',
       expect.stringContaining('→ 400'),
       undefined,
       expect.objectContaining({ statusCode: 400, errorMessage: 'bad input' })
     )
-    expect(errorSpy).not.toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
+    expect(raised).toBe(failure)
+  })
+
+  it.each([
+    ['status', { status: 413, expose: true }, 413],
+    ['statusCode', { statusCode: 415, expose: true }, 415],
+    ['a plain 400', { status: 400, expose: true }, 400]
+  ])(
+    /*
+     * An error that is not an HttpException but carries the `http-errors` shape (what the body
+     * parser raises) is a client error too: CLIENT_ERROR at warn level, with the status it exposes
+     * in the message and in `statusCode`, and the error is raised as it was thrown.
+     */
+    'logs CLIENT_ERROR with the status of an exposed http-errors error, read from %s',
+    async (_name, fields, code) => {
+      const failure = Object.assign(new Error('refused'), fields)
+
+      const { warn, error, raised } = await run({ status: code, fails: failure })
+
+      expect(warn).toHaveBeenCalledWith(
+        'HTTP_REQUEST_CLIENT_ERROR',
+        `GET /probe → ${code}`,
+        undefined,
+        expect.objectContaining({ method: 'GET', url: '/probe', statusCode: code })
+      )
+      expect(error).not.toHaveBeenCalled()
+      expect(raised).toBe(failure)
+    }
+  )
+
+  it(/*
+   * For an error of a type whose message quotes the request body the entry carries the fixed text
+   * and the parser type, never the message: no key-name redaction can censor a piece of the body
+   * out of free text.
+   */
+  'logs the fixed text and the parser type for an exposed error that quotes the body', async () => {
+    const failure = Object.assign(
+      new Error(`Unexpected token 'h', "hunter2-SENTINEL" is not valid JSON`),
+      { status: 400, expose: true, type: 'entity.parse.failed' }
+    )
+
+    const { warn } = await run({ status: 400, fails: failure })
+
+    expect(warn).toHaveBeenCalledWith(
+      'HTTP_REQUEST_CLIENT_ERROR',
+      'GET /probe → 400',
+      undefined,
+      expect.objectContaining({
+        errorMessage: 'request body could not be parsed',
+        bodyParserType: 'entity.parse.failed'
+      })
+    )
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('hunter2')
   })
 
   it(/*
    * A plain Error must emit SERVER_ERROR (error level, with the Error) and
-   * propagate as a 500 — the exception is logged, never swallowed.
+   * propagate — the exception is logged, never swallowed.
    */
   'logs SERVER_ERROR for a thrown Error and propagates it', async () => {
-    await request(app.getHttpServer()).get('/boom').expect(500)
+    const failure = new Error('kaboom')
 
-    expect(errorSpy).toHaveBeenCalledWith(
+    const { error, raised } = await run({ status: 500, fails: failure })
+
+    expect(error).toHaveBeenCalledWith(
       'HTTP_REQUEST_SERVER_ERROR',
-      expect.any(Error),
+      failure,
       undefined,
       expect.objectContaining({ statusCode: 500 })
     )
+    expect(raised).toBe(failure)
   })
 
   it(/*
@@ -287,9 +260,11 @@ describe('HttpLoggingInterceptor (integration)', () => {
    * branch at/above 500.
    */
   'logs SERVER_ERROR for a 5xx HttpException', async () => {
-    await request(app.getHttpServer()).get('/server-http').expect(500)
+    const failure = new InternalServerErrorException('explicit 500')
 
-    expect(errorSpy).toHaveBeenCalledWith(
+    const { error } = await run({ status: 500, fails: failure })
+
+    expect(error).toHaveBeenCalledWith(
       'HTTP_REQUEST_SERVER_ERROR',
       expect.any(Error),
       undefined,
@@ -299,62 +274,32 @@ describe('HttpLoggingInterceptor (integration)', () => {
 
   it(/*
    * A non-Error throw must be wrapped into an Error for the SERVER_ERROR log —
-   * covers the `err instanceof Error` false branch — and still return 500.
+   * covers the `err instanceof Error` false branch — and still be raised as it was thrown.
    */
   'wraps a non-Error throw into an Error for SERVER_ERROR', async () => {
-    await request(app.getHttpServer()).get('/throw-string').expect(500)
+    const { error, raised } = await run({ status: 500, fails: 'plain string failure' })
 
-    expect(errorSpy).toHaveBeenCalledWith(
+    expect(error).toHaveBeenCalledWith(
       'HTTP_REQUEST_SERVER_ERROR',
       expect.any(Error),
       undefined,
       expect.objectContaining({ statusCode: 500 })
     )
+    expect(raised).toBe('plain string failure')
   })
 
-  it(/*
-   * When upstream auth populated req.user, the acting userId must flow into the
-   * log entries — covers the `req.user?.id` populated path.
-   */
-  'extracts userId from req.user when present', async () => {
-    await request(app.getHttpServer()).get('/me').expect(200)
+  it.each([
+    ['req.user.id when it is the only field', { id: 'u_1' }, 'u_1'],
+    ['req.user.sub when id is absent (a JWT principal)', { sub: 's_1' }, 's_1'],
+    // An `id ?? sub` swap would attribute the log to the ORM id instead.
+    ['req.user.sub over req.user.id when both are present', { sub: 's_2', id: 'u_2' }, 's_2']
+  ])('extracts the acting user from %s', async (_name, user, expected) => {
+    const { info } = await run({ user })
 
-    expect(infoSpy).toHaveBeenCalledWith(
+    expect(info).toHaveBeenCalledWith(
       'HTTP_REQUEST_START',
       expect.any(String),
-      'u_1',
-      expect.objectContaining({ method: 'GET' })
-    )
-  })
-
-  it(/*
-   * A JWT principal names its subject `sub`, not `id`. The acting userId must
-   * still flow into the log entries — covers the `req.user?.id` fallback of
-   * `sub ?? id` that every nest-auth token relies on (reading only `id` dropped it before).
-   */
-  'extracts userId from req.user.sub when id is absent (JWT principal)', async () => {
-    await request(app.getHttpServer()).get('/me-jwt').expect(200)
-
-    expect(infoSpy).toHaveBeenCalledWith(
-      'HTTP_REQUEST_START',
-      expect.any(String),
-      's_1',
-      expect.objectContaining({ method: 'GET' })
-    )
-  })
-
-  it(/*
-   * When a principal carries both `sub` and `id`, the JWT subject is the
-   * authenticated identity and must win — pins the `sub ?? id` precedence
-   * (an `id ?? sub` swap would attribute the log to the ORM id instead).
-   */
-  'prefers req.user.sub over req.user.id when both are present', async () => {
-    await request(app.getHttpServer()).get('/me-both').expect(200)
-
-    expect(infoSpy).toHaveBeenCalledWith(
-      'HTTP_REQUEST_START',
-      expect.any(String),
-      's_2',
+      expected,
       expect.objectContaining({ method: 'GET' })
     )
   })
@@ -364,9 +309,9 @@ describe('HttpLoggingInterceptor (integration)', () => {
    * non-string branch of the user-agent read.
    */
   'falls back to "unknown" when the User-Agent header is absent', async () => {
-    await request(app.getHttpServer()).get('/teapot').unset('User-Agent').expect(418)
+    const { info } = await run({ status: 418 })
 
-    expect(infoSpy).toHaveBeenCalledWith(
+    expect(info).toHaveBeenCalledWith(
       'HTTP_REQUEST_START',
       expect.any(String),
       undefined,
@@ -380,11 +325,9 @@ describe('HttpLoggingInterceptor (integration)', () => {
    * the logs. Covers the isExcluded() true branch.
    */
   'skips logging for an excluded path', async () => {
-    await request(app.getHttpServer()).get('/health').expect(200)
+    const { info } = await run({ url: '/health' })
 
-    const loggedKeys = infoSpy.mock.calls.map((call) => call[0])
-    expect(loggedKeys).not.toContain('HTTP_REQUEST_START')
-    expect(loggedKeys).not.toContain('HTTP_REQUEST_SUCCESS')
+    expect(info).not.toHaveBeenCalled()
   })
 
   it(/*
@@ -394,10 +337,10 @@ describe('HttpLoggingInterceptor (integration)', () => {
    * epoch-sized number).
    */
   'emits readable START/SUCCESS messages and a sane duration', async () => {
-    await request(app.getHttpServer()).get('/ok/4bf92f35-77b3-4da6-a3ce-929d0e0e4736').expect(200)
+    const { info } = await run({ url: '/ok/4bf92f35-77b3-4da6-a3ce-929d0e0e4736' })
 
-    const start = infoSpy.mock.calls.find((call) => call[0] === 'HTTP_REQUEST_START')
-    const success = infoSpy.mock.calls.find((call) => call[0] === 'HTTP_REQUEST_SUCCESS')
+    const start = info.mock.calls.find((call) => call[0] === 'HTTP_REQUEST_START')
+    const success = info.mock.calls.find((call) => call[0] === 'HTTP_REQUEST_SUCCESS')
     expect(start?.[1]).toContain('GET /ok/:id')
     expect(success?.[1]).toContain('→ 200')
     const duration = (success?.[3] as { duration: number }).duration
@@ -411,9 +354,9 @@ describe('HttpLoggingInterceptor (integration)', () => {
    * `statusCode >= HTTP_REDIRECT_MIN` (redirect lower bound).
    */
   'logs REDIRECT (not SUCCESS) at the 300 boundary', async () => {
-    await request(app.getHttpServer()).get('/moved').expect(300)
+    const { info } = await run({ status: 300 })
 
-    const keys = infoSpy.mock.calls.map((call) => call[0])
+    const keys = info.mock.calls.map((call) => call[0])
     expect(keys).toContain('HTTP_REQUEST_REDIRECT')
     expect(keys).not.toContain('HTTP_REQUEST_SUCCESS')
   })
@@ -423,9 +366,9 @@ describe('HttpLoggingInterceptor (integration)', () => {
    * (neither REDIRECT nor SUCCESS). Pins `statusCode < HTTP_CLIENT_ERROR_MIN`.
    */
   'logs only START for a non-throwing 400', async () => {
-    await request(app.getHttpServer()).get('/noncontent400').expect(400)
+    const { info } = await run({ status: 400 })
 
-    const keys = infoSpy.mock.calls.map((call) => call[0])
+    const keys = info.mock.calls.map((call) => call[0])
     expect(keys).toContain('HTTP_REQUEST_START')
     expect(keys).not.toContain('HTTP_REQUEST_REDIRECT')
     expect(keys).not.toContain('HTTP_REQUEST_SUCCESS')
@@ -436,9 +379,9 @@ describe('HttpLoggingInterceptor (integration)', () => {
    * `Date.now() - start` arithmetic in the catchError branch.
    */
   'reports a sane duration on the error path', async () => {
-    await request(app.getHttpServer()).get('/boom').expect(500)
+    const { error } = await run({ status: 500, fails: new Error('kaboom') })
 
-    const errorCall = errorSpy.mock.calls.find((call) => call[0] === 'HTTP_REQUEST_SERVER_ERROR')
+    const errorCall = error.mock.calls.find((call) => call[0] === 'HTTP_REQUEST_SERVER_ERROR')
     const duration = (errorCall?.[3] as { duration: number }).duration
     expect(duration).toBeGreaterThanOrEqual(0)
     expect(duration).toBeLessThan(60_000)
