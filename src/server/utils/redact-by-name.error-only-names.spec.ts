@@ -71,7 +71,7 @@ describe('createNameRedactor with errorOnlyNames', () => {
 })
 
 describe('the clone of an Error outside the record', () => {
-  it('accepts an assignment in strict mode, for a data property the original froze and an accessor with no setter', () => {
+  it('accepts an assignment in strict mode, for what the original froze (an own field, its message and its stack) and an accessor with no setter', () => {
     const error = Object.assign(new Error('x'), { frozen: 'v' })
     Object.defineProperty(error, 'getterOnly', { get: () => 'g', enumerable: false })
     Object.freeze(error)
@@ -81,7 +81,11 @@ describe('the clone of an Error outside the record', () => {
       'use strict'
       clone['frozen'] = 'changed'
       clone['getterOnly'] = 'changed'
+      clone['message'] = 'changed'
+      clone['stack'] = 'changed'
     }).not.toThrow()
     expect(clone['getterOnly']).toBe('g')
+    expect(clone['message']).toBe('changed')
+    expect(clone['stack']).toBe('changed')
   })
 })

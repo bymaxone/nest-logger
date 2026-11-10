@@ -124,10 +124,17 @@ function draw(pick: () => number, id: number): Drawn {
   return { record, messages, secrets, plain: { value, path: `plain.${keys.join('.')}.password` } }
 }
 
-function written(
-  extra: Partial<BymaxLoggerModuleOptions>,
-  record: Record<string, unknown>
-): string {
+/** A logger and the lines it wrote, built once for a configuration and reused for every record. */
+interface Sink {
+  readonly service: PinoLoggerService
+  readonly lines: string[]
+}
+const sinks = new Map<string, Sink>()
+
+function sinkFor(extra: Partial<BymaxLoggerModuleOptions>): Sink {
+  const key = JSON.stringify(extra)
+  const cached = sinks.get(key)
+  if (cached !== undefined) return cached
   const lines: string[] = []
   const options = applyDefaults({ service: { name: 'app', version: '1.0.0' }, ...extra })
   const pino = buildPinoInstance(
@@ -136,7 +143,18 @@ function written(
     [{ name: 'capture', write: (line: string): void => void lines.push(line) }],
     new DestinationHealth()
   )
-  new PinoLoggerService(pino, resolveNameRedactor(options)).info('KEY', 'hello', 'u1', record)
+  const sink = { service: new PinoLoggerService(pino, resolveNameRedactor(options)), lines }
+  sinks.set(key, sink)
+  return sink
+}
+
+function written(
+  extra: Partial<BymaxLoggerModuleOptions>,
+  record: Record<string, unknown>
+): string {
+  const { service, lines } = sinkFor(extra)
+  lines.length = 0
+  service.info('KEY', 'hello', 'u1', record)
   return lines[0] ?? ''
 }
 
