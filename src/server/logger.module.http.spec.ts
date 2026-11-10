@@ -59,3 +59,22 @@ describe('BymaxLoggerModule HTTP wiring (forRoot)', () => {
     expect(hasProvider(providers, APP_FILTER)).toBe(false)
   })
 })
+
+describe('BymaxLoggerModule HTTP wiring (forRootAsync)', () => {
+  it(/*
+   * The catch-all filter is never wired from asynchronously resolved options: a global filter
+   * added from them would sit in every consumer's pipeline whether or not HTTP logging is on.
+   * An asynchronous consumer registers `HttpExceptionFilter` itself, which the end-to-end cases
+   * in `test/e2e/exception-filter-wiring.e2e-spec.ts` pin.
+   */
+  'registers no exception filter, even with http enabled', () => {
+    const dynamicModule = BymaxLoggerModule.forRootAsync({
+      useFactory: () => ({
+        service: { name: 'http-wiring-test', version: '1.0.0' },
+        http: { isEnabled: true }
+      })
+    })
+
+    expect(hasProvider(dynamicModule.providers, APP_FILTER)).toBe(false)
+  })
+})

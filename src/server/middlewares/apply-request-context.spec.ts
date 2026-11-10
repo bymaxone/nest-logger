@@ -1,137 +1,146 @@
 /**
- * Pins `BymaxLoggerModule.useRequestContext`, which delegates to `applyRequestContext`: the
- * correlation scope runs ahead of the body parser, a second mount reuses it, and calling it
- * without the module imported fails with a clear message.
+ * Pins `applyRequestContext`, which `BymaxLoggerModule.useRequestContext` delegates to: it mounts
+ * one handler on the application that opens the correlation scope, a second mount of the same
+ * middleware reuses that scope, and calling it without the module imported fails with a clear
+ * message. The application is a double with `get` and `use`; that the handler runs ahead of the
+ * body parser is pinned in `test/e2e/use-request-context.e2e-spec.ts`, which boots Nest.
  *
  * Layer: server/middlewares, tests.
  */
-import { Controller, Module, Post } from '@nestjs/common'
-import type {
-  ArgumentsHost,
-  INestApplication,
-  MiddlewareConsumer,
-  NestModule
-} from '@nestjs/common'
-import { Test } from '@nestjs/testing'
-import request from 'supertest'
+import type { INestApplication } from '@nestjs/common'
 
-import { applyRequestIdMiddleware } from './apply-request-id-middleware'
-import type { ILogDestination } from '../interfaces/log-destination.interface'
+import { applyRequestContext } from './apply-request-context'
+import { RequestIdMiddleware } from './request-id.middleware'
+import { applyDefaults } from '../config/default-options'
+import { LOGGER_OPTIONS_TOKEN } from '../constants/injection-tokens.constants'
+import type {
+  LoggableRequest,
+  LoggableResponse,
+  NextHandler
+} from '../interfaces/http-context.interface'
 import { BymaxLoggerModule } from '../logger.module'
 import { LogContextService } from '../services/log-context.service'
 
-/** Swallows every entry: the module's default destination would write to the real stdout. */
-const SINK: ILogDestination = { name: 'sink', write: (): void => undefined }
+type Handler = (req: LoggableRequest, res: LoggableResponse, next: NextHandler) => void
 
-@Controller()
-class EchoController {
-  @Post('echo')
-  echo(): { ok: boolean } {
-    return { ok: true }
-  }
-}
-
-@Module({
-  imports: [
-    BymaxLoggerModule.forRoot({ service: { name: 'app', version: '1.0.0' }, destinations: [SINK] })
-  ],
-  controllers: [EchoController]
-})
-class PlainModule {}
-
-@Module({
-  imports: [
-    BymaxLoggerModule.forRoot({ service: { name: 'app', version: '1.0.0' }, destinations: [SINK] })
-  ],
-  controllers: [EchoController]
-})
-class ModuleWithMiddleware implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
-    applyRequestIdMiddleware(consumer)
-  }
-}
-
-/** Answers every error with the request id read from the log context. */
-function envelopeFilter(logContext: LogContextService): {
-  catch(exception: { getStatus(): number }, host: ArgumentsHost): void
+/** An application that hands out the module's providers and records what is mounted on it. */
+function appWith(logContext: LogContextService): {
+  app: INestApplication
+  mounted: Handler[]
+  options: ReturnType<typeof applyDefaults>
 } {
-  return {
-    catch(exception, host): void {
-      host
-        .switchToHttp()
-        .getResponse()
-        .status(exception.getStatus())
-        .json({ correlationId: logContext.get('requestId') ?? null })
-    }
-  }
+  const options = applyDefaults({ service: { name: 'app', version: '1.0.0' } })
+  const mounted: Handler[] = []
+  const app = {
+    get: (token: unknown) => (token === LOGGER_OPTIONS_TOKEN ? options : logContext),
+    use: (handler: Handler) => void mounted.push(handler)
+  } as unknown as INestApplication
+  return { app, mounted, options }
 }
 
-async function create(module: new () => unknown, mount: boolean): Promise<INestApplication> {
-  const moduleRef = await Test.createTestingModule({ imports: [module] }).compile()
-  const app = moduleRef.createNestApplication({ logger: false })
-  if (mount) BymaxLoggerModule.useRequestContext(app)
-  app.useGlobalFilters(envelopeFilter(app.get(LogContextService)))
-  await app.init()
-  return app
+const request = (headers: Record<string, string> = {}): LoggableRequest =>
+  ({ headers, method: 'POST', url: '/echo' }) as unknown as LoggableRequest
+
+const response = (): { res: LoggableResponse; headers: Record<string, string> } => {
+  const headers: Record<string, string> = {}
+  const res = {
+    setHeader: (name: string, value: string): void => void (headers[name] = value)
+  } as unknown as LoggableResponse
+  return { res, headers }
 }
 
-const refuse = (app: INestApplication): request.Test =>
-  request(app.getHttpServer()).post('/echo').set('content-type', 'application/json').send('{"a":')
+describe('applyRequestContext', () => {
+  it('is what BymaxLoggerModule.useRequestContext mounts', () => {
+    const { app, mounted } = appWith(new LogContextService())
 
-describe('BymaxLoggerModule.useRequestContext', () => {
-  it('opens the scope ahead of the body parser, so a refused body has its request id', async () => {
-    const app = await create(PlainModule, true)
+    BymaxLoggerModule.useRequestContext(app)
 
-    const res = await refuse(app)
-
-    expect(res.status).toBe(400)
-    expect(res.body.correlationId).toBe(res.headers['x-request-id'])
-    await app.close()
+    expect(mounted).toHaveLength(1)
   })
 
-  it('is reused by a module-level mount, which mints no second id', async () => {
-    const app = await create(ModuleWithMiddleware, true)
+  it('mounts exactly one handler on the application', () => {
+    const { app, mounted } = appWith(new LogContextService())
 
-    const res = await request(app.getHttpServer())
-      .post('/echo')
-      .set('content-type', 'application/json')
-      .set('x-request-id', 'caller-id-1')
-      .send('{"a":1}')
+    applyRequestContext(app)
 
-    expect(res.headers['x-request-id']).toBe('caller-id-1')
-    await app.close()
+    expect(mounted).toHaveLength(1)
   })
 
-  it('leaves a refused body without an id when it is not called', async () => {
-    const app = await create(PlainModule, false)
+  it('opens the scope for a request: the id is in the context of what runs next and on the response', () => {
+    const logContext = new LogContextService()
+    const { app, mounted } = appWith(logContext)
+    applyRequestContext(app)
+    const { res, headers } = response()
+    let seen: unknown
 
-    const res = await refuse(app)
+    mounted[0]?.(request(), res, () => {
+      seen = logContext.get('requestId')
+    })
 
-    expect(res.body.correlationId).toBeNull()
-    await app.close()
+    expect(seen).toEqual(expect.any(String))
+    expect(headers['x-request-id']).toBe(seen)
   })
 
-  it('writes nothing to the real stdout', async () => {
+  it('keeps the id a caller sent, as the module-level mount does', () => {
+    const logContext = new LogContextService()
+    const { app, mounted } = appWith(logContext)
+    applyRequestContext(app)
+    const { res, headers } = response()
+    let seen: unknown
+
+    mounted[0]?.(request({ 'x-request-id': 'caller-id-1' }), res, () => {
+      seen = logContext.get('requestId')
+    })
+
+    expect(headers['x-request-id']).toBe('caller-id-1')
+    expect(seen).toBe('caller-id-1')
+  })
+
+  it('is reused by a second mount of the middleware, which mints no second id', () => {
+    const logContext = new LogContextService()
+    const { app, mounted, options } = appWith(logContext)
+    applyRequestContext(app)
+    const second = new RequestIdMiddleware(logContext, options)
+    const req = request()
+    const { res, headers } = response()
+    const ids: unknown[] = []
+
+    mounted[0]?.(req, res, () => {
+      ids.push(logContext.get('requestId'))
+      second.use(req, res, () => ids.push(logContext.get('requestId')))
+    })
+
+    expect(ids).toHaveLength(2)
+    expect(ids[1]).toBe(ids[0])
+    expect(headers['x-request-id']).toBe(ids[0])
+  })
+
+  it('writes nothing to the real stdout', () => {
     const stdout = jest.spyOn(process.stdout, 'write')
+    const { app, mounted } = appWith(new LogContextService())
+    applyRequestContext(app)
 
-    const app = await create(PlainModule, true)
-    await refuse(app)
-    await app.close()
+    mounted[0]?.(request(), response().res, () => undefined)
 
-    expect(stdout).not.toHaveBeenCalledWith(expect.stringContaining('"service"'))
+    expect(stdout).not.toHaveBeenCalled()
     stdout.mockRestore()
   })
 
-  it('throws a clear error, with the DI failure as the cause, when the module is not imported', async () => {
-    const moduleRef = await Test.createTestingModule({}).compile()
-    const app = moduleRef.createNestApplication({ logger: false })
+  it('throws a clear error, with the DI failure as the cause, when the module is not imported', () => {
+    const failure = new Error('Nest could not find LogContextService')
+    const app = {
+      get: (): never => {
+        throw failure
+      },
+      use: jest.fn()
+    } as unknown as INestApplication
 
-    expect(() => BymaxLoggerModule.useRequestContext(app)).toThrow(
+    expect(() => applyRequestContext(app)).toThrow(
       expect.objectContaining({
         message: expect.stringContaining('useRequestContext(app) called but BymaxLoggerModule'),
-        cause: expect.any(Error)
+        cause: failure
       })
     )
-    await app.close()
+    expect(app.use).not.toHaveBeenCalled()
   })
 })

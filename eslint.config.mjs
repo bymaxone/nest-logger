@@ -379,10 +379,8 @@ export default [
       'src/server/filters/http-exception.filter.client-errors.spec.ts',
       'src/server/filters/http-exception.filter.spec.ts',
       'src/server/interceptors/http-logging.interceptor.spec.ts',
-      'src/server/logger.module.async-filter.spec.ts',
       'src/server/logger.module.spec.ts',
       'src/server/middlewares/apply-access-log.spec.ts',
-      'src/server/middlewares/apply-request-context.spec.ts',
       'src/server/middlewares/request-id.middleware.spec.ts'
     ],
     rules: {
