@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.15] - 2026-11-10
+
 ### Fixed
 
 - **Under `redactStrategy: 'paths'`, an `Error` in the record is no longer written as `{}`.** A
@@ -22,9 +24,17 @@ heading here.
   past the four-level ceiling of `fast-redact`; data that is not an `Error` is still matched only
   by your configured paths, which is what the strategy is for. Found by measuring 1.4.13: a nested
   `Error` was `{}` even with no `redactPaths` at all.
+  **This also closes a leak.** An `Error` that writes itself through `toJSON`, as an HTTP client's
+  error does, was written with the output of that method, and a secret in it deeper than
+  `fast-redact` reaches (an `authorization` header under `config.headers`) was
+  written in clear under `redactStrategy: 'paths'`. Measured on 1.4.14 with
+  `{ top: <Error whose toJSON returns { config: { a: { b: { c: { d: { headers: { authorization } } } } } } }> }`:
+  the value appeared as written; it is now `[REDACTED]`.
   **Apply to a derived backend:** a host on `redactStrategy: 'paths'` now sees `type`, `message`,
   `stack` and `cause` where it saw `{}`, so a query or alert that matched the empty object matches
-  the fields instead. Hosts on the default strategy are unaffected.
+  the fields instead. Hosts on the default strategy are unaffected. A host on `'paths'` that logged
+  an `Error` with a `toJSON` carrying credentials should treat what reached its log store as
+  exposed and rotate them.
 
 ## [1.4.14] - 2026-11-09
 
@@ -2703,7 +2713,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.14...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.15...HEAD
+[1.4.15]: https://github.com/bymaxone/nest-logger/compare/v1.4.14...v1.4.15
 [1.4.14]: https://github.com/bymaxone/nest-logger/compare/v1.4.13...v1.4.14
 [1.4.13]: https://github.com/bymaxone/nest-logger/compare/v1.4.12...v1.4.13
 [1.4.12]: https://github.com/bymaxone/nest-logger/compare/v1.4.11...v1.4.12
