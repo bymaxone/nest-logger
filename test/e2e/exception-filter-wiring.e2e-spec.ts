@@ -3,7 +3,8 @@
  * exception filter itself, `forRootAsync` does not, and registering the filter by hand
  * is how an asynchronous consumer gets the same entries.
  *
- * Layer: server, tests. The asymmetry is deliberate (a global catch-all filter added
+ * Layer: E2E, server. Real Nest applications and real HTTP; the registration decision itself is
+ * pinned on the dynamic module in `src/server/logger.module.http.spec.ts`. The asymmetry is deliberate (a global catch-all filter added
  * from asynchronously resolved options would sit in every consumer's pipeline, whether
  * or not HTTP logging is on). These cases pin the behaviour and the remedy the README
  * gives, so a change to either has to update the documentation with it.
@@ -14,10 +15,12 @@ import { APP_FILTER } from '@nestjs/core'
 import { Test } from '@nestjs/testing'
 import request from 'supertest'
 
-import { HttpExceptionFilter } from './filters/http-exception.filter'
-import type { ILogDestination } from './interfaces/log-destination.interface'
-import { BymaxLoggerModule } from './logger.module'
-import { applyAccessLog } from './middlewares/apply-access-log'
+import {
+  applyAccessLog,
+  BymaxLoggerModule,
+  HttpExceptionFilter,
+  type ILogDestination
+} from '@bymax-one/nest-logger'
 
 @Controller()
 class ThrowingController {
