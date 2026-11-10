@@ -3,13 +3,14 @@
  * The lint gate names the spellings a selector can see; these cases use the ones it cannot (a name
  * built at run time, an aliased or destructured loader, `.call`, an interpolated template, a
  * dynamic `import()`, a method looked up by a variable), which only the resolution of the module
- * and the server's own `listen` can stop. A unit spec cannot load `supertest`, and cannot start a
- * server.
+ * and the server's own `listen` can stop. A unit spec cannot load `supertest`, cannot start a
+ * server, cannot connect out and cannot bind or send a datagram.
  *
  * Layer: repository tooling, tests. It imports nothing from `src/`; the guard itself is
  * `scripts/jest-no-sockets.resolver.cjs` and `scripts/jest-no-sockets.setup.cjs`, wired into the
  * Jest configurations that run unit specs.
  */
+import { createSocket } from 'node:dgram'
 import { createServer as createHttpServer } from 'node:http'
 import { connect, createServer as createNetServer, Socket } from 'node:net'
 import { resolve } from 'node:path'
@@ -83,6 +84,22 @@ describe('the runtime guard against sockets in a unit spec', () => {
         String((failure as { cause?: { message?: string } } | undefined)?.cause?.message)
       ).toMatch(REFUSED)
     })
+  })
+
+  describe('a datagram socket', () => {
+    it.each(['bind', 'send', 'connect'])(
+      'is refused for %s, the method looked up by a variable',
+      (name) => {
+        const socket = createSocket('udp4')
+        const method = Reflect.get(socket, name) as (this: unknown, ...args: unknown[]) => unknown
+
+        try {
+          expect(() => method.call(socket, 59998, '127.0.0.1')).toThrow(REFUSED)
+        } finally {
+          socket.close()
+        }
+      }
+    )
   })
 
   describe('starting a server', () => {
