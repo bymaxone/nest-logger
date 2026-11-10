@@ -4,9 +4,10 @@
  *
  * A unit spec drives the code with doubles and opens no socket. `listen` of `net.Server` is what
  * every server, `http` and Express included, ends in, and `connect` of `net.Socket` is what every
- * client ends in, `net.connect` and `fetch` included. A datagram socket opens at `bind` or `send`
- * of `dgram`, and its `connect` binds first. Replacing these stops a server, a connection or a
- * datagram socket however the method is reached: a variable key, a destructured or bound method,
+ * client ends in, `net.connect` and `fetch` included. A datagram socket is refused at
+ * its creation, `createSocket` and the `Socket` constructor of `dgram`, so none of the methods that
+ * would open one is ever reached. Replacing these stops a server, a connection or a datagram
+ * socket however the function is reached: a variable key, a destructured or bound method,
  * the prototype itself. They are replaced only for a spec under `src/` and put back after the
  * file, because the core module is shared by every test file a Jest worker runs, and the
  * end-to-end specs under `test/e2e` start servers and call them.
@@ -17,14 +18,14 @@ const net = require('node:net')
 const path = require('node:path')
 
 const SRC = path.resolve(__dirname, '..', 'src') + path.sep
-/** The methods of a datagram socket that open it. */
-const DATAGRAM = ['bind', 'send']
+/** What makes a datagram socket, whatever method would then open it. */
+const DATAGRAM = ['createSocket', 'Socket']
 const { testPath } = expect.getState()
 
 if (typeof testPath === 'string' && testPath.startsWith(SRC)) {
   const listen = net.Server.prototype.listen
   const connect = net.Socket.prototype.connect
-  const datagram = Object.fromEntries(DATAGRAM.map((name) => [name, dgram.Socket.prototype[name]]))
+  const datagram = Object.fromEntries(DATAGRAM.map((name) => [name, dgram[name]]))
 
   net.Server.prototype.listen = function refuseToListen() {
     throw new Error(
@@ -40,7 +41,7 @@ if (typeof testPath === 'string' && testPath.startsWith(SRC)) {
   }
 
   for (const name of DATAGRAM) {
-    dgram.Socket.prototype[name] = function refuseDatagram() {
+    dgram[name] = function refuseDatagram() {
       throw new Error(
         'A unit spec opens no socket, so it cannot open a datagram socket. Use doubles, or move ' +
           'the case to test/e2e.'
@@ -49,7 +50,7 @@ if (typeof testPath === 'string' && testPath.startsWith(SRC)) {
   }
 
   afterAll(() => {
-    for (const name of DATAGRAM) dgram.Socket.prototype[name] = datagram[name]
+    for (const name of DATAGRAM) dgram[name] = datagram[name]
     net.Server.prototype.listen = listen
     net.Socket.prototype.connect = connect
   })

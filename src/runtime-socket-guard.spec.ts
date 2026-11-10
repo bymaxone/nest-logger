@@ -4,13 +4,13 @@
  * built at run time, an aliased or destructured loader, `.call`, an interpolated template, a
  * dynamic `import()`, a method looked up by a variable), which only the resolution of the module
  * and the server's own `listen` can stop. A unit spec cannot load `supertest`, cannot start a
- * server, cannot connect out and cannot bind or send a datagram.
+ * server, cannot connect out and cannot create a datagram socket.
  *
  * Layer: repository tooling, tests. It imports nothing from `src/`; the guard itself is
  * `scripts/jest-no-sockets.resolver.cjs` and `scripts/jest-no-sockets.setup.cjs`, wired into the
  * Jest configurations that run unit specs.
  */
-import { createSocket } from 'node:dgram'
+import * as dgram from 'node:dgram'
 import { createServer as createHttpServer } from 'node:http'
 import { connect, createServer as createNetServer, Socket } from 'node:net'
 import { resolve } from 'node:path'
@@ -87,19 +87,19 @@ describe('the runtime guard against sockets in a unit spec', () => {
   })
 
   describe('a datagram socket', () => {
-    it.each(['bind', 'send', 'connect'])(
-      'is refused for %s, the method looked up by a variable',
-      (name) => {
-        const socket = createSocket('udp4')
-        const method = Reflect.get(socket, name) as (this: unknown, ...args: unknown[]) => unknown
+    // A socket cannot be had at all, so no method that would open it (`bind`, `send`, and the
+    // synchronous variants some Node versions add) is ever reached.
+    it('is refused at creation, the function looked up by a variable', () => {
+      const CREATE = ['create', 'Socket'].join('')
 
-        try {
-          expect(() => method.call(socket, 59998, '127.0.0.1')).toThrow(REFUSED)
-        } finally {
-          socket.close()
-        }
-      }
-    )
+      expect(() => Reflect.get(dgram, CREATE).call(dgram, 'udp4')).toThrow(REFUSED)
+    })
+
+    it('is refused for the constructor', () => {
+      const Datagram = Reflect.get(dgram, 'Socket') as new (type: string) => unknown
+
+      expect(() => new Datagram('udp4')).toThrow(REFUSED)
+    })
   })
 
   describe('starting a server', () => {
