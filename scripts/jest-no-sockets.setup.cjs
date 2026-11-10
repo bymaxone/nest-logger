@@ -4,12 +4,12 @@
  *
  * A unit spec drives the code with doubles and opens no socket. `listen` of `net.Server` is what
  * every server, `http` and Express included, ends in, and `connect` of `net.Socket` is what every
- * client ends in, `net.connect` and `fetch` included, and `bind`, `send` and `connect` of a
- * `dgram` socket are where a datagram socket opens, so replacing them stops a server, a connection
- * or a datagram socket however the method is reached: a variable key, a destructured or bound
- * method, the prototype itself. They are replaced only for a spec under `src/` and put back after the file,
- * because the core module is shared by every test file a Jest worker runs, and the end-to-end
- * specs under `test/e2e` start servers and call them.
+ * client ends in, `net.connect` and `fetch` included. A datagram socket opens at `bind` or `send`
+ * of `dgram`, and its `connect` binds first. Replacing these stops a server, a connection or a
+ * datagram socket however the method is reached: a variable key, a destructured or bound method,
+ * the prototype itself. They are replaced only for a spec under `src/` and put back after the
+ * file, because the core module is shared by every test file a Jest worker runs, and the
+ * end-to-end specs under `test/e2e` start servers and call them.
  */
 /* global expect, afterAll */
 const dgram = require('node:dgram')
@@ -18,7 +18,7 @@ const path = require('node:path')
 
 const SRC = path.resolve(__dirname, '..', 'src') + path.sep
 /** The methods of a datagram socket that open it. */
-const DATAGRAM = ['bind', 'send', 'connect']
+const DATAGRAM = ['bind', 'send']
 const { testPath } = expect.getState()
 
 if (typeof testPath === 'string' && testPath.startsWith(SRC)) {
