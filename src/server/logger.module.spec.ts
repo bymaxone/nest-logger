@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
@@ -281,52 +282,54 @@ describe('BymaxLoggerModule.forRoot', () => {
 })
 
 describe('BymaxLoggerModule.useNestLogger', () => {
-  beforeEach(() => {
-    // Silence the bootstrap log emitted when the module compiles.
-    jest.spyOn(PinoLoggerService.prototype, 'info').mockImplementation(() => undefined)
-  })
+  /** An application that holds a logger and records what is done with it. */
+  function appHolding(logger: unknown): {
+    app: INestApplication
+    get: jest.Mock
+    useLogger: jest.Mock
+    flushLogs: jest.Mock
+  } {
+    const get = jest.fn(() => logger)
+    const useLogger = jest.fn()
+    const flushLogs = jest.fn()
+    return {
+      app: { get, useLogger, flushLogs } as unknown as INestApplication,
+      get,
+      useLogger,
+      flushLogs
+    }
+  }
 
   it(/*
    * The helper must fetch PinoLoggerService from the container, install it as the
    * Nest application logger, and flush buffered bootstrap logs — the one-liner
-   * main.ts wiring contract.
+   * main.ts wiring contract. Installed before the flush, so the buffered lines reach it.
    */
-  'wires PinoLoggerService as the Nest application logger', async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [BymaxLoggerModule.forRoot({ service })]
-    }).compile()
-    const app = moduleRef.createNestApplication({ bufferLogs: true })
-    const useLoggerSpy = jest.spyOn(app, 'useLogger')
-    const flushLogsSpy = jest.spyOn(app, 'flushLogs')
+  'wires PinoLoggerService as the Nest application logger', () => {
+    const logger = {}
+    const { app, useLogger, flushLogs } = appHolding(logger)
+    const order: string[] = []
+    useLogger.mockImplementation(() => void order.push('useLogger'))
+    flushLogs.mockImplementation(() => void order.push('flushLogs'))
 
     BymaxLoggerModule.useNestLogger(app)
 
-    expect(useLoggerSpy).toHaveBeenCalledWith(expect.any(PinoLoggerService))
-    expect(flushLogsSpy).toHaveBeenCalledTimes(1)
-    await app.close()
+    expect(useLogger).toHaveBeenCalledWith(logger)
+    expect(flushLogs).toHaveBeenCalledTimes(1)
+    expect(order).toEqual(['useLogger', 'flushLogs'])
   })
 
   // The lookup is non-strict on purpose. A consumer that imports the logger in a feature module
   // rather than at the root has the provider outside the host module's own injector, and a strict
   // `get` refuses it — so the helper would throw the "was not imported" error at a deployment
-  // that imported it perfectly well, and the message would be actively misleading. The
-  // root-level case above cannot tell the two apart, because there the provider is local.
-  it('resolves the logger from a feature module, not only from the root', async () => {
-    @Module({ imports: [BymaxLoggerModule.forRoot({ service })] })
-    class FeatureModule {}
+  // that imported it perfectly well. That a feature module resolves is pinned in
+  // `test/e2e/use-nest-logger.e2e-spec.ts`, which needs the real container; this pins the call.
+  it('asks the container for the logger across the whole module graph', () => {
+    const { app, get } = appHolding({})
 
-    @Module({ imports: [FeatureModule] })
-    class RootModule {}
+    BymaxLoggerModule.useNestLogger(app)
 
-    const moduleRef = await Test.createTestingModule({ imports: [RootModule] }).compile()
-    const app = moduleRef.createNestApplication({ bufferLogs: true })
-    const useLoggerSpy = jest.spyOn(app, 'useLogger')
-
-    expect(() => {
-      BymaxLoggerModule.useNestLogger(app)
-    }).not.toThrow()
-    expect(useLoggerSpy).toHaveBeenCalledWith(expect.any(PinoLoggerService))
-    await app.close()
+    expect(get).toHaveBeenCalledWith(PinoLoggerService, { strict: false })
   })
 
   it(/*
@@ -335,23 +338,29 @@ describe('BymaxLoggerModule.useNestLogger', () => {
    * original DI error is attached as `.cause` so the underlying failure is
    * preserved for debugging — pins the `{ cause }` argument in the throw.
    */
-  'throws a clear error when the module was not imported', async () => {
-    const moduleRef = await Test.createTestingModule({
-      providers: [{ provide: 'NOOP', useValue: true }]
-    }).compile()
-    const app = moduleRef.createNestApplication()
-
+  'throws a clear error, with the DI failure as the cause, when the module was not imported', () => {
+    const failure = new Error('Nest could not find PinoLoggerService')
+    const useLogger = jest.fn()
+    const app = {
+      get: (): never => {
+        throw failure
+      },
+      useLogger,
+      flushLogs: jest.fn()
+    } as unknown as INestApplication
     let thrown: unknown
+
     try {
       BymaxLoggerModule.useNestLogger(app)
     } catch (e) {
       thrown = e
     }
+
     expect(thrown).toBeInstanceOf(Error)
     expect((thrown as Error).message).toBe(
       '[BymaxLoggerModule] useNestLogger(app) called but BymaxLoggerModule was not imported'
     )
-    expect((thrown as Error).cause).toBeInstanceOf(Error)
-    await app.close()
+    expect((thrown as Error).cause).toBe(failure)
+    expect(useLogger).not.toHaveBeenCalled()
   })
 })

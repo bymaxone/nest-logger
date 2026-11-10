@@ -377,7 +377,6 @@ export default [
   {
     files: [
       'src/server/interceptors/http-logging.interceptor.spec.ts',
-      'src/server/logger.module.spec.ts',
       'src/server/middlewares/request-id.middleware.spec.ts'
     ],
     rules: {
