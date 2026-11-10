@@ -32,13 +32,27 @@ const FORBIDDEN = [
   "const load = () => import('supertest')",
   'const a = async (app: any) => app.listen(0)',
   'const b = async (app: any) => app?.listen(0)',
-  'const c = (moduleRef: any) => moduleRef.createNestApplication()'
+  'const c = (moduleRef: any) => moduleRef.createNestApplication()',
+  "const d = (app: any) => app['listen'](0)",
+  "const e = (app: any) => app?.['listen'](0)",
+  'const f = (app: any) => app[`listen`](0)',
+  'const { listen } = app',
+  "const { 'listen': g } = app",
+  'const h = (app: any) => app.listen.bind(app)',
+  "const i = (moduleRef: any) => moduleRef['createNestApplication']()",
+  'const j = require(`supertest`)',
+  'const k = () => import(`supertest/lib/agent`)',
+  "const l = jest.requireActual('supertest')",
+  "import m = require('supertest')"
 ]
 
 const ALLOWED = [
   "import { join } from 'node:path'",
   "const { relative } = require('node:path')",
-  'const list = [1].map((n) => n)'
+  'const list = [1].map((n) => n)',
+  "jest.mock('supertest')",
+  'const stub = { listen: jest.fn() }',
+  'const listening = true'
 ]
 
 const ELSEWHERE = [

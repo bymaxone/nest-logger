@@ -7,6 +7,14 @@ import prettier from 'eslint-plugin-prettier'
 import security from 'eslint-plugin-security'
 import globals from 'globals'
 
+// Messages and patterns of the rule that keeps a unit spec from opening a socket.
+const NO_SOCKET =
+  'A unit spec opens no socket. Use request and response doubles, or move the case to test/e2e.'
+const NO_SERVER =
+  'A unit spec starts no server. Use request and response doubles, or move the case to test/e2e.'
+const SUPERTEST = '/^supertest(\\/|$)/'
+const STARTS_A_SERVER = '/^(listen|createNestApplication)$/'
+
 export default [
   // Global ignores — only build artifacts and coverage, NOT config files
   {
@@ -310,45 +318,34 @@ export default [
 
   // A unit spec under `src/` opens no socket: it drives the code with request and response doubles.
   // A case that needs a real listening server belongs in `test/e2e`, where sockets are allowed.
-  // `no-restricted-imports` sees import declarations and re-exports only, so a `require` and a
-  // dynamic `import` of the package have their own selectors.
+  //
+  // `no-restricted-imports` sees import declarations and re-exports only, so every other way to
+  // load the package has a selector of its own. The server is banned by the member it is started
+  // through, not by the call: `app.listen`, `app['listen']`, `const { listen } = app` and
+  // `app.listen.bind(app)` all name it, where a selector on the call would miss the last two.
   {
     files: ['src/**/*.spec.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
-        {
-          patterns: [
-            {
-              group: ['supertest', 'supertest/**'],
-              message:
-                'A unit spec opens no socket. Use request and response doubles, or move the case to test/e2e.'
-            }
-          ]
-        }
+        { patterns: [{ group: ['supertest', 'supertest/**'], message: NO_SOCKET }] }
       ],
       'no-restricted-syntax': [
         'error',
-        {
-          selector: "CallExpression[callee.name='require'][arguments.0.value=/^supertest(\\/|$)/]",
-          message:
-            'A unit spec opens no socket. Use request and response doubles, or move the case to test/e2e.'
-        },
-        {
-          selector: 'ImportExpression[source.value=/^supertest(\\/|$)/]',
-          message:
-            'A unit spec opens no socket. Use request and response doubles, or move the case to test/e2e.'
-        },
-        {
-          selector: "CallExpression[callee.property.name='listen']",
-          message:
-            'A unit spec opens no socket. Use request and response doubles, or move the case to test/e2e.'
-        },
-        {
-          selector: "CallExpression[callee.property.name='createNestApplication']",
-          message:
-            'A unit spec boots no application. Use request and response doubles, or move the case to test/e2e.'
-        }
+        ...[
+          `CallExpression[callee.name='require'][arguments.0.value=${SUPERTEST}]`,
+          `CallExpression[callee.name='require'][arguments.0.quasis.0.value.cooked=${SUPERTEST}]`,
+          `CallExpression[callee.property.name=/^(requireActual|requireMock)$/][arguments.0.value=${SUPERTEST}]`,
+          `ImportExpression[source.value=${SUPERTEST}]`,
+          `ImportExpression[source.quasis.0.value.cooked=${SUPERTEST}]`
+        ].map((selector) => ({ selector, message: NO_SOCKET })),
+        ...[
+          `MemberExpression[computed=false][property.name=${STARTS_A_SERVER}]`,
+          `MemberExpression[computed=true][property.value=${STARTS_A_SERVER}]`,
+          `MemberExpression[computed=true][property.quasis.0.value.cooked=${STARTS_A_SERVER}]`,
+          `ObjectPattern > Property[key.name=${STARTS_A_SERVER}]`,
+          `ObjectPattern > Property[key.value=${STARTS_A_SERVER}]`
+        ].map((selector) => ({ selector, message: NO_SERVER }))
       ]
     }
   },
