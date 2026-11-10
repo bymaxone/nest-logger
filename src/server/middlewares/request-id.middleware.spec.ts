@@ -1,239 +1,10 @@
-import { Controller, Get, Inject, Module } from '@nestjs/common'
-import type { INestApplication, MiddlewareConsumer, NestModule } from '@nestjs/common'
-import { Test } from '@nestjs/testing'
-import request from 'supertest'
-
-import { applyRequestIdMiddleware } from './apply-request-id-middleware'
 import { RequestIdMiddleware } from './request-id.middleware'
 import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
-import { BymaxLoggerModule } from '../logger.module'
 import { LogContextService } from '../services/log-context.service'
 
 /** UUID v4 shape used to assert a generated correlation id. */
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-/** Exposes the propagated context so tests can prove the scope started pre-handler. */
-@Controller()
-class ContextController {
-  constructor(@Inject(LogContextService) private readonly logContext: LogContextService) {}
-
-  @Get('ctx')
-  ctx(): { requestId: unknown; tenantId: unknown } {
-    return {
-      requestId: this.logContext.get('requestId'),
-      tenantId: this.logContext.get('tenantId')
-    }
-  }
-}
-
-/** Wires the middleware via the public helper, exactly as a consumer would. */
-@Module({
-  imports: [BymaxLoggerModule.forRoot({ service: { name: 'middleware-test', version: '1.0.0' } })],
-  controllers: [ContextController]
-})
-class ContextModule implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
-    applyRequestIdMiddleware(consumer)
-  }
-}
-
-describe('RequestIdMiddleware (integration via applyRequestIdMiddleware)', () => {
-  let app: INestApplication
-
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [ContextModule] }).compile()
-    app = moduleRef.createNestApplication({ logger: false })
-    await app.init()
-  })
-
-  afterAll(async () => {
-    await app.close()
-  })
-
-  it(/*
-   * With no inbound x-request-id the middleware must mint a UUID, expose it on the
-   * response, and propagate it into the handler's context — proving the scope is
-   * opened before the handler runs.
-   */
-  'generates a request id, exposes it, and propagates it', async () => {
-    const res = await request(app.getHttpServer()).get('/ctx').expect(200)
-
-    const header = res.headers['x-request-id']
-    expect(header).toMatch(UUID_V4)
-    expect(res.body.requestId).toBe(header)
-  })
-
-  it(/*
-   * An inbound x-request-id must be honored (not regenerated) and echoed back —
-   * covers the "header present" branch of the id resolution.
-   */
-  'echoes and propagates an inbound x-request-id', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/ctx')
-      .set('x-request-id', 'req-abc-123')
-      .expect(200)
-
-    expect(res.headers['x-request-id']).toBe('req-abc-123')
-    expect(res.body.requestId).toBe('req-abc-123')
-  })
-
-  it(/*
-   * The configured tenant header must be read into the context when present —
-   * covers the tenant "present" branch.
-   */
-  'propagates the tenant id from the x-tenant-id header', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/ctx')
-      .set('x-tenant-id', 'tenant-42')
-      .expect(200)
-
-    expect(res.body.tenantId).toBe('tenant-42')
-  })
-
-  it(/*
-   * With no tenant header the context must carry no tenantId — covers the tenant
-   * "absent" branch and proves an undefined value is never written.
-   */
-  'omits the tenant id when the header is absent', async () => {
-    const res = await request(app.getHttpServer()).get('/ctx').expect(200)
-
-    expect(res.body.tenantId).toBeUndefined()
-  })
-
-  it(/*
-   * An oversized inbound x-request-id must be rejected and replaced with a fresh
-   * UUID, so a client cannot push an unbounded string into every log entry —
-   * covers the length-bound rejection on the request-id path.
-   */
-  'rejects an oversized x-request-id and generates a fresh one', async () => {
-    const oversized = 'x'.repeat(300)
-    const res = await request(app.getHttpServer())
-      .get('/ctx')
-      .set('x-request-id', oversized)
-      .expect(200)
-
-    expect(res.headers['x-request-id']).not.toBe(oversized)
-    expect(res.headers['x-request-id']).toMatch(UUID_V4)
-    expect(res.body.requestId).toBe(res.headers['x-request-id'])
-  })
-
-  it(/*
-   * An x-request-id carrying a character outside the id-safe set (here a markup
-   * fragment) must be rejected and replaced with a fresh UUID, so a client cannot
-   * plant markup or a control byte into the logs and the echoed correlationId.
-   */
-  'rejects a request id with disallowed characters and generates a fresh one', async () => {
-    const malicious = '<script>alert(1)</script>'
-    const res = await request(app.getHttpServer())
-      .get('/ctx')
-      .set('x-request-id', malicious)
-      .expect(200)
-
-    expect(res.headers['x-request-id']).not.toBe(malicious)
-    expect(res.headers['x-request-id']).toMatch(UUID_V4)
-    expect(res.body.requestId).toBe(res.headers['x-request-id'])
-  })
-
-  it(/*
-   * A tenant header with a disallowed character (a space here) must be dropped,
-   * not propagated into the log context — the same id-safe gate on the tenant path.
-   */
-  'omits a tenant id with disallowed characters', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/ctx')
-      .set('x-tenant-id', 'acme evil')
-      .expect(200)
-
-    expect(res.body.tenantId).toBeUndefined()
-  })
-
-  it(/*
-   * An oversized tenant header must be dropped (not propagated) — covers the
-   * length-bound rejection on the tenant path.
-   */
-  'omits an oversized tenant id', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/ctx')
-      .set('x-tenant-id', 'y'.repeat(300))
-      .expect(200)
-
-    expect(res.body.tenantId).toBeUndefined()
-  })
-
-  it(/*
-   * An x-request-id at EXACTLY the 256-char bound must be honored (the check is
-   * `length <= 256`, inclusive) — pins the boundary so an off-by-one (`<`) that
-   * would reject a max-length id is caught.
-   */
-  'honors an x-request-id at exactly the 256-char limit', async () => {
-    const atLimit = 'a'.repeat(256)
-    const res = await request(app.getHttpServer())
-      .get('/ctx')
-      .set('x-request-id', atLimit)
-      .expect(200)
-
-    expect(res.headers['x-request-id']).toBe(atLimit)
-    expect(res.body.requestId).toBe(atLimit)
-  })
-})
-
-/** Wires the middleware with request-id generation disabled (gateway owns it). */
-@Module({
-  imports: [
-    BymaxLoggerModule.forRoot({
-      service: { name: 'no-gen-test', version: '1.0.0' },
-      http: { shouldGenerateRequestId: false }
-    })
-  ],
-  controllers: [ContextController]
-})
-class NoGenContextModule implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
-    applyRequestIdMiddleware(consumer)
-  }
-}
-
-describe('RequestIdMiddleware with shouldGenerateRequestId disabled', () => {
-  let app: INestApplication
-
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [NoGenContextModule] }).compile()
-    app = moduleRef.createNestApplication({ logger: false })
-    await app.init()
-  })
-
-  afterAll(async () => {
-    await app.close()
-  })
-
-  it(/*
-   * With generation disabled and no inbound header, the middleware must NOT mint
-   * an id: no x-request-id header is exposed and the context carries no requestId —
-   * correlation is delegated to the upstream gateway. Pins both the
-   * `shouldGenerateRequestId ? … : undefined` and `if (requestId !== undefined)` branches.
-   */
-  'mints no request id when disabled and no header is present', async () => {
-    const res = await request(app.getHttpServer()).get('/ctx').expect(200)
-
-    expect(res.headers['x-request-id']).toBeUndefined()
-    expect(res.body.requestId).toBeUndefined()
-  })
-
-  it(/*
-   * With generation disabled an INBOUND header must still be honored and echoed —
-   * the gateway-provided id flows through unchanged.
-   */
-  'still honors an inbound x-request-id when generation is disabled', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/ctx')
-      .set('x-request-id', 'gw-1')
-      .expect(200)
-
-    expect(res.headers['x-request-id']).toBe('gw-1')
-    expect(res.body.requestId).toBe('gw-1')
-  })
-})
 
 /** Options double carrying only what the middleware reads. */
 function createOptions(shouldGenerateRequestId = true): ResolvedBymaxLoggerModuleOptions {
@@ -252,6 +23,155 @@ function createResponse(): { res: LoggableResponse; setHeader: jest.Mock } {
 function createRequest(headers: Record<string, string> = {}): LoggableRequest {
   return { headers, method: 'GET', url: '/ctx' } as unknown as LoggableRequest
 }
+
+/**
+ * Runs one request through the middleware and returns what it exposed on the response and what the
+ * code running next saw in the log context: the scope is open before the handler, so what `next`
+ * reads is what a handler would read.
+ */
+function handle(
+  headers: Record<string, string> = {},
+  options: ResolvedBymaxLoggerModuleOptions = createOptions()
+): { header: unknown; requestId: unknown; tenantId: unknown } {
+  const logContext = new LogContextService()
+  const middleware = new RequestIdMiddleware(logContext, options)
+  const { res, setHeader } = createResponse()
+  let seen = { requestId: undefined as unknown, tenantId: undefined as unknown }
+
+  middleware.use(createRequest(headers), res, () => {
+    seen = { requestId: logContext.get('requestId'), tenantId: logContext.get('tenantId') }
+  })
+
+  const written = setHeader.mock.calls.find(([name]) => name === 'x-request-id')
+  return { header: written?.[1], ...seen }
+}
+
+describe('RequestIdMiddleware', () => {
+  it(/*
+   * With no inbound x-request-id the middleware must mint a UUID, expose it on the
+   * response, and propagate it into the context of what runs next — proving the scope is
+   * opened before the handler runs.
+   */
+  'generates a request id, exposes it, and propagates it', () => {
+    const { header, requestId } = handle()
+
+    expect(header).toMatch(UUID_V4)
+    expect(requestId).toBe(header)
+  })
+
+  it(/*
+   * An inbound x-request-id must be honored (not regenerated) and echoed back —
+   * covers the "header present" branch of the id resolution.
+   */
+  'echoes and propagates an inbound x-request-id', () => {
+    const { header, requestId } = handle({ 'x-request-id': 'req-abc-123' })
+
+    expect(header).toBe('req-abc-123')
+    expect(requestId).toBe('req-abc-123')
+  })
+
+  it(/*
+   * The configured tenant header must be read into the context when present —
+   * covers the tenant "present" branch.
+   */
+  'propagates the tenant id from the x-tenant-id header', () => {
+    expect(handle({ 'x-tenant-id': 'tenant-42' }).tenantId).toBe('tenant-42')
+  })
+
+  it(/*
+   * With no tenant header the context must carry no tenantId — covers the tenant
+   * "absent" branch and proves an undefined value is never written.
+   */
+  'omits the tenant id when the header is absent', () => {
+    expect(handle().tenantId).toBeUndefined()
+  })
+
+  it(/*
+   * An oversized inbound x-request-id must be rejected and replaced with a fresh
+   * UUID, so a client cannot push an unbounded string into every log entry —
+   * covers the length-bound rejection on the request-id path.
+   */
+  'rejects an oversized x-request-id and generates a fresh one', () => {
+    const oversized = 'x'.repeat(300)
+
+    const { header, requestId } = handle({ 'x-request-id': oversized })
+
+    expect(header).not.toBe(oversized)
+    expect(header).toMatch(UUID_V4)
+    expect(requestId).toBe(header)
+  })
+
+  it(/*
+   * An x-request-id carrying a character outside the id-safe set (here a markup
+   * fragment) must be rejected and replaced with a fresh UUID, so a client cannot
+   * plant markup or a control byte into the logs and the echoed correlationId.
+   */
+  'rejects a request id with disallowed characters and generates a fresh one', () => {
+    const malicious = '<script>alert(1)</script>'
+
+    const { header, requestId } = handle({ 'x-request-id': malicious })
+
+    expect(header).not.toBe(malicious)
+    expect(header).toMatch(UUID_V4)
+    expect(requestId).toBe(header)
+  })
+
+  it(/*
+   * A tenant header with a disallowed character (a space here) must be dropped,
+   * not propagated into the log context — the same id-safe gate on the tenant path.
+   */
+  'omits a tenant id with disallowed characters', () => {
+    expect(handle({ 'x-tenant-id': 'acme evil' }).tenantId).toBeUndefined()
+  })
+
+  it(/*
+   * An oversized tenant header must be dropped (not propagated) — covers the
+   * length-bound rejection on the tenant path.
+   */
+  'omits an oversized tenant id', () => {
+    expect(handle({ 'x-tenant-id': 'y'.repeat(300) }).tenantId).toBeUndefined()
+  })
+
+  it(/*
+   * An x-request-id at EXACTLY the 256-char bound must be honored (the check is
+   * `length <= 256`, inclusive) — pins the boundary so an off-by-one (`<`) that
+   * would reject a max-length id is caught.
+   */
+  'honors an x-request-id at exactly the 256-char limit', () => {
+    const atLimit = 'a'.repeat(256)
+
+    const { header, requestId } = handle({ 'x-request-id': atLimit })
+
+    expect(header).toBe(atLimit)
+    expect(requestId).toBe(atLimit)
+  })
+})
+
+describe('RequestIdMiddleware with shouldGenerateRequestId disabled', () => {
+  it(/*
+   * With generation disabled and no inbound header, the middleware must NOT mint
+   * an id: no x-request-id header is exposed and the context carries no requestId —
+   * correlation is delegated to the upstream gateway. Pins both the
+   * `shouldGenerateRequestId ? … : undefined` and `if (requestId !== undefined)` branches.
+   */
+  'mints no request id when disabled and no header is present', () => {
+    const { header, requestId } = handle({}, createOptions(false))
+
+    expect(header).toBeUndefined()
+    expect(requestId).toBeUndefined()
+  })
+
+  it(/*
+   * With generation disabled an INBOUND header must still be honored and echoed —
+   * the gateway-provided id flows through unchanged.
+   */
+  'still honors an inbound x-request-id when generation is disabled', () => {
+    const { header, requestId } = handle({ 'x-request-id': 'gw-1' }, createOptions(false))
+
+    expect(header).toBe('gw-1')
+    expect(requestId).toBe('gw-1')
+  })
+})
 
 describe('RequestIdMiddleware mounted a second time', () => {
   let logContext: LogContextService
