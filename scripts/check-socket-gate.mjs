@@ -1,7 +1,8 @@
 /**
  * @fileoverview Socket-gate check — proves the lint rule that keeps a unit spec under `src/` from
  * opening a socket reports the spellings it names for loading `supertest` or starting a server,
- * and only there.
+ * and only there. Aliasing or destructuring a loader, `.call`, a name built at run time and an
+ * interpolated template are not among them: a selector cannot see them.
  * @layer scripts
  *
  * The rule is `no-restricted-imports` plus `no-restricted-syntax` in `eslint.config.mjs`. A rule

@@ -342,8 +342,12 @@ export default [
   // `createMockFromModule`) have selectors of their own. The server is banned
   // by the member it is started through, not by the call: `app.listen`, `app['listen']`,
   // `const { listen } = app` and `app.listen.bind(app)` all name it, where a selector on the call
-  // would miss the last two. The names are literals: a name built at run time, a cast argument or
-  // `module.require` is out of a selector's reach.
+  // would miss the last two.
+  //
+  // The gate catches the idiomatic and accidental uses: literal names, in a string or a template
+  // literal, through a member call or a destructured `listen`. Aliasing or destructuring a loader,
+  // `.call`, a name built at run time, an interpolated template, a cast argument and
+  // `module.require` are out of a selector's reach and are not checked here.
   //
   // Reading `listen` off a stub is banned the same way. A double defines it as an object-literal
   // property, which the rule leaves alone, and is not read back as a member.
