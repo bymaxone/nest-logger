@@ -43,7 +43,14 @@ const FORBIDDEN = [
   'const j = require(`supertest`)',
   'const k = () => import(`supertest/lib/agent`)',
   "const l = jest.requireActual('supertest')",
-  "import m = require('supertest')"
+  "import m = require('supertest')",
+  'const n = jest.requireActual(`supertest`)',
+  "const o = jest.requireMock('supertest')",
+  'const p = jest.requireMock(`supertest`)',
+  "const q = jest.createMockFromModule('supertest')",
+  'const r = jest.createMockFromModule(`supertest/lib/agent`)',
+  "const s = jest['requireActual']('supertest')",
+  'const t = jest[`requireMock`](`supertest`)'
 ]
 
 const ALLOWED = [

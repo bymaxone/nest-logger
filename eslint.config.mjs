@@ -15,6 +15,24 @@ const NO_SERVER =
 const SUPERTEST = '/^supertest(\\/|$)/'
 const STARTS_A_SERVER = '/^(listen|createNestApplication)$/'
 
+// Each way to load a module other than an import declaration, with the name given as a string and
+// as a template literal, so that no loader has one spelling closed and the other open.
+const JEST_LOADERS = '/^(requireActual|requireMock|createMockFromModule|genMockFromModule)$/'
+const CALLS_THAT_LOAD = [
+  "CallExpression[callee.name='require']",
+  `CallExpression[callee.computed=false][callee.property.name=${JEST_LOADERS}]`,
+  `CallExpression[callee.computed=true][callee.property.value=${JEST_LOADERS}]`,
+  `CallExpression[callee.computed=true][callee.property.quasis.0.value.cooked=${JEST_LOADERS}]`
+]
+const LOADS_SUPERTEST = [
+  ...CALLS_THAT_LOAD.flatMap((call) => [
+    `${call}[arguments.0.value=${SUPERTEST}]`,
+    `${call}[arguments.0.quasis.0.value.cooked=${SUPERTEST}]`
+  ]),
+  `ImportExpression[source.value=${SUPERTEST}]`,
+  `ImportExpression[source.quasis.0.value.cooked=${SUPERTEST}]`
+]
+
 export default [
   // Global ignores — only build artifacts and coverage, NOT config files
   {
@@ -320,7 +338,8 @@ export default [
   // A case that needs a real listening server belongs in `test/e2e`, where sockets are allowed.
   //
   // `no-restricted-imports` sees import declarations and re-exports only, so a `require`, a
-  // dynamic `import()` and `jest.requireActual` have selectors of their own. The server is banned
+  // dynamic `import()` and the Jest loaders (`requireActual`, `requireMock`,
+  // `createMockFromModule`) have selectors of their own. The server is banned
   // by the member it is started through, not by the call: `app.listen`, `app['listen']`,
   // `const { listen } = app` and `app.listen.bind(app)` all name it, where a selector on the call
   // would miss the last two. The names are literals: a name built at run time, a cast argument or
@@ -337,13 +356,7 @@ export default [
       ],
       'no-restricted-syntax': [
         'error',
-        ...[
-          `CallExpression[callee.name='require'][arguments.0.value=${SUPERTEST}]`,
-          `CallExpression[callee.name='require'][arguments.0.quasis.0.value.cooked=${SUPERTEST}]`,
-          `CallExpression[callee.property.name=/^(requireActual|requireMock)$/][arguments.0.value=${SUPERTEST}]`,
-          `ImportExpression[source.value=${SUPERTEST}]`,
-          `ImportExpression[source.quasis.0.value.cooked=${SUPERTEST}]`
-        ].map((selector) => ({ selector, message: NO_SOCKET })),
+        ...LOADS_SUPERTEST.map((selector) => ({ selector, message: NO_SOCKET })),
         ...[
           `MemberExpression[computed=false][property.name=${STARTS_A_SERVER}]`,
           `MemberExpression[computed=true][property.value=${STARTS_A_SERVER}]`,
