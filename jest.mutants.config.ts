@@ -14,6 +14,10 @@ const config: Config = {
   rootDir: 'src',
   testMatch: ['**/*.spec.ts', '**/*.test.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
+  // A unit spec opens no socket: the resolver refuses `supertest` and the setup stops `listen`, for
+  // a spec under `src/` only, whatever way the spec spells it.
+  resolver: '<rootDir>/../scripts/jest-no-sockets.resolver.cjs',
+  setupFilesAfterEnv: ['<rootDir>/../scripts/jest-no-sockets.setup.cjs'],
   moduleNameMapper: {
     '^@bymax-one/nest-logger$': '<rootDir>/server/index.ts',
     '^@bymax-one/nest-logger/shared$': '<rootDir>/shared/index.ts'

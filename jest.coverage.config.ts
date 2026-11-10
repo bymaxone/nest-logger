@@ -23,6 +23,10 @@ const config: Config = {
   // "dupMap.get is not a function" on the `@bymax-one/nest-logger` alias.
   modulePathIgnorePatterns: ['<rootDir>/dist/', '<rootDir>/.stryker-tmp/'],
   moduleFileExtensions: ['ts', 'js', 'json'],
+  // A unit spec opens no socket: the resolver refuses `supertest` and the setup stops `listen`, for
+  // a spec under `src/` only, whatever way the spec spells it.
+  resolver: '<rootDir>/scripts/jest-no-sockets.resolver.cjs',
+  setupFilesAfterEnv: ['<rootDir>/scripts/jest-no-sockets.setup.cjs'],
   // Mirror the subpath aliases declared in tsconfig.json "paths" so tests and
   // production code resolve the same module instance — a dual-package hazard
   // would make `instanceof` checks return false across subpath boundaries.
