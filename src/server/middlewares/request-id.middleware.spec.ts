@@ -27,7 +27,7 @@ function createRequest(headers: Record<string, string> = {}): LoggableRequest {
 /**
  * Runs one request through the middleware and returns what it exposed on the response and what the
  * code running next saw in the log context: the scope is open before the handler, so what `next`
- * reads is what a handler would read.
+ * reads is what a handler would read. It throws when the middleware does not call `next`.
  */
 function handle(
   headers: Record<string, string> = {},
@@ -36,12 +36,15 @@ function handle(
   const logContext = new LogContextService()
   const middleware = new RequestIdMiddleware(logContext, options)
   const { res, setHeader } = createResponse()
-  let seen = { requestId: undefined as unknown, tenantId: undefined as unknown }
+  let seen: { requestId: unknown; tenantId: unknown } | undefined
 
   middleware.use(createRequest(headers), res, () => {
     seen = { requestId: logContext.get('requestId'), tenantId: logContext.get('tenantId') }
   })
 
+  // A middleware that never calls `next` stops the request. The cases that assert an absence would
+  // pass against it, so the helper refuses to answer when `next` did not run.
+  if (seen === undefined) throw new Error('the middleware did not call next')
   const written = setHeader.mock.calls.find(([name]) => name === 'x-request-id')
   return { header: written?.[1], ...seen }
 }
