@@ -1,556 +1,206 @@
-import { Body, Controller, Module, Post } from '@nestjs/common'
-import type { INestApplication, MiddlewareConsumer, NestModule } from '@nestjs/common'
-import { Test } from '@nestjs/testing'
-import request from 'supertest'
+/**
+ * Pins `applyAccessLog`: it mounts one handler on the application, that handler opens the
+ * correlation scope and runs the access log INSIDE it, the dependencies are looked up without a
+ * strict qualifier, and calling it without the module imported fails with a clear message that
+ * keeps the DI failure as its cause. The application is a double with `get` and `use`; that the
+ * handler runs ahead of the body parser, under a global prefix and with a non-global logger
+ * module, is pinned in `test/e2e/apply-access-log.e2e-spec.ts`, which boots Nest.
+ *
+ * Layer: server/middlewares, tests.
+ */
+import { EventEmitter } from 'node:events'
+
+import type { INestApplication } from '@nestjs/common'
 
 import { applyAccessLog } from './apply-access-log'
-import { applyRequestIdMiddleware } from './apply-request-id-middleware'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
-import type { ILogDestination } from '../interfaces/log-destination.interface'
-import { BymaxLoggerModule } from '../logger.module'
+import { applyDefaults } from '../config/default-options'
+import { LOGGER_OPTIONS_TOKEN } from '../constants/injection-tokens.constants'
+import type {
+  LoggableRequest,
+  LoggableResponse,
+  NextHandler
+} from '../interfaces/http-context.interface'
+import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
+import { LogContextService } from '../services/log-context.service'
+import { PinoLoggerService } from '../services/pino-logger.service'
 
-/** A body the JSON parser cannot accept — the request under measurement. */
-const TRUNCATED_JSON = '{"label":'
+type Handler = (req: LoggableRequest, res: LoggableResponse, next: NextHandler) => void
 
-/** Captures every emitted entry so a test can assert on absence as well as presence. */
-class CaptureDestination implements ILogDestination {
-  readonly name = 'capture'
-  readonly entries: Record<string, unknown>[] = []
-
-  write(payload: string): void {
-    this.entries.push(JSON.parse(payload) as Record<string, unknown>)
-  }
-
-  /** Only the HTTP access entries — the bootstrap line is noise here. */
-  httpKeys(): unknown[] {
-    return this.entries
-      .map((entry) => entry.logKey)
-      .filter((logKey) => typeof logKey === 'string' && logKey.startsWith('HTTP_'))
-  }
-
-  clear(): void {
-    this.entries.length = 0
-  }
-}
-
-/**
- * Wait until `capture` holds at least `count` HTTP entries, then settle one more
- * turn.
- *
- * The terminal entry is emitted from the server response's `'close'` event,
- * which can fire AFTER supertest's promise resolves. Asserting straight away
- * therefore races: the entry is sometimes missing from this test and sometimes
- * lands in the NEXT one, after `beforeEach` cleared the capture — measured as a
- * flaky failure roughly one run in three. The extra settle turn is what keeps a
- * straggler from corrupting the following test rather than this one.
- */
-async function waitForHttpEntries(capture: CaptureDestination, count: number): Promise<void> {
-  const deadline = Date.now() + 2000
-  while (capture.httpKeys().length < count && Date.now() < deadline) {
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 5)
-    })
-  }
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, 10)
+/** An application that hands out the module's providers and records what is mounted on it. */
+function appWith(http: BymaxLoggerModuleOptions['http'] = { isEnabled: true }): {
+  app: INestApplication
+  mounted: Handler[]
+  get: jest.Mock
+  logger: { info: jest.Mock; warnStructured: jest.Mock; errorStructured: jest.Mock }
+  logContext: LogContextService
+} {
+  const options = applyDefaults({ service: { name: 'app', version: '1.0.0' }, http })
+  const logContext = new LogContextService()
+  const logger = { info: jest.fn(), warnStructured: jest.fn(), errorStructured: jest.fn() }
+  const mounted: Handler[] = []
+  const get = jest.fn((token: unknown) => {
+    if (token === PinoLoggerService) return logger
+    if (token === LOGGER_OPTIONS_TOKEN) return options
+    return logContext
   })
+  const app = {
+    get,
+    use: (handler: Handler) => void mounted.push(handler)
+  } as unknown as INestApplication
+  return { app, mounted, get, logger, logContext }
 }
 
-/**
- * Wait until `capture` holds an entry with `logKey`, then settle one more turn.
- *
- * Use this wherever the assertion names one key. Waiting on a COUNT is a guess
- * about how many entries a request produces, and a wrong guess races in either
- * direction: too high and the deadline expires before the assertion, too low and
- * it returns while the entry the test is about has not arrived. Waiting on the key
- * the assertion names cannot be wrong about it.
- *
- * The count-based sibling stays for the tests that assert an exact sequence, where
- * the count IS the claim.
- */
-async function waitForHttpKey(capture: CaptureDestination, logKey: string): Promise<void> {
-  const deadline = Date.now() + 2000
-  while (!capture.httpKeys().includes(logKey) && Date.now() < deadline) {
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 5)
-    })
-  }
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, 10)
-  })
-}
+const request = (headers: Record<string, string> = {}): LoggableRequest =>
+  ({
+    headers,
+    method: 'POST',
+    url: '/examples',
+    originalUrl: '/examples'
+  }) as unknown as LoggableRequest
 
-const earlyCapture = new CaptureDestination()
-const lateCapture = new CaptureDestination()
-const bothCapture = new CaptureDestination()
-const prefixCapture = new CaptureDestination()
-const scopedCapture = new CaptureDestination()
-
-/** Route that only ever runs when the body parsed — deliberately trivial. */
-@Controller()
-class EchoController {
-  @Post('examples')
-  create(@Body() body: unknown): unknown {
-    return body
-  }
-}
-
-/** The recommended wiring: mounted from `main.ts`, ahead of the parser. */
-@Module({
-  imports: [
-    BymaxLoggerModule.forRoot({
-      service: { name: 'early-mount', version: '1.0.0' },
-      http: { isEnabled: true },
-      destinations: [earlyCapture]
-    })
-  ],
-  controllers: [EchoController]
-})
-class EarlyMountModule {}
-
-/** The module-middleware wiring, kept as the POSITIVE CONTROL for the gap. */
-@Module({
-  imports: [
-    BymaxLoggerModule.forRoot({
-      service: { name: 'late-mount', version: '1.0.0' },
-      http: { isEnabled: true },
-      destinations: [lateCapture]
-    })
-  ],
-  controllers: [EchoController]
-})
-class LateMountModule implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
-    applyRequestIdMiddleware(consumer)
-  }
-}
-
-/** Both helpers at once — the wiring a consumer lands on mid-migration. */
-@Module({
-  imports: [
-    BymaxLoggerModule.forRoot({
-      service: { name: 'both-mounts', version: '1.0.0' },
-      http: { isEnabled: true },
-      destinations: [bothCapture]
-    })
-  ],
-  controllers: [EchoController]
-})
-class BothMountsModule implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
-    applyRequestIdMiddleware(consumer)
-  }
+/** A response that can be closed, with the status and the delivery state the terminal entry reads. */
+function response(statusCode = 201): {
+  res: LoggableResponse
+  headers: Record<string, string>
+  close: () => void
+} {
+  const headers: Record<string, string> = {}
+  const emitter = new EventEmitter()
+  const res = Object.assign(emitter, {
+    statusCode,
+    writableFinished: true,
+    setHeader: (name: string, value: string): void => void (headers[name] = value)
+  }) as unknown as LoggableResponse
+  return { res, headers, close: () => void emitter.emit('close') }
 }
 
 describe('applyAccessLog', () => {
-  let app: INestApplication
+  it('mounts exactly one handler on the application', () => {
+    const { app, mounted } = appWith()
 
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [EarlyMountModule] }).compile()
-    app = moduleRef.createNestApplication({ logger: false })
-    // BEFORE init(): `init()` registers the body parser and only then registers
-    // module middleware, so mounting here is what puts this ahead of the parser.
     applyAccessLog(app)
-    await app.init()
+
+    expect(mounted).toHaveLength(1)
   })
 
-  afterAll(async () => {
-    await app.close()
-  })
+  it('looks its dependencies up without a strict qualifier', () => {
+    const { app, get } = appWith()
 
-  beforeEach(() => {
-    earlyCapture.clear()
-  })
-
-  it(/*
-   * THE defect this helper exists for. A body the JSON parser rejects never
-   * reaches module middleware, a guard, an interceptor or a route, so the access
-   * log never saw it. Mounted ahead of the parser it must emit START and a
-   * terminal 4xx entry around whatever the exception filter produces.
-   */
-  'logs a request the body parser rejects', async () => {
-    await request(app.getHttpServer())
-      .post('/examples')
-      .set('Content-Type', 'application/json')
-      .send(TRUNCATED_JSON)
-      .expect(400)
-    await waitForHttpEntries(earlyCapture, 3)
-
-    expect(earlyCapture.httpKeys()).toEqual([
-      RESERVED_LOG_KEYS.HTTP_REQUEST_START,
-      RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED,
-      RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR
-    ])
-  })
-
-  it(/*
-   * The rejected request must be CORRELATABLE, not merely counted: the id the
-   * client sent has to reach both entries. An id in the response with no line to
-   * join it to is a token the client can quote and nothing more — that was the
-   * failed first attempt at this fix, and this assertion is what distinguishes
-   * the two.
-   */
-  'carries the inbound request id onto the entries for a rejected body', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/examples')
-      .set('Content-Type', 'application/json')
-      .set('x-request-id', 'measure-me')
-      .send(TRUNCATED_JSON)
-      .expect(400)
-
-    await waitForHttpEntries(earlyCapture, 3)
-
-    expect(res.headers['x-request-id']).toBe('measure-me')
-    const requestIds = earlyCapture.entries
-      .filter((entry) => typeof entry.logKey === 'string' && entry.logKey.startsWith('HTTP_'))
-      .map((entry) => entry.requestId)
-    expect(requestIds).toEqual(['measure-me', 'measure-me', 'measure-me'])
-  })
-
-  it(/*
-   * The terminal entry must carry the status the server actually produced, so a
-   * rejected body is queryable as the 400 it was rather than being lumped in
-   * with successes.
-   */
-  'records the real status code for a rejected body', async () => {
-    await request(app.getHttpServer())
-      .post('/examples')
-      .set('Content-Type', 'application/json')
-      .send(TRUNCATED_JSON)
-      .expect(400)
-    await waitForHttpEntries(earlyCapture, 3)
-
-    const terminal = earlyCapture.entries.find(
-      (entry) => entry.logKey === RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR
-    )
-    expect(terminal?.statusCode).toBe(400)
-  })
-
-  it(/*
-   * A request that DOES reach the handler must still be logged exactly once
-   * end-to-end — the early mount must not regress the ordinary path it shares
-   * with the module-middleware wiring.
-   */
-  'still logs a well-formed request exactly once', async () => {
-    await request(app.getHttpServer()).post('/examples').send({ label: 'ok' }).expect(201)
-    await waitForHttpEntries(earlyCapture, 2)
-
-    expect(earlyCapture.httpKeys()).toEqual([
-      RESERVED_LOG_KEYS.HTTP_REQUEST_START,
-      RESERVED_LOG_KEYS.HTTP_REQUEST_SUCCESS
-    ])
-  })
-})
-
-describe('applyRequestIdMiddleware (positive control for the parser gap)', () => {
-  let app: INestApplication
-
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [LateMountModule] }).compile()
-    app = moduleRef.createNestApplication({ logger: false })
-    await app.init()
-  })
-
-  afterAll(async () => {
-    await app.close()
-  })
-
-  beforeEach(() => {
-    lateCapture.clear()
-  })
-
-  it(/*
-   * The control that makes the assertion above mean something. A zero is only
-   * evidence when the same measurement produces a non-zero somewhere it should:
-   * the module-middleware wiring logs a well-formed request perfectly well...
-   */
-  'logs a well-formed request', async () => {
-    await request(app.getHttpServer()).post('/examples').send({ label: 'ok' }).expect(201)
-    await waitForHttpEntries(lateCapture, 2)
-
-    expect(lateCapture.httpKeys()).toEqual([
-      RESERVED_LOG_KEYS.HTTP_REQUEST_START,
-      RESERVED_LOG_KEYS.HTTP_REQUEST_SUCCESS
-    ])
-  })
-
-  it(/*
-   * ...and for the rejected body it emits ONE line and no access log, because
-   * NestJS registers the parser before module middleware. Measured rather than
-   * assumed: the auto-wired exception filter DOES catch a parser rejection on the
-   * sync path, so this is not the flat zero it first looks like. It is one line
-   * short of an access log — no START, no terminal entry, no status/duration/ip.
-   */
-  'emits only the filter line, and no access log, for a rejected body', async () => {
-    await request(app.getHttpServer())
-      .post('/examples')
-      .set('Content-Type', 'application/json')
-      .send(TRUNCATED_JSON)
-      .expect(400)
-    await waitForHttpEntries(lateCapture, 1)
-
-    expect(lateCapture.httpKeys()).toEqual([RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED])
-  })
-
-  it(/*
-   * And the line it does emit is UNCORRELATED, which is the half that matters.
-   * The correlation middleware is mounted behind the parser too, so no scope is
-   * ever opened: the client sent `x-request-id: measure-me` and the entry carries
-   * no requestId at all. A 400 you cannot join to the caller's id is the same
-   * defect as a missing 400, wearing a healthier face — this is the assertion
-   * that separates "the request is logged" from "the request is traceable".
-   */
-  'emits that line without the correlation id the client sent', async () => {
-    await request(app.getHttpServer())
-      .post('/examples')
-      .set('Content-Type', 'application/json')
-      .set('x-request-id', 'measure-me')
-      .send(TRUNCATED_JSON)
-      .expect(400)
-    await waitForHttpEntries(lateCapture, 1)
-
-    const handled = lateCapture.entries.find(
-      (entry) => entry.logKey === RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED
-    )
-    expect(handled).toBeDefined()
-    expect(handled?.requestId).toBeUndefined()
-  })
-})
-
-describe('applyAccessLog alongside applyRequestIdMiddleware', () => {
-  let app: INestApplication
-
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [BothMountsModule] }).compile()
-    app = moduleRef.createNestApplication({ logger: false })
     applyAccessLog(app)
-    await app.init()
+
+    expect(get).toHaveBeenCalledWith(PinoLoggerService)
+    expect(get).toHaveBeenCalledWith(LogContextService)
+    expect(get).toHaveBeenCalledWith(LOGGER_OPTIONS_TOKEN)
   })
 
-  afterAll(async () => {
-    await app.close()
-  })
+  it('logs START inside the correlation scope the request id opens, and echoes that id', () => {
+    const { app, mounted, logger, logContext } = appWith()
+    applyAccessLog(app)
+    const seen: unknown[] = []
+    logger.info.mockImplementation(() => void seen.push(logContext.get('requestId')))
+    const { res, headers } = response()
+    const next = jest.fn()
 
-  beforeEach(() => {
-    bothCapture.clear()
-  })
+    mounted[0]?.(request({ 'x-request-id': 'measure-me' }), res, next)
 
-  it(/*
-   * Both helpers wired at once is a reasonable state to be in mid-migration, and
-   * it must not double the access log: the second access-log mount finds the
-   * request's lifecycle already claimed and stands down.
-   */
-  'logs a request exactly once with both helpers wired', async () => {
-    await request(app.getHttpServer()).post('/examples').send({ label: 'ok' }).expect(201)
-    await waitForHttpEntries(bothCapture, 2)
-
-    expect(bothCapture.httpKeys()).toEqual([
+    expect(logger.info).toHaveBeenCalledWith(
       RESERVED_LOG_KEYS.HTTP_REQUEST_START,
-      RESERVED_LOG_KEYS.HTTP_REQUEST_SUCCESS
-    ])
+      'POST /examples',
+      undefined,
+      expect.objectContaining({ method: 'POST', url: '/examples', fullUrl: '/examples' })
+    )
+    expect(seen).toEqual(['measure-me'])
+    expect(headers['x-request-id']).toBe('measure-me')
+    expect(next).toHaveBeenCalledTimes(1)
   })
 
-  it(/*
-   * Nor may it mint two ids. Before the middleware became idempotent, two mounts
-   * with no inbound header produced two different UUIDs — the outer set the
-   * response header to one, the inner overwrote the context with the other — so
-   * the header and the log entries disagreed about the request's identity.
-   */
-  'mints exactly one request id with both helpers wired', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/examples')
-      .send({ label: 'ok' })
-      .expect(201)
-    await waitForHttpEntries(bothCapture, 2)
+  it('runs what comes next inside the scope, after START', () => {
+    const { app, mounted, logger, logContext } = appWith()
+    applyAccessLog(app)
+    const order: string[] = []
+    logger.info.mockImplementation(() => void order.push('start'))
+    const { res } = response()
 
-    const requestIds = bothCapture.entries
-      .filter((entry) => typeof entry.logKey === 'string' && entry.logKey.startsWith('HTTP_'))
-      .map((entry) => entry.requestId)
-    expect(new Set(requestIds).size).toBe(1)
-    expect(requestIds[0]).toBe(res.headers['x-request-id'])
-  })
-})
-
-/** Same wiring, under a global prefix — the shape that broke the old default. */
-@Module({
-  imports: [
-    BymaxLoggerModule.forRoot({
-      service: { name: 'prefixed', version: '1.0.0' },
-      http: { isEnabled: true },
-      destinations: [prefixCapture]
+    mounted[0]?.(request(), res, () => {
+      order.push(`next:${typeof logContext.get('requestId')}`)
     })
-  ],
-  controllers: [EchoController]
-})
-class PrefixedModule {}
 
-describe('applyAccessLog under setGlobalPrefix', () => {
-  let app: INestApplication
+    expect(order).toEqual(['start', 'next:string'])
+  })
 
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [PrefixedModule] }).compile()
-    app = moduleRef.createNestApplication({ logger: false })
-    app.setGlobalPrefix('api')
+  it('logs the terminal entry with the real status when the response closes', () => {
+    const { app, mounted, logger } = appWith()
     applyAccessLog(app)
-    await app.init()
-  })
+    const { res, close } = response(201)
+    mounted[0]?.(request(), res, () => undefined)
+    logger.info.mockClear()
 
-  afterAll(async () => {
-    await app.close()
-  })
+    close()
 
-  beforeEach(() => {
-    prefixCapture.clear()
-  })
-
-  it(/*
-   * A global prefix is exactly where this library has been bitten before: the
-   * middleware default used to be `'*'`, which stops matching the prefixed root
-   * under `setGlobalPrefix`, so requests silently vanished from the log. This
-   * mount goes through `app.use()` rather than `forRoutes`, so it is a different
-   * mechanism with the same failure mode available to it — pinned rather than
-   * assumed.
-   */
-  'logs a prefixed request', async () => {
-    await request(app.getHttpServer()).post('/api/examples').send({ label: 'ok' }).expect(201)
-    await waitForHttpEntries(prefixCapture, 2)
-
-    expect(prefixCapture.httpKeys()).toEqual([
-      RESERVED_LOG_KEYS.HTTP_REQUEST_START,
-      RESERVED_LOG_KEYS.HTTP_REQUEST_SUCCESS
-    ])
-  })
-
-  it(/*
-   * And it must log the WHOLE path. A mounted middleware sees `url` relative to
-   * its mount point, so logging `url` instead of `originalUrl` would drop the
-   * prefix from every entry and stop an `excludePaths` pattern written against
-   * the real path from ever matching.
-   */
-  'records the full prefixed path', async () => {
-    await request(app.getHttpServer()).post('/api/examples').send({ label: 'ok' }).expect(201)
-    await waitForHttpEntries(prefixCapture, 2)
-
-    const start = prefixCapture.entries.find(
-      (entry) => entry.logKey === RESERVED_LOG_KEYS.HTTP_REQUEST_START
+    expect(logger.info).toHaveBeenCalledWith(
+      RESERVED_LOG_KEYS.HTTP_REQUEST_SUCCESS,
+      expect.stringContaining('POST /examples → 201'),
+      undefined,
+      expect.objectContaining({ statusCode: 201 })
     )
-    expect(start?.url).toBe('/api/examples')
   })
 
-  it(/*
-   * The parser gap must stay closed under a prefix too — the reason the helper
-   * exists does not get to depend on the app's routing configuration.
-   */
-  'still logs a rejected body under a prefix', async () => {
-    await request(app.getHttpServer())
-      .post('/api/examples')
-      .set('Content-Type', 'application/json')
-      .send(TRUNCATED_JSON)
-      .expect(400)
-    await waitForHttpKey(prefixCapture, RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR)
-
-    expect(prefixCapture.httpKeys()).toContain(RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR)
-  })
-})
-
-/** The logger registered NON-globally, inside a feature module. */
-@Module({
-  imports: [
-    BymaxLoggerModule.forRoot({
-      service: { name: 'scoped', version: '1.0.0' },
-      isGlobal: false,
-      http: { isEnabled: true },
-      destinations: [scopedCapture]
-    })
-  ],
-  controllers: [EchoController]
-})
-class ScopedLoggerModule {}
-
-@Module({ imports: [ScopedLoggerModule] })
-class RootModule {}
-
-describe('applyAccessLog with a non-global logger module', () => {
-  let app: INestApplication
-
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [RootModule] }).compile()
-    app = moduleRef.createNestApplication({ logger: false })
+  it('logs a 4xx terminal entry for a request refused before any route', () => {
+    const { app, mounted, logger } = appWith()
     applyAccessLog(app)
-    await app.init()
+    const { res, close } = response(400)
+    mounted[0]?.(request(), res, () => undefined)
+
+    close()
+
+    expect(logger.warnStructured).toHaveBeenCalledWith(
+      RESERVED_LOG_KEYS.HTTP_REQUEST_CLIENT_ERROR,
+      'POST /examples → 400',
+      undefined,
+      expect.objectContaining({ statusCode: 400 })
+    )
   })
 
-  afterAll(async () => {
-    await app.close()
+  it('opens the scope and writes no access entry when HTTP logging is off', () => {
+    const { app, mounted, logger, logContext } = appWith({ isEnabled: false })
+    applyAccessLog(app)
+    let seen: unknown
+    const { res, headers, close } = response()
+
+    mounted[0]?.(request(), res, () => {
+      seen = logContext.get('requestId')
+    })
+    close()
+
+    expect(seen).toEqual(expect.any(String))
+    expect(headers['x-request-id']).toBe(seen)
+    expect(logger.info).not.toHaveBeenCalled()
+    expect(logger.warnStructured).not.toHaveBeenCalled()
   })
 
-  it(/*
-   * `isGlobal: false` puts the providers in a feature module rather than the root
-   * one, so a STRICT container lookup would not find them and the helper would
-   * throw "BymaxLoggerModule was not imported" at a consumer who imported it
-   * perfectly well. The lookup is deliberately non-strict; this is the
-   * configuration that tells the two apart.
-   */
-  'resolves its dependencies and logs', async () => {
-    await request(app.getHttpServer()).post('/examples').send({ label: 'ok' }).expect(201)
-    await waitForHttpEntries(scopedCapture, 2)
-
-    expect(scopedCapture.httpKeys()).toEqual([
-      RESERVED_LOG_KEYS.HTTP_REQUEST_START,
-      RESERVED_LOG_KEYS.HTTP_REQUEST_SUCCESS
-    ])
-  })
-})
-
-describe('applyAccessLog without the module', () => {
-  it(/*
-   * Calling the helper on an app that never imported BymaxLoggerModule must fail
-   * with a message naming the cause, not with a raw DI error about an unknown
-   * provider — the same contract `useNestLogger` already offers.
-   */
-  'throws a clear error when BymaxLoggerModule was not imported', async () => {
-    @Module({ controllers: [EchoController] })
-    class BareModule {}
-
-    const moduleRef = await Test.createTestingModule({ imports: [BareModule] }).compile()
-    const app = moduleRef.createNestApplication({ logger: false })
-
-    // Compared for equality rather than with `toThrow`, which substring-matches a string
-    // and would still pass if the cryptic DI failure this helper exists to replace were
-    // prepended to the clear one. Passing an Error instead is not the way out: expect
-    // compares `cause` too, and this error carries the DI failure there on purpose.
+  it('throws a clear error naming the cause when BymaxLoggerModule was not imported', () => {
+    const failure = new Error('Nest could not find PinoLoggerService')
+    const app = {
+      get: (): never => {
+        throw failure
+      },
+      use: jest.fn()
+    } as unknown as INestApplication
     let caught: unknown
+
     try {
       applyAccessLog(app)
     } catch (error) {
       caught = error
     }
+
+    // Equality rather than `toThrow`, which substring-matches a string and would still pass if
+    // the cryptic DI failure this helper replaces were prepended to the clear one.
     expect((caught as Error).message).toBe(
       '[BymaxLoggerModule] applyAccessLog(app) called but BymaxLoggerModule was not imported'
     )
-
-    await app.close()
-  })
-
-  it(/*
-   * The original DI failure must survive as `cause` — the clear message is an
-   * addition to the diagnosis, never a replacement that discards it.
-   */
-  'preserves the original DI failure as cause', async () => {
-    @Module({ controllers: [EchoController] })
-    class BareModule {}
-
-    const moduleRef = await Test.createTestingModule({ imports: [BareModule] }).compile()
-    const app = moduleRef.createNestApplication({ logger: false })
-
-    let caught: unknown
-    try {
-      applyAccessLog(app)
-    } catch (error) {
-      caught = error
-    }
-    expect((caught as Error).cause).toBeDefined()
-
-    await app.close()
+    expect((caught as Error).cause).toBe(failure)
+    expect(app.use).not.toHaveBeenCalled()
   })
 })
