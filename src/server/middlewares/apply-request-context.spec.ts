@@ -120,7 +120,11 @@ describe('applyRequestContext', () => {
     const { app, mounted } = appWith(new LogContextService())
     applyRequestContext(app)
 
-    mounted[0]?.(request(), response().res, () => undefined)
+    const next = jest.fn()
+
+    mounted[0]?.(request(), response().res, next)
+
+    expect(next).toHaveBeenCalledTimes(1)
 
     expect(stdout).not.toHaveBeenCalled()
     stdout.mockRestore()

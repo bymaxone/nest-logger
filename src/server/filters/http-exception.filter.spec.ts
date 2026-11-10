@@ -40,6 +40,12 @@ function run(exception: unknown, request: Partial<LoggableRequest> = {}): Outcom
 
   new HttpExceptionFilter(logger).catch(exception, host)
 
+  // A filter that wrote no response leaves the client waiting. The cases that assert an absence or
+  // only the log would pass against it, so the helper refuses to answer when it did not write one.
+  if (status.mock.calls.length !== 1 || json.mock.calls.length !== 1) {
+    throw new Error('the filter did not write exactly one response')
+  }
+
   return { warn, error, status, json }
 }
 
