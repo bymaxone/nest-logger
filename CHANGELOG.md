@@ -26,7 +26,7 @@ heading here.
   `Error` was `{}` even with no `redactPaths` at all.
   **This also closes a leak.** An `Error` that writes itself through `toJSON`, as an HTTP client's
   error does, was written with the output of that method, and a secret in it deeper than
-  `fast-redact` reaches (an `authorization` header at `config.headers` four levels down) was
+  `fast-redact` reaches (an `authorization` header under `config.headers`) was
   written in clear under `redactStrategy: 'paths'`. Measured on 1.4.14 with
   `{ top: <Error whose toJSON returns { config: { a: { b: { c: { d: { headers: { authorization } } } } } } }> }`:
   the value appeared as written; it is now `[REDACTED]`.
