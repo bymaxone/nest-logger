@@ -14,9 +14,5 @@
   {
     "file": "src/mutate-const-tables.spec.ts",
     "reason": "Runs scripts/mutate-const-tables.mjs as a child process on fixture directories and imports nothing from src/, so it judges no mutant."
-  },
-  {
-    "file": "src/eslint-socket-gate.spec.ts",
-    "reason": "Runs ESLint as a child process on probe texts and imports nothing from src/, so it judges no mutant."
   }
 ]
