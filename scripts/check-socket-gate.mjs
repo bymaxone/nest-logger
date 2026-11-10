@@ -63,12 +63,7 @@ const ALLOWED = [
   'const listening = true'
 ]
 
-const ELSEWHERE = [
-  'test/e2e/probe.e2e-spec.ts',
-  'scripts/probe.mjs',
-  'src/server/probe.ts',
-  'src/server/middlewares/apply-access-log.spec.ts'
-]
+const ELSEWHERE = ['test/e2e/probe.e2e-spec.ts', 'scripts/probe.mjs', 'src/server/probe.ts']
 
 const configIndex = argv.indexOf('--config')
 const configFile = configIndex === -1 ? 'eslint.config.mjs' : (argv[configIndex + 1] ?? '')
