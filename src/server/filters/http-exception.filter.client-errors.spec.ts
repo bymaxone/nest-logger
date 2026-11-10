@@ -4,176 +4,129 @@
  * body parser raises for a body over the limit (413) or an unsupported content encoding (415). The
  * client error keeps its status; every other non-`HttpException` stays a 500.
  *
- * Layer: server/filters, tests.
+ * Layer: server/filters, tests. The filter is called directly with a logger double and host,
+ * request and response doubles; what the real body parser raises, through a running Nest
+ * application, is pinned in `test/e2e/client-error-from-parser.e2e-spec.ts`.
  */
-import { Body, Controller, Get, Param, Post } from '@nestjs/common'
-import type { INestApplication } from '@nestjs/common'
-import { Test } from '@nestjs/testing'
-import request from 'supertest'
+import type { ArgumentsHost } from '@nestjs/common'
 
-import { BymaxLoggerModule } from '../logger.module'
-import { PinoLoggerService } from '../services/pino-logger.service'
+import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
+import type { PinoLoggerService } from '../services/pino-logger.service'
+
+import { HttpExceptionFilter } from './http-exception.filter'
 
 /** An error shaped like the ones the `http-errors` package builds. */
 function httpError(fields: Record<string, unknown>, message = 'refused'): Error {
   return Object.assign(new Error(message), fields)
 }
 
-@Controller()
-class ThrowingController {
-  @Get('shape/:name')
-  shape(@Param('name') name: string): never {
-    const shapes: Record<string, Error> = {
-      status: httpError({ status: 413, expose: true }, 'request entity too large'),
-      'status-code': httpError({ statusCode: 415, expose: true }, 'unsupported content encoding'),
-      'bad-request': httpError({ status: 400, expose: true }, 'bad request'),
-      hidden: httpError({ status: 413, expose: false }, 'internal detail'),
-      server: httpError({ status: 503, expose: true }, 'unavailable'),
-      low: httpError({ status: 399, expose: true }),
-      high: httpError({ status: 600, expose: true }),
-      fraction: httpError({ status: 413.5, expose: true }),
-      text: httpError({ status: '413', expose: true }),
-      'no-expose': httpError({ status: 413 }),
-      'parse-failed': httpError(
-        { status: 400, expose: true, type: 'entity.parse.failed' },
-        `Unexpected token 'h', "hunter2-SENTINEL" is not valid JSON`
-      )
-    }
-    throw shapes[name]
-  }
+/** Runs the filter on `exception` and returns what it logged and wrote. */
+function run(exception: unknown): {
+  warn: jest.Mock
+  error: jest.Mock
+  status: jest.Mock
+  json: jest.Mock
+} {
+  const warn = jest.fn()
+  const error = jest.fn()
+  const logger = { warnStructured: warn, errorStructured: error } as unknown as PinoLoggerService
+  const json = jest.fn()
+  const status = jest.fn()
+  const res = { status, json } as unknown as LoggableResponse
+  status.mockReturnValue(res)
+  const req = { method: 'GET', url: '/shape', headers: {} } as LoggableRequest
+  const host = {
+    switchToHttp: () => ({ getResponse: () => res, getRequest: () => req })
+  } as unknown as ArgumentsHost
 
-  @Post('echo')
-  echo(@Body() body: unknown): unknown {
-    return body
-  }
+  new HttpExceptionFilter(logger).catch(exception, host)
+
+  return { warn, error, status, json }
 }
 
 describe('HttpExceptionFilter, a client error that is not an HttpException', () => {
-  let app: INestApplication
-  let warnSpy: jest.SpyInstance
-  let errorSpy: jest.SpyInstance
-
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        BymaxLoggerModule.forRoot({
-          service: { name: 'filter-client', version: '1.0.0' },
-          http: { isEnabled: true, shouldCaptureExceptions: true }
-        })
-      ],
-      controllers: [ThrowingController]
-    }).compile()
-    app = moduleRef.createNestApplication({ logger: false })
-    await app.init()
-  })
-
-  beforeEach(() => {
-    const logger = app.get(PinoLoggerService)
-    warnSpy = jest.spyOn(logger, 'warnStructured').mockImplementation()
-    errorSpy = jest.spyOn(logger, 'errorStructured').mockImplementation()
-  })
-
-  afterAll(async () => {
-    await app.close()
-  })
-
   it.each([
-    ['status', 413, 'request entity too large'],
-    ['status-code', 415, 'unsupported content encoding'],
-    ['bad-request', 400, 'bad request']
-  ])('keeps the %s of an exposed client error', async (name, status, message) => {
-    const res = await request(app.getHttpServer()).get(`/shape/${name}`)
-
-    expect(res.status).toBe(status)
-    expect(res.body).toEqual({ statusCode: status, message })
-    expect(warnSpy).toHaveBeenCalledWith(
-      'HTTP_EXCEPTION_HANDLED',
-      message,
-      undefined,
-      expect.objectContaining({ status, method: 'GET' })
-    )
-    expect(warnSpy).toHaveBeenCalledWith(
-      'HTTP_REQUEST_CLIENT_ERROR',
-      expect.stringContaining(`→ ${status}`),
-      undefined,
-      expect.objectContaining({ statusCode: status })
-    )
-    expect(errorSpy).not.toHaveBeenCalled()
-  })
-
-  it('logs the fixed text, not the message, for an exposed error of a type that quotes the body', async () => {
-    const res = await request(app.getHttpServer()).get('/shape/parse-failed')
-
-    expect(res.status).toBe(400)
-    expect(res.body.message).toContain('hunter2-SENTINEL')
-    expect(warnSpy).toHaveBeenCalledWith(
-      'HTTP_REQUEST_CLIENT_ERROR',
-      expect.any(String),
-      undefined,
-      expect.objectContaining({
-        errorMessage: 'request body could not be parsed',
-        bodyParserType: 'entity.parse.failed'
-      })
-    )
-    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain('hunter2')
-  })
-
-  it.each(['hidden', 'server', 'low', 'high', 'fraction', 'text', 'no-expose'])(
-    'stays an unhandled 500 for the %s shape',
-    async (name) => {
-      const res = await request(app.getHttpServer()).get(`/shape/${name}`)
-
-      expect(res.status).toBe(500)
-      expect(res.body).toEqual({ statusCode: 500, message: 'Internal server error' })
-      expect(errorSpy).toHaveBeenCalledWith(
-        'HTTP_EXCEPTION_UNHANDLED',
-        expect.anything(),
-        undefined,
-        expect.objectContaining({ status: 500 })
-      )
-    }
-  )
-
-  it.each([
-    ['a body over the limit', {}, JSON.stringify({ a: 'x'.repeat(200_000) }), 413],
-    ['an unsupported content encoding', { 'content-encoding': 'unknown' }, '{"a":1}', 415],
-    ['truncated JSON', {}, '{"a":', 400]
-  ])('answers %s from the real body parser with its status', async (_name, headers, body, code) => {
-    const res = await request(app.getHttpServer())
-      .post('/echo')
-      .set('content-type', 'application/json')
-      .set(headers)
-      .send(body)
-
-    expect(res.status).toBe(code)
-    expect(res.body.statusCode).toBe(code)
-  })
-
-  it.each([
+    ['status', httpError({ status: 413, expose: true }, 'request entity too large'), 413],
     [
-      'a content encoding',
-      { 'content-type': 'application/json', 'content-encoding': 'x-CLIENT-MARKER' },
-      'unsupported content encoding'
+      'status-code',
+      httpError({ statusCode: 415, expose: true }, 'unsupported content encoding'),
+      415
     ],
-    [
-      'a charset',
-      { 'content-type': 'application/json; charset=CLIENT-MARKER' },
-      'unsupported charset'
-    ]
-  ])(
-    'echoes nothing of the client when it names %s the body parser does not support',
-    async (_name, headers, message) => {
-      const res = await request(app.getHttpServer()).post('/echo').set(headers).send('{"a":1}')
+    ['bad-request', httpError({ status: 400, expose: true }, 'bad request'), 400]
+  ])('keeps the %s of an exposed client error', (_name, exception, code) => {
+    const { warn, error, status, json } = run(exception)
 
-      expect(res.status).toBe(415)
-      expect(res.body).toEqual({ statusCode: 415, message })
-      expect(warnSpy).toHaveBeenCalledWith(
+    expect(status).toHaveBeenCalledWith(code)
+    expect(json).toHaveBeenCalledWith({ statusCode: code, message: exception.message })
+    expect(warn).toHaveBeenCalledWith(
+      'HTTP_EXCEPTION_HANDLED',
+      exception.message,
+      undefined,
+      expect.objectContaining({ status: code, method: 'GET' })
+    )
+    expect(error).not.toHaveBeenCalled()
+  })
+
+  it('logs the fixed text, not the message, for an exposed error of a type that quotes the body', () => {
+    const exception = httpError(
+      { status: 400, expose: true, type: 'entity.parse.failed' },
+      `Unexpected token 'h', "hunter2-SENTINEL" is not valid JSON`
+    )
+
+    const { warn, json } = run(exception)
+
+    expect(json).toHaveBeenCalledWith({ statusCode: 400, message: exception.message })
+    expect(warn).toHaveBeenCalledWith(
+      'HTTP_EXCEPTION_HANDLED',
+      'request body could not be parsed',
+      undefined,
+      expect.objectContaining({ bodyParserType: 'entity.parse.failed' })
+    )
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('hunter2')
+  })
+
+  it.each([
+    ['hidden', httpError({ status: 413, expose: false }, 'internal detail')],
+    ['server', httpError({ status: 503, expose: true }, 'unavailable')],
+    ['low', httpError({ status: 399, expose: true })],
+    ['high', httpError({ status: 600, expose: true })],
+    ['fraction', httpError({ status: 413.5, expose: true })],
+    ['text', httpError({ status: '413', expose: true })],
+    ['no-expose', httpError({ status: 413 })]
+  ])('stays an unhandled 500 for the %s shape', (_name, exception) => {
+    const { error, status, json } = run(exception)
+
+    expect(status).toHaveBeenCalledWith(500)
+    expect(json).toHaveBeenCalledWith({ statusCode: 500, message: 'Internal server error' })
+    expect(error).toHaveBeenCalledWith(
+      'HTTP_EXCEPTION_UNHANDLED',
+      expect.anything(),
+      undefined,
+      expect.objectContaining({ status: 500 })
+    )
+  })
+
+  it.each([
+    ['a content encoding', 'unsupported content encoding', 'encoding.unsupported'],
+    ['a charset', 'unsupported charset', 'charset.unsupported']
+  ])(
+    'echoes nothing of the client when it names %s the parser does not support',
+    (_name, message, type) => {
+      const exception = httpError(
+        { status: 415, expose: true, type },
+        `${message} "x-CLIENT-MARKER"`
+      )
+
+      const { warn, json } = run(exception)
+
+      expect(json).toHaveBeenCalledWith({ statusCode: 415, message })
+      expect(warn).toHaveBeenCalledWith(
         'HTTP_EXCEPTION_HANDLED',
         message,
         undefined,
         expect.objectContaining({ status: 415 })
       )
-      expect(JSON.stringify([res.body, warnSpy.mock.calls])).not.toMatch(/marker/i)
+      expect(JSON.stringify([json.mock.calls, warn.mock.calls])).not.toMatch(/marker/i)
     }
   )
 })

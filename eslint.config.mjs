@@ -376,8 +376,6 @@ export default [
   // rewritten with doubles, and none joins it.
   {
     files: [
-      'src/server/filters/http-exception.filter.client-errors.spec.ts',
-      'src/server/filters/http-exception.filter.spec.ts',
       'src/server/interceptors/http-logging.interceptor.spec.ts',
       'src/server/logger.module.spec.ts',
       'src/server/middlewares/apply-access-log.spec.ts',

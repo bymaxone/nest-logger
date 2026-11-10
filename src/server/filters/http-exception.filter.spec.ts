@@ -1,210 +1,131 @@
-import { BadRequestException, Controller, Get, InternalServerErrorException } from '@nestjs/common'
-import type { INestApplication } from '@nestjs/common'
-import { Test } from '@nestjs/testing'
-import type { NextFunction, Request, Response } from 'express'
-import request from 'supertest'
-
-import { BymaxLoggerModule } from '../logger.module'
-import { PinoLoggerService } from '../services/pino-logger.service'
-
 /**
- * Fixture controller throwing the exception shapes the filter must distinguish:
- * a 4xx HttpException, a 5xx HttpException, a generic Error, and a generic Error
- * on a route carrying an authenticated user.
+ * Pins `HttpExceptionFilter`: what it logs and what it answers for each kind of thrown value. A
+ * 4xx `HttpException` is logged as handled at warn level and answered with its own status and body;
+ * a 5xx one and any other thrown value are logged as unhandled at error level, the first answered
+ * with the exception's own body and the second with the fixed 500 body; the acting user comes from
+ * `req.user`, the JWT subject over the ORM id; and the logged `url` carries no query string.
+ *
+ * Layer: server/filters, tests. The filter is called directly with a logger double and host,
+ * request and response doubles; the same behaviour through a running Nest application is pinned by
+ * the end-to-end cases in `test/e2e`.
  */
-@Controller()
-class FilterFixtureController {
-  @Get('bad')
-  bad(): never {
-    throw new BadRequestException('bad input')
-  }
+import { BadRequestException, InternalServerErrorException } from '@nestjs/common'
+import type { ArgumentsHost } from '@nestjs/common'
 
-  @Get('server-http')
-  serverHttp(): never {
-    throw new InternalServerErrorException('explicit 500')
-  }
+import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
+import type { PinoLoggerService } from '../services/pino-logger.service'
 
-  @Get('boom')
-  boom(): never {
-    throw new Error('kaboom')
-  }
+import { HttpExceptionFilter } from './http-exception.filter'
 
-  @Get('me-boom')
-  meBoom(): never {
-    throw new Error('user boom')
-  }
-
-  @Get('me-boom-jwt')
-  meBoomJwt(): never {
-    throw new Error('user boom')
-  }
-
-  @Get('me-boom-both')
-  meBoomBoth(): never {
-    throw new Error('user boom')
-  }
+interface Outcome {
+  readonly warn: jest.Mock
+  readonly error: jest.Mock
+  readonly status: jest.Mock
+  readonly json: jest.Mock
 }
 
-describe('HttpExceptionFilter (integration)', () => {
-  let app: INestApplication
-  let logger: PinoLoggerService
-  let warnSpy: jest.SpyInstance
-  let errorSpy: jest.SpyInstance
+/** Runs the filter on `exception` for `request` and returns what it logged and wrote. */
+function run(exception: unknown, request: Partial<LoggableRequest> = {}): Outcome {
+  const warn = jest.fn()
+  const error = jest.fn()
+  const logger = { warnStructured: warn, errorStructured: error } as unknown as PinoLoggerService
+  const json = jest.fn()
+  const status = jest.fn()
+  const res = { status, json } as unknown as LoggableResponse
+  status.mockReturnValue(res)
+  const req = { method: 'GET', url: '/path', headers: {}, ...request } as LoggableRequest
+  const host = {
+    switchToHttp: () => ({ getResponse: () => res, getRequest: () => req })
+  } as unknown as ArgumentsHost
 
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        BymaxLoggerModule.forRoot({
-          service: { name: 'filter-test', version: '1.0.0' },
-          http: { isEnabled: true, shouldCaptureExceptions: true }
-        })
-      ],
-      controllers: [FilterFixtureController]
-    }).compile()
+  new HttpExceptionFilter(logger).catch(exception, host)
 
-    app = moduleRef.createNestApplication({ logger: false })
-    app.use((req: Request, _res: Response, next: NextFunction) => {
-      if (req.url.startsWith('/me-boom-both')) {
-        // Both fields present: the JWT subject must win over the ORM id.
-        ;(req as Request & { user?: { sub?: string; id?: string } }).user = {
-          sub: 's_2',
-          id: 'u_2'
-        }
-      } else if (req.url.startsWith('/me-boom-jwt')) {
-        // A JWT principal names its subject `sub`, not `id`.
-        ;(req as Request & { user?: { sub?: string } }).user = { sub: 's_1' }
-      } else if (req.url.startsWith('/me-boom')) {
-        ;(req as Request & { user?: { id?: string } }).user = { id: 'u_1' }
-      }
-      next()
-    })
-    await app.init()
-    logger = app.get(PinoLoggerService)
-  })
+  return { warn, error, status, json }
+}
 
-  beforeEach(() => {
-    warnSpy = jest.spyOn(logger, 'warnStructured').mockImplementation()
-    errorSpy = jest.spyOn(logger, 'errorStructured').mockImplementation()
-  })
-
-  afterAll(async () => {
-    await app.close()
-  })
-
+describe('HttpExceptionFilter', () => {
   it(/*
-   * A 4xx HttpException must log HTTP_EXCEPTION_HANDLED at warn level and the
-   * response must echo the exception's own status and body.
+   * A 4xx HttpException must log HTTP_EXCEPTION_HANDLED at warn level and the response must echo
+   * the exception's own status and body.
    */
-  'logs HTTP_EXCEPTION_HANDLED (warn) and renders a 4xx', async () => {
-    const res = await request(app.getHttpServer()).get('/bad').expect(400)
+  'logs HTTP_EXCEPTION_HANDLED (warn) and renders a 4xx', () => {
+    const { warn, error, status, json } = run(new BadRequestException('bad input'))
 
-    expect(res.body).toMatchObject({ statusCode: 400, message: 'bad input' })
-    expect(warnSpy).toHaveBeenCalledWith(
+    expect(status).toHaveBeenCalledWith(400)
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 400, message: 'bad input' })
+    )
+    expect(warn).toHaveBeenCalledWith(
       'HTTP_EXCEPTION_HANDLED',
-      expect.any(String),
+      'bad input',
       undefined,
       expect.objectContaining({ status: 400, method: 'GET' })
     )
+    expect(error).not.toHaveBeenCalled()
   })
 
   it(/*
-   * A 5xx HttpException must log HTTP_EXCEPTION_UNHANDLED at error level (with a
-   * sanitized error) and render the exception's status/body.
+   * A 5xx HttpException must log HTTP_EXCEPTION_UNHANDLED at error level, with a sanitized error,
+   * and render the exception's own status and body, not the generic internal-error body.
    */
-  'logs HTTP_EXCEPTION_UNHANDLED (error) for a 5xx HttpException', async () => {
-    await request(app.getHttpServer()).get('/server-http').expect(500)
+  'logs HTTP_EXCEPTION_UNHANDLED (error) for a 5xx HttpException and renders its own body', () => {
+    const { warn, error, status, json } = run(new InternalServerErrorException('explicit 500'))
 
-    expect(errorSpy).toHaveBeenCalledWith(
+    expect(error).toHaveBeenCalledWith(
       'HTTP_EXCEPTION_UNHANDLED',
       expect.objectContaining({ name: expect.any(String), message: expect.any(String) }),
       undefined,
       expect.objectContaining({ status: 500 })
     )
+    expect(warn).not.toHaveBeenCalled()
+    expect(status).toHaveBeenCalledWith(500)
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 500, message: 'explicit 500' })
+    )
   })
 
   it(/*
-   * For an HttpException the response must echo the exception's own status code
-   * and serialized body (not the generic internal-error body) — proves
-   * res.status().json() is driven by the exception, not hardcoded.
+   * A non-HttpException must be treated as an unhandled 500: logged as HTTP_EXCEPTION_UNHANDLED and
+   * rendered with the generic internal-error body, which does not carry its message.
    */
-  'renders the HttpException own status and body', async () => {
-    const res = await request(app.getHttpServer()).get('/server-http').expect(500)
+  'treats a generic Error as an unhandled 500', () => {
+    const { warn, error, status, json } = run(new Error('kaboom'))
 
-    expect(res.body).toMatchObject({ statusCode: 500, message: 'explicit 500' })
-  })
-
-  it(/*
-   * A non-HttpException must be treated as an unhandled 500: logged as
-   * HTTP_EXCEPTION_UNHANDLED and rendered with the generic internal-error body.
-   */
-  'treats a generic Error as an unhandled 500', async () => {
-    const res = await request(app.getHttpServer()).get('/boom').expect(500)
-
-    expect(res.body).toMatchObject({ statusCode: 500, message: 'Internal server error' })
-    expect(errorSpy).toHaveBeenCalledWith(
+    expect(status).toHaveBeenCalledWith(500)
+    expect(json).toHaveBeenCalledWith({ statusCode: 500, message: 'Internal server error' })
+    expect(error).toHaveBeenCalledWith(
       'HTTP_EXCEPTION_UNHANDLED',
       expect.objectContaining({ name: expect.any(String) }),
       undefined,
       expect.objectContaining({ status: 500 })
     )
+    expect(warn).not.toHaveBeenCalled()
   })
 
-  it(/*
-   * When req.user is present the acting userId must be attached to the exception
-   * log — covers the populated `req.user?.id` path in the filter.
-   */
-  'attaches userId from req.user when present', async () => {
-    await request(app.getHttpServer()).get('/me-boom').expect(500)
+  it.each([
+    ['req.user.id when it is the only field', { id: 'u_1' }, 'u_1'],
+    ['req.user.sub when id is absent (a JWT principal)', { sub: 's_1' }, 's_1'],
+    ['req.user.sub over req.user.id when both are present', { sub: 's_2', id: 'u_2' }, 's_2']
+  ])('attaches the acting user from %s', (_name, user, expected) => {
+    // `sub ?? id`: an `id ?? sub` swap would attribute the error to the ORM id.
+    const { error } = run(new Error('user boom'), { user })
 
-    expect(errorSpy).toHaveBeenCalledWith(
+    expect(error).toHaveBeenCalledWith(
       'HTTP_EXCEPTION_UNHANDLED',
       expect.objectContaining({ name: expect.any(String) }),
-      'u_1',
+      expected,
       expect.objectContaining({ status: 500 })
     )
   })
 
   it(/*
-   * A JWT principal names its subject `sub`, not `id`. The acting userId must
-   * still be attached to the exception log — covers the `req.user?.id` fallback
-   * of `sub ?? id` that every nest-auth token relies on.
+   * The logged `url` must have its query string stripped: query params routinely carry secrets
+   * (reset tokens, OAuth codes) and cannot be redacted as a substring once embedded in the URL.
    */
-  'attaches userId from req.user.sub when id is absent (JWT principal)', async () => {
-    await request(app.getHttpServer()).get('/me-boom-jwt').expect(500)
+  'strips the query string from the logged url', () => {
+    const { error } = run(new Error('kaboom'), { url: '/boom?token=supersecret&x=1' })
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      'HTTP_EXCEPTION_UNHANDLED',
-      expect.objectContaining({ name: expect.any(String) }),
-      's_1',
-      expect.objectContaining({ status: 500 })
-    )
-  })
-
-  it(/*
-   * When a principal carries both `sub` and `id`, the JWT subject is the
-   * authenticated identity and must win — pins the `sub ?? id` precedence
-   * (an `id ?? sub` swap would attribute the error to the ORM id instead).
-   */
-  'attaches req.user.sub over req.user.id when both are present', async () => {
-    await request(app.getHttpServer()).get('/me-boom-both').expect(500)
-
-    expect(errorSpy).toHaveBeenCalledWith(
-      'HTTP_EXCEPTION_UNHANDLED',
-      expect.objectContaining({ name: expect.any(String) }),
-      's_2',
-      expect.objectContaining({ status: 500 })
-    )
-  })
-
-  it(/*
-   * The logged `url` must have its query string stripped: query params routinely
-   * carry secrets (reset tokens, OAuth codes) and cannot be redacted as a
-   * substring once embedded in the URL. The secret must never reach the log.
-   */
-  'strips the query string from the logged url', async () => {
-    await request(app.getHttpServer()).get('/boom?token=supersecret&x=1').expect(500)
-
-    const metadata = errorSpy.mock.calls.at(-1)?.[3] as Record<string, unknown>
+    const metadata = error.mock.calls.at(-1)?.[3] as Record<string, unknown>
     expect(metadata).toMatchObject({ url: '/boom' })
     expect(JSON.stringify(metadata)).not.toContain('supersecret')
   })
