@@ -310,15 +310,17 @@ export default [
 
   // A unit spec under `src/` opens no socket: it drives the code with request and response doubles.
   // A case that needs a real listening server belongs in `test/e2e`, where sockets are allowed.
+  // `no-restricted-imports` sees import declarations and re-exports only, so a `require` and a
+  // dynamic `import` of the package have their own selectors.
   {
     files: ['src/**/*.spec.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
         {
-          paths: [
+          patterns: [
             {
-              name: 'supertest',
+              group: ['supertest', 'supertest/**'],
               message:
                 'A unit spec opens no socket. Use request and response doubles, or move the case to test/e2e.'
             }
@@ -327,6 +329,16 @@ export default [
       ],
       'no-restricted-syntax': [
         'error',
+        {
+          selector: "CallExpression[callee.name='require'][arguments.0.value=/^supertest(\\/|$)/]",
+          message:
+            'A unit spec opens no socket. Use request and response doubles, or move the case to test/e2e.'
+        },
+        {
+          selector: 'ImportExpression[source.value=/^supertest(\\/|$)/]',
+          message:
+            'A unit spec opens no socket. Use request and response doubles, or move the case to test/e2e.'
+        },
         {
           selector: "CallExpression[callee.property.name='listen']",
           message:
