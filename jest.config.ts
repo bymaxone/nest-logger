@@ -6,6 +6,10 @@ const config: Config = {
   rootDir: 'src',
   testMatch: ['**/*.spec.ts', '**/*.test.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
+  // A unit spec opens no socket: the resolver refuses `supertest` and the setup stops `listen`, for
+  // a spec under `src/` only, whatever way the spec spells it.
+  resolver: '<rootDir>/../scripts/jest-no-sockets.resolver.cjs',
+  setupFilesAfterEnv: ['<rootDir>/../scripts/jest-no-sockets.setup.cjs'],
   // Mirror the subpath aliases declared in tsconfig.json "paths" so that tests
   // exercise the exact same import specifiers that consumers and the tsup
   // bundler use. Without this, tests would need relative imports while build

@@ -14,5 +14,9 @@
   {
     "file": "src/mutate-const-tables.spec.ts",
     "reason": "Runs scripts/mutate-const-tables.mjs as a child process on fixture directories and imports nothing from src/, so it judges no mutant."
+  },
+  {
+    "file": "src/runtime-socket-guard.spec.ts",
+    "reason": "Loads the Jest resolver and setup of the repository's own guard and imports nothing from src/, so it judges no mutant."
   }
 ]

@@ -4,7 +4,7 @@ import {
   NotFoundException
 } from '@nestjs/common'
 import type { CallHandler, ExecutionContext } from '@nestjs/common'
-import { of, throwError } from 'rxjs'
+import { Observable, of, throwError } from 'rxjs'
 
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import { applyDefaults } from '../config/default-options'
@@ -12,6 +12,25 @@ import type { PinoLoggerService } from '../services/pino-logger.service'
 import { markRecorderActive, readRecordedError } from '../utils/http-log-state.util'
 
 import { HttpLoggingInterceptor } from './http-logging.interceptor'
+
+/**
+ * A call handler whose stream records that it was subscribed: the interceptor must hand the request
+ * on, and a stream nothing subscribes means the handler never ran.
+ */
+function tracked(make: () => Observable<unknown>): {
+  handler: CallHandler
+  subscribed: () => boolean
+} {
+  let ran = false
+  const handler: CallHandler = {
+    handle: () =>
+      new Observable<unknown>((subscriber) => {
+        ran = true
+        return make().subscribe(subscriber)
+      })
+  }
+  return { handler, subscribed: () => ran }
+}
 
 interface Run {
   readonly info: jest.Mock
@@ -60,9 +79,9 @@ async function run(spec: RequestSpec = {}): Promise<Run> {
       getResponse: () => ({ statusCode: spec.status ?? 200 })
     })
   } as unknown as ExecutionContext
-  const handler: CallHandler = {
-    handle: () => ('fails' in spec ? throwError(() => spec.fails) : of(undefined))
-  }
+  const { handler, subscribed } = tracked(() =>
+    'fails' in spec ? throwError(() => spec.fails) : of(undefined)
+  )
 
   const raised = await new Promise<unknown>((resolve) => {
     interceptor.intercept(context, handler).subscribe({
@@ -70,6 +89,10 @@ async function run(spec: RequestSpec = {}): Promise<Run> {
       complete: () => resolve(undefined)
     })
   })
+
+  // A stream the interceptor never subscribed is a request that never ran: the cases that assert an
+  // absence would pass against it, so the helper refuses to answer when the handler was not run.
+  if (!subscribed()) throw new Error('the interceptor never subscribed the handler')
 
   return { info, warn, error, raised }
 }
@@ -418,13 +441,15 @@ describe('HttpLoggingInterceptor unit', () => {
   'logs only START (not SUCCESS or REDIRECT) for a 1xx response', async () => {
     const infoSpy = jest.fn()
     const interceptor = makeInterceptor(infoSpy)
-    const callHandler: CallHandler = { handle: () => of(undefined) }
+    const { handler: callHandler, subscribed } = tracked(() => of(undefined))
 
     await new Promise<void>((resolve, reject) => {
       interceptor
         .intercept(makeCtx(100), callHandler)
         .subscribe({ complete: resolve, error: reject })
     })
+
+    expect(subscribed()).toBe(true)
 
     const keys = (infoSpy.mock.calls as unknown[][]).map((c) => c[0])
     expect(keys).toContain(RESERVED_LOG_KEYS.HTTP_REQUEST_START)
@@ -502,7 +527,7 @@ describe('HttpLoggingInterceptor unit', () => {
   'emits nothing when the access-log middleware claimed the request', async () => {
     const infoSpy = jest.fn()
     const interceptor = makeInterceptor(infoSpy)
-    const callHandler: CallHandler = { handle: () => of(undefined) }
+    const { handler: callHandler, subscribed } = tracked(() => of(undefined))
     const req = { method: 'GET', url: '/probe', ip: '127.0.0.1', headers: {} }
 
     await new Promise<void>((resolve, reject) => {
@@ -511,6 +536,7 @@ describe('HttpLoggingInterceptor unit', () => {
         .subscribe({ complete: resolve, error: reject })
     })
 
+    expect(subscribed()).toBe(true)
     expect(infoSpy).not.toHaveBeenCalled()
   })
 

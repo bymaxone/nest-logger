@@ -133,7 +133,9 @@ describe('applyAccessLog', () => {
     const { app, mounted, logger } = appWith()
     applyAccessLog(app)
     const { res, close } = response(201)
-    mounted[0]?.(request(), res, () => undefined)
+    const next = jest.fn()
+    mounted[0]?.(request(), res, next)
+    expect(next).toHaveBeenCalledTimes(1)
     logger.info.mockClear()
 
     close()
@@ -150,7 +152,9 @@ describe('applyAccessLog', () => {
     const { app, mounted, logger } = appWith()
     applyAccessLog(app)
     const { res, close } = response(400)
-    mounted[0]?.(request(), res, () => undefined)
+    const next = jest.fn()
+    mounted[0]?.(request(), res, next)
+    expect(next).toHaveBeenCalledTimes(1)
 
     close()
 
