@@ -11,7 +11,8 @@
  * Jest configurations that run unit specs.
  */
 import { createServer as createHttpServer } from 'node:http'
-import { createServer as createNetServer } from 'node:net'
+import { connect, createServer as createNetServer, Socket } from 'node:net'
+import { resolve } from 'node:path'
 
 /** The name of the package, built at run time so no selector can see it. */
 const PACKAGE = ['super', 'test'].join('')
@@ -44,6 +45,43 @@ describe('the runtime guard against sockets in a unit spec', () => {
 
     it('is refused for a dynamic import', async () => {
       await expect(import(PACKAGE)).rejects.toThrow(REFUSED)
+    })
+  })
+
+  describe('a helper outside src/', () => {
+    it('is refused when it loads supertest and starts a request, by the server that cannot listen', () => {
+      // The resolver keys on the module that asks, and this one is outside `src/`: what stops the
+      // request is the replaced `listen`, not the stub of the package.
+      const helper = resolve(__dirname, '..', 'scripts', 'jest-no-sockets.fixture.cjs')
+      const startRequest = require(helper) as (name: string) => unknown
+
+      expect(() => startRequest(PACKAGE)).toThrow(REFUSED)
+    })
+  })
+
+  describe('connecting out', () => {
+    it('is refused for a socket, the method looked up by a variable', () => {
+      const METHOD = ['conn', 'ect'].join('')
+      const socket = new Socket()
+
+      expect(() =>
+        Reflect.get(socket, METHOD).call(socket, { port: 9, host: '127.0.0.1' })
+      ).toThrow(REFUSED)
+    })
+
+    it('is refused for net.connect', () => {
+      expect(() => connect({ port: 9, host: '127.0.0.1' })).toThrow(REFUSED)
+    })
+
+    it('is refused for fetch, whose connection fails with the reason as its cause', async () => {
+      const failure = await fetch('http://127.0.0.1:59999/').then(
+        () => undefined,
+        (error: unknown) => error
+      )
+
+      expect(
+        String((failure as { cause?: { message?: string } } | undefined)?.cause?.message)
+      ).toMatch(REFUSED)
     })
   })
 
