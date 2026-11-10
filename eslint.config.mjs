@@ -372,16 +372,6 @@ export default [
     }
   },
 
-  // The specs that still open a socket. This list only shrinks: a spec leaves it when it is
-  // rewritten with doubles, and none joins it.
-  {
-    files: ['src/server/middlewares/request-id.middleware.spec.ts'],
-    rules: {
-      'no-restricted-imports': 'off',
-      'no-restricted-syntax': 'off'
-    }
-  },
-
   // Formatting is an ERROR, on every path the lint invocation reaches.
   //
   // `'error'` and not `--max-warnings 0`: that flag raises EVERY warning, and
