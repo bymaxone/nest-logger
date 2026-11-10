@@ -319,10 +319,15 @@ export default [
   // A unit spec under `src/` opens no socket: it drives the code with request and response doubles.
   // A case that needs a real listening server belongs in `test/e2e`, where sockets are allowed.
   //
-  // `no-restricted-imports` sees import declarations and re-exports only, so every other way to
-  // load the package has a selector of its own. The server is banned by the member it is started
-  // through, not by the call: `app.listen`, `app['listen']`, `const { listen } = app` and
-  // `app.listen.bind(app)` all name it, where a selector on the call would miss the last two.
+  // `no-restricted-imports` sees import declarations and re-exports only, so a `require`, a
+  // dynamic `import()` and `jest.requireActual` have selectors of their own. The server is banned
+  // by the member it is started through, not by the call: `app.listen`, `app['listen']`,
+  // `const { listen } = app` and `app.listen.bind(app)` all name it, where a selector on the call
+  // would miss the last two. The names are literals: a name built at run time, a cast argument or
+  // `module.require` is out of a selector's reach.
+  //
+  // Reading `listen` off a stub is banned the same way. A double defines it as an object-literal
+  // property, which the rule leaves alone, and is not read back as a member.
   {
     files: ['src/**/*.spec.ts'],
     rules: {

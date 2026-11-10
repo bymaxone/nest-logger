@@ -1,7 +1,7 @@
 /**
  * @fileoverview Socket-gate check — proves the lint rule that keeps a unit spec under `src/` from
- * opening a socket reports every way a spec can load `supertest` or start a server, and only
- * there.
+ * opening a socket reports the spellings it names for loading `supertest` or starting a server,
+ * and only there.
  * @layer scripts
  *
  * The rule is `no-restricted-imports` plus `no-restricted-syntax` in `eslint.config.mjs`. A rule
