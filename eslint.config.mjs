@@ -7,6 +7,32 @@ import prettier from 'eslint-plugin-prettier'
 import security from 'eslint-plugin-security'
 import globals from 'globals'
 
+// Messages and patterns of the rule that keeps a unit spec from opening a socket.
+const NO_SOCKET =
+  'A unit spec opens no socket. Use request and response doubles, or move the case to test/e2e.'
+const NO_SERVER =
+  'A unit spec starts no server. Use request and response doubles, or move the case to test/e2e.'
+const SUPERTEST = '/^supertest(\\/|$)/'
+const STARTS_A_SERVER = '/^(listen|createNestApplication)$/'
+
+// Each way to load a module other than an import declaration, with the name given as a string and
+// as a template literal, so that no loader has one spelling closed and the other open.
+const JEST_LOADERS = '/^(requireActual|requireMock|createMockFromModule|genMockFromModule)$/'
+const CALLS_THAT_LOAD = [
+  "CallExpression[callee.name='require']",
+  `CallExpression[callee.computed=false][callee.property.name=${JEST_LOADERS}]`,
+  `CallExpression[callee.computed=true][callee.property.value=${JEST_LOADERS}]`,
+  `CallExpression[callee.computed=true][callee.property.quasis.0.value.cooked=${JEST_LOADERS}]`
+]
+const LOADS_SUPERTEST = [
+  ...CALLS_THAT_LOAD.flatMap((call) => [
+    `${call}[arguments.0.value=${SUPERTEST}]`,
+    `${call}[arguments.0.quasis.0.value.cooked=${SUPERTEST}]`
+  ]),
+  `ImportExpression[source.value=${SUPERTEST}]`,
+  `ImportExpression[source.quasis.0.value.cooked=${SUPERTEST}]`
+]
+
 export default [
   // Global ignores — only build artifacts and coverage, NOT config files
   {
@@ -305,6 +331,63 @@ export default [
       'no-unused-vars': 'off',
       'no-undef': 'off',
       'no-console': 'off'
+    }
+  },
+
+  // A unit spec under `src/` opens no socket: it drives the code with request and response doubles.
+  // A case that needs a real listening server belongs in `test/e2e`, where sockets are allowed.
+  //
+  // `no-restricted-imports` sees import declarations and re-exports only, so a `require`, a
+  // dynamic `import()` and the Jest loaders (`requireActual`, `requireMock`,
+  // `createMockFromModule`) have selectors of their own. The server is banned
+  // by the member it is started through, not by the call: `app.listen`, `app['listen']`,
+  // `const { listen } = app` and `app.listen.bind(app)` all name it, where a selector on the call
+  // would miss the last two.
+  //
+  // The gate catches the idiomatic and accidental uses: literal names, in a string or a template
+  // literal, through a member call or a destructured `listen`. Aliasing or destructuring a loader,
+  // `.call`, a name built at run time, an interpolated template, a cast argument and
+  // `module.require` are out of a selector's reach and are not checked here.
+  //
+  // Reading `listen` off a stub is banned the same way. A double defines it as an object-literal
+  // property, which the rule leaves alone, and is not read back as a member.
+  {
+    files: ['src/**/*.spec.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['supertest', 'supertest/**'], message: NO_SOCKET }] }
+      ],
+      'no-restricted-syntax': [
+        'error',
+        ...LOADS_SUPERTEST.map((selector) => ({ selector, message: NO_SOCKET })),
+        ...[
+          `MemberExpression[computed=false][property.name=${STARTS_A_SERVER}]`,
+          `MemberExpression[computed=true][property.value=${STARTS_A_SERVER}]`,
+          `MemberExpression[computed=true][property.quasis.0.value.cooked=${STARTS_A_SERVER}]`,
+          `ObjectPattern > Property[key.name=${STARTS_A_SERVER}]`,
+          `ObjectPattern > Property[key.value=${STARTS_A_SERVER}]`
+        ].map((selector) => ({ selector, message: NO_SERVER }))
+      ]
+    }
+  },
+
+  // The specs that still open a socket. This list only shrinks: a spec leaves it when it is
+  // rewritten with doubles, and none joins it.
+  {
+    files: [
+      'src/server/filters/http-exception.filter.client-errors.spec.ts',
+      'src/server/filters/http-exception.filter.spec.ts',
+      'src/server/interceptors/http-logging.interceptor.spec.ts',
+      'src/server/logger.module.async-filter.spec.ts',
+      'src/server/logger.module.spec.ts',
+      'src/server/middlewares/apply-access-log.spec.ts',
+      'src/server/middlewares/apply-request-context.spec.ts',
+      'src/server/middlewares/request-id.middleware.spec.ts'
+    ],
+    rules: {
+      'no-restricted-imports': 'off',
+      'no-restricted-syntax': 'off'
     }
   },
 
