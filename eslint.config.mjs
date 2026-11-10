@@ -308,6 +308,58 @@ export default [
     }
   },
 
+  // A unit spec under `src/` opens no socket: it drives the code with request and response doubles.
+  // A case that needs a real listening server belongs in `test/e2e`, where sockets are allowed.
+  {
+    files: ['src/**/*.spec.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'supertest',
+              message:
+                'A unit spec opens no socket. Use request and response doubles, or move the case to test/e2e.'
+            }
+          ]
+        }
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.property.name='listen']",
+          message:
+            'A unit spec opens no socket. Use request and response doubles, or move the case to test/e2e.'
+        },
+        {
+          selector: "CallExpression[callee.property.name='createNestApplication']",
+          message:
+            'A unit spec boots no application. Use request and response doubles, or move the case to test/e2e.'
+        }
+      ]
+    }
+  },
+
+  // The specs that still open a socket. This list only shrinks: a spec leaves it when it is
+  // rewritten with doubles, and none joins it.
+  {
+    files: [
+      'src/server/filters/http-exception.filter.client-errors.spec.ts',
+      'src/server/filters/http-exception.filter.spec.ts',
+      'src/server/interceptors/http-logging.interceptor.spec.ts',
+      'src/server/logger.module.async-filter.spec.ts',
+      'src/server/logger.module.spec.ts',
+      'src/server/middlewares/apply-access-log.spec.ts',
+      'src/server/middlewares/apply-request-context.spec.ts',
+      'src/server/middlewares/request-id.middleware.spec.ts'
+    ],
+    rules: {
+      'no-restricted-imports': 'off',
+      'no-restricted-syntax': 'off'
+    }
+  },
+
   // Formatting is an ERROR, on every path the lint invocation reaches.
   //
   // `'error'` and not `--max-warnings 0`: that flag raises EVERY warning, and
