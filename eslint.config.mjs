@@ -375,10 +375,7 @@ export default [
   // The specs that still open a socket. This list only shrinks: a spec leaves it when it is
   // rewritten with doubles, and none joins it.
   {
-    files: [
-      'src/server/interceptors/http-logging.interceptor.spec.ts',
-      'src/server/middlewares/request-id.middleware.spec.ts'
-    ],
+    files: ['src/server/middlewares/request-id.middleware.spec.ts'],
     rules: {
       'no-restricted-imports': 'off',
       'no-restricted-syntax': 'off'

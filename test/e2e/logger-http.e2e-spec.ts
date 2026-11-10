@@ -33,9 +33,13 @@ describe('Logger E2E — HTTP lifecycle', () => {
   'logs START and SUCCESS for a 200 request', async () => {
     await request(app.getHttpServer()).get('/hello').expect(200)
 
-    const keys = parseLogEntries(stdoutSpy).map((entry) => entry['logKey'])
+    const entries = parseLogEntries(stdoutSpy)
+    const keys = entries.map((entry) => entry['logKey'])
     expect(keys).toContain('HTTP_REQUEST_START')
     expect(keys).toContain('HTTP_REQUEST_SUCCESS')
+    // The status the interceptor read is the one Nest actually set on the response.
+    const success = entries.find((entry) => entry['logKey'] === 'HTTP_REQUEST_SUCCESS')
+    expect(success).toMatchObject({ level: 'info', statusCode: 200, method: 'GET', url: '/hello' })
   })
 
   it(/*
@@ -58,8 +62,10 @@ describe('Logger E2E — HTTP lifecycle', () => {
   'logs SERVER_ERROR for an uncaught 500', async () => {
     await request(app.getHttpServer()).get('/boom').expect(500)
 
-    const keys = parseLogEntries(stdoutSpy).map((entry) => entry['logKey'])
-    expect(keys).toContain('HTTP_REQUEST_SERVER_ERROR')
+    const entries = parseLogEntries(stdoutSpy)
+    expect(entries.map((entry) => entry['logKey'])).toContain('HTTP_REQUEST_SERVER_ERROR')
+    const serverError = entries.find((entry) => entry['logKey'] === 'HTTP_REQUEST_SERVER_ERROR')
+    expect(serverError).toMatchObject({ level: 'error', statusCode: 500, method: 'GET' })
   })
 
   it(/*
