@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.16] - 2026-11-12
+
 ### Documentation
 
 - The README is about a third shorter. Reference material that sat inside the Quick Start (HTTP logging, OpenTelemetry, resource identity, event names, error fields, context propagation) now has its own sections after Configuration, the Quick Start keeps install, register, async and inject, and release history and process notes are gone.
@@ -2721,7 +2723,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.15...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.16...HEAD
+[1.4.16]: https://github.com/bymaxone/nest-logger/compare/v1.4.15...v1.4.16
 [1.4.15]: https://github.com/bymaxone/nest-logger/compare/v1.4.14...v1.4.15
 [1.4.14]: https://github.com/bymaxone/nest-logger/compare/v1.4.13...v1.4.14
 [1.4.13]: https://github.com/bymaxone/nest-logger/compare/v1.4.12...v1.4.13
