@@ -45,6 +45,22 @@ The library has **zero direct dependencies**: every package arrives as a peer de
 
 ---
 
+## 🔥 Features
+
+- ✅ **Structured JSON** with `MODULE_ACTION_RESULT` log keys and an exported regex for CI
+- ✅ **NestJS `LoggerService` bridge**: framework logs flow through Pino
+- ✅ **PII redaction by default**: 32 field names censored to a 100-level ceiling, append-only list
+- ✅ **Per-field size guard**: an oversized field becomes a truncation envelope
+- ✅ **OpenTelemetry correlation**: `traceId`/`spanId`/`traceFlags` from the active span, validated
+- ✅ **Stable resource identity** and opt-in semconv error fields with `Error.cause` chains
+- ✅ **`AsyncLocalStorage` context**: `requestId`, `tenantId`, `userId` without prop drilling
+- ✅ **HTTP access log before guards**: 401/403/429 and 404 are logged, URLs normalized, query stripped
+- ✅ **Pluggable destinations** with managed lifecycle; a failing sink never reaches the app
+- ✅ **Dev-friendly output**: opt-in `PrettyDevDestination` with a configurable view
+- ✅ **Zero runtime dependencies**, two subpath exports, strict TypeScript, 100% coverage and mutation score
+
+---
+
 ## 📦 Subpath Exports
 
 One package, two entry points — import only what your app needs:
@@ -863,6 +879,38 @@ Every serializer, the default `err` one and any you supply, is wrapped so a fiel
 - Custom destinations never re-serialize the raw request object; they receive the already-redacted NDJSON line.
 - Destination credentials (Loki, Postgres, OTLP) come from the environment, never from module options in source control.
 - Log retention at the sink matches your data-retention policy: redaction bounds what is stored, not how long.
+
+---
+
+## 🛡️ Security Table
+
+| Control             | Implementation                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| PII redaction       | 32 field names censored at any depth, to a 100-level ceiling, in one snapshotting walk                  |
+| Credentials         | `password`, `passwordHash`, `token`, `accessToken`, `refreshToken`, `apiKey`, `apiSecret`, `privateKey` |
+| MFA secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret`                                                           |
+| PCI DSS             | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                     |
+| LGPD documents      | `cpf`, `cnpj`, `rg`, plus `email` as a conservative default                                             |
+| HTTP headers        | `authorization`, `cookie`, `x-api-key`, `x-auth-token`, `set-cookie`                                    |
+| Redact list         | `DEFAULT_REDACT_PATHS` is append-only; removal requires a major version                                 |
+| Trace injection     | `isValidTraceId` / `isValidSpanId` validate every identifier before it is written                       |
+| URL cardinality     | UUIDs, ULIDs, nanoids and numeric IDs become `:id`; the query string is stripped                        |
+| Destination failure | Every `write()` is wrapped; a failure goes to `stderr` and is swallowed                                 |
+| Field size          | Per-field UTF-8 cap at `maxEntrySizeBytes` (64 KB default), over it a truncation envelope               |
+| Supply chain        | `"dependencies": {}`, no runtime packages of the library's own choosing                                 |
+
+---
+
+## 🧱 Tech Stack
+
+[![Pino](https://img.shields.io/badge/Pino-10-green?style=flat-square)](https://getpino.io)
+[![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?style=flat-square&logo=nestjs)](https://nestjs.com)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Node.js](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![Jest](https://img.shields.io/badge/Jest-30-C21325?style=flat-square&logo=jest)](https://jestjs.io)
+[![Stryker](https://img.shields.io/badge/Stryker-Mutation_Testing-red?style=flat-square)](https://stryker-mutator.io)
+[![pnpm](https://img.shields.io/badge/pnpm-11-F69220?style=flat-square&logo=pnpm&logoColor=white)](https://pnpm.io)
+[![tsup](https://img.shields.io/badge/tsup-9-orange?style=flat-square)](https://tsup.egoist.dev)
 
 ---
 
