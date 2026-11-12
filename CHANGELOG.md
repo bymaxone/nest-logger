@@ -16,6 +16,7 @@ heading here.
 - The README is about a third shorter. Reference material that sat inside the Quick Start (HTTP logging, OpenTelemetry, resource identity, event names, error fields, context propagation) now has its own sections after Configuration, the Quick Start keeps install, register, async and inject, and release history and process notes are gone.
 - The Performance section no longer quotes figures for bare Pino from Pino's own benchmark (its Node version did not match the specification's). It reports this repository's benchmark of the shipped configuration: about 274,000 entries/s, 0.345× of the bare wrapper.
 - Removed the mention of a future `@bymax-one/nest-audit`, a package that does not exist.
+- The README keeps the house section order: a compact Features list after Overview, and a Security Table and Tech Stack between Security Model and Testing & Quality.
 - `dist/` is unchanged.
 
 ## [1.4.15] - 2026-11-10
