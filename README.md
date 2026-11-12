@@ -33,67 +33,15 @@
 
 ## ✨ Overview
 
-`@bymax-one/nest-logger` replaces ad-hoc `console.log` and legacy Winston setups with a production-grade structured logging pipeline. Every log entry is a JSON object carrying a `logKey` (`MODULE_ACTION_RESULT` convention), `requestId`, `tenantId`, and — when OpenTelemetry is active — the correlated `traceId`/`spanId`.
+`@bymax-one/nest-logger` replaces ad-hoc `console.log` and legacy Winston setups with a structured logging pipeline. Every entry is a JSON object carrying a `logKey` (`MODULE_ACTION_RESULT` convention), `requestId`, `tenantId` and, when OpenTelemetry is active, the correlated `traceId`/`spanId`.
 
-**Why Pino?** In Pino's own benchmarks (Node 20, one instance — not this package's end-to-end rate), Pino writes ~750,000 logs/sec against Winston's ~110,000, using 3× less CPU and half the RSS under load. The difference is measurable in production billing/payments backends where the logger is on the hot path for every request.
+The library has **zero direct dependencies**: every package arrives as a peer dependency, so you control exact versions and the supply chain stays small.
 
-The library has **zero direct dependencies** — all packages arrive as peer dependencies, so you control exact versions and the supply chain surface stays minimal.
-
-### Why nest-logger?
-
-- **🎯 One module, the whole pipeline** — Logger service, HTTP interceptor, exception filter, context propagation, redaction, and destinations arrive in a single `forRoot()`. No gluing together `pino-http`, a redaction layer, and a transport by hand.
-- **🔌 Your sinks, your rules** — The library defines `ILogDestination`. You implement it for Loki, Postgres, a rolling file, or anything else. No vendor lock-in, no hidden transport dependencies.
-- **🔒 Redacted by default** — 32 sensitive field names are censored **down to 100 levels of nesting**, covering passwords, tokens, PCI DSS card data, MFA secrets, LGPD documents and credential-bearing HTTP headers. One recursive walk per entry, not a path list. Domain-specific names are yours to add via `redactPaths`.
-- **⚡ On the hot path, so it stays cheap** — Singleton providers, one composed Pino mixin, and a single-pass redactor. No `Scope.REQUEST`, no path matching.
-- **🔭 Correlated when you need it** — When an OpenTelemetry span is active, `traceId`/`spanId`/`traceFlags` land in every entry. When the peer is absent, the mixin steps aside at zero cost.
-
-```
-pnpm add @bymax-one/nest-logger
-```
-
----
-
-## 🔥 Features
-
-### 📝 Core Logging
-
-- ✅ **Structured JSON** — every entry has `level`, `time`, `service`, `logKey`, `msg`, and arbitrary metadata fields
-- ✅ **`MODULE_ACTION_RESULT` Log Keys** — a naming convention enforced by an exported regex for CI validation
-- ✅ **NestJS `LoggerService` Bridge** — drop-in replacement; all NestJS internal logs flow through Pino
-- ✅ **Pretty-Print in Dev** — opt-in `PrettyDevDestination` with a configurable `view` (single-line, hidden fields, message-only) for readable local output (requires optional `pino-pretty`)
-- ✅ **Field Size Guard** — a serialized field over the ceiling (default 64 KB) is replaced by a compact truncation envelope instead of flooding the sink
-
-### 🛡️ Security & Privacy
-
-- ✅ **PII Redaction by Default** — 32 field names censored wherever they appear, to a 100-level nesting ceiling past which nested objects are dropped, in a single snapshotting walk
-- ✅ **PCI DSS & MFA Coverage** — card data and MFA secrets redacted out of the box, with common HTTP auth headers
-- ✅ **LGPD-Aware Paths** — CPF, CNPJ, and RG redacted by default for Brazilian workloads
-- ✅ **Append-Only Redact List** — `DEFAULT_REDACT_PATHS` never shrinks without a major version; extend it via `redactPaths`
-- ✅ **Validated Trace IDs** — OTel identifiers pass `isValidTraceId` before injection, never raw user input
-
-### 🔍 Observability & Context
-
-- ✅ **OpenTelemetry Correlation** — optional `@opentelemetry/api` peer; injects `traceId`/`spanId`/`traceFlags` into every log via a Pino mixin when an active span is detected. Resolution is anchored at the library's own module path, so a Docker `WORKDIR`, a pnpm workspace or a monorepo launched from the repo root cannot silently switch correlation off
-- ✅ **Stable Resource Identity** — `service.name`/`.namespace`/`.version`/`.instance.id` and `deployment.environment.name`, all **Stable** in Semantic Conventions v1.44.0, resolved from one deterministic precedence shared with the OTel SDK
-- ✅ **Semconv Error Fields** — opt-in `exception.type`/`.message`/`.stacktrace` and low-cardinality `error.type`, additive beside the legacy `err.*`, with full `Error.cause` chains
-- ✅ **Machine-Readable Event Names** — `event.name` derived from `logKey` following OTel naming rules
-- ✅ **AsyncLocalStorage Context** — `requestId`, `tenantId`, `userId` flow automatically through the request lifecycle without prop drilling
-- ✅ **HTTP Access Log, before guards** — logs every request including the ones an interceptor cannot see (401/403/429 guard rejections, 404 unmatched routes), with URL normalization (UUID, ULID, nanoid and numeric segments replaced by `:id`) and the query string stripped
-- ✅ **Exception Filter** — captures NestJS `HttpException` and unexpected errors with structured output
-
-### 🔌 Destinations
-
-- ✅ **Pluggable Destinations** — implement `ILogDestination` to ship logs to Loki, Postgres, rolling files, or any sink
-- ✅ **Managed Lifecycle** — `onInit()` / `onShutdown()` hooks; a destination that fails `onInit()` is reported and removed from the write fan-out and from shutdown, and boot is never aborted
-- ✅ **Crash-Proof Writes** — every `write()` is wrapped in a try/catch; a failure is reported on `stderr` and swallowed, never propagated to the app
-
-### 🧩 Developer Experience
-
-- ✅ **Zero Runtime Dependencies** — everything arrives as a peer dependency, so you control versions and supply-chain surface
-- ✅ **2 Subpath Exports** — `.` for the NestJS server API, `./shared` for zero-dependency types and constants
-- ✅ **Dynamic Module** — configure via `forRoot()` or `forRootAsync()`, sensible defaults included
-- ✅ **Strict TypeScript** — `strict: true`, no `any` in production code, JSDoc on every public export
-- ✅ **100% Coverage + Mutation Tested** — statements, branches, functions, and lines gated at 100%, with Stryker as the deeper gate
+- **🎯 One module, the whole pipeline** — logger service, HTTP access log, exception filter, context propagation, redaction and destinations arrive in a single `forRoot()`.
+- **🔌 Your sinks, your rules** — implement `ILogDestination` for Loki, Postgres, a rolling file or anything else. No hidden transport dependencies.
+- **🔒 Redacted by default** — 32 sensitive field names (passwords, tokens, card data, MFA secrets, LGPD documents, credential headers) are censored down to 100 levels of nesting. Domain-specific names are yours to add via `redactPaths`.
+- **⚡ Cheap on the hot path** — singleton providers, one composed Pino mixin and a single-pass redactor. The shipped configuration sustains about 274,000 entries/s (see [Performance](#-performance)).
+- **🔭 Correlated when you need it** — with an active OpenTelemetry span, `traceId`/`spanId`/`traceFlags` land in every entry; without the peer the mixin steps aside at zero cost.
 
 ---
 
@@ -117,25 +65,17 @@ The `/shared` subpath is safe to import in isomorphic code, test helpers, CLI sc
 ---
 
 > [!TIP]
-> Prefer to learn from a working app? See the [nest-logger-example](https://github.com/bymaxone/nest-logger-example) — a full NestJS project wired with this library.
+> Prefer to learn from a working app? See [nest-logger-example](https://github.com/bymaxone/nest-logger-example), a full NestJS project wired with this library.
 
 ## 🚀 Quick Start
 
 ### 1. Install
 
 ```bash
-# Using pnpm (recommended)
 pnpm add @bymax-one/nest-logger
-
-# Using npm
-npm install @bymax-one/nest-logger
-
-# Using yarn
-yarn add @bymax-one/nest-logger
 ```
 
-> [!IMPORTANT]
-> You must also install the required **peer dependencies**. The library ships `"dependencies": {}`, so nothing arrives implicitly:
+The library ships `"dependencies": {}`, so install the **peer dependencies** yourself:
 
 ```bash
 # Server subpath (required)
@@ -146,43 +86,12 @@ pnpm add -D pino-pretty
 
 # Optional — OpenTelemetry trace correlation
 pnpm add @opentelemetry/api @opentelemetry/sdk-node
-
 ```
 
-> ⚠️ **Under pnpm, `-D` may not make it absent in production — measure, do not assume.** Two
-> consumers who had assumed otherwise measured the peer **present** in their real production images,
-> by two different build routes: `pnpm prune --prod` keeps the store entry, and a clean
-> `pnpm install --prod --frozen-lockfile` in a fresh stage installs it too. In both, the peer was
-> recorded in the lockfile. `PrettyDevDestination` imports it lazily, relative to the library's own
-> directory under `.pnpm/`, where it is a sibling — so it resolves.
->
-> That is two measurements, not a law of pnpm: whether a production install always carries an optional
-> peer, however the lockfile was produced, has not been tested here. The advice below does not depend
-> on it.
->
-> The clean-install case is worth stating separately, because "we do a fresh prod install, not a
-> prune" reads like an exemption and is not one. It is what one of those consumers concluded before
-> measuring their own image.
->
-> **On other package managers this is different**, and the difference cuts the other way: under npm's
-> or yarn's flat `node_modules`, a pruned devDependency really is gone. If you install with those,
-> do not read this warning as universal.
->
-> Either way, the rule that survives both layouts: **"it is a devDependency, therefore this path
-> cannot run in production" is not a safe premise, because the premise is about someone else's
-> install command.** `PrettyDevDestination` refuses to initialize when `NODE_ENV` is exactly
-> `production`: it reports `LOGGER_DESTINATION_INIT_FAILED` on stderr and, when it is the only
-> destination, entries go to stdout as raw NDJSON. In any other environment that ships to a log
-> pipeline (a staging stack with `NODE_ENV=staging`, an unset `NODE_ENV`) it still renders ANSI
-> colour into a pipeline that will fail to parse every line, which is indistinguishable from a
-> service that went quiet. Gate it on an explicit configuration value you can see, not on the
-> packaging.
+> [!WARNING]
+> **Under pnpm, `-D` does not guarantee that a peer is absent from a production image**: it was measured present after both `pnpm prune --prod` and a clean `pnpm install --prod --frozen-lockfile`. Under npm or yarn a pruned devDependency really is gone. Do not rely on packaging to keep `PrettyDevDestination` out of production: it refuses to initialize when `NODE_ENV` is exactly `production`, but in any other environment that feeds a log pipeline (staging, an unset `NODE_ENV`) it writes ANSI colour that the pipeline cannot parse. Gate it on an explicit configuration value.
 
-> [!NOTE]
-> `@opentelemetry/api` is resolved lazily when the Pino instance is built. When it is absent the trace mixin silently steps aside — the logger never fails to start, and never warns, over an optional peer. A copy that is installed but broken is different: it is reported once on `stderr` as `LOGGER_OTEL_API_BROKEN`, because correlation would otherwise be off with no sign.
-
-> [!NOTE]
-> The published declarations depend on no HTTP framework's types. The HTTP interceptor, the exception filter and the request-id middleware are typed by structural contracts (`LoggableRequest`, `LoggableResponse`, `NextHandler`) that an Express request and response satisfy as-is, so nothing extra is needed even when you compile with `skipLibCheck: false`. The emitted `.d.ts` imports only `@nestjs/common`, `pino` and `rxjs`.
+`@opentelemetry/api` is resolved lazily. When it is absent the trace mixin steps aside silently; a copy that is installed but broken is reported once on `stderr` as `LOGGER_OTEL_API_BROKEN`. The published declarations depend on no HTTP framework's types: the interceptor, filter and request-id middleware use structural contracts (`LoggableRequest`, `LoggableResponse`, `NextHandler`) that an Express request and response satisfy as-is.
 
 ### 2. Register the module
 
@@ -233,13 +142,10 @@ import { BymaxLoggerModule } from '@bymax-one/nest-logger'
 export class AppModule {}
 ```
 
+`forRootAsync` also accepts `useClass` or `useExisting` with a class implementing `BymaxLoggerModuleOptionsFactory` (see the Configuration section). Options from any form pass the same validation as `forRoot`, and an error thrown while producing them fails module initialisation.
+
 > [!IMPORTANT]
-> **`forRootAsync` does not register the exception filter.** With `http.isEnabled` it registers the
-> access log (`HTTP_REQUEST_START`, `_SUCCESS`, `_CLIENT_ERROR`, `_SERVER_ERROR`, `_ABORTED`), and the
-> failing request's error still reaches its terminal entry. The two entries the filter writes,
-> `HTTP_EXCEPTION_HANDLED` and `HTTP_EXCEPTION_UNHANDLED`, are not emitted, and
-> `http.shouldCaptureExceptions` has no effect on this path. `forRoot` registers the filter itself.
-> To get the same entries from `forRootAsync`, register it:
+> **`forRootAsync` does not register the exception filter.** With `http.isEnabled` it registers the access log, but `HTTP_EXCEPTION_HANDLED` and `HTTP_EXCEPTION_UNHANDLED` are not emitted and `http.shouldCaptureExceptions` has no effect. Register it yourself:
 >
 > ```typescript
 > import { Module } from '@nestjs/common'
@@ -249,41 +155,6 @@ export class AppModule {}
 > @Module({ providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }] })
 > export class LoggingFilterModule {}
 > ```
->
-> It is left to you on purpose: the filter is a global catch-all that writes the response itself, and
-> a library adding one from asynchronously resolved options would put it in the pipeline of every
-> consumer, including those with HTTP logging off or with their own filters.
-
-`useFactory` is one of three forms. When the options depend on a provider already in the DI graph, a class can produce them instead. It implements `BymaxLoggerModuleOptionsFactory`; pass it as `useClass` to have the module instantiate it, or as `useExisting` to reuse an instance another module already provides:
-
-```typescript
-// logger-options.factory.ts
-import { Injectable } from '@nestjs/common'
-import { ConfigService } from '@nestjs/config'
-import type {
-  BymaxLoggerModuleOptions,
-  BymaxLoggerModuleOptionsFactory
-} from '@bymax-one/nest-logger'
-
-@Injectable()
-export class LoggerOptionsFactory implements BymaxLoggerModuleOptionsFactory {
-  constructor(private readonly cfg: ConfigService) {}
-
-  createLoggerOptions(): BymaxLoggerModuleOptions {
-    return {
-      service: {
-        name: this.cfg.getOrThrow<string>('OTEL_SERVICE_NAME'),
-        version: this.cfg.getOrThrow<string>('RELEASE_SHA')
-      }
-    }
-  }
-}
-
-// app.module.ts: imports: [BymaxLoggerModule.forRootAsync({ imports: [ConfigModule], useClass: LoggerOptionsFactory })]
-// or, to reuse an instance another module exports: { imports: [OptionsModule], useExisting: LoggerOptionsFactory }
-```
-
-`createLoggerOptions()` may return the options or a promise of them. An error thrown from it, or from `useFactory`, fails module initialisation, and the options it returns go through the same validation as `forRoot`.
 
 ### 4. Inject the logger in a service
 
@@ -343,7 +214,7 @@ Output (JSON, production) for the `PAYMENT_REFUND_SUCCESS` call above, with the 
 }
 ```
 
-`requestId` and `tenantId` are added when the call runs inside an HTTP request that passed through the request-ID middleware (`tenantId` only when the request carries the tenant header), and `traceId` and `spanId` when an OpenTelemetry span is active (see [OpenTelemetry correlation](#6-opentelemetry-correlation)). Outside a request, as in the flow above, they are absent.
+`requestId` and `tenantId` are added when the call runs inside an HTTP request that passed through the request-ID middleware (`tenantId` only when the request carries the tenant header), and `traceId` and `spanId` when an OpenTelemetry span is active (see [OpenTelemetry correlation](#-opentelemetry-correlation)). Outside a request, as in the flow above, they are absent.
 
 Output (pretty-print, development):
 
@@ -353,9 +224,74 @@ Output (pretty-print, development):
     stripeRefundId: "re_abc"
 ```
 
-### 5. HTTP logging (automatic)
+### 5. Next steps
 
-Enable `http.isEnabled: true` in the module options and wire the access log — `applyAccessLog(app)` in `main.ts` (recommended, see [Requests rejected before routing](#requests-rejected-before-routing)) or `applyRequestIdMiddleware(consumer)` (see [Context propagation](#7-context-propagation-with-logcontextservice)). The access log is recorded from **middleware**, which emits the six `HTTP_REQUEST_*` keys below; the exception filter adds the last two:
+Wire the access log in `main.ts` with `applyAccessLog(app)` (see [HTTP Logging](#-http-logging)), enable [OpenTelemetry correlation](#-opentelemetry-correlation), and read the Configuration tables for every option.
+
+---
+
+## ⚙️ Configuration
+
+Full options reference for `BymaxLoggerModule.forRoot(options)`:
+
+### Top-level options
+
+| Option                       | Type                                          | Default                                             | Description                                                                                                                                                                                                                                                |
+| ---------------------------- | --------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `service.name`               | `string`                                      | **Required**                                        | Service name emitted in every log entry                                                                                                                                                                                                                    |
+| `service.version`            | `string`                                      | **Required**                                        | Release version/SHA emitted in every log entry                                                                                                                                                                                                             |
+| `service.namespace`          | `string`                                      | —                                                   | OTel `service.namespace` (**Stable**) — the group the service belongs to                                                                                                                                                                                   |
+| `service.instanceId`         | `string`                                      | —                                                   | OTel `service.instance.id` (**Stable**). **Never generated** — supply it from the platform. See [Resource identity](#resource-identity)                                                                                                                    |
+| `service.environment`        | `string`                                      | `NODE_ENV`                                          | OTel `deployment.environment.name` (**Stable**). The deprecated `deployment.environment` is never emitted                                                                                                                                                  |
+| `resourceFormat`             | `'nested' \| 'flat'`                          | `'nested'`                                          | Shape of the identity fields. `'flat'` emits the dotted attribute names verbatim                                                                                                                                                                           |
+| `eventNameField`             | `string \| false`                             | `'event.name'`                                      | Field carrying the derived event name (`PAYMENT_FAILED` → `payment.failed`). `false` disables it                                                                                                                                                           |
+| `errorFormat`                | `'pino' \| 'semconv' \| 'both'`               | `'pino'`                                            | `'both'` adds `exception.*` and `error.type` beside `err.*`; `'semconv'` replaces them                                                                                                                                                                     |
+| `level`                      | `LogLevel`                                    | `'info'` when `NODE_ENV=production`, else `'debug'` | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                                                                                                                                                               |
+| `redactPaths`                | `string[]`                                    | `[]`                                                | Additional `fast-redact` paths, applied on top of the default coverage                                                                                                                                                                                     |
+| `redactStrategy`             | `'names' \| 'paths'`                          | `'names'`                                           | Engine behind the DEFAULT set. `'paths'` is the legacy `fast-redact` expansion (four-level ceiling, ~100× slower)                                                                                                                                          |
+| `shouldDisableDefaultRedact` | `boolean`                                     | `false`                                             | Skip the default PII coverage entirely. ⚠️ Emits `LOGGER_BOOTSTRAP_WARNING` at startup — document why                                                                                                                                                      |
+| `redactCensor`               | `string`                                      | `'[REDACTED]'`                                      | Replacement value written in place of every redacted field                                                                                                                                                                                                 |
+| `maxEntrySizeBytes`          | `number`                                      | `65536`                                             | UTF-8 byte ceiling per serialized field (`err` + any custom serializer); over it the value becomes a truncation envelope                                                                                                                                   |
+| `errorOwnFields`             | `'all' \| 'safe'`                             | `'all'`                                             | Which own fields of an error are written. `'all'` writes every one; `'safe'` writes an allow-list of operational names plus `errorOwnFieldNames` (see [Error fields](#error-fields)). A binary value is written as its size in both. Recommended: `'safe'` |
+| `errorOwnFieldNames`         | `readonly string[]`                           | `[]`                                                | Own-field names `'safe'` writes beside its default list, matched exactly; ignored under `'all'`                                                                                                                                                            |
+| `isGlobal`                   | `boolean`                                     | `true`                                              | Register the module as `@Global()`                                                                                                                                                                                                                         |
+| `shouldUseAsNestLogger`      | `boolean`                                     | `true`                                              | **Deprecated, not read.** Call `BymaxLoggerModule.useNestLogger(app)` in `main.ts` instead                                                                                                                                                                 |
+| `serializers`                | `Record<string, (input: unknown) => unknown>` | `{}`                                                | Custom Pino serializers, merged with the defaults                                                                                                                                                                                                          |
+| `timestamp`                  | `() => string`                                | `() => new Date().toISOString()`                    | Custom timestamp function                                                                                                                                                                                                                                  |
+| `destinations`               | `ILogDestination[]`                           | `[new DefaultStdoutDestination()]`                  | The sinks entries are written to. ⚠️ A non-empty list **replaces** that default — see [Destinations](#destinations-replace-stdout)                                                                                                                         |
+
+### `http` options
+
+| Option                         | Type                           | Default                                                                  | Description                                                                                                                                                                                                          |
+| ------------------------------ | ------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http.isEnabled`               | `boolean`                      | `false`                                                                  | Register `HttpLoggingInterceptor` (and, on `forRoot`, `HttpExceptionFilter`) globally                                                                                                                                |
+| `http.shouldCaptureExceptions` | `boolean`                      | `true`                                                                   | Capture unhandled HTTP exceptions and emit `HTTP_EXCEPTION_UNHANDLED`. `forRoot` only: see the note under [Async configuration](#3-async-configuration-with-configservice)                                           |
+| `http.shouldGenerateRequestId` | `boolean`                      | `true`                                                                   | Generate a `requestId` when the inbound request header is absent                                                                                                                                                     |
+| `http.excludePaths`            | `RegExp[]`                     | `[/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/]` | Paths that bypass HTTP logging. Use anchored, linear-time regexes (ReDoS-safe)                                                                                                                                       |
+| `http.tenantIdHeader`          | `string \| false`              | `'x-tenant-id'`                                                          | Request header carrying the tenant identifier, or `false` to read none. A value from the header is what the client asserted: see [Inbound `x-request-id` and tenant header](#inbound-x-request-id-and-tenant-header) |
+| `http.tenantIdResolver`        | `(req) => string \| undefined` | none                                                                     | Resolves the tenant id on the server side. When given it is the only source and the header is not read                                                                                                               |
+
+### `otel` options
+
+| Option                              | Type                          | Default        | Description                                                                                          |
+| ----------------------------------- | ----------------------------- | -------------- | ---------------------------------------------------------------------------------------------------- |
+| `otel.shouldAutoInjectTraceContext` | `boolean`                     | `true`         | Detect `@opentelemetry/api` and inject `traceId`/`spanId` via Pino mixin                             |
+| `otel.fieldFormat`                  | `'camelCase' \| 'snake_case'` | `'camelCase'`  | Field names in log entries: `traceId`/`spanId` vs `trace_id`/`span_id`                               |
+| `otel.traceIdField`                 | `string`                      | `'traceId'`    | Field name for the trace ID; `fieldFormat: 'snake_case'` derives `trace_id` unless this is set       |
+| `otel.spanIdField`                  | `string`                      | `'spanId'`     | Field name for the span ID; `fieldFormat: 'snake_case'` derives `span_id` unless this is set         |
+| `otel.traceFlagsField`              | `string`                      | `'traceFlags'` | Field name for the trace flags; `fieldFormat: 'snake_case'` derives `trace_flags` unless this is set |
+
+### Options from a class
+
+`forRootAsync` accepts a class that produces the options, for when they depend on a provider already in the DI graph. It implements `BymaxLoggerModuleOptionsFactory`; pass it as `useClass` (the module instantiates it) or `useExisting` (an instance another module provides). `createLoggerOptions()` may return the options or a promise of them.
+
+For example, `createLoggerOptions()` can return `{ service: { name: this.cfg.getOrThrow('OTEL_SERVICE_NAME'), version: this.cfg.getOrThrow('RELEASE_SHA') } }`, registered with `forRootAsync({ imports: [ConfigModule], useClass: LoggerOptionsFactory })`.
+
+---
+
+## 🌐 HTTP Logging
+
+Set `http.isEnabled: true`, then wire the access log with `applyAccessLog(app)` in `main.ts` (recommended, see below) or `applyRequestIdMiddleware(consumer)`. The access log is recorded from **middleware** and emits six `HTTP_REQUEST_*` keys; the exception filter adds the last two:
 
 | Log key                     | When                                                |
 | --------------------------- | --------------------------------------------------- |
@@ -368,59 +304,25 @@ Enable `http.isEnabled: true` in the module options and wire the access log — 
 | `HTTP_EXCEPTION_HANDLED`    | `HttpException` caught by the filter                |
 | `HTTP_EXCEPTION_UNHANDLED`  | Unexpected error caught by the filter               |
 
-`HTTP_REQUEST_START` is emitted **before guards**, so it carries no `userId` — authentication runs
-in a guard, and at that point there is no principal yet. The acting user is on the **terminal**
-entry, where the guard has populated it. Both entries carry the same `requestId`, so joining on
-that gives the whole request.
+`HTTP_REQUEST_START` is emitted **before guards**, so it carries no `userId`: authentication runs in a guard and there is no principal yet. The acting user is on the terminal entry. Both entries carry the same `requestId`.
 
-For the parser errors listed here the request body's text stays out of the library's own entry. For a body that does not parse (`entity.parse.failed`), a body the `verify` function of the parser refuses (`entity.verify.failed`) and an unsupported content encoding or charset, `HTTP_EXCEPTION_HANDLED` carries a fixed message and the parser `type` in a `bodyParserType` field, because the parser's message can quote part of the body and no key-name redaction can censor a string. The response body is the application's concern: for a body that does not parse or that `verify` refuses, the parser's own message still reaches the client unless the application answers the error itself. A `verify` function that gives its error a `type` of its own is outside this list. The malformed-JSON case needs the Express adapter and a body parser mounted before `app.init()`, as Nest's own default one is: the module mounts a small error layer after that parser, because Nest rebuilds the parser's error as a `BadRequestException` that no longer has its `type`. With another adapter, or a parser you mount after `app.init()`, that entry keeps the parser's message.
+URLs are normalized (`/users/550e8400-e29b-41d4-a716-446655440000` becomes `/users/:id`) so label cardinality stays bounded. The **query string is stripped** from every logged URL and from the message of a logged exception, because a magic-link token in a query parameter is a secret no key-name redaction can scrub out of a string. Only a literal `?` starts a query: a secret placed in the path itself (`;jsessionid=...`, a token segment) stays in `url`.
 
-URLs are automatically normalized — `/users/550e8400-e29b-41d4-a716-446655440000` becomes `/users/:id` so Loki/Grafana cardinality stays bounded. The query string is stripped from every logged URL, because a magic-link token or reset code in a query parameter is a secret no key-name redaction can scrub out of a string value. The same cut applies to the message of a logged exception: Nest words its not-found message as `Cannot GET /path?code=...`, so the request's own query string is removed from `HTTP_EXCEPTION_HANDLED`'s `msg` and from `errorMessage`. The response still carries what Nest wrote, which is the application's concern. Only a literal `?` starts a query: a secret placed in the path itself (`;jsessionid=...`, a token segment, a percent-encoded `%3F`) is part of the path and stays in `url`.
+For a body that does not parse (`entity.parse.failed`), one the parser's `verify` refuses (`entity.verify.failed`), or an unsupported content encoding or charset, `HTTP_EXCEPTION_HANDLED` carries a fixed message and the parser `type` in `bodyParserType`, because the parser's message can quote part of the body. The response the client receives is the application's concern. The malformed-JSON case needs the Express adapter and a body parser mounted before `app.init()`, as Nest's default one is; with another adapter, or a parser mounted after `app.init()`, that entry keeps the parser's message.
 
 > [!IMPORTANT]
-> **Why middleware and not an interceptor.** NestJS runs middleware → guards → interceptors →
-> handler, so an interceptor never observes a request a guard rejected, and never observes one that
-> matched no route. Measured against a real backend: **401, 403, 429 from a throttler and 404 for an
-> unknown path produced no log line at all** — not even `HTTP_REQUEST_START` — so brute force,
-> credential stuffing and route enumeration were invisible, and invisible without a `requestId` to
-> correlate them by. The access log therefore runs before guards.
->
-> A consumer who does not wire the middleware keeps the previous interceptor-based behaviour rather
-> than losing HTTP logs — including its blind spot.
+> **Why middleware and not an interceptor.** NestJS runs middleware → guards → interceptors → handler, so an interceptor never sees a request a guard rejected or one that matched no route. Measured against a real backend, 401, 403, 429 and 404 produced no log line at all, which hid brute force and route enumeration. Without the middleware wiring, the interceptor-based behaviour remains, blind spot included.
 
-#### Requests rejected before routing
+### Requests rejected before routing
 
-Middleware wired through `configure(consumer)` is not early enough for every request. NestJS
-registers the body parser **one line before** it registers module middleware:
-
-```js
-// @nestjs/core/nest-application.js
-useBodyParser && this.registerParserMiddleware()
-await this.registerModules() // everything from configure(consumer)
-```
-
-Express dispatches in registration order, so when the parser rejects a body it calls `next(err)`
-and every remaining non-error handler is skipped — module middleware, guards, interceptors and the
-route handler all never run. **A `POST` carrying truncated JSON therefore produces no access log
-at all**, and the same hole covers a payload over the body limit and an unsupported content type:
-exactly the requests a client got wrong or an attacker shaped.
-
-What you get today depends on your wiring, and neither answer is good:
+NestJS registers the body parser one line **before** it registers module middleware, so when the parser rejects a body (truncated JSON, a payload over the limit, an unsupported content type) every later handler is skipped. Through `configure(consumer)` that request produces:
 
 | Wiring                                                 | A body the parser rejects produces                        |
 | ------------------------------------------------------ | --------------------------------------------------------- |
 | `forRoot` with `shouldCaptureExceptions` (the default) | **one** `HTTP_EXCEPTION_HANDLED` line, **no `requestId`** |
 | `forRootAsync`, or `shouldCaptureExceptions: false`    | **nothing at all**                                        |
 
-The first row is the one worth reading twice. The line exists, so a dashboard counting entries
-looks healthy — but the correlation scope is mounted behind the parser too, so it never opened:
-the client can send `x-request-id: measure-me` and the entry carries no `requestId` to join it to.
-A 400 you cannot trace to the caller is the same defect as a missing 400 wearing a healthier face.
-
-`applyAccessLog(app)` closes both rows. `INestApplication.use()` delegates straight to the HTTP
-adapter and `init()` (where the parser is registered) does not run until `listen()`, so mounting
-from `main.ts` lands **ahead** of the parser — the same reason `helmet` and `cookie-parser` are
-mounted this way:
+`applyAccessLog(app)` closes both rows. `INestApplication.use()` delegates to the HTTP adapter and `init()` (where the parser is registered) has not run yet, so mounting from `main.ts` lands ahead of the parser, the same way `helmet` and `cookie-parser` are mounted:
 
 ```typescript
 // main.ts
@@ -444,51 +346,17 @@ async function bootstrap() {
 void bootstrap()
 ```
 
-The access log needs nothing else to work there — it emits from the response's `'close'` event,
-reading `statusCode` and `writableFinished`, so it never depends on a route matching, a handler
-running or a filter catching anything. One line in, one line out, for the parser rejection, the
-unmatched-route 404, the guard rejection and the aborted connection alike.
+Mount it **before** `app.init()`: a serverless entry point or a test that calls `await app.init()` first must mount before that, not merely before `listen()`. The access log emits from the response's `'close'` event, so it needs no route match, handler or filter: one line in and one line out for a parser rejection, an unmatched-route 404, a guard rejection and an aborted connection alike.
 
-To open only the correlation scope ahead of the parser, without the access log, call
-`BymaxLoggerModule.useRequestContext(app)` at the same point. A request the parser refuses (truncated JSON,
-a content encoding it does not support, a body over the limit) then has its `requestId` and the
-`x-request-id` response header, so an exception filter that reads the id from `LogContextService`
-puts the same value in its envelope. Register that filter with `app.useGlobalFilters(...)` after `NestFactory.create()`, which answers
-ahead of every `APP_FILTER` provider. `forRoot` with `http.isEnabled` (and
-`http.shouldCaptureExceptions`, which defaults to `true`) registers the library's own exception
-filter as an `APP_FILTER` provider; `forRootAsync` never does, so there is nothing for yours to
-compete with unless you registered `HttpExceptionFilter` yourself. Where the library's filter is
-registered, the order the modules are imported decides between `APP_FILTER` providers: one in your
-root module, or in a module imported before `BymaxLoggerModule`, was answered by the library's
-filter in the measurement, with or without an injected dependency, while one in a module imported
-after it answered itself. It can be combined with `applyAccessLog(app)` or
-`applyRequestIdMiddleware(consumer)`: a second mount reuses the scope.
+To open only the correlation scope ahead of the parser, without the access log, call `BymaxLoggerModule.useRequestContext(app)` at the same point. A request the parser refuses then has its `requestId` and the `x-request-id` response header, so an exception filter that reads the id from `LogContextService` can put the same value in its envelope. Register such a filter with `app.useGlobalFilters(...)`, which answers ahead of every `APP_FILTER` provider. Where the library's own filter is registered (`forRoot` with `http.isEnabled`), the import order of modules decides between `APP_FILTER` providers: one in a module imported before `BymaxLoggerModule` was answered by the library's filter in the measurement, one imported after it answered itself.
 
-`applyRequestIdMiddleware(consumer)` remains supported and unchanged; it is the right choice when
-correlation should be scoped to a route subtree rather than the whole application. **Wiring both is
-safe** — the correlation middleware adopts an id already in scope instead of minting a second one,
-and the access log stands down when it finds the request's lifecycle already claimed, so nothing is
-minted twice and nothing is logged twice.
+`applyRequestIdMiddleware(consumer)` remains supported and suits correlation scoped to a route subtree. Wiring both is safe: the correlation middleware adopts an id already in scope and the access log stands down when the lifecycle is already claimed, so nothing is minted or logged twice.
 
-**Delivery is reported separately from status.** `HTTP_REQUEST_ABORTED` is emitted when the
-connection closed before the response was flushed, and it **keeps the real status the server
-produced** rather than inventing one: nginx's `499` is not an HTTP status (IANA leaves 452–499
-unassigned), so recording it would assert a code the protocol has no name for and break any
-consumer grouping by class.
+**Delivery is reported separately from status.** `HTTP_REQUEST_ABORTED` is emitted when the connection closed before the response was flushed, and it keeps the real status the server produced rather than inventing one (`499` is not an HTTP status). A fast handler whose client hangs up after the bytes were flushed is reported as the success it was; whether the peer read it is not knowable server-side.
 
-Its limit is worth stating: `writableFinished` distinguishes a response still in flight from one
-handed to the operating system. A **fast handler whose client hangs up after the bytes were
-flushed** is reported as the success it was — the server completed and flushed it, and whether the
-peer read it is not knowable from the server side. What this catches is the case that matters
-operationally: the slow upstream, the load-balancer timeout, the cancelled request.
+### Unexpected errors behind `@bymax-one/nest-core`
 
-#### Unexpected errors behind `@bymax-one/nest-core`
-
-When nest-core's exception filter answers, an unexpected error becomes a fixed
-`500 BYMAX_INTERNAL_ERROR`. The access-log line for that response carries the cause only when this
-package's HTTP interceptor saw the error, which it does not for an error raised before it (in a
-guard or a middleware) or with HTTP logging off. nest-core 1.6.2 adds an optional sink token, `BYMAX_UNEXPECTED_ERROR_SINK`, and
-`PinoUnexpectedErrorSink` is a ready implementation of it. Bind it from a global module:
+When nest-core's exception filter answers, an unexpected error becomes a fixed `500 BYMAX_INTERNAL_ERROR`, and the access-log line carries the cause only if this package's interceptor saw the error (not for an error raised in a guard or a middleware, or with HTTP logging off). With nest-core 1.6.2 or later, bind `PinoUnexpectedErrorSink` to its `BYMAX_UNEXPECTED_ERROR_SINK` token from a global module:
 
 ```typescript
 import { Global, Module } from '@nestjs/common'
@@ -503,11 +371,7 @@ import { PinoUnexpectedErrorSink } from '@bymax-one/nest-logger'
 export class UnexpectedErrorSinkModule {}
 ```
 
-Import it next to `BymaxLoggerModule`. The binding resolves `PinoLoggerService` because
-`BymaxLoggerModule` is global by default; with `isGlobal: false`, add the same `forRoot`/`forRootAsync` result the
-application imports to the sink module's `imports`. Keep it in a constant: calling `forRoot` a
-second time builds a second logger. Each unexpected error then produces one `error` entry with the key
-`HTTP_UNEXPECTED_ERROR`:
+Import it next to `BymaxLoggerModule`. The binding resolves `PinoLoggerService` because that module is global by default; with `isGlobal: false`, add the same `forRoot`/`forRootAsync` result to the sink module's `imports`, kept in a constant (a second `forRoot` call builds a second logger). Each unexpected error then produces one `error` entry with the key `HTTP_UNEXPECTED_ERROR`:
 
 | Field           | Content                                                                                                 |
 | --------------- | ------------------------------------------------------------------------------------------------------- |
@@ -516,17 +380,13 @@ second time builds a second logger. Each unexpected error then produces one `err
 | `route`         | Matched route template (`/invoices/:id`), or `<unmatched>` before routing — never the raw URL           |
 | `correlationId` | nest-core's correlation id, when one resolved                                                           |
 
-The sink adds nothing from the request beyond `method`, `route` and `correlationId`: no body,
-headers or query string. The error is serialized as on every `err` entry, own enumerable fields
-included, so an error object that itself carries request data (a `url` with a query string, a copy
-of the headers) brings that data along, under the same key-name redaction. The trace id comes from the trace mixin, as on every other entry. `record()`
-never throws, so a failing destination cannot change the response. This package does not import
-nest-core: the class matches nest-core's contract by shape, and `IUnexpectedErrorSink` /
-`UnexpectedErrorReport` are exported for reference.
+The sink adds no body, headers or query string. The error is serialized as on every `err` entry, own fields included, so an error that itself carries request data brings it along, under the same key-name redaction. `record()` never throws, so a failing destination cannot change the response. This package does not import nest-core: the class matches its contract by shape, and `IUnexpectedErrorSink` and `UnexpectedErrorReport` are exported for reference.
 
-### 6. OpenTelemetry correlation
+---
 
-Initialize the OTel SDK **before** importing NestJS — this is critical:
+## 🔭 OpenTelemetry Correlation
+
+Initialize the OTel SDK **before** importing NestJS:
 
 ```typescript
 // main.ts (top of file — before any NestJS import)
@@ -568,30 +428,15 @@ async function bootstrap() {
 void bootstrap()
 ```
 
-Once active, every log entry automatically carries `traceId`, `spanId`, and `traceFlags`. Click the `traceId` in Grafana to jump directly to the correlated span in Tempo or Honeycomb.
+Once active, every entry carries `traceId`, `spanId` and `traceFlags`. The logger **observes** the trace context: it never creates spans, installs a context manager or parses `traceparent`. With the API present but no active span, no identifiers are emitted.
 
-**Without OpenTelemetry installed, everything above simply does not happen** — no error, no warning
-on every log, no crash. The peer is optional and the logger is fully usable on its own. The one
-case that _is_ reported is a misconfiguration: if trace injection is enabled and
-`@opentelemetry/api` cannot be resolved, a single `LOGGER_BOOTSTRAP_WARNING` naming
-`OTEL_API_UNAVAILABLE` is emitted at startup. Absence of `traceId` would otherwise be
-indistinguishable from "no active span".
+**Without OpenTelemetry installed, none of this happens** and there is no error or per-entry warning. The one reported misconfiguration is trace injection enabled while `@opentelemetry/api` cannot be resolved: a single `LOGGER_BOOTSTRAP_WARNING` with reason `OTEL_API_UNAVAILABLE` at startup, because a missing `traceId` would otherwise look like "no active span". The peer is resolved from the library's own module path, falling back to `process.cwd()`, so a Docker `WORKDIR`, a hoisted workspace or a monorepo started at its root does not switch correlation off.
 
-The logger **observes** the trace context; it never creates spans, installs a context manager, or
-parses `traceparent` by hand. When the API is present but no span is active, no identifiers are
-emitted — none are invented.
+## 🧭 Resource, Events and Errors
 
-> [!NOTE]
-> Resolution of the optional peer is anchored at the **library's own module path**, falling back to
-> `process.cwd()`. Anchoring only at the working directory — as versions before this did — silently
-> disabled correlation whenever the process was launched from somewhere other than the application
-> root: a Docker `WORKDIR`, a pnpm/Yarn workspace with hoisted `node_modules`, a monorepo started at
-> the repository root, a serverless bundle.
+### Resource identity
 
-### 6b. Resource identity
-
-Every entry carries the service identity, using attributes that are **Stable** in Semantic
-Conventions v1.44.0:
+Every entry carries the service identity, using attributes that are **Stable** in Semantic Conventions v1.44.0:
 
 ```typescript
 BymaxLoggerModule.forRoot({
@@ -622,136 +467,48 @@ BymaxLoggerModule.forRoot({
 }
 ```
 
-Set `resourceFormat: 'flat'` to emit the dotted attribute names verbatim
-(`"service.instance.id": "pod-7f3a"`), which is what a collector mapping log fields onto resource
-attributes reads directly.
+Set `resourceFormat: 'flat'` to emit the dotted names verbatim (`"service.instance.id": "pod-7f3a"`), which is what a collector mapping log fields onto resource attributes reads directly. The deprecated `deployment.environment` spelling is never emitted.
 
-#### Precedence
-
-Resolved once at startup, in this order:
-
-1. **explicit `service` options**
-2. **`OTEL_SERVICE_NAME`** (name only)
-3. **`OTEL_RESOURCE_ATTRIBUTES`** (`service.namespace=payments,service.version=2.14.3,…`)
-4. **`NODE_ENV`** (environment only)
-
-Explicit configuration wins because it is the most specific statement you can make. The order of
-the two OpenTelemetry variables is required by the specification, not chosen: _"If `service.name` is
-also provided in `OTEL_RESOURCE_ATTRIBUTES`, then `OTEL_SERVICE_NAME` takes precedence."_
-
-Reading the same variables the SDK reads is what makes **logs and traces agree** without the logger
-depending on the SDK. Configure the environment once and both signals describe the same service.
+Values resolve once at startup, in this order: explicit `service` options, then `OTEL_SERVICE_NAME` (name only), then `OTEL_RESOURCE_ATTRIBUTES` (`service.namespace=payments,service.version=2.14.3,…`), then `NODE_ENV` (environment only). The order of the two OpenTelemetry variables is the specification's. Reading the variables the SDK reads makes logs and traces agree without depending on the SDK.
 
 > [!IMPORTANT]
-> **`service.instance.id` is never generated.** The specification requires the triplet
-> (`service.namespace`, `service.name`, `service.instance.id`) to be globally unique and recommends
-> a random UUID — but a UUID minted by the logger would be the _logger's_, not the OpenTelemetry
-> Resource's, so logs and traces would claim different instances of the same process. It would also
-> change on every restart while looking authoritative. Supply it from the platform (Kubernetes pod
-> UID, ECS task ARN, VM instance id) or through `OTEL_RESOURCE_ATTRIBUTES`. Omitted is honest;
-> plausible-but-wrong is not.
->
-> There is **no `OTEL_SERVICE_VERSION`** variable in the specification. Version comes from
-> configuration or from `OTEL_RESOURCE_ATTRIBUTES`.
+> **`service.instance.id` is never generated.** A UUID minted by the logger would not be the OpenTelemetry Resource's, so logs and traces would claim different instances of one process. Supply it from the platform (Kubernetes pod UID, ECS task ARN) or through `OTEL_RESOURCE_ATTRIBUTES`. There is no `OTEL_SERVICE_VERSION` variable in the specification.
 
-The deprecated `deployment.environment` spelling is **never** emitted, in any mode.
+### Event names
 
-### 6c. Event names
+Structured entries carry a machine-readable name derived from `logKey`, lowercase and dot-namespaced (`PAYMENT_FAILED` → `payment.failed`, `USER_AUTHENTICATION_FAILED` → `user.authentication.failed`). `logKey` itself is never renamed. Calls through the NestJS variadic bridge (`logger.log`, `logger.warn`) carry no log key and get no event name. Keep names low cardinality: identifiers belong in their own fields.
 
-Structured entries carry a machine-readable event name derived from `logKey`, following OTel naming
-rules — lowercase, dot-namespaced:
+The value is meant for the **`EventName`** field of an OpenTelemetry LogRecord; the same-named `event.name` attribute is deprecated. A JSON line cannot express that distinction, so the carrier key is configurable through `eventNameField` and your collector decides where it lands. `eventNameField: false` emits nothing.
 
-| `logKey`                     | `event.name`                 |
-| ---------------------------- | ---------------------------- |
-| `PAYMENT_FAILED`             | `payment.failed`             |
-| `USER_AUTHENTICATION_FAILED` | `user.authentication.failed` |
-
-`logKey` is **never renamed or removed** — this is additive. Calls through the NestJS variadic
-bridge (`logger.log`, `logger.warn`, …) carry no log key and correctly get no event name: an
-ordinary diagnostic line is not an Event.
-
-Keep event names **low cardinality**. `payment.failed` is an event; `payment.failed.918231781` is an
-identifier wearing an event's clothes and will multiply your series count. Identifiers belong in
-their own fields.
-
-> [!NOTE]
-> The value is meant to be mapped onto the **`EventName`** field of the OpenTelemetry LogRecord,
-> which is Stable in the Logs Data Model. The same-named `event.name` **attribute** is _Deprecated_
-> precisely because the value belongs in that top-level field instead. A JSON log line has no way to
-> express that distinction — every key is just a key — so the carrier key is configurable via
-> `eventNameField`, and your collector decides where it lands. What it must not do is carry it into
-> an OTLP _attributes_ map under the deprecated name.
-
-Set `eventNameField: false` to emit nothing.
-
-### 6d. Error fields
+### Error fields
 
 `errorFormat` controls the shape:
 
 ```json
-// errorFormat: 'pino'  (default — unchanged from 1.2.0)
+// errorFormat: 'pino'  (default)
 { "err": { "type": "PaymentDeclined", "message": "card declined", "stack": "…",
            "cause": { "name": "Error", "message": "gateway timeout" } } }
 
-// errorFormat: 'both'  (recommended while migrating)
+// errorFormat: 'both'  (adds the semconv fields beside err)
 { "err": { "type": "PaymentDeclined", … },
   "exception.type": "PaymentDeclined",
   "exception.message": "card declined",
   "exception.stacktrace": "…",
   "error.type": "PaymentDeclined" }
 
-// errorFormat: 'semconv'  (explicit migration — err is removed)
+// errorFormat: 'semconv'  (err is removed)
 { "exception.type": "PaymentDeclined", "exception.message": "card declined",
   "exception.stacktrace": "…", "error.type": "PaymentDeclined" }
 ```
 
-All four attributes are **Stable**. `error.type` carries the **class name** and is low cardinality
-by construction — never a message, never an identifier — because the spec requires it to be
-aggregatable.
+All four attributes are **Stable**. `error.type` carries the class name, so it stays low cardinality. `Error.cause` chains are preserved (depth- and width-bounded, circular-safe, redacted like any field) and `AggregateError` members reach the entry as `err.errors`. There is no OpenTelemetry attribute for a cause chain, so these stay under `err`.
 
-**`Error.cause` chains are preserved**, depth- and width-bounded, circular-safe, and redacted like
-any other field. `AggregateError` members reach the entry as `err.errors`. There is no
-OpenTelemetry attribute for a cause chain, so these stay namespaced under `err` rather than
-inventing an `exception.cause` the spec does not define.
+An error's own enumerable properties (`code`, `statusCode`, domain fields) travel with it at every depth, including on a nested `cause` and each `AggregateError` member, and pass through the same name-based redaction and size bound as any serializer output. They never shadow a field the serializer derives. Exceptions: the arguments of a failed driver call are not written (`args` and `parameters` are omitted, a `command` object is reduced to its `name`, and an error with a SQLSTATE `code` loses `detail`, `where` and `internalQuery`, which quote the row and the statement), because redaction matches key names and cannot see a value inside a string.
 
-**An error's own enumerable properties travel with it at every depth** — `code` on a Node system
-error, `statusCode` from an HTTP layer, whatever domain fields you attached — including on a nested
-`cause` and on each `AggregateError` member:
+**`errorOwnFields`.** Node's own errors carry values: a failed child process has `stdout` and `stderr`, an `AssertionError` its `actual` and `expected`, a file system error its `path`. A list of names to drop cannot name them all, so the choice is yours:
 
-```json
-{
-  "err": {
-    "type": "Error",
-    "message": "bootstrap failed",
-    "code": "EBOOT",
-    "cause": {
-      "name": "Error",
-      "message": "config invalid",
-      "code": "BYMAX_CONFIG_VALIDATION",
-      "issues": [{ "variable": "DATABASE_URL", "code": "invalid_url" }]
-    }
-  }
-}
-```
-
-This matters because `code` is usually the field you alert on. Until 1.2.7 those properties survived
-only on the error handed to the log call and were dropped the moment the same error was wrapped as
-someone else's `cause` — which is what any handler that wraps what it caught does before
-logging it. They never shadow a
-field the serializer derives, and they pass through the same name-based redaction and size bound as
-any other serializer output.
-
-An error's own enumerable properties (`code`, `statusCode`, domain fields) are carried through, as
-Pino's standard serializer did, with one exception: the arguments of a failed driver call are not
-written. The fields `args` and `parameters` are omitted, a `command` object is reduced to its
-`name`, and an error with a SQLSTATE `code` (five characters from `0-9A-Z`, the first not `E`) loses `detail`, `where` and `internalQuery`, which quote the row and
-the statement (its other fields stay), because the redaction
-matches key names and cannot see a value inside a string.
-
-**Own fields of an error: `errorOwnFields`.** Node's own errors carry values: a failed child process has its `stdout`, `stderr` and `output` (Buffers), an `AssertionError` its `actual` and `expected`, a file system error its `path`, a `URL` error its `input`. A list of names to drop cannot name them all, so the choice is yours:
-
-- `errorOwnFields: 'all'` (the default in 1.x) writes every own field as above. A binary value (a Buffer, a typed array or a `DataView`) is written as its size, such as `"[Binary 42 bytes]"`, never as bytes: as an own field of an error (a failed child process carries its `stdout`, `stderr` and `output` there), as a member of an array, and anywhere else in the record. See _Binary values_ below.
-- `errorOwnFields: 'safe'` writes only `code`, `errno`, `syscall`, `signal`, `status`, `statusCode`, `address`, `port`, `hostname` and the PostgreSQL `constraint`, `table`, `column`, `schema` and `routine`, plus the names in `errorOwnFieldNames`, at every depth and for an `Error` nested in the metadata. `path` is not on the list: add it if a path is not data to you. Under `'safe'` what the redaction writes is plain data, with nothing left to run later. An `Error` is written from its own fields: a `toJSON` it has (an HTTP client's, which may carry the request) is not called, and a serializer receives it as a plain error-like object (`name`, `message`, `stack`, `cause`, `errors` and the allowed fields) instead of an `Error` instance. Any other `toJSON` is called once, as `JSON.stringify` would, and its result is censored. A function or a symbol is omitted as `JSON.stringify` omits it, and a Buffer or a typed array anywhere in the record is written as its `[Binary N bytes]` marker. The `type`, `message`, `stack`, `cause` and `errors` the logger derives are always written. Names are matched exactly, case included. The recommended setting.
+- `'all'` (the default in 1.x) writes every own field as above.
+- `'safe'` (recommended) writes only `code`, `errno`, `syscall`, `signal`, `status`, `statusCode`, `address`, `port`, `hostname` and the PostgreSQL `constraint`, `table`, `column`, `schema` and `routine`, plus the names in `errorOwnFieldNames` (matched exactly), at every depth. `path` is not on the list; add it if a path is not data to you. Under `'safe'` an `Error` is written from its own fields and its `toJSON` is not called (an HTTP client's `toJSON` may carry the request); any other `toJSON` is called once, as `JSON.stringify` would, and its result is censored. A serializer then receives a plain error-like object instead of an `Error` instance.
 
 ```typescript
 BymaxLoggerModule.forRoot({
@@ -761,125 +518,39 @@ BymaxLoggerModule.forRoot({
 })
 ```
 
-**Binary values.** A Buffer, a typed array or a `DataView` anywhere in the record is written as its size (`"[Binary 42 bytes]"`), in both modes and under both redaction strategies, whatever `toJSON` a subclass defines. This holds whenever the record is walked: with the default coverage, with any entry in `redactPaths`, and under `redactStrategy: 'paths'`, where the record is walked once for this and the walk's depth ceiling (100) and visit budget apply. If you turn every redaction off (`shouldDisableDefaultRedact: true`, no `redactPaths`, and `errorOwnFields` not `'safe'`), nothing walks the record, so the marker is off with it and a Buffer is written the way Pino writes it. To log the bytes of a Buffer on purpose, convert it first, for example `buffer.toString('base64')`.
+**Binary values.** A Buffer, typed array or `DataView` anywhere in the record is written as its size (`"[Binary 42 bytes]"`), in both modes and under both redaction strategies. If you turn every redaction off (`shouldDisableDefaultRedact: true`, no `redactPaths`, and `errorOwnFields` not `'safe'`), nothing walks the record and a Buffer is written the way Pino writes it. To log bytes on purpose, convert first, for example `buffer.toString('base64')`.
 
-Neither setting covers the `message`: Node writes the command line of a failed child process, arguments included, and what it printed to stderr into it, and the redaction matches key names, not text.
+Neither setting covers the `message`: Node writes the command line of a failed child process, arguments included, into it, and redaction matches key names, not text.
 
-When those properties cannot be read (a Proxy whose `ownKeys` throws, or a getter that throws), none of them is copied and the error node carries `_errorFieldsIncomplete: true`, so an entry without its `code` is never mistaken for a complete one.
+When an error's properties cannot be read (a Proxy whose `ownKeys` throws, a throwing getter), none are copied and the error node carries `_errorFieldsIncomplete: true`. An `Error` that cannot be read at all does not cost the record its `logKey`, `userId` or metadata: it is replaced by its sanitized form (`name` and `message`, with the same marker), or `{ type: 'SanitizeFailed' }` when even those are unreadable. Filter on those two to find such entries.
 
-An `Error` that cannot be read at all does not cost the record its `logKey`, `userId` or metadata: the node is replaced by its sanitized form, which keeps `name` and `message` and carries the same marker unless `name` or `message` itself is unreadable, in which case it is `{ type: 'SanitizeFailed' }`. Filter on `err._errorFieldsIncomplete: true` or `SanitizeFailed` to find these entries.
+An `Error` nested in the metadata is written as its own enumerable fields, censored by name, with `type`, `message`, `stack`, `cause` and `errors` added, bounded like the root `err` and marked `_truncated` when cut. A string `cause` is logged like a `message`: do not put secrets in either. Whatever sits under a record-root key that has a serializer (`err`, or a key of `serializers`) reaches that serializer censored by name with its `Error`s still instances, and what a serializer returns is written as returned, so an `Error` in that output stays `{}`.
 
-An `Error` nested in the metadata (under a key, inside an array, or inside another `Error`) is written as its own enumerable fields, censored by name (or as its `toJSON` decides, except under `errorOwnFields: 'safe'`, where an `Error` is written from its own fields and its `toJSON` is not called), with `type`, `message`, `stack`, `cause` and `errors` added where the node has no key of that name. The added cause chain and `errors` are bounded as the root `err`'s are, each with a `_truncated` marker. A string `cause` is logged like a `message`: do not put secrets in either. Whatever sits under a record-root key that has a serializer, `err` or a key of `serializers`, reaches that serializer censored by name, with its `Error`s still instances (under `errorOwnFields: 'safe'`, as plain data: see _Own fields of an error_), and what a serializer returns is written as returned, so an `Error` in that output stays `{}` (the arguments and quoted values of a failed driver call are omitted from it, as everywhere; plain data under `'safe'`).
+## 🧵 Context Propagation
 
-### 7. Context propagation with `LogContextService`
+`LogContextService` holds an `AsyncLocalStorage` scope. Any entry emitted inside `logContext.run({ requestId }, callback)`, at any nesting depth, carries the scope's fields with no prop drilling. `applyAccessLog(app)` and `applyRequestIdMiddleware(consumer)` open the scope for each request; the full method list is in the API Reference.
 
-```typescript
-// request-id.middleware.ts
-import { Injectable, NestMiddleware } from '@nestjs/common'
-import {
-  LogContextService,
-  type LoggableRequest,
-  type LoggableResponse
-} from '@bymax-one/nest-logger'
-import { randomUUID } from 'node:crypto'
+### Inbound `x-request-id` and tenant header
 
-@Injectable()
-export class RequestIdMiddleware implements NestMiddleware {
-  constructor(private readonly logContext: LogContextService) {}
-
-  use(req: LoggableRequest, res: LoggableResponse, next: () => void) {
-    // A header can arrive repeated, so its type is `string | string[]`.
-    const raw = req.headers['x-request-id']
-    const requestId = (Array.isArray(raw) ? raw[0] : raw) ?? `r_${randomUUID()}`
-    this.logContext.run({ requestId }, next)
-  }
-}
-```
-
-Any log emitted inside the `run()` scope — regardless of nesting depth — automatically includes `requestId` with no prop drilling.
-
-#### Inbound `x-request-id` and tenant header
-
-The bundled `RequestIdMiddleware` does not trust the headers it reads. A request id or tenant id is accepted only when it is a string of **at most 256 characters** drawn from `A-Z a-z 0-9 . _ : / + = -`. Anything else is rejected and replaced, not truncated or cleaned: an oversized value, an empty one, one carrying a space, a control character or any of `< > " '`,, and a value that is not a string.
+The bundled `RequestIdMiddleware` does not trust the headers it reads. A request id or tenant id is accepted only when it is a string of **at most 256 characters** from `A-Z a-z 0-9 . _ : / + = -`. Anything else is replaced, never truncated or cleaned.
 
 | Header                                    | Rejected value becomes                                                                                                             |
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `x-request-id`                            | a fresh UUID, or none when `http.shouldGenerateRequestId` is `false` (an enclosing scope's `requestId`, if any, is then inherited) |
 | the tenant header (`http.tenantIdHeader`) | no `tenantId` from the header; a tenant is never minted                                                                            |
 
-**A `tenantId` read from the header is what the client asserted.** Any client can send any tenant in `x-tenant-id`, and every entry of its requests will carry it. The 256-character rule above keeps the value safe to write; it does not make it true. Do not use a header-derived `tenantId` to decide whose data an entry is about unless something in front of the application sets or overwrites the header. A host that authenticates its tenants has two options, and both leave the default unchanged for everyone else:
+**A `tenantId` read from the header is what the client asserted.** Any client can send any tenant in `x-tenant-id`; the 256-character rule keeps the value safe to write, not true. Do not use a header-derived `tenantId` to decide whose data an entry is about unless something in front of the application sets or overwrites the header. A host that authenticates its tenants has two options:
 
-- `http: { tenantIdHeader: false }` reads no header, so the middleware takes no `tenantId` from the request.
-- `http: { tenantIdResolver: (req) => ... }` takes the tenant from what the host trusts, for example a value an earlier middleware put on the request after verifying a token. When a resolver is given it is the only source: the header is not read even if the resolver answers nothing, so a client cannot fall back to it. The answer passes the same 256-character rule, and a resolver that throws gives no `tenantId`. The middleware runs before guards, so a tenant known only after authentication is set later with `LogContextService.set('tenantId', ...)`.
+- `http: { tenantIdHeader: false }` reads no header, so no `tenantId` is taken from the request.
+- `http: { tenantIdResolver: (req) => ... }` takes the tenant from what the host trusts, for example a value an earlier middleware set after verifying a token. When given, it is the only source (the header is not read even if the resolver answers nothing), its answer passes the same rule, and a resolver that throws gives no `tenantId`. The middleware runs before guards, so a tenant known only after authentication is set later with `LogContextService.set('tenantId', ...)`.
 
-An accepted id is echoed back on the response `x-request-id` header and written to every entry the request produces, which is why the set is narrow. The example above reads the header raw to stay short; use `RequestIdMiddleware` through `applyAccessLog(app)` or `applyRequestIdMiddleware(consumer)` unless you apply the same rule yourself.
-
----
-
-## ⚙️ Configuration
-
-Full options reference for `BymaxLoggerModule.forRoot(options)`:
-
-### Top-level options
-
-| Option                       | Type                                          | Default                                             | Description                                                                                                                                                                                                                                                        |
-| ---------------------------- | --------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `service.name`               | `string`                                      | **Required**                                        | Service name emitted in every log entry                                                                                                                                                                                                                            |
-| `service.version`            | `string`                                      | **Required**                                        | Release version/SHA emitted in every log entry                                                                                                                                                                                                                     |
-| `service.namespace`          | `string`                                      | —                                                   | OTel `service.namespace` (**Stable**) — the group the service belongs to                                                                                                                                                                                           |
-| `service.instanceId`         | `string`                                      | —                                                   | OTel `service.instance.id` (**Stable**). **Never generated** — supply it from the platform. See [Resource identity](#6b-resource-identity)                                                                                                                         |
-| `service.environment`        | `string`                                      | `NODE_ENV`                                          | OTel `deployment.environment.name` (**Stable**). The deprecated `deployment.environment` is never emitted                                                                                                                                                          |
-| `resourceFormat`             | `'nested' \| 'flat'`                          | `'nested'`                                          | Shape of the identity fields. `'flat'` emits the dotted attribute names verbatim                                                                                                                                                                                   |
-| `eventNameField`             | `string \| false`                             | `'event.name'`                                      | Field carrying the derived event name (`PAYMENT_FAILED` → `payment.failed`). `false` disables it                                                                                                                                                                   |
-| `errorFormat`                | `'pino' \| 'semconv' \| 'both'`               | `'pino'`                                            | `'both'` adds `exception.*` and `error.type` beside `err.*`; `'semconv'` replaces them                                                                                                                                                                             |
-| `level`                      | `LogLevel`                                    | `'info'` when `NODE_ENV=production`, else `'debug'` | Minimum log level. One of `fatal \| error \| warn \| info \| debug \| trace`                                                                                                                                                                                       |
-| `redactPaths`                | `string[]`                                    | `[]`                                                | Additional `fast-redact` paths, applied on top of the default coverage                                                                                                                                                                                             |
-| `redactStrategy`             | `'names' \| 'paths'`                          | `'names'`                                           | Engine behind the DEFAULT set. `'paths'` restores the pre-1.2 `fast-redact` expansion (four-level ceiling, ~100× slower)                                                                                                                                           |
-| `shouldDisableDefaultRedact` | `boolean`                                     | `false`                                             | Skip the default PII coverage entirely. ⚠️ Emits `LOGGER_BOOTSTRAP_WARNING` at startup — document why                                                                                                                                                              |
-| `redactCensor`               | `string`                                      | `'[REDACTED]'`                                      | Replacement value written in place of every redacted field                                                                                                                                                                                                         |
-| `maxEntrySizeBytes`          | `number`                                      | `65536`                                             | UTF-8 byte ceiling per serialized field (`err` + any custom serializer); over it the value becomes a truncation envelope                                                                                                                                           |
-| `errorOwnFields`             | `'all' \| 'safe'`                             | `'all'`                                             | Which own fields of an error are written. `'all'` writes every one; `'safe'` writes an allow-list of operational names plus `errorOwnFieldNames` (see _Own fields of an error_ in section 6). A binary value is written as its size in both. Recommended: `'safe'` |
-| `errorOwnFieldNames`         | `readonly string[]`                           | `[]`                                                | Own-field names `'safe'` writes beside its default list, matched exactly; ignored under `'all'`                                                                                                                                                                    |
-| `isGlobal`                   | `boolean`                                     | `true`                                              | Register the module as `@Global()`                                                                                                                                                                                                                                 |
-| `shouldUseAsNestLogger`      | `boolean`                                     | `true`                                              | **Deprecated, not read.** Call `BymaxLoggerModule.useNestLogger(app)` in `main.ts` instead                                                                                                                                                                         |
-| `serializers`                | `Record<string, (input: unknown) => unknown>` | `{}`                                                | Custom Pino serializers, merged with the defaults                                                                                                                                                                                                                  |
-| `timestamp`                  | `() => string`                                | `() => new Date().toISOString()`                    | Custom timestamp function                                                                                                                                                                                                                                          |
-| `destinations`               | `ILogDestination[]`                           | `[new DefaultStdoutDestination()]`                  | The sinks entries are written to. ⚠️ A non-empty list **replaces** that default — see [Destinations](#destinations-replace-stdout)                                                                                                                                 |
-
-### `http` options
-
-| Option                         | Type                           | Default                                                                  | Description                                                                                                                                                                                                          |
-| ------------------------------ | ------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `http.isEnabled`               | `boolean`                      | `false`                                                                  | Register `HttpLoggingInterceptor` (and, on `forRoot`, `HttpExceptionFilter`) globally                                                                                                                                |
-| `http.shouldCaptureExceptions` | `boolean`                      | `true`                                                                   | Capture unhandled HTTP exceptions and emit `HTTP_EXCEPTION_UNHANDLED`. `forRoot` only: see the note under [Async configuration](#3-async-configuration-with-configservice)                                           |
-| `http.shouldGenerateRequestId` | `boolean`                      | `true`                                                                   | Generate a `requestId` when the inbound request header is absent                                                                                                                                                     |
-| `http.excludePaths`            | `RegExp[]`                     | `[/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/]` | Paths that bypass HTTP logging. Use anchored, linear-time regexes (ReDoS-safe)                                                                                                                                       |
-| `http.tenantIdHeader`          | `string \| false`              | `'x-tenant-id'`                                                          | Request header carrying the tenant identifier, or `false` to read none. A value from the header is what the client asserted: see [Inbound `x-request-id` and tenant header](#inbound-x-request-id-and-tenant-header) |
-| `http.tenantIdResolver`        | `(req) => string \| undefined` | none                                                                     | Resolves the tenant id on the server side. When given it is the only source and the header is not read                                                                                                               |
-
-### `otel` options
-
-| Option                              | Type                          | Default        | Description                                                                                          |
-| ----------------------------------- | ----------------------------- | -------------- | ---------------------------------------------------------------------------------------------------- |
-| `otel.shouldAutoInjectTraceContext` | `boolean`                     | `true`         | Detect `@opentelemetry/api` and inject `traceId`/`spanId` via Pino mixin                             |
-| `otel.fieldFormat`                  | `'camelCase' \| 'snake_case'` | `'camelCase'`  | Field names in log entries: `traceId`/`spanId` vs `trace_id`/`span_id`                               |
-| `otel.traceIdField`                 | `string`                      | `'traceId'`    | Field name for the trace ID; `fieldFormat: 'snake_case'` derives `trace_id` unless this is set       |
-| `otel.spanIdField`                  | `string`                      | `'spanId'`     | Field name for the span ID; `fieldFormat: 'snake_case'` derives `span_id` unless this is set         |
-| `otel.traceFlagsField`              | `string`                      | `'traceFlags'` | Field name for the trace flags; `fieldFormat: 'snake_case'` derives `trace_flags` unless this is set |
+An accepted id is echoed on the response `x-request-id` header and written to every entry of the request, which is why the accepted set is narrow.
 
 ---
 
 ## 🔑 Log Key Convention
 
-All structured log calls must use the `MODULE_ACTION_RESULT` format:
-
-```
-USER_LOGIN_SUCCESS         AUTH_REGISTER_FAILED
-PAYMENT_REFUND_PROCESSED   WEBHOOK_STRIPE_RECEIVED
-HTTP_REQUEST_CLIENT_ERROR  METHOD_SLOW_EXECUTION
-```
-
-The regex is exported from the `/shared` entry for CI validation:
+All structured log calls use the `MODULE_ACTION_RESULT` format (`USER_LOGIN_SUCCESS`, `PAYMENT_REFUND_PROCESSED`, `WEBHOOK_STRIPE_RECEIVED`). The regex is exported from `/shared` for CI validation:
 
 ```typescript
 import { LOG_KEYS_CONVENTION_REGEX } from '@bymax-one/nest-logger/shared'
@@ -893,23 +564,17 @@ function assertValidLogKey(key: string) {
 
 ### Reserved keys
 
-The following keys are used internally by the library — do not reuse them in application code:
+These are used by the library; do not reuse them in application code. All are exported as `RESERVED_LOG_KEYS` from `@bymax-one/nest-logger/shared`.
 
 `LOGGER_BOOTSTRAP_OK` · `LOGGER_BOOTSTRAP_WARNING` · `LOGGER_SHUTDOWN_OK` · `HTTP_REQUEST_START` · `HTTP_REQUEST_SUCCESS` · `HTTP_REQUEST_REDIRECT` · `HTTP_REQUEST_CLIENT_ERROR` · `HTTP_REQUEST_SERVER_ERROR` · `HTTP_REQUEST_ABORTED` · `HTTP_REQUEST_COMPLETED` · `HTTP_EXCEPTION_HANDLED` · `HTTP_EXCEPTION_UNHANDLED` · `HTTP_UNEXPECTED_ERROR` · `HTTP_UNEXPECTED_ERROR_DROPPED` · `METHOD_EXECUTION` · `METHOD_SLOW_EXECUTION` · `LOGGER_DESTINATION_INIT_FAILED` · `LOGGER_DESTINATION_WRITE_FAILED` · `LOGGER_ENTRY_TRUNCATED` · `LOGGER_REDACTION_FAILED` · `LOGGER_OTEL_API_BROKEN`
 
-All reserved keys are exported as the `RESERVED_LOG_KEYS` constant from `@bymax-one/nest-logger/shared`.
-
-`HTTP_REQUEST_COMPLETED` is reserved but deliberately never emitted — the four status-specific
-terminal keys already carry the same `duration`, so a generic "completed" entry would double the
-access-log volume to say nothing new. The reserved-but-unwritten set is exported as
-`RESERVED_LOG_KEYS_NOT_EMITTED`, and a test asserts that every OTHER declared key has a writer in
-the source, so a key can no longer be documented as a signal and then silently never emitted.
+`HTTP_REQUEST_COMPLETED` is reserved but never emitted: the four status-specific terminal keys already carry the same `duration`. The reserved-but-unwritten set is exported as `RESERVED_LOG_KEYS_NOT_EMITTED`, and a test asserts that every other declared key has a writer in the source.
 
 ---
 
 ## 🧩 Custom Destinations
 
-Implement `ILogDestination` to ship logs to any sink:
+Implement `ILogDestination` to ship logs to any sink. `write` receives the entry already serialized as a newline-terminated JSON string, so a sink that forwards lines should buffer them as they arrive and parse only where a field is needed. The [destinations guide](./docs/guidelines/DESTINATIONS-IMPLEMENTATION-GUIDELINES.md) has further examples (database, rolling file, stream).
 
 ```typescript
 import type { ILogDestination } from '@bymax-one/nest-logger'
@@ -1000,22 +665,13 @@ BymaxLoggerModule.forRootAsync({
 
 ### Destinations replace stdout
 
-A non-empty `destinations` **replaces** `DefaultStdoutDestination` — it does not add to it. That is deliberate: a file-only or socket-only deployment has to be able to turn structured stdout off. To keep stdout alongside a custom sink, list it explicitly:
+A non-empty `destinations` **replaces** `DefaultStdoutDestination`, so a file-only or socket-only deployment can turn structured stdout off. To keep stdout beside a custom sink, list it explicitly: `destinations: [new DefaultStdoutDestination(), new LokiDestination({ ... })]`.
 
-```typescript
-destinations: [new DefaultStdoutDestination(), new LokiDestination({ ... })]
-```
-
-The consequence worth knowing: a sink you supply may be the **only** one the application has, so its failure is the application's silence. Two guarantees cover that, and neither requires anything from you:
-
-- **A destination that fails `onInit` is reported as `LOGGER_DESTINATION_INIT_FAILED` on `stderr`** — not through the logger, whose sinks are the ones that just failed — and receives no entries.
-- **If _every_ destination fails to initialize, entries fall back to raw NDJSON on `stdout`.** Degraded and ugly, but visible; nothing is lost, including the bootstrap entries.
-
-So the common accident — adding `new PrettyDevDestination()` without installing the optional `pino-pretty` — costs you colours and a line on stderr telling you why, never your logs.
+A sink you supply may be the only one the application has, so two guarantees cover its failure: a destination that fails `onInit` is reported as `LOGGER_DESTINATION_INIT_FAILED` on `stderr` (not through the logger, whose sinks just failed) and receives no entries, and if **every** destination fails to initialize, entries fall back to raw NDJSON on `stdout`. Adding `new PrettyDevDestination()` without the optional `pino-pretty` therefore costs colours and a line on stderr, never your logs.
 
 ### Choosing how the dev terminal renders
 
-`PrettyDevDestination` takes a `view`. Every field defaults to what it rendered before, so `new PrettyDevDestination()` is unchanged — the options exist because the default view is deliberately verbose, and one entry can be seven lines.
+`PrettyDevDestination` takes a `view`; every field defaults to the previous rendering, so `new PrettyDevDestination()` is unchanged. The default view is verbose (one entry can be seven lines).
 
 ```typescript
 // One line per entry, with the fields your project repeats on every line hidden.
@@ -1024,7 +680,6 @@ new PrettyDevDestination({
 })
 
 // Message only, with the context pulled back into the line.
-// See the messageFormat warning below before interpolating any other field.
 new PrettyDevDestination({
   view: { hideObject: true, messageFormat: '[{context}] {msg}' }
 })
@@ -1039,94 +694,12 @@ new PrettyDevDestination({
 | `translateTime` | `'SYS:HH:MM:ss.l'`       | Or `false` for the raw timestamp                                             |
 | `colorize`      | `true`                   | ANSI colour                                                                  |
 
-> **`hideObject` hides it from THIS destination.** Any other destination you registered still receives the complete entry — the option is display-only and scoped to the pretty renderer. When pretty is your **only** destination that scope becomes total: `destinations` **replaces** stdout, so there is no JSON copy behind the rendering and a hidden field, `logKey` included, is not visible anywhere. That is what the option is for; `messageFormat` is how you pull a specific field back.
+- **`hideObject` hides fields from this destination only.** Other destinations still receive the complete entry. When pretty is your only destination nothing else holds the entry, because `destinations` replaces stdout; use `messageFormat` to pull a field back.
+- **A dot in `ignore` means a nested path.** `event.name` is a literal top-level key, so it must be escaped (`'event\\.name'` in a TypeScript string) or nothing is hidden. `service` and `deployment` are real nested objects and need no escape.
+- **`messageFormat` interpolates every placeholder except `{msg}` raw.** The library normalizes line separators and control characters in `msg` and the stack, never in metadata, so a newline in an interpolated field splits one entry into two and the second can read like a genuine record. Interpolate only fields your own code sets, never one carrying user input (`{tenantId}`, `{userId}`, a header).
+- **`destination` is not exposed, by design.** The library owns where entries go; a redirected stream would route around the fan-out and the last-resort rescue.
 
-> **A dot in `ignore` means "nested path", so a field name that CONTAINS a dot must escape it.** This library emits `event.name` as a literal top-level key, so the obvious spelling hides nothing at all — `pino-pretty` looks for an `event` object with a `name` inside, finds neither, and says nothing. Measured on one entry with only the option changing:
->
-> ```
-> ignore: '…,event.name'    → INFO: msg {"logKey":"X","event.name":"x"}   ← still there
-> ignore: '…,event\\.name'  → INFO: msg {"logKey":"X"}                    ← hidden
-> ```
->
-> In a TypeScript string literal that is `'event\\.name'` — one real backslash reaching `pino-pretty`. `service` and `deployment` need no escape; they really are nested objects. Reported by a consumer who copied the example above when it still had the unescaped form.
-
-The shape is exported as `PrettyViewOptions` when you want to build the view separately — it is this library's own interface, not a re-export of `pino-pretty`'s `PrettyOptions`, so type-checking without the optional peer installed still resolves.
-
-> **`messageFormat` interpolates every placeholder except `{msg}` raw — that can forge a terminal entry.** This library normalizes line separators and control characters in `msg` and in the stack, never in metadata, because escaping data would mean rewriting what you asked to be logged. `pino-pretty` substitutes whatever the field holds, so a newline in an interpolated field splits one entry into two and the second reads like a genuine record. Measured, with a newline in `context`:
->
-> ```
-> lines produced by ONE entry: 2
->   1: "[10:35:14.484] INFO: [Auth"
->   2: "[10:00:00.000] INFO: FORGED admin promoted] real entry …"
-> ```
->
-> Interpolate only fields your own code sets. Never one carrying user input — `{tenantId}`, `{userId}`, a header, a query value. If you need one of those visible, leave it in the record instead. That closes **this** path and no more: a metadata value is not safe terminal text either, since `JSON.stringify` escapes only C0 and emits DEL, the C1 range (U+0085 NEL included), U+2028 and U+2029 verbatim — see _One entry, one line_ below, where the same boundary is stated. Only `msg` and the stack carry that guarantee.
-
-> **`destination` is not exposed, by design.** The library owns where entries go — a redirected stream would route around the fan-out and the last-resort rescue above. It is absent from the type and applied after your options are merged, so it cannot be overridden from untyped JavaScript either.
-
-**The first entries of a boot are held, not lost.** The transform cannot exist until `onInit` — loading the optional peer is async — so everything NestJS emits while instantiating providers arrives before it. Those entries are buffered and then rendered through the transform in arrival order. If the peer is missing, the bound is reached, or the app shuts down before init, they are written as raw NDJSON instead: degraded, never dropped.
-
-### Postgres destination (Prisma)
-
-```typescript
-import { PINO_LEVEL_NUMBERS } from '@bymax-one/nest-logger'
-import type { ILogDestination } from '@bymax-one/nest-logger'
-import type { LogEntry } from '@bymax-one/nest-logger/shared'
-import type { PrismaClient } from '@prisma/client'
-
-export class PrismaLogDestination implements ILogDestination {
-  readonly name = 'prisma-postgres'
-  readonly minLevel = 'warn' as const // only persist warnings and above
-
-  constructor(private readonly prisma: PrismaClient) {}
-
-  write(payload: string): void {
-    // This destination stores individual columns, so it is one of the few that
-    // has to parse. A sink that forwards the line verbatim should not.
-    const entry = JSON.parse(payload) as LogEntry
-    void this.prisma.applicationLog.create({
-      data: {
-        // `entry.level` is the Pino LABEL ('info'). Map it when the column is numeric.
-        level: PINO_LEVEL_NUMBERS[entry.level],
-        logKey: entry.logKey,
-        message: entry.msg,
-        payload: entry,
-        createdAt: new Date(entry.time)
-      }
-    })
-  }
-}
-```
-
-### Rolling file destination (`pino-roll`)
-
-```typescript
-import { createStream } from 'pino-roll'
-import type { ILogDestination } from '@bymax-one/nest-logger'
-import type { LogEntry } from '@bymax-one/nest-logger/shared'
-
-export class RollingFileDestination implements ILogDestination {
-  readonly name = 'rolling-file'
-  private stream?: Awaited<ReturnType<typeof createStream>>
-
-  async onInit(): Promise<void> {
-    this.stream = await createStream('logs/app.log', {
-      frequency: 'daily',
-      mkdir: true,
-      size: '50m'
-    })
-  }
-
-  async onShutdown(): Promise<void> {
-    await new Promise<void>((resolve) => this.stream?.end(resolve))
-  }
-
-  write(payload: string): void {
-    // Already newline-terminated JSON — re-serializing would double-encode it.
-    this.stream?.write(payload)
-  }
-}
-```
+The view type is exported as `PrettyViewOptions`. It is this library's own interface, so type-checking works without the optional peer installed. Entries emitted before `onInit` (while Nest instantiates providers) are buffered and then rendered in order; if the peer is missing, the bound is reached or the app shuts down first, they are written as raw NDJSON, never dropped.
 
 ---
 
@@ -1136,15 +709,12 @@ export class RollingFileDestination implements ILogDestination {
 HTTP Request
     │
     ▼
-RequestIdMiddleware             ← runs FIRST (NestJS middleware precedes
-    │                              guards AND interceptors) and opens the
-    │                              AsyncLocalStorage scope
+RequestIdMiddleware             ← runs first; opens the AsyncLocalStorage scope
     │                              { requestId, tenantId }
     ▼
-HttpAccessLogMiddleware         ← emits HTTP_REQUEST_START inside that scope, and
-    │                              arms the terminal entry on the response's
-    │                              'close' event. BEFORE guards, so a 401/403/429
-    │                              rejection is logged too.
+HttpAccessLogMiddleware         ← emits HTTP_REQUEST_START in that scope and arms the
+    │                              terminal entry on the response's 'close' event,
+    │                              BEFORE guards, so a 401/403/429 is logged too
     ▼
 Guards (consumer's auth)        ← may reject here; no interceptor ever runs
     │
@@ -1159,7 +729,7 @@ Application Service
               ▼
          Pino logger
               │
-         createTraceContextMixin()  ← runs per log entry
+         createTraceContextMixin()  ← per entry
               ├── ALS store      → { requestId, tenantId, userId }
               └── OTel span      → { traceId, spanId, traceFlags }
               │
@@ -1169,31 +739,21 @@ Application Service
               ▼
     ┌─────────────────────────────┐
     │  DefaultStdoutDestination   │  ← default; replaced by `destinations`
-    │  LokiDestination            │  ← optional
-    │  PrismaLogDestination       │  ← optional
-    │  RollingFileDestination     │  ← optional
+    │  your ILogDestination(s)    │
     └─────────────────────────────┘
 ```
 
-### Design Principles
-
-| Principle                     | Description                                                                                                                                                                                                                                                                                 |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **🪶 Singleton Scope**        | `AsyncLocalStorage` delivers per-request context at zero latency overhead — NestJS's own docs put the cost of `Scope.REQUEST` at up to ~5% latency, unacceptable on a logger that runs for every request                                                                                    |
-| **🧬 One Composed Mixin**     | ALS context and OTel trace context merge into a single Pino mixin with a deterministic order: ALS first, then OTel — an active span is the authoritative trace identity, so it wins on conflicts                                                                                            |
-| **⚡ Single-pass Redaction**  | One recursive walk censors any value whose key name is in the sensitive set, to a 100-level ceiling past which nested objects are dropped rather than emitted — O(nodes), the same order the serializer already pays. Replaced 140 `fast-redact` wildcard paths that cost ~107 µs per entry |
-| **🔌 Interface-Driven Sinks** | `ILogDestination` is a contract — Loki, Postgres, rolling files, or anything else is a consumer implementation, never a dependency of this package                                                                                                                                          |
-| **🌳 Zero Runtime Deps**      | `"dependencies": {}` — every package arrives as a peer dependency, so consumers pin exact versions and the supply-chain surface stays theirs                                                                                                                                                |
+Providers are singletons: `AsyncLocalStorage` delivers per-request context without `Scope.REQUEST`. ALS context and the OTel span merge into one mixin in a fixed order (ALS first, then OTel, so an active span wins a conflict).
 
 ---
 
 ## 🔐 Security Model
 
-A logger sees every payload the application handles, so the security posture is about what **never** reaches the sink — and about a sink failure never reaching the application.
+A logger sees every payload the application handles, so the security posture is about what **never** reaches the sink, and about a sink failure never reaching the application.
 
 ### Redaction by default
 
-The library censors **32 sensitive field names** wherever they appear in a log record — down to 100 levels of nesting, inside arrays, and inside class instances. Past that ceiling a nested OBJECT is DROPPED rather than emitted, so the limit can never become a leak. (A primitive sitting at the boundary is still emitted: its key was matched by the container at level 100, the last one walked, so it has already been through the matcher.) These cover:
+The library censors **32 sensitive field names** wherever they appear in a record: down to 100 levels of nesting, inside arrays and inside class instances. Past that ceiling a nested object is dropped rather than emitted, so the limit cannot become a leak.
 
 | Category                  | Fields                                                                                                                                                                                                                                                    |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1207,33 +767,12 @@ The library censors **32 sensitive field names** wherever they appear in a log r
 | Conservative PII          | `email`                                                                                                                                                                                                                                                   |
 | HTTP headers (absolute)   | `req.headers.authorization`, `req.headers.cookie`, `req.headers["x-api-key"]`, `req.headers["x-auth-token"]`, `res.headers["set-cookie"]` — retained for the legacy `'paths'` strategy; the by-name row above already covers these shapes and every other |
 
-#### How it works, and why it changed in `1.2.0`
-
-Redaction is one **recursive, snapshotting walk** of the record: a value is censored when its KEY NAME is in the set above, wherever that key sits. Nothing the caller passed is mutated, and every value is read exactly once and pinned into a fresh structure — so what reaches the sink is guaranteed to be what was inspected, even when the payload carries accessors or a `toJSON` that could answer differently on a second read.
-
-A value with a `toJSON` is inspected through that method's output, because that is what reaches the log. A method can also **rename** what it exposes — `{ password, toJSON: () => ({ value: this.password }) }` would emit the secret under a name nobody declared sensitive — so when the source object itself carries a sensitive key, the method is not trusted and the whole value is censored. This deliberately over-redacts an object that holds a sensitive key and correctly omits it; the alternative (running `toJSON` against a sanitized copy) throws on every method that reads an internal slot rather than an own property, which is `Date`, `Decimal` and Luxon.
+Redaction is one **recursive, snapshotting walk**: a value is censored when its key name is in the set, wherever it sits. Nothing the caller passed is mutated, and every value is read once and pinned into a fresh structure, so what reaches the sink is what was inspected even when the payload carries accessors or a `toJSON` that could answer differently on a second read. A value with a `toJSON` is inspected through that method's output; when the source object itself carries a sensitive key, the method is not trusted and the whole value is censored, because a method could rename what it exposes. `DEFAULT_REDACT_PATHS` is still exported at full fidelity, and `redactStrategy: 'paths'` feeds it to `fast-redact` for anyone depending on exact path semantics, with a four-level ceiling and roughly 100× the cost.
 
 > [!WARNING]
-> Redaction matches **key names**. A secret placed under a name you have not declared sensitive is
-> emitted — `logger.log(key, msg, userId, { renamed: user.password })` writes it in clear, and so
-> does a `toJSON` that renames nested state. That is a property of name-based redaction, not a
-> defect: no name matcher can follow a value through a rename. Declare the name, or keep the value
-> out of the log.
+> Redaction matches **key names**. A secret under a name you have not declared sensitive is emitted: `logger.log(key, msg, userId, { renamed: user.password })` writes it in clear, and so does a `toJSON` that renames nested state. No name matcher can follow a value through a rename. Declare the name, or keep the value out of the log.
 
-Before `1.2.0` the same names were expanded into 140 `fast-redact` paths at wildcard depths 1–4 (`*.field`, `*.*.field`, …), because `fast-redact`'s `*` matches a single level and is not recursive. That approach had two problems, both measured:
-
-|                                  |                depth-1–4 paths (pre-`1.2.0`) |                 name walk (`1.2.0`) |
-| -------------------------------- | -------------------------------------------: | ----------------------------------: |
-| Throughput, full production path |                             **9,311 logs/s** |                  **274,227 logs/s** |
-| Cost per entry                   |                                      ~107 µs |                             ~3.6 µs |
-| Nesting covered                  |                 4 levels — deeper **leaked** | 100 levels — deeper objects dropped |
-| `{ headers: { authorization } }` | **leaked** (only `req.headers.*` was pinned) |                            censored |
-
-`DEFAULT_REDACT_PATHS` is still exported at full fidelity, and `redactStrategy: 'paths'` still feeds it to `fast-redact` for anyone depending on exact path semantics — with the ceiling and the cost that implies. Expect that escape hatch to be removed in a future major.
-
-**Not covered, by design:** a secret interpolated into the message STRING (`logger.info(key, \`token=${t}\`)`) — redaction works on structured fields, and no field-based mechanism can scrub a substring. Keep secrets out of `msg`.
-
-**One entry, one line.** What the message string _cannot_ do is forge an entry. Every message argument passes through a line-separator normalization before it reaches Pino, so `\r`, `\n`, U+2028, U+2029 and C1 NEL (U+0085) become the literal two-character sequence `\n` — and every other control character that can drive a terminal (ESC, vertical tab, form feed, backspace, the rest of C0 except TAB, DEL and the C1 range) becomes its readable `\uXXXX` escape. This protects **two** sinks, not one. `pino-pretty` (shipped here as `PrettyDevDestination`) and any destination that re-renders the parsed message write those bytes straight to the terminal, where a raw newline **or** an `ESC E` produces something indistinguishable from a separate log entry. And the raw NDJSON line is exposed too when a human reads it in a terminal: JSON escaping covers only C0, so `JSON.stringify` and Pino's serializer emit DEL, the C1 range (U+0085 NEL included), U+2028 and U+2029 **verbatim** — measured on real bytes. Escaping at the sink neutralizes both paths. The scrubbed stack gets the same escaping (its newlines are kept, since a stack is multi-line by design), because `pino-pretty` prints it raw and its first line repeats the error message. Structured fields are untouched: `err.message` keeps the original text verbatim. That is the boundary — a control character placed in a **metadata value** still reaches a terminal, because escaping data would mean rewriting what you asked to be logged. Only `msg` and the stack carry this guarantee.
+**One entry, one line.** Every message argument passes through a normalization before it reaches Pino: line separators (`\r`, `\n`, U+2028, U+2029, U+0085) become the two-character sequence `\n`, and every other control character that can drive a terminal (ESC, vertical tab, form feed, backspace, the rest of C0 except TAB, DEL and the C1 range) becomes a readable `\uXXXX` escape. This keeps a message from forging an entry in `pino-pretty` and in any destination that re-renders it, and `JSON.stringify` alone would leave DEL, C1, U+2028 and U+2029 verbatim in a raw line read in a terminal. The scrubbed stack gets the same escaping (its newlines are kept). Structured fields are untouched, so `err.message` keeps the original text, and a control character in a **metadata value** still reaches a terminal: only `msg` and the stack carry this guarantee.
 
 ### Extending the defaults
 
@@ -1248,21 +787,10 @@ BymaxLoggerModule.forRoot({
 })
 ```
 
-The extra paths are **merged** with the defaults — never replacing them.
+The extra paths are **merged** with the defaults, never replacing them.
 
 > [!IMPORTANT]
-> A consumer path's LEAF NAME is also fed to the name walk, so `redactPaths: ['user.ssn']`
-> censors `ssn` wherever it appears, not only under `user`. That is broader than the path you
-> wrote, deliberately: consumer paths are applied by Pino's stringifier, which runs after the
-> per-field size bound, so without this a field covered only by a path could still surface inside
-> a truncation envelope's `_preview`. It errs toward redacting a name you have already declared
-> secret.
->
-> An **array index is not a name**, so an unquoted numeric segment is skipped and the path falls
-> back to the nearest name: `redactPaths: ['tokens[0]']` censors the whole `tokens` array. The
-> walk matches key names and never array positions, so feeding it `0` would cover nothing while
-> censoring any object key literally named `0`. The quoted form `['obj["0"]']` stays a name,
-> since an object key named `0` IS matched by the walk.
+> A path's **leaf name** is also fed to the name walk, so `redactPaths: ['user.ssn']` censors `ssn` wherever it appears, not only under `user`. That is deliberate: paths are applied by Pino's stringifier, after the per-field size bound, and without this a field covered only by a path could surface inside a truncation envelope's `_preview`. An **array index is not a name**: `redactPaths: ['tokens[0]']` censors the whole `tokens` array, while the quoted form `['obj["0"]']` stays a name.
 
 ### Disabling defaults (not recommended)
 
@@ -1274,25 +802,25 @@ BymaxLoggerModule.forRoot({
 })
 ```
 
-A `LOGGER_BOOTSTRAP_WARNING` entry is emitted on startup so security reviews can audit when PII protection was intentionally reduced.
+A `LOGGER_BOOTSTRAP_WARNING` is emitted on startup so security reviews can audit when PII protection was reduced on purpose.
 
 ### An append-only default list
 
-`DEFAULT_REDACT_PATHS` is append-only by contract: a path may be added in a minor release, but removing one requires a major version bump. A field that stopped being redacted silently is a leak that no consumer would notice — the version number is what makes it visible.
+`DEFAULT_REDACT_PATHS` is append-only by contract: a path may be added in a minor release, but removing one requires a major version. A field that silently stopped being redacted is a leak nobody would notice.
 
 ### Validated trace identifiers
 
-Trace context is never copied verbatim into a log entry. The OTel mixin reads the active span and passes its identifiers through `isValidTraceId` / `isValidSpanId` before injecting them, so a malformed or attacker-influenced value cannot be written into the correlation fields your dashboards and alerts key on.
+The OTel mixin passes the active span's identifiers through `isValidTraceId` / `isValidSpanId` before injecting them, so a malformed or attacker-influenced value cannot reach the correlation fields your dashboards key on.
 
 ### Destination failures are contained
 
-Every `write()` runs inside a try/catch. A destination that throws or rejects produces a `LOGGER_DESTINATION_WRITE_FAILED` line on `stderr` — never back through the logger, which would turn a broken sink into a write → log → write feedback loop — and the entry is dropped for that sink only. A destination whose `onInit()` rejects is reported as `LOGGER_DESTINATION_INIT_FAILED` and removed from the write fan-out and the shutdown sequence, so it receives no entries and never blocks boot. A logging backend going down degrades logging — it never takes the application with it.
+Every `write()` runs inside a try/catch. A destination that throws or rejects produces a `LOGGER_DESTINATION_WRITE_FAILED` line on `stderr` (never back through the logger, which would loop) and the entry is dropped for that sink only. A destination whose `onInit()` rejects is reported as `LOGGER_DESTINATION_INIT_FAILED` and removed from the fan-out and shutdown, and never blocks boot.
 
 ### What redaction covers, and what it cannot
 
-The walk is bounded: a container nested more than 100 levels deep is written as `[REDACTION_DEPTH_EXCEEDED]`, and a call that visits more than 200000 containers writes `[REDACTION_BUDGET_EXCEEDED]` in place of each further one (only primitives beside them are kept; a container sibling after the budget is the marker too). Nothing past either bound is passed through unwalked. A stack or a message is written at most 16384 characters long and ends with `…[truncated]` when it was cut. A string under a metadata key is the caller's own data and is written as given: `maxEntrySizeBytes` bounds what a serializer returns, not a metadata string.
+The walk is bounded: a container nested more than 100 levels deep is written as `[REDACTION_DEPTH_EXCEEDED]`, and a call that visits more than 200000 containers writes `[REDACTION_BUDGET_EXCEEDED]` in place of each further one. A stack or message is written at most 16384 characters long and ends with `…[truncated]` when cut. A string under a metadata key is the caller's own data and is written as given: `maxEntrySizeBytes` bounds what a serializer returns, not a metadata string.
 
-Redaction here matches **field names**, not values. Under the default `redactStrategy: 'names'` a secret stored under a covered name is censored at any depth — under the legacy `'paths'` strategy the four-level `fast-redact` ceiling applies instead, and a deeper field is not covered. Either way, the same secret **embedded inside a string** under an uncovered name travels intact. Measured:
+Redaction matches **field names**, not values. A secret under a covered name is censored at any depth (under the legacy `'paths'` strategy the four-level ceiling applies instead), but the same secret **embedded inside a string** under an uncovered name travels intact:
 
 ```json
 {
@@ -1301,119 +829,58 @@ Redaction here matches **field names**, not values. Under the default `redactStr
 }
 ```
 
-There is no name rule that reaches the second one, and scanning inside values for secret-shaped text would mean rewriting what you asked to be logged — wrong in both directions, silently. **The boundary is yours to hold:** do not put rendered bodies, raw provider responses or whole request payloads into a field, and be aware that attaching an upstream error as `cause` carries whatever that error carries. Since 1.2.7 preserves an error's own fields at every depth of the chain, a cause that quotes something it should not quote is now more visible, not less.
+No name rule reaches the second case, and scanning values for secret-shaped text would rewrite what you asked to log. **The boundary is yours to hold:** do not put rendered bodies, raw provider responses or whole request payloads into a field, and remember that an upstream error attached as `cause` carries whatever that error carries.
 
-`redactStrategy` governs **your** payload — the record you log, your child bindings, and the output of any serializer you supply. The built-in `err` serializer is the library's own output and is always name-walked, including under `'paths'`, because `fast-redact`'s four-wildcard ceiling cannot reach the depth a `cause` chain serializes to.
-
-Under `redactStrategy: 'paths'`, an `Error` anywhere in the record is converted with the default names censored in its own fields and its `cause` chain at any depth; non-`Error` data is matched only by the configured paths. The `Error` is written as it is under `'names'` (`type`, `message`, `stack`, its own fields and its causes), with your paths applied on top. A secret under a default name in your own data deeper than the ceiling still travels intact, as above.
+`redactStrategy` governs **your** payload: the record, child bindings and the output of any serializer you supply. The built-in `err` serializer is always name-walked, even under `'paths'`, because the four-level ceiling cannot reach the depth of a `cause` chain. Under `'paths'`, an `Error` anywhere in the record is converted with the default names censored in its own fields and its `cause` chain at any depth, with your paths applied on top; non-`Error` data is matched only by the configured paths.
 
 #### A value interpolated into the message has no name to redact
 
-The case above is a secret inside a field's **value**. The sharper version is a value interpolated into the message itself, where there is no field at all:
-
 ```ts
-// Both identifiers are now message text: there is no `userId` field and no
-// `familyId` field for any strategy to match, only a string that happens to
-// contain them.
+// Both identifiers are message text: there is no field for any strategy to match.
 logger.warn(`reissueTokens: family revoked userId=${userId} familyId=${familyId}`)
 
-// Same facts, as fields. The logKey is yours — `RESERVED_LOG_KEYS` holds the
-// library's own keys, not your domain's — and follows MODULE_ACTION_RESULT:
-// module AUTH, action REUSE, result DETECTED.
+// Same facts, as fields (logKey is yours, in MODULE_ACTION_RESULT form).
 logger.warnStructured('AUTH_REUSE_DETECTED', 'token family revoked after reuse detection', userId, {
   familyId
 })
 ```
 
-Redaction matches names. An interpolated value does not have one — not an uncovered name, none — so there is nothing for any strategy to match, and no configuration you can add will change that. This is not a gap to be closed later: scanning message text for secret-shaped substrings would mean rewriting what you asked to be logged, which is the wrong trade in both directions.
-
-The rule that follows is short: **a value that matters is a field, not text.** A field can be redacted, queried, aggregated and correlated; the same value inside `msg` can only be read by a human who happens to be looking. That applies most to the values you would least like to interpolate — tokens, identifiers, addresses — and it is the one part of this contract the library cannot enforce for you, because the decision is made at the call site.
+An interpolated value has no name, so no configuration can redact it. **A value that matters is a field, not text.** A field can be redacted, queried and correlated; inside `msg` it can only be read by a human. The library cannot enforce this, because the decision is made at the call site.
 
 ### A closed pipe does not kill the process
 
-`node app | head` closes the read end of stdout while the application is still writing. The stream reports that as `EPIPE` **asynchronously**, through its `'error'` event, after `write()` has already returned — so a `try/catch` around the write catches nothing, and because Node attaches no default handler to `process.stdout`, the emit becomes an uncaught exception and the process dies. Measured, not assumed: `0` listeners, no synchronous throw, `UNCAUGHT:EPIPE`, exit 42.
-
-Every write this library makes to a process stream — the default stdout sink, the last-resort rescue, the pre-init drain, the `stderr` failure reports — installs a swallowing `'error'` listener on first use. The one exception is the stream `pino-pretty` writes through inside `PrettyDevDestination`, which attaches `'error'` listeners of its own. **The side effect is worth knowing:** that listener is on the shared `process.stdout`, so after the first log line an EPIPE raised by _your_ writes stops being an uncaught exception too. The alternative is the crash above. Your own `'error'` listener is never removed or replaced — this only ever adds one.
-
-If you write to `process.stdout` from a custom `ILogDestination`, do the same in your own sink; the [destinations guide](./docs/guidelines/DESTINATIONS-IMPLEMENTATION-GUIDELINES.md) has the exact pattern.
+`node app | head` closes the read end of stdout while the application is still writing. Node reports the `EPIPE` asynchronously through the stream's `'error'` event, after `write()` returned, and attaches no default handler to `process.stdout`, so the emit becomes an uncaught exception and the process dies. Every write the library makes to a process stream (default stdout sink, last-resort rescue, pre-init drain, `stderr` reports) installs a swallowing `'error'` listener on first use. The one exception is the stream `pino-pretty` writes through, which attaches listeners of its own. The side effect: the listener sits on the shared `process.stdout`, so an EPIPE raised by your own writes stops being an uncaught exception too. Your own `'error'` listener is never removed or replaced. A custom `ILogDestination` that writes to `process.stdout` should do the same; the [destinations guide](./docs/guidelines/DESTINATIONS-IMPLEMENTATION-GUIDELINES.md) has the pattern.
 
 ### Bounded field size
 
-Every serializer — the default `err` one and any you supply — is wrapped so a field whose serialized JSON exceeds `maxEntrySizeBytes` (64 KB by default) is replaced by a compact envelope: `_truncated`, `_logKey: 'LOGGER_ENTRY_TRUNCATED'`, `_originalSize`, and a 200-character `_preview`. An accidentally logged webhook payload costs a bounded number of bytes and leaves a record that truncation happened, instead of flooding the sink.
+Every serializer, the default `err` one and any you supply, is wrapped so a field whose serialized JSON exceeds `maxEntrySizeBytes` (64 KB by default) is replaced by an envelope with `_truncated`, `_logKey: 'LOGGER_ENTRY_TRUNCATED'`, `_originalSize` and a 200-character `_preview`.
 
 ### Security Checklist
 
-When integrating `@bymax-one/nest-logger` in production, verify each of the following:
-
-- `shouldDisableDefaultRedact` stays `false` — if it is on, the `LOGGER_BOOTSTRAP_WARNING` must be justified in a security review
-- Every custom field carrying a secret or personal document is added to `redactPaths` at the depths it actually appears
-- `http.excludePaths` regexes are anchored and linear-time — an unbounded pattern runs on every request URL (ReDoS)
-- Custom destinations never re-serialize the raw request object; they receive the already-redacted, already-serialized NDJSON line
-- Destination credentials (Loki, Postgres, OTLP) come from the environment, never from values written into module options in source control
-- Log retention at the sink matches your data-retention policy — redaction bounds what is stored, not how long
-
----
-
-## 🛡️ Security Table
-
-| Layer               | Implementation                                                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| PII Redaction       | 32 field names censored at ANY depth in one snapshotting walk — ~3.6 µs/entry                                                  |
-| Credentials         | `password`, `passwordHash`, `token`, `accessToken`, `refreshToken`, `apiKey`, `apiSecret`, `privateKey`                        |
-| MFA Secrets         | `mfaSecret`, `mfaRecoveryCodes`, `totpSecret` — redacted to the 100-level ceiling                                              |
-| PCI DSS             | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                                            |
-| LGPD Documents      | `cpf`, `cnpj`, `rg`, plus `email` as a conservative default                                                                    |
-| HTTP Headers        | `authorization`, `cookie`, `x-api-key`, `x-auth-token`, `set-cookie` — absolute paths on `req` / `res`                         |
-| Redact List         | `DEFAULT_REDACT_PATHS` is append-only; removal requires a major version                                                        |
-| Trace Injection     | `isValidTraceId` / `isValidSpanId` validated before any identifier is written                                                  |
-| URL Cardinality     | UUIDs, ULIDs, nanoids and numeric IDs normalized to `:id` — bounds label cardinality and keeps raw identifiers out of the path |
-| Destination Failure | Every `write()` try/catch-wrapped; a failure is reported on `stderr` and swallowed, never propagated to the caller             |
-| Field Size          | Per-field UTF-8 cap at `maxEntrySizeBytes` (64 KB default); oversized values become a truncation envelope                      |
-| Supply Chain        | `"dependencies": {}` — no transitive runtime packages of the library's own choosing                                            |
-
-> [!IMPORTANT]
-> Redaction protects the fields it knows about. Any new field carrying a secret or a personal document must be added to `redactPaths` — the default list covers the standard set, not your domain's.
-
----
-
-## 🧱 Tech Stack
-
-[![Pino](https://img.shields.io/badge/Pino-10-green?style=flat-square)](https://getpino.io)
-[![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?style=flat-square&logo=nestjs)](https://nestjs.com)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Node.js](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
-[![Jest](https://img.shields.io/badge/Jest-30-C21325?style=flat-square&logo=jest)](https://jestjs.io)
-[![Stryker](https://img.shields.io/badge/Stryker-Mutation_Testing-red?style=flat-square)](https://stryker-mutator.io)
-[![pnpm](https://img.shields.io/badge/pnpm-11-F69220?style=flat-square&logo=pnpm&logoColor=white)](https://pnpm.io)
-[![tsup](https://img.shields.io/badge/tsup-9-orange?style=flat-square)](https://tsup.egoist.dev)
+- `shouldDisableDefaultRedact` stays `false`; if it is on, the `LOGGER_BOOTSTRAP_WARNING` must be justified in a security review.
+- Every custom field carrying a secret or personal document is added to `redactPaths` at the depths where it appears. The default list covers the standard set, not your domain's.
+- `http.excludePaths` regexes are anchored and linear-time: an unbounded pattern runs on every request URL (ReDoS).
+- Custom destinations never re-serialize the raw request object; they receive the already-redacted NDJSON line.
+- Destination credentials (Loki, Postgres, OTLP) come from the environment, never from module options in source control.
+- Log retention at the sink matches your data-retention policy: redaction bounds what is stored, not how long.
 
 ---
 
 ## 🧪 Testing & Quality
 
-A logger runs on every request of every service that installs it, so the suite is held to a bar beyond "it runs" — every behavior is pinned so that a regression **fails a test**.
+A logger runs on every request of every service that installs it, so every behavior is pinned so that a regression fails a test:
 
-- ✅ **100% line coverage** — statements, branches, functions, and lines, enforced as a release gate across unit + e2e
-- ✅ **100% mutation score** — verified with [Stryker](https://stryker-mutator.io/) on a cold run
-  against a `break` threshold of 100, with **zero** surviving mutants. The handful that no test can
-  kill are suppressed on the line they apply to and each carries its reason; a rule against those
-  comments was retired once their cost was measured at **+0.10 kB brotli**, roughly a tenth of
-  what it had been assumed to be (see the [report](./docs/mutation_testing_results.md))
-- ✅ **Every suppression carries its reason** — each `// Stryker disable` names, after the `:` Stryker reads it from, why the mutant it silences cannot be observed; one of them is recorded as what it is, a mutant the suite kills but Stryker fails to attribute, rather than mislabelled an equivalent. `check:mutants` proves those reasons parse, so they reach the report rather than the `Ignored using a comment` fallback, and the score stays an accounting rather than a number
-- ✅ **No real I/O in unit tests** — the Pino instance and every destination are mocked; e2e tests exercise the wired module through `@nestjs/testing` and supertest
+- **100% coverage** (statements, branches, functions, lines), enforced as a release gate across unit and e2e tests.
+- **100% mutation score** with [Stryker](https://stryker-mutator.io/) on a cold run, with a `break` threshold of 100. The few mutants no test can kill are suppressed on the line they apply to, each with its reason (`pnpm check:mutants` proves the reasons parse). See the [report](./docs/mutation_testing_results.md).
+- **No real I/O in unit tests**: Pino and every destination are mocked, and e2e tests exercise the wired module through `@nestjs/testing` and supertest.
 
 ```bash
 pnpm test              # unit tests (Jest)
-pnpm test:cov          # coverage report
-pnpm test:e2e          # end-to-end tests (supertest)
-pnpm test:cov:all      # full coverage gate (100% statements/branches/functions/lines)
-pnpm mutation          # Stryker mutation testing (100% break gate)
-pnpm typecheck         # tsc strict check (all tsconfig variants)
-pnpm lint              # ESLint
+pnpm test:e2e          # end-to-end tests
+pnpm test:cov:all      # full coverage gate
+pnpm mutation          # Stryker mutation testing
+pnpm typecheck && pnpm lint
 ```
-
-> [!NOTE]
-> Line coverage proves a line _executed_ under test; mutation testing proves a test _would fail_ if that line were wrong. The full methodology and per-area breakdown are in [docs/mutation_testing_results.md](./docs/mutation_testing_results.md).
 
 ---
 
@@ -1423,9 +890,7 @@ pnpm lint              # ESLint
 
 Implements NestJS `LoggerService`. All methods are available via `@InjectLogger()`.
 
-There are **two** APIs on this class, and they do not share a signature shape.
-
-**Structured API** — the `MODULE_ACTION_RESULT` convention. The third parameter is the acting **`userId`**, not a context label (the context comes from `@InjectLogger(ctx)`), and it may be omitted: when it is, an ambient `userId` from the `LogContextService` scope is used.
+**Structured API** — the `MODULE_ACTION_RESULT` convention. The third parameter is the acting **`userId`**, not a context label (the context comes from `@InjectLogger(ctx)`), and it may be omitted: an ambient `userId` from the `LogContextService` scope is then used.
 
 | Method            | Signature                         | Notes                                                            |
 | ----------------- | --------------------------------- | ---------------------------------------------------------------- |
@@ -1433,14 +898,9 @@ There are **two** APIs on this class, and they do not share a signature shape.
 | `warnStructured`  | `(logKey, msg, userId?, meta?)`   | Structured warn log — takes a **message string**                 |
 | `errorStructured` | `(logKey, error, userId?, meta?)` | Structured error log — takes an **`Error`**, serialized to `err` |
 
-> [!NOTE]
-> `meta` carries arbitrary fields, with two reserved groups dropped on the way in. `logKey`,
-> `userId` and `context` belong to the payload — the entry states who acted and where, read from
-> the authenticated ALS scope, so a metadata bag cannot forge them. `__proto__`, `constructor`
-> and `prototype` are dropped as well: they name a prototype chain rather than a field, and an
-> own `__proto__` (what `JSON.parse` of a request body produces) would otherwise be lost anyway.
+`meta` carries arbitrary fields, except that `logKey`, `userId` and `context` belong to the payload (read from the authenticated ALS scope, so a metadata bag cannot forge them) and `__proto__`, `constructor` and `prototype` are dropped, since they name a prototype chain rather than a field.
 
-**NestJS `LoggerService` bridge** — the variadic contract NestJS itself calls, so `app.useLogger()` works. These take a message, not a log key.
+**NestJS `LoggerService` bridge** — the variadic contract NestJS calls, so `app.useLogger()` works. These take a message, not a log key.
 
 | Method    | Signature                              | Notes                                          |
 | --------- | -------------------------------------- | ---------------------------------------------- |
@@ -1472,17 +932,7 @@ There are **two** APIs on this class, and they do not share a signature shape.
 | `get`       | `(key)`             | Reads one field from the current scope, or `undefined` when unset or outside a `run()` call                                           |
 | `getStore`  | `()`                | Returns current scope or `undefined` outside a `run()` call                                                                           |
 
-> [!IMPORTANT]
-> **A nested `run()` discards the enclosing context.** The inner scope starts from its own `store`
-> alone, so a field an outer scope had set — a `tenantId` resolved at the edge, say — is absent for
-> the whole inner scope. Nothing throws; `get()` simply returns `undefined` and the field is missing
-> from every entry the callback emits, which is the kind of thing found by losing a field in
-> production. Use `runMerged()` when the inner scope should extend the outer one.
->
-> Replacement stays the default because the opposite leaks in a worse direction: a background job
-> started inside a request scope would silently inherit the caller's `userId` and attribute its
-> entries to a user who never triggered it. A missing field is visibly missing; an inherited one is
-> wrong while looking right.
+**A nested `run()` discards the enclosing context.** The inner scope starts from its own `store` alone, so a field an outer scope had set (a `tenantId` resolved at the edge) is absent for the whole inner scope; nothing throws and `get()` returns `undefined`. Use `runMerged()` when the inner scope should extend the outer one. Replacement is the default because the opposite leaks worse: a background job started inside a request scope would inherit the caller's `userId` and attribute its entries to a user who never triggered it.
 
 ### Decorators
 
@@ -1509,8 +959,7 @@ Every token is a `Symbol`, never a string, so it cannot collide with one of your
 
 ### Level maps (from `@bymax-one/nest-logger`)
 
-`LogEntry.level` is the Pino string LABEL, not the numeric code. A destination writing a numeric
-column converts with the exported maps instead of hard-coding them:
+`LogEntry.level` is the Pino string label, not the numeric code. A destination writing a numeric column converts with the exported maps:
 
 ```typescript
 import { PINO_LEVEL_NAMES, PINO_LEVEL_NUMBERS } from '@bymax-one/nest-logger'
@@ -1533,10 +982,7 @@ type ServiceMetadata = {
   readonly environment?: string
 }
 
-// What is EMITTED. Deliberately a different type: `instanceId` nests as
-// `service.instance.id`, and the environment is not under `service` at all.
-// Reusing the configuration type here would advertise `entry.service.instanceId`,
-// which no entry carries.
+// What is EMITTED: `instanceId` nests as `service.instance.id`, and the environment is not under `service`.
 type EmittedServiceResource = {
   readonly name: string
   readonly version: string
@@ -1570,40 +1016,7 @@ type LogEntry = {
 }
 ```
 
-Under `resourceFormat: 'flat'` there is no `service` object at all — the values arrive as dotted
-top-level keys (`"service.instance.id"`), which the index signature already admits.
-
-The emitted types are exported, so a helper that receives one can be typed without inlining its
-shape:
-
-```typescript
-import type {
-  EmittedDeploymentResource,
-  EmittedServiceResource,
-  LogEntry
-} from '@bymax-one/nest-logger/shared'
-
-/** Build the identity triplet a backend joins on, from a parsed entry. */
-function identityOf(entry: LogEntry): string {
-  const service: EmittedServiceResource | undefined = entry.service
-  const deployment: EmittedDeploymentResource | undefined = entry.deployment
-  if (service === undefined) {
-    return 'unknown'
-  }
-  // `service.namespace` is part of the identity, not decoration: OTel allows two
-  // services to share a name when their namespaces differ, so a key built without
-  // it collapses them into one.
-  const namespace = service.namespace ?? 'no-namespace'
-  const instance = service.instance?.id ?? 'no-instance'
-  const environment = deployment?.environment.name ?? 'no-environment'
-  return `${namespace}/${service.name}@${service.version}/${instance}/${environment}`
-}
-
-/** `event.name` is declared, so it reads as a string without a cast. */
-function eventOf(entry: LogEntry): string | undefined {
-  return entry['event.name']
-}
-```
+Under `resourceFormat: 'flat'` there is no `service` object: the values arrive as dotted top-level keys (`"service.instance.id"`), which the index signature admits.
 
 ### `ILogDestination`
 
@@ -1673,69 +1086,45 @@ The `PrettyDevDestination` errors are thrown inside `onInit`, which the registry
 
 ## ⚡ Performance
 
-Pino official benchmarks (Node 24, 100k logs):
+Measured by this repository's own benchmark (`pnpm bench`, see [bench/README.md](./bench/README.md)) on the shipped configuration, which is what `forRoot({ service })` builds with nothing else set: name-walk redaction and the composed ALS/OTel mixin, inside an active request context, writing to a no-op sink.
 
-| Logger                 | Logs/sec     | Avg latency | RSS        | CPU    |
-| ---------------------- | ------------ | ----------- | ---------- | ------ |
-| **Pino 10 (JSON)**     | **~750,000** | **1.3 µs**  | **~45 MB** | **8%** |
-| Pino 10 (pretty)       | ~120,000     | 8 µs        | ~50 MB     | 14%    |
-| Winston 3 (JSON)       | ~110,000     | 9 µs        | ~85 MB     | 22%    |
-| Winston 3 (transports) | ~75,000      | 13 µs       | ~95 MB     | 28%    |
+- **About 274,000 entries/s** through the full production path, which retains 0.345× of the throughput of the bare wrapper (no redaction, no mixin) measured the same way.
+- The legacy `redactStrategy: 'paths'` measures about 7,900 entries/s in the same bench.
 
-At high throughput (~100k req/s), Pino consumes 3× less CPU and ~2× less RSS than Winston.
+Absolute figures depend on the machine; the benchmark gates the ratio so a regression fails CI.
 
 ---
 
 ## 🚫 What This Library Does NOT Do
 
-By design, the following are out of scope:
-
 - ❌ **OTel SDK initialization** — consumer's responsibility in `main.ts`
 - ❌ **Custom metrics** (OTel Metrics API) — use `@opentelemetry/api` directly
-- ❌ **Alerting** (PagerDuty, Slack) — configure your OTLP backend (Grafana Alertmanager)
+- ❌ **Alerting** — configure your OTLP backend
 - ❌ **Log aggregation UI** — Grafana, Datadog, Honeycomb
 - ❌ **Sentry SDK** — install `@sentry/node` in the consumer if desired
-- ❌ **Immutable audit logs** — future `@bymax-one/nest-audit`
-- ❌ **File rotation built-in** — use the `RollingFileDestination` example above, built on `pino-roll`
-- ❌ **Fastify** — the HTTP integration targets the Express adapter (`@nestjs/platform-express`); a Fastify adapter is not supported
-- ❌ **`pino-http`** — the `HttpLoggingInterceptor` is a NestJS-native replacement; install `pino-http` independently if you prefer it (produces duplicate logs if both are active)
+- ❌ **Immutable audit logs**
+- ❌ **File rotation built in** — write a destination on `pino-roll` (see the [destinations guide](./docs/guidelines/DESTINATIONS-IMPLEMENTATION-GUIDELINES.md))
+- ❌ **Fastify** — the HTTP integration targets the Express adapter (`@nestjs/platform-express`)
+- ❌ **`pino-http`** — `HttpLoggingInterceptor` is a NestJS-native replacement; running both produces duplicate logs
 
 ---
 
 ## 🤝 Contributing
 
-This library is part of the `@bymax-one` monorepo. Development follows the Bymax coding standards:
-
-- TypeScript strict (`noImplicitAny`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`)
-- 100% test coverage gate
-- Conventional Commits enforced by commitlint + husky
-- No direct dependencies — peer deps only
-- All boolean identifiers prefixed with `is / has / should / can`
-- All log keys in `MODULE_ACTION_RESULT` format
+Development follows the Bymax coding standards: TypeScript strict (`noImplicitAny`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`), a 100% coverage gate, Conventional Commits (commitlint + husky), peer dependencies only, boolean identifiers prefixed `is`/`has`/`should`/`can`, and log keys in `MODULE_ACTION_RESULT` form.
 
 ```bash
-# Clone the repository
 git clone https://github.com/bymaxone/nest-logger.git
 cd nest-logger
-
-# Install dependencies
 pnpm install
-
-# Run tests
-pnpm test
-
-# Build
-pnpm build
-
-# Type check
-pnpm typecheck
+pnpm test && pnpm typecheck && pnpm build
 ```
 
 ---
 
 ## 🔒 Security Policy
 
-If you discover a security vulnerability, please **do not** open a public issue. Instead, email us at **support@bymax.one** with details. We take security seriously and will respond promptly.
+If you discover a security vulnerability, please **do not** open a public issue. Email **support@bymax.one** with details.
 
 ---
 
