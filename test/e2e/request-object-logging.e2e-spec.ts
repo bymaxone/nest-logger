@@ -1,11 +1,13 @@
 /**
  * E2E: a request object passed as log metadata, through a real Nest application and real HTTP.
  *
- * `logger.info(key, msg, userId, { req })` is the first thing a host writes when it wants the request
- * in a line. An `IncomingMessage` carries its credentials twice: in `headers`, an object whose keys the
- * name redaction censors, and in `rawHeaders`, a flat array of alternating names and values, where a
- * value sits beside a name and is not under any key. Under the default names strategy the array's
- * strings are not covered by a name, so the `Authorization` and `X-Api-Key` values reach the line.
+ * `logger.info(key, msg, userId, { req })` is how a host puts the request in a line. An
+ * `IncomingMessage` carries its credentials twice: in `headers`, an object whose keys the name
+ * redaction censors, and in `rawHeaders`, a flat array of alternating names and values, where a value
+ * sits beside its name and not under a key. A key-name rule cannot reach it, so the value beside a
+ * sensitive name is censored as a pair, under every redaction strategy. These cases read every line
+ * the logger writes for a request logged under `req`, under another key, with a host serializer and
+ * with the legacy paths strategy.
  *
  * Layer: E2E, server (`PinoLoggerService`, the default serializers).
  */
