@@ -66,7 +66,8 @@ export interface HttpOptions {
    * stripping nor key-name redaction can reach it. The logger replaces such a segment with
    * `:redacted` in `url`, `fullUrl` and the path echoed in a not-found message, and keeps the rest
    * of the route. Built in: a hex value of 32 or more digits, a JWT, an opaque token of 32 or more
-   * base64 or base64url characters that is not a slug, a snake_case or letters-only name or a UUID,
+   * base64 or base64url characters that is not a slug, a snake_case name or a UUID, and a hex run of 32 or more digits inside a
+   * segment,
    * and an email address; a file extension after a token is ignored.
    *
    * Each pattern is `.test()`-ed against ONE percent-decoded segment, so anchor it (`/^tok_/`) and

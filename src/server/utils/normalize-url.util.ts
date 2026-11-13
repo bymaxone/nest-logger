@@ -35,8 +35,8 @@ const JWT_SECRET_REGEX = /^eyJ[\w-]*\.[\w-]+\.[\w-]*$/
 const TOKEN_SECRET_REGEX = /^[A-Za-z0-9_+-]{32,}={0,2}$/
 /** A lowercase slug or snake_case name (`my-long-article-title-2024`), which is a name and not a token. */
 const SLUG_REGEX = /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/
-/** Letters only (`getAllUsersWithPermissions`): a name, since a random token of this length carries digits. */
-const LETTERS_ONLY_REGEX = /^[A-Za-z]+$/
+/** A run of 32 or more hex digits anywhere in a segment, which a prefix such as `rst_` does not hide. */
+const HEX_RUN_REGEX = /[0-9a-f]{32}/i
 /** A UUID, which is an identifier: `/:id` in `url`, and kept in `fullUrl` for debugging. */
 const UUID_SEGMENT_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** An email address, which is personal data and the usual carrier of an account-recovery link. */
@@ -75,15 +75,13 @@ function withoutExtension(segment: string): string {
   return dot > 0 && segment.length - dot <= 9 ? segment.slice(0, dot) : segment
 }
 
-/** A hex value, a JWT, or an opaque token that is not a slug, a UUID or a letters-only name. */
+/** A hex value, a JWT, or an opaque token that is not a slug or a UUID. */
 function looksLikeToken(value: string): boolean {
   return (
     HEX_SECRET_REGEX.test(value) ||
+    HEX_RUN_REGEX.test(value) ||
     JWT_SECRET_REGEX.test(value) ||
-    (TOKEN_SECRET_REGEX.test(value) &&
-      !SLUG_REGEX.test(value) &&
-      !UUID_SEGMENT_REGEX.test(value) &&
-      !LETTERS_ONLY_REGEX.test(value))
+    (TOKEN_SECRET_REGEX.test(value) && !SLUG_REGEX.test(value) && !UUID_SEGMENT_REGEX.test(value))
   )
 }
 

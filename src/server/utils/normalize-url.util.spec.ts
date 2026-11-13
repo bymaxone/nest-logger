@@ -248,7 +248,7 @@ describe('scrubSecretSegments', () => {
   })
 
   it('reads a segment that is not valid percent-encoding as it was written', () => {
-    expect(scrubSecretSegments(`/x/${HEX_64}%E0%A4%A`)).toBe(`/x/${HEX_64}%E0%A4%A`)
+    expect(scrubSecretSegments(`/x/${HEX_64}%E0%A4%A`)).toBe('/x/:redacted')
     expect(scrubSecretSegments('/x/%E0%A4%A@example.com')).toBe('/x/:redacted')
     expect(scrubSecretSegments('/x/100%/y')).toBe('/x/100%/y')
   })
@@ -340,9 +340,20 @@ describe('scrubSecretSegments, the edges of the detector', () => {
   })
 
   it.each([
+    ['a letters-only token', '/reset/abcdefghijklmnopqrstuvwxyzABCDEF'],
+    [
+      'a long camelCase name, which no rule can tell from a token',
+      '/rpc/getAllUsersWithPermissionsAndRoles'
+    ],
+    ['a hex token behind an underscore prefix', `/reset/rst_${HEX_64.slice(0, 32)}`],
+    ['a hex token behind a hyphen prefix', `/reset/reset-${HEX_64.slice(0, 32)}`],
+    ['a hex token between two words', `/reset/tok_${HEX_64.slice(0, 32)}_live`]
+  ])('replaces %s', (_name, path) => {
+    expect(scrubSecretSegments(path)).toMatch(/^\/[a-z]+\/:redacted$/)
+  })
+
+  it.each([
     ['a long snake_case name', '/reports/monthly_active_users_by_region_summary'],
-    ['a long camelCase name', '/rpc/getAllUsersWithPermissionsAndRoles'],
-    ['a long PascalCase name', '/rpc/GetAllUsersWithPermissionsAndRoles'],
     ['a long file name', '/files/quarterly-report-final-version-2024.pdf']
   ])('keeps %s, which is a name and not a token', (_name, path) => {
     expect(scrubSecretSegments(path)).toBe(path)

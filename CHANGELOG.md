@@ -47,8 +47,8 @@ heading here.
   JWT, an opaque token of 32 or more base64 or base64url characters, or an email address is now written as
   `:redacted`, in `url`, `fullUrl` and the not-found message, through the interceptor, the access
   log (`applyAccessLog`) and the exception filter. The rest of the route is kept, so per-route
-  queries still group the requests. A slug, a snake_case or letters-only name (`getAllUsersWithPermissions`) and a UUID are
-  identifiers, not credentials, and are left as they are (`url` still collapses a UUID to `/:id`). The new
+  queries still group the requests. A slug, a snake_case name and a UUID are identifiers, not credentials, and are left as they
+  are, unless a hex run of 32 or more digits sits inside them (`rst_<hex>`) (`url` still collapses a UUID to `/:id`). The new
   `http.secretPathSegments` adds your own patterns, each tested against one percent-decoded
   segment, for a token shape the built-in rules do not see (`[/^tok_/]`). `HttpExceptionFilter`
   takes the resolved options as an optional second constructor argument, so a filter you build with
