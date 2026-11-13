@@ -601,7 +601,9 @@ export function buildPinoInstance(
         withSemconvException(
           withEventName(
             redactRecord(
-              hostSerializesRequest ? record : withSerializedRequest(record),
+              hostSerializesRequest
+                ? record
+                : withSerializedRequest(record, options.http.secretPathSegments),
               true
             ) as Record<string, unknown>,
             options.eventNameField

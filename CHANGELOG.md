@@ -66,8 +66,9 @@ heading here.
   its name and not under a key. A request under the `req` key is now written as its `method`, its
   `url` (without the query, with a credential path segment replaced), its `headers` (censored by
   name) and the peer's `remoteAddress`. Anywhere else in a record, the value beside a sensitive name
-  in a `rawHeaders` array is censored. A host that registers its own `serializers.req` keeps the raw
-  request for it, and a record under `req` that is not a request is written as it was.
+  in a `rawHeaders` or `rawTrailers` array is censored. A host that registers its own `serializers.req`
+  replaces the default and receives the redaction walk's copy of the request, as before, and a record
+  under `req` that is not a request is written as it was.
   **Apply to a derived backend:** an entry that logged a whole request and read a field of it that
   is no longer written (`socket`, `rawHeaders`, a framework field such as `params`) stops carrying
   it. Log the field you need under its own key, or register `serializers.req`.

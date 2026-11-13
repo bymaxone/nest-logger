@@ -57,19 +57,24 @@ function copyHeaders(headers: unknown): Record<string, unknown> {
  * written. A request whose fields cannot be read is written as a marker, never thrown.
  *
  * @param input - The value logged under `req`.
+ * @param secretSegments - The host's own credential patterns for a path segment (`http.secretPathSegments`).
  * @returns The serialized request, or `input` when it is not a request.
  * @example
  *   serializeRequestValue(req)
  *   // → { method: 'GET', url: '/auth/reset/:redacted', headers: { ... }, remoteAddress: '::1' }
  */
-export function serializeRequestValue(input: unknown): unknown {
+export function serializeRequestValue(
+  input: unknown,
+  secretSegments: readonly RegExp[] = []
+): unknown {
   try {
     if (!isRequest(input)) return input
     const url = input.originalUrl ?? input.url
     const socket = input.socket as { remoteAddress?: unknown } | undefined
     return {
       method: input.method,
-      url: typeof url === 'string' ? scrubSecretSegments(stripQueryString(url)) : url,
+      url:
+        typeof url === 'string' ? scrubSecretSegments(stripQueryString(url), secretSegments) : url,
       headers: copyHeaders(input.headers),
       remoteAddress: socket?.remoteAddress
     } satisfies SerializedRequest
@@ -82,11 +87,15 @@ export function serializeRequestValue(input: unknown): unknown {
  * The record with its `req` field serialized when that field is a request.
  *
  * @param record - The merged record about to be redacted.
+ * @param secretSegments - The host's own credential patterns for a path segment.
  * @returns `record` itself when `req` is absent or not a request, otherwise a shallow copy that holds
  *   the serialized request.
  */
-export function withSerializedRequest(record: Record<string, unknown>): Record<string, unknown> {
+export function withSerializedRequest(
+  record: Record<string, unknown>,
+  secretSegments: readonly RegExp[] = []
+): Record<string, unknown> {
   const request = record['req']
-  const serialized = serializeRequestValue(request)
+  const serialized = serializeRequestValue(request, secretSegments)
   return serialized === request ? record : { ...record, req: serialized }
 }

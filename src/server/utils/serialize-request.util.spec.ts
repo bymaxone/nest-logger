@@ -7,6 +7,7 @@ import { IncomingMessage } from 'node:http'
 import { Socket } from 'node:net'
 
 import { censorRawHeaders } from './censor-raw-headers.util'
+import { createNameRedactor } from './redact-by-name.util'
 import { serializeRequestValue, withSerializedRequest } from './serialize-request.util'
 
 const HEX = 'a3f1c9d2b7e4086f5a1c3d9e7b2f4a6c8d0e1f3a5b7c9d2e4f6a8b0c1d3e5f7a'
@@ -39,6 +40,15 @@ describe('serializeRequestValue', () => {
     const out = serializeRequestValue(request([], `/auth/reset/${HEX}?code=QUERY-SECRET`))
 
     expect((out as { url: string }).url).toBe('/auth/reset/:redacted')
+  })
+
+  it('replaces a path segment a host pattern matches, as every other URL writer does', () => {
+    const out = serializeRequestValue(request([], '/pay/sk_live123?x=1'), [/^sk_/])
+
+    expect((out as { url: string }).url).toBe('/pay/:redacted')
+    expect((serializeRequestValue(request([], '/pay/sk_live123')) as { url: string }).url).toBe(
+      '/pay/sk_live123'
+    )
   })
 
   it('prefers originalUrl, which a mounted request keeps whole', () => {
@@ -103,6 +113,12 @@ describe('withSerializedRequest', () => {
     expect(withSerializedRequest({ a: 1 })).toEqual({ a: 1 })
   })
 
+  it('passes the host patterns on to the URL', () => {
+    const out = withSerializedRequest({ req: request([], '/pay/sk_live123') }, [/^sk_/])
+
+    expect((out['req'] as { url: string }).url).toBe('/pay/:redacted')
+  })
+
   it('returns a copy with the serialized request, and leaves the record alone', () => {
     const req = request(['X-Api-Key', 'LEAK'])
     const record = { a: 1, req }
@@ -127,6 +143,14 @@ describe('censorRawHeaders', () => {
         '[C]'
       )
     ).toEqual(['Authorization', '[C]', 'Accept', 'text/html', 'X-API-KEY', '[C]'])
+  })
+
+  it('censors the same shape under rawTrailers', () => {
+    const redact = createNameRedactor(['authorization'], '[C]')
+
+    expect(redact({ rawTrailers: ['Authorization', 'LEAK', 'X-Other', 'kept'] })).toEqual({
+      rawTrailers: ['Authorization', '[C]', 'X-Other', 'kept']
+    })
   })
 
   it('leaves a value that sits at an even index, and a name that is not text, alone', () => {

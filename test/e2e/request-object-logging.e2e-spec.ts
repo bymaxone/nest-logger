@@ -34,6 +34,17 @@ class RequestController {
   }
 }
 
+@Controller()
+class PayController {
+  constructor(@Inject(PinoLoggerService) private readonly logger: PinoLoggerService) {}
+
+  @Get('pay/:ref')
+  pay(@Req() req: unknown): { ok: boolean } {
+    this.logger.info('PAY_REQUEST', 'request as metadata', undefined, { req })
+    return { ok: true }
+  }
+}
+
 @Module({
   imports: [
     BymaxLoggerModule.forRoot({ service: { name: 'e2e-request-object', version: '0.0.0' } })
@@ -116,11 +127,18 @@ describe('Logger E2E — a request object under another key', () => {
   })
 })
 
+let received: unknown
+
 @Module({
   imports: [
     BymaxLoggerModule.forRoot({
       service: { name: 'e2e-request-object-own', version: '0.0.0' },
-      serializers: { req: () => ({ ownSerializer: true }) }
+      serializers: {
+        req: (input) => {
+          received = input
+          return { ownSerializer: true }
+        }
+      }
     })
   ],
   controllers: [RequestController]
@@ -144,10 +162,49 @@ describe('Logger E2E — a host req serializer', () => {
     stdout = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
   })
 
-  it('receives the request itself, and its output is what is written', async () => {
+  it('replaces the default, and receives the request as the redaction walk copied it', async () => {
     await request(app.getHttpServer()).get('/probe').set('Authorization', 'Bearer LEAK-BEARER')
 
     const entry = parseLogEntries(stdout).find((e) => e['logKey'] === 'PROBE_REQUEST')
     expect(entry?.['req']).toEqual({ ownSerializer: true })
+    expect(received).toMatchObject({ method: 'GET', url: '/probe' })
+    expect(JSON.stringify(received)).not.toContain('LEAK-BEARER')
+  })
+})
+
+@Module({
+  imports: [
+    BymaxLoggerModule.forRoot({
+      service: { name: 'e2e-request-object-segments', version: '0.0.0' },
+      http: { secretPathSegments: [/^sk_/] }
+    })
+  ],
+  controllers: [PayController]
+})
+class SegmentsModule {}
+
+describe('Logger E2E — the host credential path patterns reach a logged request', () => {
+  let app: INestApplication
+  let stdout: jest.SpyInstance
+
+  beforeAll(async () => {
+    app = await NestFactory.create(SegmentsModule, { logger: false })
+    await app.init()
+  })
+
+  afterAll(async () => {
+    await app.close()
+  })
+
+  beforeEach(() => {
+    stdout = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
+  })
+
+  it('writes the request URL with a segment the host pattern matches replaced', async () => {
+    await request(app.getHttpServer()).get('/pay/sk_live123')
+
+    const text = stdout.mock.calls.map((call) => String(call[0])).join('')
+    expect(text).not.toContain('sk_live123')
+    expect(text).toContain('"url":"/pay/:redacted"')
   })
 })
