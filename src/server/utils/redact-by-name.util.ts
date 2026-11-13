@@ -73,6 +73,17 @@ import {
 import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
+/**
+ * The names whose values a `rawHeaders` array censors. Under the legacy `'paths'` strategy the walk
+ * covers no name outside an `Error`, and the default names it holds for inside one are the ones to
+ * use: a path cannot match a value by the name beside it.
+ */
+function rawHeaderNames(rules: RedactRules): ReadonlySet<string> {
+  return rules.sensitive.size > 0
+    ? rules.sensitive
+    : (rules.insideErrors?.sensitive ?? rules.sensitive)
+}
+
 /** The keys of a message that hold headers as a flat `[name, value, ...]` array. */
 const RAW_HEADER_KEYS: ReadonlySet<string> = new Set(['rawheaders', 'rawtrailers'])
 
@@ -589,7 +600,7 @@ function walkProperties(
       rules.sensitive.has(key.toLowerCase())
         ? rules.censor
         : RAW_HEADER_KEYS.has(key.toLowerCase()) && Array.isArray(current)
-          ? censorRawHeaders(current, rules.sensitive, rules.censor)
+          ? censorRawHeaders(current, rawHeaderNames(rules), rules.censor)
           : walk(
               scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
               rules,

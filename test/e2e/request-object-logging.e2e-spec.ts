@@ -208,3 +208,49 @@ describe('Logger E2E — the host credential path patterns reach a logged reques
     expect(text).toContain('"url":"/pay/:redacted"')
   })
 })
+
+@Module({
+  imports: [
+    BymaxLoggerModule.forRoot({
+      service: { name: 'e2e-request-object-paths', version: '0.0.0' },
+      redactStrategy: 'paths'
+    })
+  ],
+  controllers: [RequestController]
+})
+class PathsStrategyModule {}
+
+describe('Logger E2E — a request object under another key, with the legacy paths strategy', () => {
+  let app: INestApplication
+  let stdout: jest.SpyInstance
+
+  beforeAll(async () => {
+    app = await NestFactory.create(PathsStrategyModule, { logger: false })
+    await app.init()
+  })
+
+  afterAll(async () => {
+    await app.close()
+  })
+
+  beforeEach(() => {
+    stdout = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
+  })
+
+  it('censors the credential values in rawHeaders, which no path can match by the name beside them', async () => {
+    await request(app.getHttpServer())
+      .get('/nested')
+      .set('Authorization', 'Bearer LEAK-BEARER')
+      .set('X-Api-Key', 'LEAK-KEY')
+
+    const text = stdout.mock.calls.map((call) => String(call[0])).join('')
+    expect(text).not.toContain('LEAK-BEARER')
+    expect(text).not.toContain('LEAK-KEY')
+  })
+
+  it('censors them for a request under req as well', async () => {
+    await request(app.getHttpServer()).get('/probe').set('Authorization', 'Bearer LEAK-BEARER')
+
+    expect(stdout.mock.calls.map((call) => String(call[0])).join('')).not.toContain('LEAK-BEARER')
+  })
+})
