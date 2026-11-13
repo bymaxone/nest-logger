@@ -241,6 +241,23 @@ function validateDestinations(options: BymaxLoggerModuleOptions): void {
   destinations.forEach((entry: unknown, index) => validateDestination(entry, index))
 }
 
+/**
+ * An optional list of regular expressions. `types.isRegExp`, not `instanceof`: a pattern built in
+ * another realm (a `vm` context, a worker, a test sandbox) is a valid RegExp for which `instanceof`
+ * is false.
+ */
+function checkRegExpList(path: string, value: unknown): void {
+  if (value === undefined) return
+  if (!Array.isArray(value)) {
+    reject(path, 'must be an array of RegExp', value)
+  }
+  value.forEach((pattern: unknown, index) => {
+    if (!types.isRegExp(pattern)) {
+      reject(`${path}[${String(index)}]`, 'must be a RegExp', pattern)
+    }
+  })
+}
+
 /** The `http` group. */
 function validateHttp(options: BymaxLoggerModuleOptions): void {
   const http = checkGroup('http', options.http)
@@ -248,19 +265,8 @@ function validateHttp(options: BymaxLoggerModuleOptions): void {
   checkBoolean('http.isEnabled', http['isEnabled'])
   checkBoolean('http.shouldCaptureExceptions', http['shouldCaptureExceptions'])
   checkBoolean('http.shouldGenerateRequestId', http['shouldGenerateRequestId'])
-  const excludePaths = http['excludePaths']
-  if (excludePaths !== undefined) {
-    if (!Array.isArray(excludePaths)) {
-      reject('http.excludePaths', 'must be an array of RegExp', excludePaths)
-    }
-    // `types.isRegExp`, not `instanceof`: a pattern built in another realm (a `vm`
-    // context, a worker, a test sandbox) is a valid RegExp for which `instanceof` is false.
-    excludePaths.forEach((pattern: unknown, index) => {
-      if (!types.isRegExp(pattern)) {
-        reject(`http.excludePaths[${String(index)}]`, 'must be a RegExp', pattern)
-      }
-    })
-  }
+  checkRegExpList('http.excludePaths', http['excludePaths'])
+  checkRegExpList('http.secretPathSegments', http['secretPathSegments'])
   const tenantIdHeader = http['tenantIdHeader']
   if (
     tenantIdHeader !== undefined &&

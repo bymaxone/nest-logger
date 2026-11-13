@@ -280,6 +280,27 @@ describe('validateOptions: http', () => {
     }
   )
 
+  it.each([
+    ['not an array', /^tok_/, /options\.http\.secretPathSegments must be an array of RegExp/],
+    ['a list with a string', ['tok_'], /options\.http\.secretPathSegments\[0\] must be a RegExp/]
+  ])(
+    /*
+     * The list is tested against every request path, so it is checked like `excludePaths`.
+     */
+    'rejects an http.secretPathSegments that is %s',
+    (_label, value, message) => {
+      expect(() => validateOptions(withOption('http', { secretPathSegments: value }))).toThrow(
+        message
+      )
+    }
+  )
+
+  it('accepts an http.secretPathSegments list of patterns', () => {
+    expect(() =>
+      validateOptions(withOption('http', { secretPathSegments: [/^tok_/] }))
+    ).not.toThrow()
+  })
+
   it(/*
    * `readonly RegExp[]` also admits a pattern built in another realm (a `vm`
    * context, a worker, a test sandbox boundary), for which `instanceof RegExp` is

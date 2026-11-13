@@ -38,6 +38,27 @@ heading here.
   and that engine is slower in proportion; the default `'names'` strategy is a set lookup and is
   unchanged, and is the recommended one.
 
+- **A credential in a path segment no longer reaches a log line.** A reset, verification or
+  invitation link carries its token in the path (`/auth/reset/<token>`), where the query-string
+  stripping does not reach and key-name redaction cannot censor it, because it is the value of a
+  string field. Measured on 1.4.16: a 64-digit hex token and a JWT in the path were written in
+  clear in `fullUrl`, in the `url` of an exception entry, and in the not-found message
+  (`Cannot GET /auth/reset/<token>`). Each path segment that is a hex value of 32 or more digits, a
+  JWT, an opaque token of 32 or more base64url characters, or an email address is now written as
+  `:redacted`, in `url`, `fullUrl` and the not-found message, through the interceptor, the access
+  log (`applyAccessLog`) and the exception filter. The rest of the route is kept, so per-route
+  queries still group the requests. A hyphenated lowercase slug and a UUID are identifiers, not
+  credentials, and are left as they are (`url` still collapses a UUID to `/:id`). The new
+  `http.secretPathSegments` adds your own patterns, each tested against one percent-decoded
+  segment, for a token shape the built-in rules do not see (`[/^tok_/]`). `HttpExceptionFilter`
+  takes the resolved options as an optional second constructor argument, so a filter you build with
+  the logger alone keeps working and applies the built-in patterns.
+  **Apply to a derived backend:** a query or alert on `fullUrl` that matched such a token as text
+  stops matching; `fullUrl` is the raw path with the query removed and the credential segments
+  replaced, not the request as received. A path your route table cannot tell apart from a token (a
+  long mixed-case segment that is a name, not a secret) is replaced too, and the way back is to
+  carry that name in a shorter or hyphenated lowercase form.
+
 ## [1.4.16] - 2026-11-12
 
 ### Documentation

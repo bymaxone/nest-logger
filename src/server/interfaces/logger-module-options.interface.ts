@@ -60,6 +60,19 @@ export interface HttpOptions {
    */
   excludePaths?: readonly RegExp[]
   /**
+   * Patterns for path segments that carry a credential, in addition to the built-in ones.
+   *
+   * A reset, verification or invitation link puts its token in the path, where neither the query
+   * stripping nor key-name redaction can reach it. The logger replaces such a segment with
+   * `:redacted` in `url`, `fullUrl` and the path echoed in a not-found message, and keeps the rest
+   * of the route. Built in: a hex value of 32 or more digits, a JWT, an opaque token of 32 or more
+   * base64url characters that is not a hyphenated lowercase slug, and an email address.
+   *
+   * Each pattern is `.test()`-ed against ONE percent-decoded segment, so anchor it (`/^tok_/`) and
+   * keep it linear-time, as with {@link HttpOptions.excludePaths}. Default: none.
+   */
+  secretPathSegments?: readonly RegExp[]
+  /**
    * Header name carrying the tenant identifier, or `false` to read no header. Default:
    * `x-tenant-id`.
    *
