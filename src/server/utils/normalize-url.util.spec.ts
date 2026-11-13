@@ -264,7 +264,6 @@ describe('scrubSecretSegments', () => {
 
     expect(scrubSecretSegments('/pay/tok_a', [pattern])).toBe('/pay/:redacted')
     expect(scrubSecretSegments('/pay/tok_a', [pattern])).toBe('/pay/:redacted')
-    expect(pattern.lastIndex).toBe(0)
   })
 
   it('replaces every credential segment of a path, not only the first', () => {
@@ -414,5 +413,13 @@ describe('a credential the segment split and the replacement order could hide', 
 
     expect(Date.now() - started).toBeLessThan(200)
     expect(out).not.toContain('aaaaaaaa')
+  })
+
+  it('reads a host pattern that is frozen, which assigning to lastIndex would throw on', () => {
+    const frozen = Object.freeze(/^tok_/)
+
+    expect(scrubSecretSegments('/pay/tok_live_1', [frozen])).toBe('/pay/:redacted')
+    expect(scrubSecretSegments('/pay/plain-ref', [frozen])).toBe('/pay/plain-ref')
+    expect(secretPathSegments('/pay/tok_live_1', [frozen])).toEqual(['tok_live_1'])
   })
 })

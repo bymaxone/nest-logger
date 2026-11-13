@@ -8,6 +8,8 @@
  * (Datadog, Loki, Elastic), making per-route dashboards unusable.
  */
 
+import { matchesExcludePath } from './matches-exclude-path.util'
+
 // Each fixed-length pattern ends with a negative lookahead asserting the next
 // character is NOT another character of the same class. Without it the regex
 // would partially consume a longer segment (e.g. a 22-char slug → `/:idv`),
@@ -68,7 +70,7 @@ function isSecretSegment(segment: string, extra: readonly RegExp[]): boolean {
     looksLikeToken(decoded) ||
     looksLikeToken(withoutExtension(decoded)) ||
     EMAIL_SECRET_REGEX.test(decoded) ||
-    extra.some((pattern) => matchesFresh(pattern, decoded))
+    matchesExcludePath(extra, decoded)
   )
 }
 
@@ -86,14 +88,6 @@ function looksLikeToken(value: string): boolean {
     JWT_SECRET_REGEX.test(value) ||
     (TOKEN_SECRET_REGEX.test(value) && !SLUG_REGEX.test(value) && !UUID_SEGMENT_REGEX.test(value))
   )
-}
-
-/** `RegExp.test` on a pattern that may carry the `g` or `y` flag, without reading or leaving `lastIndex`. */
-function matchesFresh(pattern: RegExp, value: string): boolean {
-  pattern.lastIndex = 0
-  const matched = pattern.test(value)
-  pattern.lastIndex = 0
-  return matched
 }
 
 /**
