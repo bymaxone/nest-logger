@@ -129,7 +129,7 @@ export const REDACT_COMMON_FIELDS: readonly string[] = [
   // The spellings systems actually write. The default `'names'` matching is case-insensitive, so
   // `accessToken` already covers `ACCESSTOKEN`, but not `access_token` (the OAuth wire name) or
   // `access-token`: those are different names. The legacy `'paths'` engine is case-sensitive, so
-  // the all-lowercase `apikey` and `sessionid` are listed too.
+  // the all-lowercase `apikey` and `sessiontoken` are listed too.
   // OAuth and API credentials, snake case.
   'access_token',
   'refresh_token',
