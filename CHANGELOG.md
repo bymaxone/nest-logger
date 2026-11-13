@@ -19,7 +19,7 @@ heading here.
 - The Performance section no longer quotes figures for bare Pino from Pino's own benchmark (its Node version did not match the specification's). It reports this repository's benchmark of the shipped configuration: about 274,000 entries/s, 0.345× of the bare wrapper.
 - Removed the mention of a future `@bymax-one/nest-audit`, a package that does not exist.
 - The README keeps the house section order: a compact Features list after Overview, and a Security Table and Tech Stack between Security Model and Testing & Quality.
-- Two precision notes on the 1.4.15 entry below. First, a host on `redactStrategy: 'paths'` saw `{}` for an `Error` only with the default error options; the migration note about queries and alerts that matched the empty object applies to those hosts alone. Second, the advice to rotate credentials applies only to a host whose `Error` carried a secret deeper than the four-level reach of `fast-redact`; a host that never logged such an `Error` has nothing to rotate.
+- Two precision notes on the 1.4.15 entry below. Both concern a host on `redactStrategy: 'paths'` with `errorOwnFields: 'safe'`: there the redaction walk already converted a nested `Error` to data, so it was never written as `{}`, and the advice to rotate credentials does not apply to it. With the default `errorOwnFields: 'all'` the entry stands as written.
 - `dist/` is unchanged.
 
 ## [1.4.15] - 2026-11-10
