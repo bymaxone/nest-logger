@@ -132,7 +132,7 @@ the same string.
 
 **Guaranteed** (verified on serialized bytes, adversarially):
 
-- 32 sensitive field names (passwords, tokens, auth/cookie headers, API keys, PCI, LGPD documents)
+- 62 sensitive field names (passwords, tokens, auth/cookie headers, API keys, PCI, LGPD documents)
   are censored **wherever the key appears**: any nesting depth to the traversal ceiling, arrays,
   class instances, child-logger bindings, base bindings, serializer outputs, error own-properties
   and cause chains. Matching is case-insensitive.

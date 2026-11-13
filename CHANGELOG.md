@@ -26,7 +26,7 @@ heading here.
   `x-csrf-token`, `x-xsrf-token`, `csrf_token`) and the snake forms of the password family. The
   lower-case `apikey` and `sessionid` are listed as well, because the legacy `'paths'` strategy is
   case-sensitive. **Apply to a derived backend:** a field that carried one of these names now
-  arrives as `[REDACTED]`, so a query that matched its value stops matching. **Cost under
+  arrives as `[REDACTED]`, so a query that matched its value stops matching. That includes an application that used `sessionId` or `session_id` as a correlation field: the name is now a credential name, so carry the value under a different key. **Cost under
   `redactStrategy: 'paths'`:** `DEFAULT_REDACT_PATHS` grows from 165 to 315 entries, and that
   engine is slower in proportion; the default `'names'` strategy is a set lookup and is unchanged.
 

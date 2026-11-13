@@ -113,13 +113,13 @@ describe('Logger E2E — ALS context propagation', () => {
   'carries a field added mid-scope with set()', () => {
     logContext.run({ requestId: 'r_3' }, () => {
       logContext.set('userId', 'u_late')
-      logContext.set('sessionId', 's_1')
+      logContext.set('workspaceId', 'w_1')
       logger.info('CONTEXT_SET', 'probe')
     })
 
     const entry = findEntry('CONTEXT_SET')
     expect(entry?.['userId']).toBe('u_late')
-    expect(entry?.['sessionId']).toBe('s_1')
+    expect(entry?.['workspaceId']).toBe('w_1')
   })
 
   it(/*
