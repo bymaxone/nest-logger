@@ -33,9 +33,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-13 — server: 35.50 KiB real -> 35.6 KiB budget (~0.3% headroom). The default `req`
+//   - 2026-11-13 — server: 35.51 KiB real -> 35.6 KiB budget (~0.3% headroom). The default `req`
 //     serializer (a request object logged as metadata is written as its method, URL, headers and
-//     peer, and a `rawHeaders` or `rawTrailers` array has its credential values censored) is +0.44 KiB over the
+//     peer, and a `rawHeaders` or `rawTrailers` array has its credential values censored) is +0.45 KiB over the
 //     35.06 KiB measured below, all of it executable code and its JSDoc.
 //   - 2026-11-13 — server: 35.06 KiB real -> 35.25 KiB budget (~0.5% headroom). The previous budget
 //     of 35.0 KiB was exceeded by scrubbing a credential path segment from `url`, `fullUrl` and the

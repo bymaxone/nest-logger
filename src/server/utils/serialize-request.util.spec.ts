@@ -154,7 +154,9 @@ describe('censorRawHeaders', () => {
   })
 
   it('censors the values under the legacy paths strategy, where the walk holds only the names it covers inside errors', () => {
-    const redact = createNameRedactor([], '[C]', [], undefined, undefined, ['authorization'])
+    const redact = createNameRedactor([], '[C]', [], undefined, undefined, undefined, [
+      'authorization'
+    ])
 
     expect(
       redact({ request: { rawHeaders: ['Authorization', 'LEAK', 'Accept', 'kept'] } })

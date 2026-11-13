@@ -73,19 +73,19 @@ import {
 import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
-/**
- * The names whose values a `rawHeaders` array censors. Under the legacy `'paths'` strategy the walk
- * covers no name outside an `Error`, and the default names it holds for inside one are the ones to
- * use: a path cannot match a value by the name beside it.
- */
-function rawHeaderNames(rules: RedactRules): ReadonlySet<string> {
-  return rules.sensitive.size > 0
-    ? rules.sensitive
-    : (rules.insideErrors?.sensitive ?? rules.sensitive)
-}
-
 /** The keys of a message that hold headers as a flat `[name, value, ...]` array. */
 const RAW_HEADER_KEYS: ReadonlySet<string> = new Set(['rawheaders', 'rawtrailers'])
+
+/**
+ * The walked value of a field, with the value beside each sensitive name censored when the field is a
+ * flat header array. The array is walked first, so an object or a nested array inside it keeps the
+ * guards every other value has.
+ */
+function censorHeaderArray(key: string, walked: unknown, rules: RedactRules): unknown {
+  return RAW_HEADER_KEYS.has(key.toLowerCase()) && Array.isArray(walked)
+    ? censorRawHeaders(walked, rules.headerNames, rules.censor)
+    : walked
+}
 
 /**
  * Traversal ceiling. Not a redaction ceiling in any realistic sense — real log
@@ -204,6 +204,11 @@ export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
 interface RedactRules {
   /** Lower-cased field names whose values are censored. */
   readonly sensitive: ReadonlySet<string>
+  /**
+   * Lower-cased header names whose values a flat header array censors. The names the record is
+   * protected by, which the walk holds itself only under the `'names'` strategy.
+   */
+  readonly headerNames: ReadonlySet<string>
   /** Replacement written in place of a sensitive value. */
   readonly censor: string
   /** Record-root keys that have a serializer: what sits under them is read as it is. */
@@ -599,16 +604,18 @@ function walkProperties(
       key,
       rules.sensitive.has(key.toLowerCase())
         ? rules.censor
-        : RAW_HEADER_KEYS.has(key.toLowerCase()) && Array.isArray(current)
-          ? censorRawHeaders(current, rawHeaderNames(rules), rules.censor)
-          : walk(
+        : censorHeaderArray(
+            key,
+            walk(
               scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
               rules,
               depth + 1,
               ancestors,
               true,
               inSerialized || (!honorToJson && rules.serializedKeys.has(key))
-            )
+            ),
+            rules
+          )
     )
   }
   if (asData) {
@@ -699,7 +706,8 @@ export function createNameRedactor(
   serializedKeys?: readonly string[],
   maxVisits: number = REDACT_MAX_VISITS,
   ownFields: OwnFieldPolicy = ALL_OWN_FIELDS,
-  errorOnlyNames?: Iterable<string>
+  errorOnlyNames?: Iterable<string>,
+  headerNames?: Iterable<string>
 ): Redactor {
   // Matched case-INSENSITIVELY. HTTP header names are case-insensitive by spec,
   // and only INBOUND Node headers arrive lower-cased — a hand-built or outbound
@@ -710,6 +718,7 @@ export function createNameRedactor(
   // redacting `Password` / `Email` too, which is the safe direction.
   const rules: Omit<RedactRules, 'visits'> = {
     sensitive: new Set(Array.from(fieldNames, (name) => name.toLowerCase())),
+    headerNames: new Set(Array.from(headerNames ?? fieldNames, (name) => name.toLowerCase())),
     censor,
     serializedKeys: new Set(serializedKeys),
     errorsAsData: serializedKeys !== undefined,

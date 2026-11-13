@@ -431,12 +431,11 @@ function buildNameRedactor(
   nestedErrorsAsData = false,
   coversNames = true
 ): Redactor {
-  const names = coversNames
-    ? [
-        ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
-        ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
-      ]
-    : []
+  const allNames = [
+    ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
+    ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
+  ]
+  const names = coversNames ? allNames : []
   const ownFields = ownFieldPolicyOf(options)
   // With no name to cover the value is still walked under 'safe', which writes plain data only the
   // walk can produce: an `Error` nested in the record, and what a serializer returns. It is also
@@ -452,9 +451,18 @@ function buildNameRedactor(
         ['err', ...Object.keys(options.serializers)],
         undefined,
         ownFields,
-        coversNames ? undefined : namesInsideErrors(options)
+        coversNames ? undefined : namesInsideErrors(options),
+        allNames
       )
-    : createNameRedactor(names, options.redactCensor, undefined, undefined, ownFields)
+    : createNameRedactor(
+        names,
+        options.redactCensor,
+        undefined,
+        undefined,
+        ownFields,
+        undefined,
+        allNames
+      )
 }
 
 /**

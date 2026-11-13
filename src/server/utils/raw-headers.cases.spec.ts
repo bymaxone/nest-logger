@@ -84,4 +84,46 @@ describe('rawHeaders censoring, by configuration', () => {
 
     expect(out).toEqual(['LEAK-N', 'Authorization'])
   })
+
+  it('censors a name the host protects by path, under the paths strategy, with the defaults on', () => {
+    expect(
+      redactedRaw(
+        { redactStrategy: 'paths', redactPaths: ['headers.x-custom-token'] },
+        () => ({
+          request: { rawHeaders: ['X-Custom-Token', 'LEAK-H', 'Authorization', 'LEAK-A'] }
+        }),
+        pick('rawHeaders')
+      )
+    ).toEqual(['X-Custom-Token', '[REDACTED]', 'Authorization', '[REDACTED]'])
+  })
+
+  it('censors only the host name under the paths strategy with the defaults disabled', () => {
+    expect(
+      redactedRaw(
+        {
+          redactStrategy: 'paths',
+          shouldDisableDefaultRedact: true,
+          redactPaths: ['req.headers.x-custom-token']
+        },
+        () => ({
+          request: { rawHeaders: ['X-Custom-Token', 'LEAK-H', 'Authorization', 'LEAK-A'] }
+        }),
+        pick('rawHeaders')
+      )
+    ).toEqual(['X-Custom-Token', '[REDACTED]', 'Authorization', 'LEAK-A'])
+  })
+
+  it('walks an object inside the array, so no value skips the redaction by key', () => {
+    const out = redactedRaw(
+      {},
+      () => ({
+        request: {
+          rawHeaders: ['x', { password: 'LEAK-OBJ' }]
+        }
+      }),
+      pick('rawHeaders')
+    ) as unknown[]
+
+    expect(out[1]).toEqual({ password: '[REDACTED]' })
+  })
 })
