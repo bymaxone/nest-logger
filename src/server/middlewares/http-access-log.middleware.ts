@@ -64,7 +64,8 @@ import { matchesExcludePath } from '../utils/matches-exclude-path.util'
 import {
   normalizeUrl,
   stripQueryString,
-  withoutRequestQueryIfText
+  scrubSecretSegments,
+  withoutRequestSecretsIfText
 } from '../utils/normalize-url.util'
 
 /**
@@ -77,6 +78,8 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
   private readonly isEnabled: boolean
   /** Path patterns that bypass HTTP logging entirely (health checks, metrics). */
   private readonly excludePaths: readonly RegExp[]
+  /** The host's own credential-segment patterns (`http.secretPathSegments`). */
+  private readonly secretPathSegments: readonly RegExp[]
 
   /**
    * @param logger - The structured logger the access entries are written to.
@@ -91,6 +94,7 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
   ) {
     this.isEnabled = options.http.isEnabled
     this.excludePaths = options.http.excludePaths
+    this.secretPathSegments = options.http.secretPathSegments
   }
 
   /**
@@ -144,7 +148,7 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
     markRecorderActive(req)
 
     const method = req.method
-    const url = normalizeUrl(target)
+    const url = normalizeUrl(target, this.secretPathSegments)
     const start = Date.now()
 
     this.logger.info(RESERVED_LOG_KEYS.HTTP_REQUEST_START, `${method} ${url}`, readUserId(req), {
@@ -152,7 +156,7 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
       url,
       // Query string stripped: it may carry secrets (reset tokens, OAuth codes)
       // that no key-name redaction can scrub out of a string VALUE.
-      fullUrl: path,
+      fullUrl: scrubSecretSegments(path, this.secretPathSegments),
       // Conventional for an access log and personal data under GDPR/LGPD. Its
       // fidelity is the app's to establish: behind a proxy it is only the real
       // client when the app configures `trust proxy`, and a value the app has not
@@ -266,7 +270,12 @@ export class HttpAccessLogMiddleware implements NestMiddleware {
           : {
               ...meta,
               errorMessage: cutIfText(
-                withoutRequestQueryIfText(recorded.error.message, req.originalUrl, req.url)
+                withoutRequestSecretsIfText(
+                  recorded.error.message,
+                  this.secretPathSegments,
+                  req.originalUrl,
+                  req.url
+                )
               )
             }
       )

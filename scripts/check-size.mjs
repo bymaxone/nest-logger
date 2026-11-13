@@ -33,6 +33,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-14 — server: 35.06 KiB real -> 35.25 KiB budget (~0.5% headroom). The previous budget
+//     of 35.0 KiB was exceeded by scrubbing a credential path segment from `url`, `fullUrl` and the
+//     not-found message (the detector, its `http.secretPathSegments` option with its validation and
+//     defaults, and the three consumers), all of it executable code.
 //   - 2026-11-09 — server: 34.08 KiB real -> 35.0 KiB budget (~2.7% headroom). Measured with an
 //     `Error` converted to data under `redactStrategy: 'paths'`, with the default names censored
 //     inside it (`errorOnlyNames` in the walk and its helper in the factory): 33.91 KiB before,
@@ -222,7 +226,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 35.0 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 35.25 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 

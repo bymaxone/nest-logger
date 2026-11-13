@@ -144,6 +144,20 @@ describe('applyDefaults', () => {
   })
 
   it(/*
+   * The built-in credential patterns need no configuration, and a host's own list is copied and
+   * frozen like `excludePaths`, so a later change to the array it passed cannot reach the logger.
+   */
+  'should default secretPathSegments to none and freeze a copy of the host list', () => {
+    expect(applyDefaults(baseOptions).http.secretPathSegments).toEqual([])
+    const own = [/^tok_/]
+    const resolved = applyDefaults({ ...baseOptions, http: { secretPathSegments: own } })
+
+    own.push(/^other/)
+    expect(resolved.http.secretPathSegments).toEqual([/^tok_/])
+    expect(Object.isFrozen(resolved.http.secretPathSegments)).toBe(true)
+  })
+
+  it(/*
    * The default excludePaths cover the probe endpoints a stock service exposes:
    * `/health`, the liveness and readiness probes `/health/live` and
    * `/health/ready` of `@bymax-one/nest-core`, and `/metrics`. They are ANCHORED:

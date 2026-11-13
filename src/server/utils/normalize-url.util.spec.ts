@@ -1,4 +1,10 @@
-import { normalizeUrl, withoutRequestQuery } from './normalize-url.util'
+import {
+  normalizeUrl,
+  scrubSecretSegments,
+  secretPathSegments,
+  withoutRequestSecrets,
+  withoutRequestSecretsIfText
+} from './normalize-url.util'
 
 describe('normalizeUrl', () => {
   it(/*
@@ -164,7 +170,7 @@ describe('normalizeUrl', () => {
   })
 })
 
-describe('withoutRequestQuery', () => {
+describe('withoutRequestSecrets, on a query', () => {
   const QUERY = '?code=SECRET-CODE&state=SECRET-STATE'
 
   it.each([
@@ -172,11 +178,11 @@ describe('withoutRequestQuery', () => {
     ['a message that echoes the URL twice', `${QUERY} and again ${QUERY}`, ' and again '],
     ['a message without the query', 'Cannot GET /missing', 'Cannot GET /missing']
   ])('removes the query of the request from %s', (_name, text, expected) => {
-    expect(withoutRequestQuery(text, `/missing${QUERY}`)).toBe(expected)
+    expect(withoutRequestSecrets(text, [], `/missing${QUERY}`)).toBe(expected)
   })
 
   it('removes the query of every URL given, so a mounted request is covered by either', () => {
-    expect(withoutRequestQuery('a?x=1 b?y=2', '/api/a?x=1', '/a?y=2')).toBe('a b')
+    expect(withoutRequestSecrets('a?x=1 b?y=2', [], '/api/a?x=1', '/a?y=2')).toBe('a b')
   })
 
   it.each([
@@ -185,16 +191,235 @@ describe('withoutRequestQuery', () => {
     ['a URL with no query', ['/missing']],
     ['a URL whose query is only the mark', ['/missing?']]
   ])('leaves the text as it is for %s', (_name, urls) => {
-    expect(withoutRequestQuery('is it? yes?', ...urls)).toBe('is it? yes?')
+    expect(withoutRequestSecrets('is it? yes?', [], ...urls)).toBe('is it? yes?')
   })
 
   it('removes the raw bytes of the query, which is how Nest words its message', () => {
-    expect(withoutRequestQuery('Cannot GET /x?t=a%20b%2Fc', '/x?t=a%20b%2Fc')).toBe('Cannot GET /x')
+    expect(withoutRequestSecrets('Cannot GET /x?t=a%20b%2Fc', [], '/x?t=a%20b%2Fc')).toBe(
+      'Cannot GET /x'
+    )
   })
 
   it('does not remove a query written in another encoding than the request carried', () => {
-    expect(withoutRequestQuery('Cannot GET /x?t=a b/c', '/x?t=a%20b%2Fc')).toBe(
+    expect(withoutRequestSecrets('Cannot GET /x?t=a b/c', [], '/x?t=a%20b%2Fc')).toBe(
       'Cannot GET /x?t=a b/c'
     )
+  })
+})
+
+const HEX_64 = 'a3f1c9d2b7e4086f5a1c3d9e7b2f4a6c8d0e1f3a5b7c9d2e4f6a8b0c1d3e5f7a'
+const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ.c2lnbmF0dXJlLXZhbHVlLWhlcmU'
+const TOKEN = 'Zk9vQmFyQmF6UXV4MTIzNDU2Nzg5MGFiY2RlZkdISUo'
+
+describe('scrubSecretSegments', () => {
+  it.each([
+    ['a 64-digit hex token', `/auth/reset/${HEX_64}`],
+    ['the shortest hex token, 32 digits', `/auth/reset/${HEX_64.slice(0, 32)}`],
+    ['an upper-case hex token', `/auth/reset/${HEX_64.toUpperCase()}`],
+    ['a JWT', `/auth/reset/${JWT}`],
+    ['an opaque base64url token', `/invite/${TOKEN}`],
+    ['an email address', '/unsubscribe/someone.private@example.com'],
+    ['a percent-encoded email address', '/unsubscribe/someone.private%40example.com']
+  ])('replaces %s with the placeholder and keeps the route', (_name, path) => {
+    const scrubbed = scrubSecretSegments(path)
+
+    expect(scrubbed).toMatch(/^\/[a-z]+(\/[a-z]+)?\/:redacted$/)
+    expect(scrubbed.startsWith(path.slice(0, path.lastIndexOf('/') + 1))).toBe(true)
+  })
+
+  it.each([
+    ['a 31-digit hex value', `/x/${HEX_64.slice(0, 31)}`],
+    ['a short slug', '/articles/short-slug'],
+    [
+      'a long hyphenated lowercase slug',
+      '/articles/how-to-rotate-a-signing-key-without-downtime-2024'
+    ],
+    ['a word-like segment', '/accounts/organizationadministration'],
+    ['a JWT lookalike without the header prefix', '/x/abc.def.ghi'],
+    ['a numeric id, which the id rule owns', '/users/123'],
+    ['a UUID, which is an identifier', '/users/4bf92f35-77b3-4da6-a3ce-929d0e0e4736'],
+    ['an upper-case UUID', '/users/4BF92F35-77B3-4DA6-A3CE-929D0E0E4736'],
+    ['a dated path', '/reports/2024/11/13'],
+    ['a text with an at sign that is not an address', '/tags/@team'],
+    ['the root', '/'],
+    ['an empty string', '']
+  ])('leaves %s as it is', (_name, path) => {
+    expect(scrubSecretSegments(path)).toBe(path)
+  })
+
+  it('reads a segment that is not valid percent-encoding as it was written', () => {
+    expect(scrubSecretSegments(`/x/${HEX_64}%E0%A4%A`)).toBe('/x/:redacted')
+    expect(scrubSecretSegments('/x/%E0%A4%A@example.com')).toBe('/x/:redacted')
+    expect(scrubSecretSegments('/x/100%/y')).toBe('/x/100%/y')
+  })
+
+  it('replaces a segment a host pattern matches, including after a decode', () => {
+    expect(scrubSecretSegments('/pay/tok_live_4242', [/^tok_/])).toBe('/pay/:redacted')
+    expect(scrubSecretSegments('/pay/tok%5Flive', [/^tok_/])).toBe('/pay/:redacted')
+    expect(scrubSecretSegments('/pay/other', [/^tok_/])).toBe('/pay/other')
+  })
+
+  it('gives the same answer on every call for a pattern with the global flag', () => {
+    const pattern = /^tok_/g
+
+    expect(scrubSecretSegments('/pay/tok_a', [pattern])).toBe('/pay/:redacted')
+    expect(scrubSecretSegments('/pay/tok_a', [pattern])).toBe('/pay/:redacted')
+  })
+
+  it('replaces every credential segment of a path, not only the first', () => {
+    expect(scrubSecretSegments(`/a/${HEX_64}/b/${JWT}`)).toBe('/a/:redacted/b/:redacted')
+  })
+})
+
+describe('normalizeUrl, with a credential in the path', () => {
+  it('scrubs the credential before the id rules, so its leading digits are not an id', () => {
+    expect(normalizeUrl(`/auth/reset/${HEX_64.replace(/^./, '7')}`)).toBe('/auth/reset/:redacted')
+  })
+
+  it('applies the host patterns and still strips the query', () => {
+    expect(normalizeUrl('/pay/tok_live_1/orders/5?x=1', [/^tok_/])).toBe(
+      '/pay/:redacted/orders/:id'
+    )
+  })
+})
+
+describe('secretPathSegments', () => {
+  it('returns each credential segment once, as the request wrote it', () => {
+    expect(
+      secretPathSegments(`/a/${HEX_64}/b/${HEX_64}/c/someone%40example.com?t=${HEX_64}`)
+    ).toEqual([HEX_64, 'someone%40example.com'])
+  })
+
+  it('returns nothing for a path without one', () => {
+    expect(secretPathSegments('/users/123')).toEqual([])
+  })
+})
+
+describe('withoutRequestSecrets, on a path', () => {
+  it('replaces the credential segment in a not-found message and cuts the query', () => {
+    expect(
+      withoutRequestSecrets(`Cannot GET /auth/reset/${HEX_64}?x=1`, [], `/auth/reset/${HEX_64}?x=1`)
+    ).toBe('Cannot GET /auth/reset/:redacted')
+  })
+
+  it('finds the credential in either URL of a mounted request', () => {
+    expect(
+      withoutRequestSecrets(`Cannot GET /api/r/${HEX_64}`, [], `/api/r/${HEX_64}`, `/r/${HEX_64}`)
+    ).toBe('Cannot GET /api/r/:redacted')
+  })
+
+  it('leaves a text that does not carry the credential as it is', () => {
+    expect(withoutRequestSecrets('Cannot GET /x', [], `/x/${HEX_64}`)).toBe('Cannot GET /x')
+  })
+})
+
+describe('withoutRequestSecretsIfText', () => {
+  it('returns a value that is not text unchanged', () => {
+    const value = { a: 1 }
+
+    expect(withoutRequestSecretsIfText(value, [], '/x')).toBe(value)
+    expect(withoutRequestSecretsIfText(undefined, [], '/x')).toBeUndefined()
+  })
+
+  it('cleans a text', () => {
+    expect(withoutRequestSecretsIfText(`GET /x/${HEX_64}`, [], `/x/${HEX_64}`)).toBe(
+      'GET /x/:redacted'
+    )
+  })
+})
+
+describe('scrubSecretSegments, the edges of the detector', () => {
+  it.each([
+    ['a hex token with a file extension', `/download/${HEX_64}.pdf`],
+    ['a base64url token with a file extension', `/verify/${TOKEN}.json`],
+    ['a standard-base64 token with padding', `/verify/${TOKEN}==`],
+    ['a standard-base64 token with a plus sign', `/verify/${TOKEN.slice(0, 20)}+${TOKEN.slice(20)}`]
+  ])('replaces %s', (_name, path) => {
+    expect(scrubSecretSegments(path)).toMatch(/^\/[a-z]+\/:redacted$/)
+  })
+
+  it.each([
+    ['a letters-only token', '/reset/abcdefghijklmnopqrstuvwxyzABCDEF'],
+    [
+      'a long camelCase name, which no rule can tell from a token',
+      '/rpc/getAllUsersWithPermissionsAndRoles'
+    ],
+    ['a hex token behind an underscore prefix', `/reset/rst_${HEX_64.slice(0, 32)}`],
+    ['a hex token behind a hyphen prefix', `/reset/reset-${HEX_64.slice(0, 32)}`],
+    ['a hex token between two words', `/reset/tok_${HEX_64.slice(0, 32)}_live`]
+  ])('replaces %s', (_name, path) => {
+    expect(scrubSecretSegments(path)).toMatch(/^\/[a-z]+\/:redacted$/)
+  })
+
+  it.each([
+    ['a long snake_case name', '/reports/monthly_active_users_by_region_summary'],
+    ['a long file name', '/files/quarterly-report-final-version-2024.pdf']
+  ])('keeps %s, which is a name and not a token', (_name, path) => {
+    expect(scrubSecretSegments(path)).toBe(path)
+  })
+
+  it('tests an email segment in linear time, whatever the dots and at signs', () => {
+    const hostile = `/x/a@${'.'.repeat(16_000)}@`
+    const started = Date.now()
+
+    scrubSecretSegments(hostile)
+    secretPathSegments(hostile)
+
+    expect(Date.now() - started).toBeLessThan(100)
+  })
+
+  it('still reads an email address with several dots in its domain', () => {
+    expect(scrubSecretSegments('/u/first.last@mail.example.co.uk')).toBe('/u/:redacted')
+  })
+})
+
+describe('a credential the segment split and the replacement order could hide', () => {
+  const B64_WITH_SLASHES = '////+yBFao+02f4jSG2St9wBJktwlbrfBClOc5i94gc='
+
+  it('replaces a standard-base64 token whose slashes arrive percent-encoded', () => {
+    expect(scrubSecretSegments(`/reset/${encodeURIComponent(B64_WITH_SLASHES)}`)).toBe(
+      '/reset/:redacted'
+    )
+  })
+
+  it('names a percent-encoded token by the bytes the request carried', () => {
+    const encoded = encodeURIComponent(B64_WITH_SLASHES)
+
+    expect(secretPathSegments(`/reset/${encoded}`)).toEqual([encoded])
+  })
+
+  it('replaces a credential that is the start of a longer one without leaving the rest', () => {
+    const url = '/missing/tok_live/tok_live_SECRET'
+
+    expect(withoutRequestSecrets(`Cannot GET ${url}`, [/^tok_/], url)).toBe(
+      'Cannot GET /missing/:redacted/:redacted'
+    )
+  })
+
+  it('replaces the longer of two hex credentials that share their first 32 digits', () => {
+    const short = HEX_64.slice(0, 32)
+    const url = `/a/${short}/b/${HEX_64}`
+
+    expect(withoutRequestSecrets(`Cannot GET ${url}`, [], url)).toBe(
+      'Cannot GET /a/:redacted/b/:redacted'
+    )
+  })
+
+  it('stays fast for a request path made of many distinct credentials', () => {
+    const url = `/${Array.from({ length: 400 }, (_, i) => `${String(i).padStart(32, 'a')}`).join('/')}`
+    const started = Date.now()
+
+    const out = withoutRequestSecrets(`Cannot GET ${url}`, [], url)
+
+    expect(Date.now() - started).toBeLessThan(200)
+    expect(out).not.toContain('aaaaaaaa')
+  })
+
+  it('reads a host pattern that is frozen, which assigning to lastIndex would throw on', () => {
+    const frozen = Object.freeze(/^tok_/)
+
+    expect(scrubSecretSegments('/pay/tok_live_1', [frozen])).toBe('/pay/:redacted')
+    expect(scrubSecretSegments('/pay/plain-ref', [frozen])).toBe('/pay/plain-ref')
+    expect(secretPathSegments('/pay/tok_live_1', [frozen])).toEqual(['tok_live_1'])
   })
 })

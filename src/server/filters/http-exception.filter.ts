@@ -23,16 +23,22 @@
  * Registered as `APP_FILTER` by `BymaxLoggerModule` when `http.isEnabled` and
  * `http.shouldCaptureExceptions` are both set.
  */
-import { Catch, HttpException, HttpStatus, Inject } from '@nestjs/common'
+import { Catch, HttpException, HttpStatus, Inject, Optional } from '@nestjs/common'
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common'
 
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+import { LOGGER_OPTIONS_TOKEN } from '../constants/injection-tokens.constants'
 import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
+import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { PinoLoggerService } from '../services/pino-logger.service'
 import { readExposedClientError } from '../utils/exposed-client-error.util'
 import type { ExposedClientError } from '../utils/exposed-client-error.util'
 import { readRecordedParserError } from '../utils/http-log-state.util'
-import { stripQueryString, withoutRequestQuery } from '../utils/normalize-url.util'
+import {
+  scrubSecretSegments,
+  stripQueryString,
+  withoutRequestSecrets
+} from '../utils/normalize-url.util'
 import { sanitizeError } from '../utils/sanitize-error.util'
 
 /** The request facts every entry the filter writes carries. */
@@ -53,12 +59,24 @@ const INTERNAL_ERROR_BODY = {
  */
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  /** The host's own credential-segment patterns (`http.secretPathSegments`). */
+  private readonly secretPathSegments: readonly RegExp[]
+
   /**
    * @param logger - The structured logger exception entries are written to.
    *   Injected by token explicitly: the package is bundled without
    *   `emitDecoratorMetadata`, so implicit class-type injection would not resolve.
+   * @param options - Resolved module options, read for `http.secretPathSegments`. Optional, so a
+   *   filter built by hand with the logger alone keeps the built-in credential patterns.
    */
-  constructor(@Inject(PinoLoggerService) private readonly logger: PinoLoggerService) {}
+  constructor(
+    @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
+    @Optional()
+    @Inject(LOGGER_OPTIONS_TOKEN)
+    options?: ResolvedBymaxLoggerModuleOptions
+  ) {
+    this.secretPathSegments = options?.http.secretPathSegments ?? []
+  }
 
   /**
    * Log the exception at the status-appropriate level and write the JSON
@@ -76,7 +94,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const userId = req.user?.sub ?? req.user?.id
     // Strip the query string: it may carry secrets and cannot be redacted as a
     // substring once embedded in the logged `url` string.
-    const url = stripQueryString(req.url)
+    const url = scrubSecretSegments(stripQueryString(req.url), this.secretPathSegments)
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus()
@@ -106,7 +124,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
         this.logger.warnStructured(
           RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED,
           parserError?.logMessage ??
-            withoutRequestQuery(exception.message, req.originalUrl, req.url),
+            withoutRequestSecrets(
+              exception.message,
+              this.secretPathSegments,
+              req.originalUrl,
+              req.url
+            ),
           userId,
           metadata
         )
@@ -150,7 +173,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // response keeps the message, which is the application's concern.
     this.logger.warnStructured(
       RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED,
-      withoutRequestQuery(clientError.logMessage, ...rawUrls),
+      withoutRequestSecrets(clientError.logMessage, this.secretPathSegments, ...rawUrls),
       userId,
       {
         method,

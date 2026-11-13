@@ -41,7 +41,8 @@ import { matchesExcludePath } from '../utils/matches-exclude-path.util'
 import {
   normalizeUrl,
   stripQueryString,
-  withoutRequestQueryIfText
+  scrubSecretSegments,
+  withoutRequestSecretsIfText
 } from '../utils/normalize-url.util'
 
 /** Lower bound of the HTTP success (2xx) range. */
@@ -54,6 +55,8 @@ const HTTP_SUCCESS_MIN = 200
 export class HttpLoggingInterceptor implements NestInterceptor {
   /** Path patterns that bypass HTTP logging entirely (health checks, metrics). */
   private readonly excludePaths: readonly RegExp[]
+  /** The host's own credential-segment patterns (`http.secretPathSegments`). */
+  private readonly secretPathSegments: readonly RegExp[]
 
   /**
    * @param logger - The structured logger the lifecycle entries are written to.
@@ -67,6 +70,7 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     @Inject(LOGGER_OPTIONS_TOKEN) options: ResolvedBymaxLoggerModuleOptions
   ) {
     this.excludePaths = options.http.excludePaths
+    this.secretPathSegments = options.http.secretPathSegments
   }
 
   /**
@@ -110,7 +114,7 @@ export class HttpLoggingInterceptor implements NestInterceptor {
 
     const userAgent = readUserAgent(req)
     const userId = readUserId(req)
-    const normalizedUrl = normalizeUrl(url)
+    const normalizedUrl = normalizeUrl(url, this.secretPathSegments)
     const start = Date.now()
 
     this.logger.info(RESERVED_LOG_KEYS.HTTP_REQUEST_START, `${method} ${normalizedUrl}`, userId, {
@@ -119,7 +123,7 @@ export class HttpLoggingInterceptor implements NestInterceptor {
       // Query string stripped: it may carry secrets (reset tokens, OAuth codes)
       // that Pino's path-based redaction cannot scrub from a string value. The
       // raw (un-normalized) path is kept for per-request debugging.
-      fullUrl: stripQueryString(url),
+      fullUrl: scrubSecretSegments(stripQueryString(url), this.secretPathSegments),
       ip,
       userAgent
     })
@@ -234,7 +238,9 @@ export class HttpLoggingInterceptor implements NestInterceptor {
             url,
             statusCode,
             duration,
-            errorMessage: cutIfText(withoutRequestQueryIfText(err.message, ...rawUrls))
+            errorMessage: cutIfText(
+              withoutRequestSecretsIfText(err.message, this.secretPathSegments, ...rawUrls)
+            )
           }
         )
       }
@@ -284,7 +290,9 @@ export class HttpLoggingInterceptor implements NestInterceptor {
         url,
         statusCode: clientError.status,
         duration,
-        errorMessage: cutIfText(withoutRequestQueryIfText(clientError.logMessage, ...rawUrls)),
+        errorMessage: cutIfText(
+          withoutRequestSecretsIfText(clientError.logMessage, this.secretPathSegments, ...rawUrls)
+        ),
         bodyParserType: clientError.bodyParserType
       }
     )

@@ -20,6 +20,7 @@ const DEFAULT_HTTP: ResolvedHttpOptions = {
   shouldCaptureExceptions: true,
   shouldGenerateRequestId: true,
   excludePaths: [/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/],
+  secretPathSegments: [],
   tenantIdHeader: 'x-tenant-id',
   tenantIdResolver: undefined
 }
@@ -100,7 +101,8 @@ export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxL
     destinations: Object.freeze([...(options.destinations ?? [])]),
     http: Object.freeze({
       ...http,
-      excludePaths: Object.freeze([...http.excludePaths])
+      excludePaths: Object.freeze([...http.excludePaths]),
+      secretPathSegments: Object.freeze([...http.secretPathSegments])
     }),
     otel: Object.freeze(otel),
     maxEntrySizeBytes: options.maxEntrySizeBytes ?? DEFAULT_MAX_ENTRY_SIZE_BYTES,
