@@ -11,6 +11,29 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.17] - 2026-11-14
+
+### Security
+
+- **The default redaction list now covers the credential names real systems write.** A name is
+  matched as written (case-insensitively under the default `'names'` strategy), so `accessToken`
+  never covered `access_token`, the OAuth wire name, and a value under it was written in clear.
+  Measured on 1.4.16: `{ access_token, refresh_token, api_key, 'proxy-authorization' }` in the
+  metadata of a log call reached the line unredacted. `REDACT_COMMON_FIELDS` grows from 32 to 62
+  names, append-only: the snake and kebab spellings of the token, key and secret names
+  (`access_token`, `refresh-token`, `client_secret`, `private-key`, `api_key`, `secret_key`, and
+  the rest), `proxy-authorization`, the session and CSRF names (`session_id`, `sessionId`,
+  `x-csrf-token`, `x-xsrf-token`, `csrf_token`) and the snake forms of the password family. The
+  lower-case `apikey` and `sessionid` are listed as well, because the legacy `'paths'` strategy is
+  case-sensitive. **Apply to a derived backend:** a field that carried one of these names now
+  arrives as `[REDACTED]`, so a query that matched its value stops matching. **Cost under
+  `redactStrategy: 'paths'`:** `DEFAULT_REDACT_PATHS` grows from 165 to 315 entries, and that
+  engine is slower in proportion; the default `'names'` strategy is a set lookup and is unchanged.
+
+### Documentation
+
+- The README, and the redaction guideline, give the new count and list the added names.
+
 ## [1.4.16] - 2026-11-12
 
 ### Documentation
@@ -2724,7 +2747,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.16...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.17...HEAD
+[1.4.17]: https://github.com/bymaxone/nest-logger/compare/v1.4.16...v1.4.17
 [1.4.16]: https://github.com/bymaxone/nest-logger/compare/v1.4.15...v1.4.16
 [1.4.15]: https://github.com/bymaxone/nest-logger/compare/v1.4.14...v1.4.15
 [1.4.14]: https://github.com/bymaxone/nest-logger/compare/v1.4.13...v1.4.14
