@@ -31,8 +31,11 @@ const SECRET_PLACEHOLDER = ':redacted'
 const HEX_SECRET_REGEX = /^[0-9a-f]{32,}$/i
 /** JWT: three base64url parts, the first being the encoded `{"` header every JWT starts with. */
 const JWT_SECRET_REGEX = /^eyJ[\w-]*\.[\w-]+\.[\w-]*$/
-/** Opaque token: 32 or more base64 or base64url characters, with the padding a base64 value ends in. */
-const TOKEN_SECRET_REGEX = /^[A-Za-z0-9_+-]{32,}={0,2}$/
+/**
+ * Opaque token: 32 or more base64 or base64url characters, with the padding a base64 value ends in.
+ * A segment is tested decoded, and a `/` that arrived as `%2F` is part of a standard-base64 token.
+ */
+const TOKEN_SECRET_REGEX = /^[A-Za-z0-9_+/-]{32,}={0,2}$/
 /** A lowercase slug or snake_case name (`my-long-article-title-2024`), which is a name and not a token. */
 const SLUG_REGEX = /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/
 /** A run of 32 or more hex digits anywhere in a segment, which a prefix such as `rst_` does not hide. */
@@ -210,15 +213,23 @@ export function withoutRequestSecrets(
   ...urls: Array<string | undefined>
 ): string {
   let result = text
+  const segments = new Set<string>()
   for (const url of urls) {
     if (url === undefined) continue
     const queryStart = url.indexOf('?')
     if (queryStart !== -1 && url.length - queryStart > 1) {
       result = result.split(url.slice(queryStart)).join('')
     }
-    for (const segment of secretPathSegments(url, extra)) {
-      result = result.split(segment).join(SECRET_PLACEHOLDER)
-    }
+    for (const segment of secretPathSegments(url, extra)) segments.add(segment)
+  }
+  if (segments.size > 0) {
+    // One pass, longest first: replacing one credential at a time would cut a credential that is the
+    // start of a longer one out of the longer, and leave its remaining bytes in the text.
+    const alternation = [...segments]
+      .sort((left, right) => right.length - left.length)
+      .map((segment) => segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('|')
+    result = result.replace(new RegExp(alternation, 'g'), SECRET_PLACEHOLDER)
   }
   return result
 }

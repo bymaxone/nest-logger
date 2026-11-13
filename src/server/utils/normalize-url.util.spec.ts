@@ -373,3 +373,46 @@ describe('scrubSecretSegments, the edges of the detector', () => {
     expect(scrubSecretSegments('/u/first.last@mail.example.co.uk')).toBe('/u/:redacted')
   })
 })
+
+describe('a credential the segment split and the replacement order could hide', () => {
+  const B64_WITH_SLASHES = '////+yBFao+02f4jSG2St9wBJktwlbrfBClOc5i94gc='
+
+  it('replaces a standard-base64 token whose slashes arrive percent-encoded', () => {
+    expect(scrubSecretSegments(`/reset/${encodeURIComponent(B64_WITH_SLASHES)}`)).toBe(
+      '/reset/:redacted'
+    )
+  })
+
+  it('names a percent-encoded token by the bytes the request carried', () => {
+    const encoded = encodeURIComponent(B64_WITH_SLASHES)
+
+    expect(secretPathSegments(`/reset/${encoded}`)).toEqual([encoded])
+  })
+
+  it('replaces a credential that is the start of a longer one without leaving the rest', () => {
+    const url = '/missing/tok_live/tok_live_SECRET'
+
+    expect(withoutRequestSecrets(`Cannot GET ${url}`, [/^tok_/], url)).toBe(
+      'Cannot GET /missing/:redacted/:redacted'
+    )
+  })
+
+  it('replaces the longer of two hex credentials that share their first 32 digits', () => {
+    const short = HEX_64.slice(0, 32)
+    const url = `/a/${short}/b/${HEX_64}`
+
+    expect(withoutRequestSecrets(`Cannot GET ${url}`, [], url)).toBe(
+      'Cannot GET /a/:redacted/b/:redacted'
+    )
+  })
+
+  it('stays fast for a request path made of many distinct credentials', () => {
+    const url = `/${Array.from({ length: 400 }, (_, i) => `${String(i).padStart(32, 'a')}`).join('/')}`
+    const started = Date.now()
+
+    const out = withoutRequestSecrets(`Cannot GET ${url}`, [], url)
+
+    expect(Date.now() - started).toBeLessThan(200)
+    expect(out).not.toContain('aaaaaaaa')
+  })
+})
