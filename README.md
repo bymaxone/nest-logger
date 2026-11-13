@@ -543,6 +543,8 @@ When an error's properties cannot be read (a Proxy whose `ownKeys` throws, a thr
 
 An `Error` nested in the metadata is written as its own enumerable fields, censored by name, with `type`, `message`, `stack`, `cause` and `errors` added, bounded like the root `err` and marked `_truncated` when cut. A string `cause` is logged like a `message`: do not put secrets in either. Whatever sits under a record-root key that has a serializer (`err`, or a key of `serializers`) reaches that serializer censored by name with its `Error`s still instances, and what a serializer returns is written as returned, so an `Error` in that output stays `{}`.
 
+A request object logged as metadata (`{ req }`) is written as its `method`, its `url` without the query and with a credential path segment replaced, its `headers` (censored by name) and the peer's `remoteAddress`; the socket, the server and `rawHeaders` are left out. Under any other key, the value beside a sensitive name in a `rawHeaders` or `rawTrailers` array is censored, and the URL uses `http.secretPathSegments` like the access log. A `serializers.req` of your own replaces this; Pino runs it after the redaction walk, so it receives the walk's copy of the request (its own enumerable properties, with no `headers` accessor), not the original object. A value under `req` that is not a request is written as it is.
+
 ## 🧵 Context Propagation
 
 `LogContextService` holds an `AsyncLocalStorage` scope. Any entry emitted inside `logContext.run({ requestId }, callback)`, at any nesting depth, carries the scope's fields with no prop drilling. `applyAccessLog(app)` and `applyRequestIdMiddleware(consumer)` open the scope for each request; the full method list is in the API Reference.

@@ -40,6 +40,7 @@ import {
   resolveServiceMetadata
 } from './utils/resolve-resource.util'
 import { assignOwnErrorFields, sanitizeError, scrubStack } from './utils/sanitize-error.util'
+import { withSerializedRequest } from './utils/serialize-request.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
@@ -430,12 +431,11 @@ function buildNameRedactor(
   nestedErrorsAsData = false,
   coversNames = true
 ): Redactor {
-  const names = coversNames
-    ? [
-        ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
-        ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
-      ]
-    : []
+  const allNames = [
+    ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
+    ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
+  ]
+  const names = coversNames ? allNames : []
   const ownFields = ownFieldPolicyOf(options)
   // With no name to cover the value is still walked under 'safe', which writes plain data only the
   // walk can produce: an `Error` nested in the record, and what a serializer returns. It is also
@@ -451,9 +451,18 @@ function buildNameRedactor(
         ['err', ...Object.keys(options.serializers)],
         undefined,
         ownFields,
-        coversNames ? undefined : namesInsideErrors(options)
+        coversNames ? undefined : namesInsideErrors(options),
+        allNames
       )
-    : createNameRedactor(names, options.redactCensor, undefined, undefined, ownFields)
+    : createNameRedactor(
+        names,
+        options.redactCensor,
+        undefined,
+        undefined,
+        ownFields,
+        undefined,
+        allNames
+      )
 }
 
 /**
@@ -545,6 +554,11 @@ export function buildPinoInstance(
   // the object-injection lint rule).
   const bound = <T>(serializer: (input: T) => unknown): ((input: T) => unknown) =>
     createSizeBoundedSerializer((input: T) => redactSerialized(serializer(input)), maxBytes)
+  // The request is serialized here, before the walk, and not as a Pino serializer: Pino runs the
+  // record formatter first, so the walk would copy a whole `IncomingMessage`, its sockets and its
+  // server, and hand the serializer a copy that has lost the prototype's `headers`. A host that
+  // registers its own `req` serializer keeps the raw request for it.
+  const hostSerializesRequest = Object.hasOwn(options.serializers, 'req')
   const serializers = {
     err: bound((error) => serializeErrorValue(error, ownFields)),
     ...Object.fromEntries(
@@ -594,7 +608,12 @@ export function buildPinoInstance(
       log: (record) =>
         withSemconvException(
           withEventName(
-            redactRecord(record, true) as Record<string, unknown>,
+            redactRecord(
+              hostSerializesRequest
+                ? record
+                : withSerializedRequest(record, options.http.secretPathSegments),
+              true
+            ) as Record<string, unknown>,
             options.eventNameField
           ),
           options.errorFormat
