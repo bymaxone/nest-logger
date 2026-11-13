@@ -99,11 +99,19 @@ describe('a host that adds its own credential name', () => {
   it('censors sessionId, at any depth, once the host adds it to its own redact list, under the default strategy', () => {
     const { line } = written(
       { redactPaths: ['sessionId'] },
-      { sessionId: 'LEAK-S1', nested: { sessionId: 'LEAK-S2' } }
+      {
+        sessionId: 'LEAK-S1',
+        nested: {
+          sessionId: 'LEAK-S2',
+          deeper: { sessionId: 'LEAK-S3', deepest: { sessionId: 'LEAK-S4' } }
+        }
+      }
     )
 
     expect(line).not.toContain('LEAK-S1')
     expect(line).not.toContain('LEAK-S2')
+    expect(line).not.toContain('LEAK-S3')
+    expect(line).not.toContain('LEAK-S4')
   })
 })
 
