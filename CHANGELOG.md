@@ -19,6 +19,7 @@ heading here.
 - The Performance section no longer quotes figures for bare Pino from Pino's own benchmark (its Node version did not match the specification's). It reports this repository's benchmark of the shipped configuration: about 274,000 entries/s, 0.345× of the bare wrapper.
 - Removed the mention of a future `@bymax-one/nest-audit`, a package that does not exist.
 - The README keeps the house section order: a compact Features list after Overview, and a Security Table and Tech Stack between Security Model and Testing & Quality.
+- Two precision notes on the 1.4.15 entry below. Both concern a host on `redactStrategy: 'paths'` with `errorOwnFields: 'safe'`: there the redaction walk already converted a nested `Error` to data, so it was never written as `{}`, and it did not run the `Error`'s `toJSON`, so the output of that method, which is what the leak above describes, was not what reached the log. With the default `errorOwnFields: 'all'` the entry stands as written.
 - `dist/` is unchanged.
 
 ## [1.4.15] - 2026-11-10
