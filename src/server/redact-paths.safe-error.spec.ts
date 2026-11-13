@@ -3,7 +3,7 @@
  * with `errorOwnFields: 'safe'`: the redaction walk converts it to data (`type`, `message`,
  * `stack`) and does not run its `toJSON`, so what that method returns, a secret or not, never
  * reaches the line. Under `'all'` the output of `toJSON` is what is written, with the default names
- * censored in it. The CHANGELOG's 1.4.16 note about the 1.4.15 entry rests on this behaviour.
+ * censored in it.
  *
  * Layer: server, tests. Driven through the real Pino pipeline, on the line a destination receives.
  */

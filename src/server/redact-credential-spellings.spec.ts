@@ -85,7 +85,7 @@ describe.each([
 })
 
 describe('the default name list', () => {
-  it('lists every spelling the contract names, so the list can only grow', () => {
+  it('lists each spelling under test, whatever its case', () => {
     const lower = new Set(REDACT_COMMON_FIELDS.map((name) => name.toLowerCase()))
 
     for (const name of SPELLINGS) {
