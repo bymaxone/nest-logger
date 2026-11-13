@@ -4,9 +4,9 @@
  * Layer: server/utils — a pure helper registered by the Pino factory. A Node `IncomingMessage` (and
  * the Express or Fastify request built on it) is a graph of sockets, parsers and servers, and it
  * carries the credentials of the call twice: in `headers`, and in `rawHeaders`, a flat array of
- * alternating names and values in which a value sits beside its name instead of under a key. Logging
- * one whole wrote every header value of the request, whatever its name, along with the internals of
- * the connection. The serializer keeps the facts a request line is for and leaves the rest out.
+ * alternating names and values in which a value sits beside its name instead of under a key. The
+ * serializer keeps the facts a request line is for and leaves the connection out: its sockets, parser
+ * and server are no part of a request line, and the redaction walk would have to traverse them.
  */
 import { scrubSecretSegments, stripQueryString } from './normalize-url.util'
 
