@@ -41,7 +41,7 @@ heading here.
 - **A credential in a path segment no longer reaches a log line.** A reset, verification or
   invitation link carries its token in the path (`/auth/reset/<token>`), where the query-string
   stripping does not reach and key-name redaction cannot censor it, because it is the value of a
-  string field. Measured on 1.4.16: a 64-digit hex token and a JWT in the path were written in
+  string field. Measured before this change: a 64-digit hex token and a JWT in the path were written in
   clear in `fullUrl`, in the `url` of an exception entry, and in the not-found message
   (`Cannot GET /auth/reset/<token>`). Each path segment that is a hex value of 32 or more digits, a
   JWT, an opaque token of 32 or more base64url characters, or an email address is now written as
