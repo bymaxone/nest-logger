@@ -328,3 +328,37 @@ describe('withoutRequestSecretsIfText', () => {
     )
   })
 })
+
+describe('scrubSecretSegments, the edges of the detector', () => {
+  it.each([
+    ['a hex token with a file extension', `/download/${HEX_64}.pdf`],
+    ['a base64url token with a file extension', `/verify/${TOKEN}.json`],
+    ['a standard-base64 token with padding', `/verify/${TOKEN}==`],
+    ['a standard-base64 token with a plus sign', `/verify/${TOKEN.slice(0, 20)}+${TOKEN.slice(20)}`]
+  ])('replaces %s', (_name, path) => {
+    expect(scrubSecretSegments(path)).toMatch(/^\/[a-z]+\/:redacted$/)
+  })
+
+  it.each([
+    ['a long snake_case name', '/reports/monthly_active_users_by_region_summary'],
+    ['a long camelCase name', '/rpc/getAllUsersWithPermissionsAndRoles'],
+    ['a long PascalCase name', '/rpc/GetAllUsersWithPermissionsAndRoles'],
+    ['a long file name', '/files/quarterly-report-final-version-2024.pdf']
+  ])('keeps %s, which is a name and not a token', (_name, path) => {
+    expect(scrubSecretSegments(path)).toBe(path)
+  })
+
+  it('tests an email segment in linear time, whatever the dots and at signs', () => {
+    const hostile = `/x/a@${'.'.repeat(16_000)}@`
+    const started = Date.now()
+
+    scrubSecretSegments(hostile)
+    secretPathSegments(hostile)
+
+    expect(Date.now() - started).toBeLessThan(100)
+  })
+
+  it('still reads an email address with several dots in its domain', () => {
+    expect(scrubSecretSegments('/u/first.last@mail.example.co.uk')).toBe('/u/:redacted')
+  })
+})

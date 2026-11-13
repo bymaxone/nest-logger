@@ -31,14 +31,16 @@ const SECRET_PLACEHOLDER = ':redacted'
 const HEX_SECRET_REGEX = /^[0-9a-f]{32,}$/i
 /** JWT: three base64url parts, the first being the encoded `{"` header every JWT starts with. */
 const JWT_SECRET_REGEX = /^eyJ[\w-]*\.[\w-]+\.[\w-]*$/
-/** Opaque token: 32 or more base64url characters. */
-const TOKEN_SECRET_REGEX = /^[A-Za-z0-9_-]{32,}$/
-/** A hyphenated lowercase slug (`my-long-article-title-2024`), which is a name and not a token. */
-const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)+$/
+/** Opaque token: 32 or more base64 or base64url characters, with the padding a base64 value ends in. */
+const TOKEN_SECRET_REGEX = /^[A-Za-z0-9_+-]{32,}={0,2}$/
+/** A lowercase slug or snake_case name (`my-long-article-title-2024`), which is a name and not a token. */
+const SLUG_REGEX = /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/
+/** Letters only (`getAllUsersWithPermissions`): a name, since a random token of this length carries digits. */
+const LETTERS_ONLY_REGEX = /^[A-Za-z]+$/
 /** A UUID, which is an identifier: `/:id` in `url`, and kept in `fullUrl` for debugging. */
 const UUID_SEGMENT_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** An email address, which is personal data and the usual carrier of an account-recovery link. */
-const EMAIL_SECRET_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+const EMAIL_SECRET_REGEX = /^[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+$/
 
 /**
  * Read a path segment the way the router does, which is percent-decoded. A segment that is not valid
@@ -60,13 +62,28 @@ function isSecretSegment(segment: string, extra: readonly RegExp[]): boolean {
   if (segment === '') return false
   const decoded = decodeSegment(segment)
   return (
-    HEX_SECRET_REGEX.test(decoded) ||
-    JWT_SECRET_REGEX.test(decoded) ||
-    (TOKEN_SECRET_REGEX.test(decoded) &&
-      !SLUG_REGEX.test(decoded) &&
-      !UUID_SEGMENT_REGEX.test(decoded)) ||
+    looksLikeToken(decoded) ||
+    looksLikeToken(withoutExtension(decoded)) ||
     EMAIL_SECRET_REGEX.test(decoded) ||
     extra.some((pattern) => matchesFresh(pattern, decoded))
+  )
+}
+
+/** The segment without a trailing file extension: `<token>.pdf` carries the token. */
+function withoutExtension(segment: string): string {
+  const dot = segment.lastIndexOf('.')
+  return dot > 0 && segment.length - dot <= 9 ? segment.slice(0, dot) : segment
+}
+
+/** A hex value, a JWT, or an opaque token that is not a slug, a UUID or a letters-only name. */
+function looksLikeToken(value: string): boolean {
+  return (
+    HEX_SECRET_REGEX.test(value) ||
+    JWT_SECRET_REGEX.test(value) ||
+    (TOKEN_SECRET_REGEX.test(value) &&
+      !SLUG_REGEX.test(value) &&
+      !UUID_SEGMENT_REGEX.test(value) &&
+      !LETTERS_ONLY_REGEX.test(value))
   )
 }
 
