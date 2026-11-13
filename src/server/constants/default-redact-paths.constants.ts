@@ -125,7 +125,47 @@ export const REDACT_COMMON_FIELDS: readonly string[] = [
   'cookie',
   'set-cookie',
   'x-api-key',
-  'x-auth-token'
+  'x-auth-token',
+  // The spellings systems actually write. The default `'names'` matching is case-insensitive, so
+  // `accessToken` already covers `ACCESSTOKEN`, but not `access_token` (the OAuth wire name) or
+  // `access-token`: those are different names. The legacy `'paths'` engine is case-sensitive, so
+  // the all-lowercase `apikey` and `sessiontoken` are listed too.
+  // OAuth and API credentials, snake case.
+  'access_token',
+  'refresh_token',
+  'id_token',
+  'api_key',
+  'apikey',
+  'api_secret',
+  'client_secret',
+  'signing_secret',
+  'private_key',
+  'secret_key',
+  'secretKey',
+  // The same, kebab case.
+  'access-token',
+  'refresh-token',
+  'id-token',
+  'api-key',
+  'client-secret',
+  'private-key',
+  // Session and CSRF credentials, in the spellings of a cookie, a header and a body field. A bare
+  // `sessionId` is deliberately absent: many applications carry it as a correlation key, and the
+  // only way to get such a field back would be to turn every default off.
+  'proxy-authorization',
+  'session_token',
+  'sessionToken',
+  'sessiontoken',
+  'session-token',
+  'x-csrf-token',
+  'x-xsrf-token',
+  'csrf_token',
+  'csrfToken',
+  'csrf-token',
+  // The password family, snake case.
+  'password_hash',
+  'new_password',
+  'old_password'
 ] as const
 
 /**

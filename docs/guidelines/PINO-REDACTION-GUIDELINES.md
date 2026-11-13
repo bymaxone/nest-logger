@@ -184,7 +184,7 @@ The lib applies this strategy by default — see §4.
 See the canonical file: [`src/server/constants/default-redact-paths.constants.ts`](../../src/server/constants/default-redact-paths.constants.ts).
 
 **Current coverage.** Under the default strategy the contract is the NAME LIST
-(`REDACT_COMMON_FIELDS`, 32 names), matched case-insensitively down to 100 levels of nesting;
+(`REDACT_COMMON_FIELDS`, 62 names), matched case-insensitively down to 100 levels of nesting;
 past that a value is dropped rather than emitted. The path
 expansion below is what `DEFAULT_REDACT_PATHS` still produces for the legacy strategy —
 `fields × 5 + absolute` (the record root plus wildcard depths 1–4), derived rather than fixed:
@@ -199,8 +199,9 @@ expansion below is what `DEFAULT_REDACT_PATHS` still produces for the legacy str
 | BR documents (LGPD) | 3 (`cpf`, `cnpj`, `rg`)                                                         | 0-4   | 15              |
 | Email (PII)         | 1 (`email`)                                                                     | 0-4   | 5               |
 | HTTP header names   | 5 (`authorization`, `cookie`, `set-cookie`, `x-api-key`, `x-auth-token`)        | 0-4   | 25              |
+| Other spellings     | 30 (snake and kebab forms of the secrets, session and CSRF names, since 1.4.17) | 0-4   | 150             |
 | HTTP headers        | 5 (absolute `req.headers` / `res.headers` paths)                                | —     | 5               |
-| **Total**           | **32 fields via depth + 5 absolute**                                            | —     | **165**         |
+| **Total**           | **62 fields via depth + 5 absolute**                                            | —     | **315**         |
 
 ### When the consumer SHOULD extend
 
