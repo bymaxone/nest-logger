@@ -149,12 +149,14 @@ export const REDACT_COMMON_FIELDS: readonly string[] = [
   'api-key',
   'client-secret',
   'private-key',
-  // Session and CSRF credentials, in the spellings of a cookie, a header and a body field.
+  // Session and CSRF credentials, in the spellings of a cookie, a header and a body field. A bare
+  // `sessionId` is deliberately absent: many applications carry it as a correlation key, and the
+  // only way to get such a field back would be to turn every default off.
   'proxy-authorization',
-  'session_id',
-  'sessionId',
-  'sessionid',
-  'session-id',
+  'session_token',
+  'sessionToken',
+  'sessiontoken',
+  'session-token',
   'x-csrf-token',
   'x-xsrf-token',
   'csrf_token',

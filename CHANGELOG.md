@@ -13,17 +13,7 @@ heading here.
 
 ## [1.4.17] - 2026-11-14
 
-### Breaking
-
-- **A field named like one of the new credential names now arrives as `[REDACTED]`.** The list of
-  default names grows (see Security below), and a value under any added name is censored, so a query
-  or alert that matched that value stops matching. The one that is likely to bite is an application
-  that uses `sessionId` or `session_id` as a **correlation field**: the name is now a credential
-  name. **Migration:** carry the correlation value under a name that is not on the list (for
-  example `workspaceId`); `REDACT_COMMON_FIELDS` lists every name. The names are append-only, so there is no option that turns one back off other than
-  `shouldDisableDefaultRedact: true`, which disables all of them and is not recommended.
-
-### Security
+### Changed (Security)
 
 - **The default redaction list now covers the credential names real systems write.** A name is
   matched as written (case-insensitively under the default `'names'` strategy), so `accessToken`
@@ -32,12 +22,21 @@ heading here.
   metadata of a log call reached the line unredacted. `REDACT_COMMON_FIELDS` grows from 32 to 62
   names, append-only: the snake and kebab spellings of the token, key and secret names
   (`access_token`, `refresh-token`, `client_secret`, `private-key`, `api_key`, `secret_key`, and
-  the rest), `proxy-authorization`, the session and CSRF names (`session_id`, `sessionId`,
-  `x-csrf-token`, `x-xsrf-token`, `csrf_token`) and the snake forms of the password family. The
-  lower-case `apikey` and `sessionid` are listed as well, because the legacy `'paths'` strategy is
-  case-sensitive. **Cost under `redactStrategy: 'paths'`:** `DEFAULT_REDACT_PATHS` grows from 165
-  to 315 entries, and that engine is slower in proportion; the default `'names'` strategy is a set
-  lookup and is unchanged.
+  the rest), `proxy-authorization`, the session-token and CSRF names (`session_token`,
+  `sessionToken`, `x-csrf-token`, `x-xsrf-token`, `csrf_token`) and the snake forms of the
+  password family. The lower-case `apikey` and `sessiontoken` are listed as well, because the legacy
+  `'paths'` strategy is case-sensitive. A bare `sessionId` is deliberately **not** listed: it is
+  often a correlation key, and a name cannot be turned off alone.
+  **Apply to a derived backend:** a field named like any added name now arrives as `[REDACTED]`, so
+  a query or alert that matched its value stops matching. The README's redaction table lists every
+  name. A field you relied on under one of them keeps working if you carry it under a different
+  key; a name that is not a credential in your system cannot be removed from the list, because the
+  only switch is `shouldDisableDefaultRedact: true`, which disables all of them. Conversely, a
+  session id that is a bearer credential in your system is not covered by default: add `sessionId`
+  to your `redactPaths`.
+  **Cost under `redactStrategy: 'paths'`:** `DEFAULT_REDACT_PATHS` grows from 165 to 315 entries,
+  and that engine is slower in proportion; the default `'names'` strategy is a set lookup and is
+  unchanged, and is the recommended one.
 
 ## [1.4.16] - 2026-11-12
 

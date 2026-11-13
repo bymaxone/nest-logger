@@ -36,10 +36,10 @@ const SPELLINGS = [
   'proxy-authorization',
   'set-cookie',
   'cookie',
-  'session_id',
-  'sessionId',
-  'session-id',
-  'sessionid',
+  'session_token',
+  'sessionToken',
+  'session-token',
+  'sessiontoken',
   'x-csrf-token',
   'x-xsrf-token',
   'csrf_token',
@@ -76,11 +76,34 @@ describe.each([
     expect(line).not.toContain('LEAK-NESTED')
   })
 
+  it('still writes sessionId, session_id and session-id, which are correlation keys', () => {
+    const { line } = written(extra, {
+      sessionId: 'sess-visible-1',
+      nested: { session_id: 'sess-visible-2', 'session-id': 'sess-visible-3' }
+    })
+
+    expect(line).toContain('sess-visible-1')
+    expect(line).toContain('sess-visible-2')
+    expect(line).toContain('sess-visible-3')
+  })
+
   it('still writes a name that is not a credential', () => {
     const { line } = written(extra, { orderId: 'o-visible', nested: { status: 'ok-visible' } })
 
     expect(line).toContain('o-visible')
     expect(line).toContain('ok-visible')
+  })
+})
+
+describe('a host that adds its own credential name', () => {
+  it('censors sessionId, at any depth, once the host adds it to its own redact list, under the default strategy', () => {
+    const { line } = written(
+      { redactPaths: ['sessionId'] },
+      { sessionId: 'LEAK-S1', nested: { sessionId: 'LEAK-S2' } }
+    )
+
+    expect(line).not.toContain('LEAK-S1')
+    expect(line).not.toContain('LEAK-S2')
   })
 })
 
