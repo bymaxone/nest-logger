@@ -1138,7 +1138,7 @@ The `PrettyDevDestination` errors are thrown inside `onInit`, which the registry
 Measured by this repository's own benchmark (`pnpm bench`, see [bench/README.md](./bench/README.md)) on the shipped configuration, which is what `forRoot({ service })` builds with nothing else set: name-walk redaction and the composed ALS/OTel mixin, inside an active request context, writing to a no-op sink.
 
 - **About 274,000 entries/s** through the full production path, which retains 0.345× of the throughput of the bare wrapper (no redaction, no mixin) measured the same way.
-- The legacy `redactStrategy: 'paths'` is about seventy times slower in the same bench run, and its cost grows with the number of default paths (315 since 1.4.17).
+- The legacy `redactStrategy: 'paths'` is about seventy times slower in the same bench run, and its cost grows with the number of default paths.
 
 Absolute figures depend on the machine; the benchmark gates the ratio so a regression fails CI.
 

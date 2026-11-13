@@ -30,10 +30,6 @@ heading here.
   `redactStrategy: 'paths'`:** `DEFAULT_REDACT_PATHS` grows from 165 to 315 entries, and that
   engine is slower in proportion; the default `'names'` strategy is a set lookup and is unchanged.
 
-### Documentation
-
-- The README, and the redaction guideline, give the new count and list the added names.
-
 ## [1.4.16] - 2026-11-12
 
 ### Documentation
