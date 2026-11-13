@@ -40,6 +40,7 @@ import {
   resolveServiceMetadata
 } from './utils/resolve-resource.util'
 import { assignOwnErrorFields, sanitizeError, scrubStack } from './utils/sanitize-error.util'
+import { withSerializedRequest } from './utils/serialize-request.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
 import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
@@ -545,6 +546,11 @@ export function buildPinoInstance(
   // the object-injection lint rule).
   const bound = <T>(serializer: (input: T) => unknown): ((input: T) => unknown) =>
     createSizeBoundedSerializer((input: T) => redactSerialized(serializer(input)), maxBytes)
+  // The request is serialized here, before the walk, and not as a Pino serializer: Pino runs the
+  // record formatter first, so the walk would copy a whole `IncomingMessage`, its sockets and its
+  // server, and hand the serializer a copy that has lost the prototype's `headers`. A host that
+  // registers its own `req` serializer keeps the raw request for it.
+  const hostSerializesRequest = Object.hasOwn(options.serializers, 'req')
   const serializers = {
     err: bound((error) => serializeErrorValue(error, ownFields)),
     ...Object.fromEntries(
@@ -594,7 +600,10 @@ export function buildPinoInstance(
       log: (record) =>
         withSemconvException(
           withEventName(
-            redactRecord(record, true) as Record<string, unknown>,
+            redactRecord(
+              hostSerializesRequest ? record : withSerializedRequest(record),
+              true
+            ) as Record<string, unknown>,
             options.eventNameField
           ),
           options.errorFormat

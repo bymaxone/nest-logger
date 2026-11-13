@@ -60,6 +60,7 @@
 import { types } from 'node:util'
 
 import { cutIfText } from './bounded-text.util'
+import { censorRawHeaders } from './censor-raw-headers.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
@@ -584,14 +585,16 @@ function walkProperties(
       key,
       rules.sensitive.has(key.toLowerCase())
         ? rules.censor
-        : walk(
-            scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
-            rules,
-            depth + 1,
-            ancestors,
-            true,
-            inSerialized || (!honorToJson && rules.serializedKeys.has(key))
-          )
+        : key.toLowerCase() === 'rawheaders' && Array.isArray(current)
+          ? censorRawHeaders(current, rules.sensitive, rules.censor)
+          : walk(
+              scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
+              rules,
+              depth + 1,
+              ancestors,
+              true,
+              inSerialized || (!honorToJson && rules.serializedKeys.has(key))
+            )
     )
   }
   if (asData) {

@@ -59,6 +59,19 @@ heading here.
   long segment with digits or mixed case that is a name, not a secret) is replaced too, and the way
   back is to carry that name in a shorter or hyphenated lowercase form.
 
+- **A request object passed as log metadata no longer writes the credentials of the call.** Measured
+  before this change: `logger.info(key, msg, userId, { req })` with a Node `IncomingMessage` wrote
+  the whole object, the connection and the server included, and its `rawHeaders` array carried the
+  `Authorization`, `X-Api-Key` and `Cookie` values in clear, because the array holds a value beside
+  its name and not under a key. A request under the `req` key is now written as its `method`, its
+  `url` (without the query, with a credential path segment replaced), its `headers` (censored by
+  name) and the peer's `remoteAddress`. Anywhere else in a record, the value beside a sensitive name
+  in a `rawHeaders` array is censored. A host that registers its own `serializers.req` keeps the raw
+  request for it, and a record under `req` that is not a request is written as it was.
+  **Apply to a derived backend:** an entry that logged a whole request and read a field of it that
+  is no longer written (`socket`, `rawHeaders`, a framework field such as `params`) stops carrying
+  it. Log the field you need under its own key, or register `serializers.req`.
+
 ## [1.4.16] - 2026-11-12
 
 ### Documentation
