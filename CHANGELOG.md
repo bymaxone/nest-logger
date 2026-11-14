@@ -75,9 +75,7 @@ heading here.
 
 ### Documentation
 
-- The README states the limits of the request serializer (`logger.child({ req })` is not serialized, a
-  request nested inside a `rawHeaders` array is not read) and of the shutdown budget (a drain equal to
-  the total leaves no time for `onShutdown`).
+- The README states the limits of the request serializer and of the shutdown budget.
 
 ### Fixed
 
