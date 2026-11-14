@@ -58,4 +58,15 @@ describe('withTimeout', () => {
     release()
     await expect(outcome).resolves.toBeInstanceOf(HookTimeoutError)
   })
+
+  it('keeps the process alive while the work is pending, so the deadline is the one that settles it', () => {
+    const spy = jest.spyOn(globalThis, 'setTimeout')
+
+    const pending = withTimeout(() => new Promise<void>(() => undefined), 20).catch(() => undefined)
+
+    const timer = spy.mock.results[0]?.value as NodeJS.Timeout
+    expect(timer.hasRef()).toBe(true)
+    spy.mockRestore()
+    return pending
+  })
 })

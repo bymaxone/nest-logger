@@ -17,7 +17,9 @@ export class HookTimeoutError extends Error {
 /**
  * Run `work` and settle with its result, or reject with a {@link HookTimeoutError} once `ms` pass.
  *
- * The timer is cleared when the work settles and does not keep the process alive. A throw, a
+ * The timer is cleared when the work settles. It is not unreferenced: it is what settles the wait
+ * when the work never does, and a process with no other handle would otherwise exit with the hook
+ * still pending, and never report it. A throw, a
  * rejection and a value that is not a promise are all read as the work's own outcome. When the
  * deadline wins, a later settlement of the work is ignored.
  *
@@ -30,7 +32,6 @@ export function withTimeout<T>(work: () => T | PromiseLike<T>, ms: number): Prom
     const timer = setTimeout(() => {
       reject(new HookTimeoutError(ms))
     }, ms)
-    timer.unref()
     const settle =
       <A extends unknown[]>(done: (...args: A) => void) =>
       (...args: A): void => {

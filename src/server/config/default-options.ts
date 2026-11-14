@@ -8,6 +8,11 @@
  * `serializers`, `http`, `otel`, `excludePaths`, `redactPaths`, `destinations`)
  * so per-request handlers cannot corrupt the shared runtime snapshot.
  */
+import {
+  DEFAULT_DRAIN_TIMEOUT_MS,
+  DEFAULT_HOOK_TIMEOUT_MS,
+  DEFAULT_SHUTDOWN_TIMEOUT_MS
+} from '../constants/lifecycle-timeouts.constants'
 import type {
   BymaxLoggerModuleOptions,
   OtelOptions,
@@ -26,18 +31,12 @@ const DEFAULT_HTTP: ResolvedHttpOptions = {
   tenantIdResolver: undefined
 }
 
-/** Default longest `onInit` or `onRegistryReady` of a destination, in milliseconds. */
-const DEFAULT_HOOK_TIMEOUT_MS = 10_000
-
-/** Default shutdown budget and drain budget, in milliseconds. */
-const DEFAULT_SHUTDOWN: Required<ShutdownOptions> = { timeoutMs: 10_000, drainTimeoutMs: 5000 }
-
 /** The shutdown group with its defaults; the default drain is never longer than the total. */
 function resolveShutdown(given: ShutdownOptions | undefined): Required<ShutdownOptions> {
-  const timeoutMs = given?.timeoutMs ?? DEFAULT_SHUTDOWN.timeoutMs
+  const timeoutMs = given?.timeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS
   return Object.freeze({
     timeoutMs,
-    drainTimeoutMs: given?.drainTimeoutMs ?? Math.min(DEFAULT_SHUTDOWN.drainTimeoutMs, timeoutMs)
+    drainTimeoutMs: given?.drainTimeoutMs ?? Math.min(DEFAULT_DRAIN_TIMEOUT_MS, timeoutMs)
   })
 }
 

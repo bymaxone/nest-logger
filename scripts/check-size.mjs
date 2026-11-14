@@ -33,8 +33,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-14 — server: 36.75 KiB real -> 36.9 KiB budget (~0.4% headroom). The lifecycle deadlines
-//     are +1.24 KiB over the 35.51 KiB measured below: the `shutdown` and `destinationHookTimeoutMs`
+//   - 2026-11-14 — server: 36.81 KiB real -> 36.9 KiB budget (~0.2% headroom). The lifecycle deadlines
+//     are +1.30 KiB over the 35.51 KiB measured below: the `shutdown` and `destinationHookTimeoutMs`
 //     options with their JSDoc and validation, the timeout helper, the drain of each destination's
 //     queue and the skipped-destination report, all of it executable code and its comments.
 //   - 2026-11-13 — server: 35.51 KiB real -> 35.6 KiB budget (~0.3% headroom). The default `req`

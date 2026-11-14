@@ -324,7 +324,8 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
     await new Promise<void>((resolve) => {
       setImmediate(resolve)
     })
-    await this.drain(startedAt + drainTimeoutMs)
+    // Clamped to the total: the drain is part of the budget and cannot spend more than all of it.
+    await this.drain(Math.min(deadline, startedAt + drainTimeoutMs))
     // One budget for the drain and every hook, so the time shutdown takes does not grow with the
     // number of destinations: each hook gets what is left, and one reached after it is spent is
     // reported as skipped.

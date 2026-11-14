@@ -64,6 +64,12 @@ describe('validateOptions: lifecycle deadlines', () => {
     ).toThrow(/options\.shutdown\.drainTimeoutMs must not exceed shutdown\.timeoutMs/)
   })
 
+  it('refuses a drain above the default total when only the drain is given', () => {
+    expect(() => validateOptions(withOption('shutdown', { drainTimeoutMs: 20_000 }))).toThrow(
+      /options\.shutdown\.drainTimeoutMs must not exceed shutdown\.timeoutMs/
+    )
+  })
+
   it('does not refuse a short total because of a drain default the consumer never set', () => {
     expect(() => validateOptions(withOption('shutdown', { timeoutMs: 2000 }))).not.toThrow()
   })

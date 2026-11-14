@@ -197,6 +197,19 @@ describe('DestinationRegistry lifecycle deadlines', () => {
       expect(stderrText(stderr)).not.toContain('xxxx')
     })
 
+    it('ends the drain at the total budget when the drain was set longer than it', async () => {
+      const destination = queuedDestination('stuck', 3)
+      const registry = registryOf([destination], {
+        shutdown: { timeoutMs: 60, drainTimeoutMs: 600 }
+      })
+      await registry.onModuleInit()
+      const started = Date.now()
+
+      await registry.onApplicationShutdown()
+
+      expect(Date.now() - started).toBeLessThan(60 + 80)
+    })
+
     it('waits for a queue that empties within the drain budget', async () => {
       const destination: ILogDestination = { name: 'busy', write: jest.fn() }
       const stream = { writableLength: 5 }

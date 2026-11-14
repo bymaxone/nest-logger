@@ -17,6 +17,7 @@
  */
 import { types } from 'node:util'
 
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from '../constants/lifecycle-timeouts.constants'
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 
@@ -82,13 +83,11 @@ function validateLifecycle(options: BymaxLoggerModuleOptions): void {
   checkTimerMs('shutdown.timeoutMs', shutdown['timeoutMs'])
   checkTimerMs('shutdown.drainTimeoutMs', shutdown['drainTimeoutMs'])
   const { timeoutMs, drainTimeoutMs } = shutdown
-  // Only two values the consumer gave are compared: a default drain is capped to a short total
-  // when options resolve, and refusing it would blame an option the consumer never set.
-  if (
-    typeof timeoutMs === 'number' &&
-    typeof drainTimeoutMs === 'number' &&
-    drainTimeoutMs > timeoutMs
-  ) {
+  // A drain the consumer gave is compared with the total the module will use, which is the default
+  // when none was given. A default drain is not compared: it is capped to a short total when
+  // options resolve, and refusing it would blame an option the consumer never set.
+  const total = typeof timeoutMs === 'number' ? timeoutMs : DEFAULT_SHUTDOWN_TIMEOUT_MS
+  if (typeof drainTimeoutMs === 'number' && drainTimeoutMs > total) {
     reject(
       'shutdown.drainTimeoutMs',
       'must not exceed shutdown.timeoutMs, which covers the drain and every onShutdown',
