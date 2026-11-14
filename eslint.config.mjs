@@ -310,7 +310,9 @@ export default [
       '**/*.test.ts',
       '**/*.e2e-spec.ts',
       '**/*.bench.ts',
-      'test/**/fixtures/**/*.ts'
+      'test/**/fixtures/**/*.ts',
+      'test/e2e/support/**/*.ts',
+      'test/e2e/jest.loopback-listen.ts'
     ],
     languageOptions: {
       parser: tsParser,
