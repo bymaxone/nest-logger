@@ -73,6 +73,34 @@ heading here.
   is no longer written (`socket`, `rawHeaders`, a framework field such as `params`) stops carrying
   it. Log the field you need under its own key, or register `serializers.req`.
 
+### Fixed
+
+- **Shutdown waits for the queue of a slow destination, and no destination hook can hold the
+  application forever.** Measured before this change: a destination that takes 5 ms per write,
+  given 300 entries and then `app.close()`, was told `onShutdown` before any of them had started
+  (301 writes began after it). Each destination sits behind a `Writable` that holds the entries
+  Pino has written and the destination has not taken, and the registry never looked at it. Shutdown
+  now waits, for all destinations at once, until no queue holds an entry, then calls `onShutdown`
+  in reverse registration order. An entry written during the wait extends it. The new `shutdown`
+  option bounds the whole sequence: `timeoutMs` (default 10000) covers the drain and every
+  `onShutdown`, so the worst case is that value whatever the number of destinations, and
+  `drainTimeoutMs` (default 5000, not above `timeoutMs`) bounds the drain. When the drain ends with
+  entries still queued, one stderr line names the destinations and the size of what each holds, and
+  no entry content. A destination reached after the budget is spent is named in one stderr line and
+  its `onShutdown` is not called. `onInit` and `onRegistryReady` had no deadline either; the new
+  `destinationHookTimeoutMs` (default 10000) bounds them. An `onInit` that does not settle in time
+  counts as one that threw: the destination is marked failed, skipped and reported, and if the
+  abandoned call settles later the destination stays inactive and receives no write and no
+  `onShutdown`. A hung `onInit` cannot be cancelled and may leak what it opened. An
+  `onRegistryReady` that does not settle is reported and bootstrap goes on. Entries logged after the
+  drain ended (a host that logs in its own shutdown hook) are not waited for.
+  **Apply to a derived backend:** a destination whose `onInit` legitimately takes more than 10
+  seconds (a slow connection) is now failed and skipped; raise `destinationHookTimeoutMs`. A
+  destination with a long flush in `onShutdown` is cut off at the shutdown budget; raise
+  `shutdown.timeoutMs` (and `shutdown.drainTimeoutMs`) and keep the total below the grace period your
+  platform gives the process. Shutdown of a process with queued entries now takes up to the drain
+  budget longer.
+
 ## [1.4.16] - 2026-11-12
 
 ### Documentation

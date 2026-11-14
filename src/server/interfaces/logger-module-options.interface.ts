@@ -105,6 +105,30 @@ export type ResolvedHttpOptions = Required<Omit<HttpOptions, 'tenantIdResolver'>
 }
 
 /**
+ * The time application shutdown has to flush the destinations.
+ *
+ * Shutdown first drains the queue each destination holds, then calls each destination's
+ * `onShutdown` in reverse registration order. The whole sequence is bounded by `timeoutMs`, whatever
+ * the number of destinations: a destination reached after the budget is spent is reported as skipped
+ * and its `onShutdown` is not called.
+ */
+export interface ShutdownOptions {
+  /**
+   * The total budget of shutdown, in milliseconds, covering the drain and every `onShutdown`.
+   * Default: 10000. An integer from 1 to 2147483647. Keep it below the grace period your platform
+   * gives the process, together with whatever else shuts down in it.
+   */
+  timeoutMs?: number
+  /**
+   * How long the drain may take, in milliseconds. Default: 5000. An integer from 1 to
+   * 2147483647, and not above `timeoutMs`. When it ends with entries still queued, one line naming
+   * the destinations and their queued sizes is written to stderr and shutdown goes on to
+   * `onShutdown`.
+   */
+  drainTimeoutMs?: number
+}
+
+/**
  * OpenTelemetry integration tuning — applied by `TraceContextMixin` when the
  * `@opentelemetry/api` peer dependency is installed.
  */
@@ -236,6 +260,19 @@ export interface BymaxLoggerModuleOptions {
   /** Maximum size in bytes per log entry. Default: 65536. */
   maxEntrySizeBytes?: number
   /**
+   * The longest a destination's `onInit` or `onRegistryReady` may take, in milliseconds. Default:
+   * 10000. An integer from 1 to 2147483647 (the largest delay a timer holds).
+   *
+   * An `onInit` that does not settle in time is treated as one that threw: the destination is
+   * marked failed, skipped and reported on stderr, and if the abandoned call settles later the
+   * destination stays inactive, receives no writes and no `onShutdown`. The call cannot be
+   * cancelled, so a hung `onInit` may leak what it opened. An `onRegistryReady` that does not
+   * settle in time is reported and bootstrap goes on.
+   */
+  destinationHookTimeoutMs?: number
+  /** How long application shutdown may take to flush the destinations. */
+  shutdown?: ShutdownOptions
+  /**
    * Which of an error's own fields are written beside its `type`, `message`, `stack` and `cause`.
    *
    * - `'all'` (default) writes every own field, at every depth of the chain and for an `Error`
@@ -271,9 +308,10 @@ export interface BymaxLoggerModuleOptions {
  * `BymaxLoggerModuleOptions` the consumer supplies.
  */
 export type ResolvedBymaxLoggerModuleOptions = Readonly<
-  Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel'>> & {
+  Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel' | 'shutdown'>> & {
     http: ResolvedHttpOptions
     otel: Required<OtelOptions>
+    shutdown: Required<ShutdownOptions>
   }
 >
 

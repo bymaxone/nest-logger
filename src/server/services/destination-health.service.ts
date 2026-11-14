@@ -80,6 +80,9 @@ export class DestinationHealth {
    */
   private readonly pendingWrites = new Map<ILogDestination, number>()
 
+  /** The `Writable` that fronts each destination, whose buffer is the queue of entries it holds. */
+  private readonly streams = new Map<ILogDestination, { readonly writableLength: number }>()
+
   /** The failed destination designated to rescue entries, if any. */
   private rescuer: ILogDestination | undefined
 
@@ -100,6 +103,28 @@ export class DestinationHealth {
    */
   markWriteFailed(destination: ILogDestination): void {
     this.writeFailed.add(destination)
+  }
+
+  /**
+   * Record the stream that fronts a destination, whose buffer is the queue of entries it holds.
+   *
+   * @param destination - The destination.
+   * @param stream - Its `Writable` adapter, read only for the size of its buffer.
+   */
+  registerStream(destination: ILogDestination, stream: { readonly writableLength: number }): void {
+    this.streams.set(destination, stream)
+  }
+
+  /**
+   * How much a destination still holds: the size of what Pino has written to its stream and the
+   * destination has not yet taken, the write in flight included. Zero means nothing is queued.
+   *
+   * @param destination - The destination to ask about.
+   * @returns The queued size in the stream's own unit (characters of the NDJSON line), `0` for a
+   *   destination whose stream is not known.
+   */
+  queuedSize(destination: ILogDestination): number {
+    return this.streams.get(destination)?.writableLength ?? 0
   }
 
   /**

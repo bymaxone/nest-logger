@@ -123,6 +123,7 @@ function literalOf(cell: string): { readonly value: unknown } | undefined {
 const TOP_LEVEL = readOptionTable('### Top-level options')
 const HTTP = readOptionTable('### `http` options')
 const OTEL = readOptionTable('### `otel` options')
+const SHUTDOWN = readOptionTable('### `shutdown` options')
 
 /** The documented cell for a default that is a behaviour, not a literal. */
 const LEVEL_CELL = "`'info'` when `NODE_ENV=production`, else `'debug'`"
@@ -189,6 +190,17 @@ describe('README option tables', () => {
       (name, cell) => {
         const key = name.replace(/^otel\./, '') as keyof typeof resolved.otel
         expect(resolved.otel[key]).toEqual(literalOf(cell)?.value)
+      }
+    )
+
+    it.each([...SHUTDOWN])(
+      /*
+       * The shutdown table is all literals, resolved with the default total.
+       */
+      'documents the applied default of `%s`',
+      (name, cell) => {
+        const key = name.replace(/^shutdown\./, '') as keyof typeof resolved.shutdown
+        expect(resolved.shutdown[key]).toEqual(literalOf(cell)?.value)
       }
     )
 
@@ -263,7 +275,9 @@ describe('README option tables', () => {
      */
     'lists exactly the top-level options', () => {
       const documented = [...TOP_LEVEL.keys()].filter((name) => !name.startsWith('service.'))
-      const real = Object.keys(resolved).filter((key) => !['service', 'http', 'otel'].includes(key))
+      const real = Object.keys(resolved).filter(
+        (key) => !['service', 'http', 'otel', 'shutdown'].includes(key)
+      )
       expect(documented.sort()).toEqual(real.sort())
     })
 
@@ -300,6 +314,14 @@ describe('README option tables', () => {
     'lists exactly the http options', () => {
       const documented = [...HTTP.keys()].map((name) => name.replace(/^http\./, ''))
       expect(documented.sort()).toEqual(Object.keys(resolved.http).sort())
+    })
+
+    it(/*
+     * The shutdown table lists exactly the keys of the resolved shutdown options.
+     */
+    'lists exactly the shutdown options', () => {
+      const documented = [...SHUTDOWN.keys()].map((name) => name.replace(/^shutdown\./, ''))
+      expect(documented.sort()).toEqual(Object.keys(resolved.shutdown).sort())
     })
 
     it(/*
