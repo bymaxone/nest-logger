@@ -126,11 +126,17 @@ describe('DestinationRegistry lifecycle deadlines', () => {
       // then on: whatever the real timer of the first hook does, the other two find nothing left.
       const readings = [1000, 1000]
       jest.spyOn(performance, 'now').mockImplementation(() => readings.shift() ?? 1120)
+      const timer = jest.spyOn(globalThis, 'setTimeout')
 
       await registry.onApplicationShutdown()
 
       expect(calls).toEqual(['c'])
       expect(stderrText(stderr)).toContain('onShutdown not called for: "b", "a"')
+      // The first hook is held to what is left of the budget, 120 ms, and no timer is longer: a hook
+      // given more would hold shutdown past its total.
+      const delays = timer.mock.calls.map((call) => Number(call[1]))
+      expect(delays).toContain(120)
+      expect(Math.max(...delays)).toBeLessThanOrEqual(120)
     })
 
     it('calls every onShutdown when the budget is not spent', async () => {
