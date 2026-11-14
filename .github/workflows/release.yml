@@ -149,9 +149,10 @@ jobs:
           set -euo pipefail
           out="$RUNNER_TEMP/package"
           mkdir -p "$out"
-          # `npm pack` runs prepack/prepare, so the build that goes into the tarball happens here. The
-          # file is found, not parsed out of npm's output, which a lifecycle script can also write to.
-          npm pack --pack-destination "$out" > "$RUNNER_TEMP/pack.log" 2>&1 || { cat "$RUNNER_TEMP/pack.log"; exit 1; }
+          # --ignore-scripts: the package has no prepack, and `prepare` only installs git hooks, so no
+          # lifecycle script may rebuild or change dist/ between the verify step and the tarball. The
+          # file is found, not parsed out of npm's output, which a script could also write to.
+          npm pack --ignore-scripts --pack-destination "$out" > "$RUNNER_TEMP/pack.log" 2>&1 || { cat "$RUNNER_TEMP/pack.log"; exit 1; }
           set -- "$out"/*.tgz
           if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
             echo "::error title=release::Packing must produce exactly one tarball."
@@ -183,7 +184,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/gate"
           cp "$RUNNER_TEMP/package/$TARBALL" "$RUNNER_TEMP/gate/$TARBALL"
           export PACKAGE_TARBALL="$RUNNER_TEMP/gate/$TARBALL"
-          pnpm exec attw "$PACKAGE_TARBALL"
+          # The published dist/ must be the one the verify step tested.
+          mkdir -p "$RUNNER_TEMP/unpacked"
+          tar -xzf "$PACKAGE_TARBALL" -C "$RUNNER_TEMP/unpacked"
+          diff -r dist "$RUNNER_TEMP/unpacked/package/dist"
+          pnpm exec attw "$PACKAGE_TARBALL" --profile strict
           node scripts/dogfood-smoke-test.mjs
           pnpm size
 
