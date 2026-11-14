@@ -181,4 +181,64 @@ describe('DestinationRegistry lifecycle deadlines', () => {
       expect(stderrText(stderr)).toContain('Shutdown failed for "slow"')
     })
   })
+
+  describe('drain', () => {
+    /** A destination fronted by a stream that holds `queued` characters until released. */
+    function queuedDestination(name: string, queued: number): ILogDestination {
+      const destination: ILogDestination = { name, write: jest.fn() }
+      const stream = new Writable({
+        write(_chunk, _encoding, callback): void {
+          void callback
+        }
+      })
+      stream.write('x'.repeat(queued))
+      health.registerStream(destination, stream)
+      return destination
+    }
+
+    it('names the destinations and the queued sizes, and no entry content, when the drain ends', async () => {
+      const destination = queuedDestination('stuck', 12)
+      const registry = registryOf([destination], {
+        shutdown: { timeoutMs: 200, drainTimeoutMs: 40 }
+      })
+      await registry.onModuleInit()
+
+      await registry.onApplicationShutdown()
+
+      expect(stderrText(stderr)).toContain('entries still queued, by size: "stuck" (12)')
+      expect(stderrText(stderr)).not.toContain('xxxx')
+    })
+
+    it('ends the drain at the total budget when the drain was set longer than it', async () => {
+      const destination = queuedDestination('stuck', 3)
+      const registry = registryOf([destination], {
+        shutdown: { timeoutMs: 60, drainTimeoutMs: 600 }
+      })
+      await registry.onModuleInit()
+      const started = Date.now()
+
+      await registry.onApplicationShutdown()
+
+      expect(Date.now() - started).toBeLessThan(60 + 80)
+    })
+
+    it('waits for a queue that empties within the drain budget', async () => {
+      const destination: ILogDestination = { name: 'busy', write: jest.fn() }
+      const stream = { writableLength: 5 }
+      health.registerStream(destination, stream)
+      const registry = registryOf([destination], {
+        shutdown: { timeoutMs: 400, drainTimeoutMs: 300 }
+      })
+      await registry.onModuleInit()
+      setTimeout(() => {
+        stream.writableLength = 0
+      }, 30)
+      const started = Date.now()
+
+      await registry.onApplicationShutdown()
+
+      expect(Date.now() - started).toBeGreaterThanOrEqual(25)
+      expect(stderrText(stderr)).not.toContain('entries still queued')
+    })
+  })
 })
