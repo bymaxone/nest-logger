@@ -224,7 +224,7 @@ describe('DestinationRegistry lifecycle deadlines', () => {
       expect(stderrText(stderr)).toContain('entries still queued, by size: "stuck" (3)')
     })
 
-    it('waits for a queue that empties within the drain budget', async () => {
+    it('waits for a queue that empties within the drain budget, and no longer than that', async () => {
       const destination: ILogDestination = { name: 'busy', write: jest.fn() }
       const stream = { queuedBytes: 5 }
       health.registerStream(destination, stream)
@@ -232,15 +232,29 @@ describe('DestinationRegistry lifecycle deadlines', () => {
         shutdown: { timeoutMs: 400, drainTimeoutMs: 300 }
       })
       await registry.onModuleInit()
-      setTimeout(() => {
-        stream.queuedBytes = 0
-      }, 30)
-      const started = Date.now()
+      // The clock is scripted: the queue empties at 30 ms of it, and the drain looks every 5 ms of it.
+      jest.useFakeTimers()
+      try {
+        setTimeout(() => {
+          stream.queuedBytes = 0
+        }, 30)
+        const started = performance.now()
+        let settledAt: number | undefined
+        const shutdown = registry.onApplicationShutdown().then(() => {
+          settledAt = performance.now()
+        })
 
-      await registry.onApplicationShutdown()
+        await jest.advanceTimersByTimeAsync(400)
+        await shutdown
 
-      expect(Date.now() - started).toBeGreaterThanOrEqual(25)
-      expect(stderrText(stderr)).not.toContain('entries still queued')
+        // Not before the queue emptied, and not as late as the drain budget (300 ms).
+        expect(settledAt).toBeDefined()
+        expect((settledAt ?? 0) - started).toBeGreaterThanOrEqual(30)
+        expect((settledAt ?? 0) - started).toBeLessThan(35)
+        expect(stderrText(stderr)).not.toContain('entries still queued')
+      } finally {
+        jest.useRealTimers()
+      }
     })
   })
 
