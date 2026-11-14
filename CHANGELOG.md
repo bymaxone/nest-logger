@@ -73,6 +73,15 @@ heading here.
   is no longer written (`socket`, `rawHeaders`, a framework field such as `params`) stops carrying
   it. Log the field you need under its own key, or register `serializers.req`.
 
+### Changed
+
+- **The release workflow packs the tarball once, in a job that holds no publish credential.** The
+  `build` job installs, runs the gates and packs; type resolution and the smoke test that installs
+  the package into a consumer run on a copy of that tarball, and the size budget reads a `dist/`
+  that the build checks is the one that was packed. The `publish` job installs nothing
+  and runs no code from the package: it checks the tarball's sha256 against the one `build`
+  reported and publishes that exact file with provenance. No file of the package changes with this.
+
 ### Documentation
 
 - The README states the limits of the request serializer and of the shutdown budget.
