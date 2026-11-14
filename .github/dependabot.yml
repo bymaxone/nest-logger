@@ -85,9 +85,9 @@ updates:
       prefix: ci
       include: scope
     groups:
-      # The org template ships this group for a caller that pins `agents-sync.yml` to a commit. This
-      # repository does not: every Bymax reusable here is on the `@v1` alias (AGENTS.md), which
-      # Dependabot leaves alone, so the group stays idle until a caller pins that one.
+      # `agents-sync.yml` is the one Bymax reusable this repository pins to a commit (AGENTS.md): this
+      # group moves that SHA in a pull request of its own, to the newest release of the same major. The
+      # other Bymax reusables are on the `@v1` alias, which Dependabot leaves alone.
       bymax-agents-sync:
         patterns:
           - 'bymaxone/.github/.github/workflows/agents-sync.yml'
