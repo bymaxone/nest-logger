@@ -1,11 +1,3 @@
-/**
- * Verifies DestinationRegistry: initializing destinations and dropping one whose init fails, reported on stderr, electing
- * a rescuer by effective level, shutting down in reverse order with failures reported on stderr, notifying destinations
- * through onRegistryReady, and the OTel availability warning at boot.
- *
- * Layer: server/services, tests.
- */
-
 jest.mock('../utils/otel-detector', () => ({
   ...jest.requireActual<typeof import('../utils/otel-detector')>('../utils/otel-detector'),
   detectOtelTraceApi: jest.fn()
