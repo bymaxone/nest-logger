@@ -384,7 +384,8 @@ export default [
   // function) fails until it is removed with `eslint --prune-suppressions`. ESLint does not stop the file
   // from being regenerated with `--suppress-rule` after a new violation, so CI runs `check:suppressions`
   // against the baseline a pull request is based on, or a push replaced: a count that rose, or an entry
-  // that revision lacks, fails. A manual run checks only that the file parses.
+  // that revision lacks, fails. A manual run checks only that the file parses, and a direct push that grows
+  // the baseline is detected on its own run only: the next push compares with the grown commit.
   //
   // A suppression counts violations per file and rule, not per function. A new offender in a file that
   // still has suppressions is reported only when it raises that file's count, so a split and a new
@@ -393,6 +394,8 @@ export default [
   {
     files: ['src/**/*.ts'],
     ignores: ['**/*.spec.ts', '**/*.test.ts'],
+    // An `eslint-disable` comment would otherwise accept a long function without touching the baseline.
+    linterOptions: { noInlineConfig: true },
     rules: {
       'max-lines-per-function': [
         'error',
