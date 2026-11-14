@@ -71,9 +71,10 @@ updates:
       - dependency-name: '@types/node'
         update-types: [version-update:semver-major]
       # prettier 3.10 reformats the it(/* comment */ 'title') pattern every spec uses; held until
-      # the formatter change is decided.
+      # the formatter change is decided. Dependabot's ignore also covers security updates, so none is
+      # proposed for these versions either.
       - dependency-name: prettier
-        versions: ['>= 3.10.0']
+        versions: ['>=3.10.0']
 
   # The workflow actions themselves (checkout, setup-node, pnpm, etc.).
   - package-ecosystem: github-actions
