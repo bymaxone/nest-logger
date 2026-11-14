@@ -1,3 +1,9 @@
+/**
+ * Covers writeStdoutSafely and writeStderrSafely: the payload reaches stdout and stderr, a
+ * synchronous throw from stdout is swallowed, and an error listener is attached to stdout on first
+ * use, once, and swallows the error it receives.
+ * Layer: server/utils, tests.
+ */
 import { writeStderrSafely, writeStdoutSafely } from './safe-stdio.util'
 
 describe('safe stdio', () => {

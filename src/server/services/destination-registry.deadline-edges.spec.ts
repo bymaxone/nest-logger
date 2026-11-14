@@ -1,9 +1,8 @@
 /**
- * Pins the edges of the shutdown deadlines: the instant a budget is exactly spent, the wait between
- * two looks at a queue, and the line that names what is still queued.
- *
- * The monotonic clock is scripted, so a budget can be spent to the millisecond and no case depends on
- * how fast the machine runs.
+ * Covers DestinationRegistry shutdown deadlines: an onShutdown reached when the budget is spent is
+ * skipped and named, one reached a millisecond earlier is called, the drain reports queued sizes,
+ * and a wait between queue checks is cut to the drain time left.
+ * Layer: server/services, tests.
  */
 import pino from 'pino'
 

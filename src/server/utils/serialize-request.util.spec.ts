@@ -1,7 +1,8 @@
 /**
- * Pins the default `req` serializer: what a Node request is written as, and that a value that is not
- * a request is left alone. The requests are real `IncomingMessage` objects, whose `headers` is a
- * prototype accessor and whose `rawHeaders` holds every header value beside its name.
+ * Covers serializeRequestValue, withSerializedRequest and censorRawHeaders: a request is written
+ * as method, URL, headers and peer address, the URL loses its query and credential segments,
+ * non-requests are returned as they are, and values beside sensitive names are censored.
+ * Layer: server/utils, tests.
  */
 import { IncomingMessage } from 'node:http'
 import { Socket } from 'node:net'
@@ -12,7 +13,10 @@ import { serializeRequestValue, withSerializedRequest } from './serialize-reques
 
 const HEX = 'a3f1c9d2b7e4086f5a1c3d9e7b2f4a6c8d0e1f3a5b7c9d2e4f6a8b0c1d3e5f7a'
 
-/** A real request with the given raw headers and URL. */
+/**
+ * A real `IncomingMessage` with the given raw headers and URL, not an object literal: its `headers` is
+ * a prototype accessor and its `rawHeaders` holds every header value beside its name.
+ */
 function request(rawHeaders: string[], url = '/probe?token=QUERY-SECRET'): IncomingMessage {
   const req = new IncomingMessage(new Socket())
   req.method = 'POST'

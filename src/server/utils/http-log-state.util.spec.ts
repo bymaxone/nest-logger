@@ -1,3 +1,9 @@
+/**
+ * Covers the http-log-state helpers: the recorder claim and recorded error stay out of enumeration
+ * and serialization, recorded and body-parser errors read back, toError wraps non-Error values,
+ * and user id and user agent reads fall back when absent.
+ * Layer: server/utils, tests.
+ */
 import {
   isRecorderActive,
   markRecorderActive,

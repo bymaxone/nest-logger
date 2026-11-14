@@ -1,8 +1,8 @@
 /**
- * Pins the edges of the credential detector that the cases of `normalize-url.util.spec.ts` leave
- * open: an empty segment, the length of a file extension, an extension on a segment that is not a
- * token, and the text a message is cleaned of when a segment holds characters a pattern treats as
- * special. Each case asserts what must NOT reach the output.
+ * Covers the secret-segment helpers of normalize-url.util at their edges: an empty segment is left
+ * alone, a token followed by a file extension is replaced, a dot-led hex token is replaced, and
+ * segments made of pattern characters are replaced in a message.
+ * Layer: server/utils, tests.
  */
 import {
   scrubSecretSegments,

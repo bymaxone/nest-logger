@@ -1,3 +1,9 @@
+/**
+ * Covers BymaxLoggerModule.forRootAsync and asyncHttpInterceptorProvider: options resolved through
+ * useFactory, useClass and useExisting, the isGlobal flag, and the interceptor chosen when http
+ * logging is enabled or disabled.
+ * Layer: server, tests.
+ */
 import { Module } from '@nestjs/common'
 import type { FactoryProvider } from '@nestjs/common'
 import { Test } from '@nestjs/testing'

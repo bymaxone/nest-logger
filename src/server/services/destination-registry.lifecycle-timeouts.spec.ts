@@ -1,9 +1,8 @@
 /**
- * Pins the deadlines of the destination lifecycle: a hook that never settles does not hold the
- * application, and shutdown ends within one budget however many destinations there are.
- *
- * The destinations are doubles, the timers are real and short, and the registry is built by hand with
- * the options a consumer would pass.
+ * Covers DestinationRegistry lifecycle deadlines: an onInit that does not settle counts as failed,
+ * an onRegistryReady that does not settle is reported and the next hook runs, a shutdown hook is
+ * held to the budget left, and the drain and drop tally report sizes and counts.
+ * Layer: server/services, tests.
  */
 import pino from 'pino'
 

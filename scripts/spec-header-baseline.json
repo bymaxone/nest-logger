@@ -1,33 +1,18 @@
 {
   "files": [
-    "src/server/config/default-options.spec.ts",
-    "src/server/config/validate-options.spec.ts",
-    "src/server/constants/default-redact-paths.constants.spec.ts",
     "src/server/destinations/pretty-dev.destination.spec.ts",
     "src/server/interceptors/http-logging.interceptor.spec.ts",
-    "src/server/logger.module.async.spec.ts",
     "src/server/logger.module.spec.ts",
     "src/server/middlewares/http-access-log.middleware.spec.ts",
     "src/server/middlewares/request-id.middleware.spec.ts",
     "src/server/mixins/trace-context.mixin.spec.ts",
-    "src/server/services/destination-health.service.spec.ts",
-    "src/server/services/destination-registry.deadline-edges.spec.ts",
-    "src/server/services/destination-registry.lifecycle-timeouts.spec.ts",
     "src/server/services/destination-registry.service.spec.ts",
-    "src/server/services/log-context.service.spec.ts",
     "src/server/services/pino-logger.service.spec.ts",
-    "src/server/sinks/pino-unexpected-error.sink.spec.ts",
     "src/server/utils/destination-to-stream.spec.ts",
-    "src/server/utils/http-log-state.util.spec.ts",
-    "src/server/utils/normalize-url.util.edges.spec.ts",
     "src/server/utils/normalize-url.util.spec.ts",
     "src/server/utils/otel-detector.spec.ts",
-    "src/server/utils/raw-headers.cases.spec.ts",
     "src/server/utils/redact-by-name.util.spec.ts",
-    "src/server/utils/report-destination-failure.util.spec.ts",
     "src/server/utils/resolve-resource.util.spec.ts",
-    "src/server/utils/safe-stdio.util.spec.ts",
-    "src/server/utils/sanitize-error.util.spec.ts",
-    "src/server/utils/serialize-request.util.spec.ts"
+    "src/server/utils/sanitize-error.util.spec.ts"
   ]
 }
