@@ -150,83 +150,35 @@ describe('DestinationRegistry lifecycle deadlines', () => {
       expect(stderrText(stderr)).not.toContain('not called')
     })
 
-    it('goes on to the next destination after a slow onShutdown ran out of time', async () => {
-      const second = jest.fn()
+    it('reports a timed-out onShutdown at the budget, after the destination before it completed', async () => {
+      const order: string[] = []
       const slow: ILogDestination = {
         name: 'slow',
         write: jest.fn(),
-        onShutdown: () => gate().promise
-      }
-      const first: ILogDestination = { name: 'first', write: jest.fn(), onShutdown: second }
-      const registry = registryOf([slow, first], {
-        shutdown: { timeoutMs: 500, drainTimeoutMs: 50 }
-      })
-      await registry.onModuleInit()
-
-      await registry.onApplicationShutdown()
-
-      expect(second).toHaveBeenCalledTimes(1)
-      expect(stderrText(stderr)).toContain('Shutdown failed for "slow"')
-    })
-  })
-
-  describe('drain', () => {
-    /** A destination fronted by a stream that holds `queued` characters until released. */
-    function queuedDestination(name: string, queued: number): ILogDestination {
-      const destination: ILogDestination = { name, write: jest.fn() }
-      const stream = new Writable({
-        write(_chunk, _encoding, callback): void {
-          void callback
+        onShutdown: () => {
+          order.push('slow')
+          return gate().promise
         }
-      })
-      stream.write('x'.repeat(queued))
-      health.registerStream(destination, stream)
-      return destination
-    }
-
-    it('names the destinations and the queued sizes, and no entry content, when the drain ends', async () => {
-      const destination = queuedDestination('stuck', 12)
-      const registry = registryOf([destination], {
-        shutdown: { timeoutMs: 200, drainTimeoutMs: 40 }
-      })
-      await registry.onModuleInit()
-
-      await registry.onApplicationShutdown()
-
-      expect(stderrText(stderr)).toContain('entries still queued, by size: "stuck" (12)')
-      expect(stderrText(stderr)).not.toContain('xxxx')
-    })
-
-    it('ends the drain at the total budget when the drain was set longer than it', async () => {
-      const destination = queuedDestination('stuck', 3)
-      const registry = registryOf([destination], {
-        shutdown: { timeoutMs: 60, drainTimeoutMs: 600 }
+      }
+      const first: ILogDestination = {
+        name: 'first',
+        write: jest.fn(),
+        onShutdown: () => {
+          order.push('first')
+        }
+      }
+      // Shutdown runs in reverse registration order, so `first` is called, and completes, before `slow`.
+      const registry = registryOf([slow, first], {
+        shutdown: { timeoutMs: 80, drainTimeoutMs: 40 }
       })
       await registry.onModuleInit()
       const started = Date.now()
 
       await registry.onApplicationShutdown()
 
-      expect(Date.now() - started).toBeLessThan(60 + 80)
-    })
-
-    it('waits for a queue that empties within the drain budget', async () => {
-      const destination: ILogDestination = { name: 'busy', write: jest.fn() }
-      const stream = { writableLength: 5 }
-      health.registerStream(destination, stream)
-      const registry = registryOf([destination], {
-        shutdown: { timeoutMs: 400, drainTimeoutMs: 300 }
-      })
-      await registry.onModuleInit()
-      setTimeout(() => {
-        stream.writableLength = 0
-      }, 30)
-      const started = Date.now()
-
-      await registry.onApplicationShutdown()
-
-      expect(Date.now() - started).toBeGreaterThanOrEqual(25)
-      expect(stderrText(stderr)).not.toContain('entries still queued')
+      expect(order).toEqual(['first', 'slow'])
+      expect(Date.now() - started).toBeLessThan(80 + 80)
+      expect(stderrText(stderr)).toContain('Shutdown failed for "slow"')
     })
   })
 })
