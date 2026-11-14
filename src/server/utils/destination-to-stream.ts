@@ -83,8 +83,9 @@ interface QueueCount {
 function ownQueuedBytes(destination: ILogDestination): number {
   try {
     const bytes = destination.queuedBytes?.() ?? 0
-    // Stryker disable next-line EqualityOperator: equivalent, `bytes >= 0` and `bytes > 0` differ only at 0, where the conditional returns `bytes`, which is 0, and the else branch returns 0. The result is 0 for every input either way.
-    return Number.isFinite(bytes) && bytes > 0 ? bytes : 0
+    // Stryker disable next-line EqualityOperator: `bytes > 0` replaced by `bytes >= 0` is equivalent. The two differ only at 0, where the conditional returns `bytes`, which is 0, and the else branch returns 0. The result is 0 for every input either way.
+    const positive = bytes > 0
+    return Number.isFinite(bytes) && positive ? bytes : 0
   } catch {
     return 0
   }
