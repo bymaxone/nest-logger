@@ -1,3 +1,10 @@
+/**
+ * Verifies sanitizeError serializes an Error to name, message and stack, keeps own properties on causes and
+ * aggregate members, truncates cause chains past the depth budget and wide aggregates, and maps circular
+ * causes and non-errors to a sentinel or UnknownError; ownFieldForLog omits argument fields.
+ *
+ * Layer: server/utils, tests.
+ */
 import { isErrorLike, OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 
 describe('sanitizeError', () => {

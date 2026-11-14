@@ -1,3 +1,10 @@
+/**
+ * Verifies destinationToStream forwards string and Buffer writes to the destination, contains rejected,
+ * thrown and thenable write failures with a stderr report, and skips a destination that failed init
+ * while writing the entry to stdout when no destination is healthy.
+ *
+ * Layer: server/utils, tests.
+ */
 import type { Writable } from 'node:stream'
 
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'

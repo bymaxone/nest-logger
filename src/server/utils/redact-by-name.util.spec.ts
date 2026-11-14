@@ -1,3 +1,10 @@
+/**
+ * Verifies createNameRedactor censors sensitive keys case-insensitively in nested objects, arrays and toJSON
+ * output without mutating its input, replaces circular and over-deep values with sentinels, and
+ * degrades to a marked envelope when traversal throws.
+ *
+ * Layer: server/utils, tests.
+ */
 import {
   REDACT_CIRCULAR,
   REDACT_DEPTH_EXCEEDED,

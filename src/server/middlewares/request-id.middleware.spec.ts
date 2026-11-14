@@ -1,3 +1,11 @@
+/**
+ * Verifies RequestIdMiddleware: generating or echoing a request id on the response and in the log context, dropping
+ * an oversized or malformed inbound request id or tenant id, and mounting a second time on the same request. It
+ * also covers which fields of an enclosing log context scope the request inherits.
+ *
+ * Layer: server/middlewares, tests.
+ */
+
 import { RequestIdMiddleware } from './request-id.middleware'
 import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
