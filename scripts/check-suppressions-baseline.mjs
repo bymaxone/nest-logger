@@ -33,7 +33,7 @@ const BASELINE = 'eslint-suppressions.json'
  *
  * @param {string} text The baseline file's text.
  * @param {string} where Where it came from, for the message.
- * @returns {Map<string, number>} The count of each suppression, keyed by `<file>\t<rule>`.
+ * @returns {Map<string, number>} The count of each suppression, keyed by `JSON.stringify([file, rule])`, which no file or rule name can make collide.
  */
 export function parseSuppressions(text, where) {
   const counts = new Map()
@@ -47,7 +47,7 @@ export function parseSuppressions(text, where) {
       if (!Number.isInteger(count) || count < 0) {
         throw new Error(`${where}: ${file} ${rule} has no whole count`)
       }
-      counts.set(`${file}\t${rule}`, count)
+      counts.set(JSON.stringify([file, rule]), count)
     }
   }
   return counts
@@ -65,7 +65,7 @@ export function growthOf(current, base) {
   for (const [key, count] of current) {
     const before = base.get(key) ?? 0
     if (count > before) {
-      const [file, rule] = key.split('\t')
+      const [file, rule] = JSON.parse(key)
       problems.push(
         `${file}: ${String(count)} \`${rule}\` suppression(s), the base revision has ${String(before)}. Fix the violation instead of suppressing it.`
       )

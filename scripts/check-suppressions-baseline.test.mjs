@@ -28,7 +28,7 @@ function baseline(counts) {
 describe('parseSuppressions', () => {
   it('reads one count per file and rule', () => {
     const counts = parseSuppressions(baseline({ 'a.ts': 2, 'b.ts': 1 }), 'x')
-    assert.equal(counts.get('a.ts\tmax-lines-per-function'), 2)
+    assert.equal(counts.get(JSON.stringify(['a.ts', 'max-lines-per-function'])), 2)
     assert.equal(counts.size, 2)
   })
 
@@ -61,6 +61,46 @@ describe('growthOf', () => {
     const problems = growthOf(parseSuppressions(baseline({ 'a.ts': 2, 'new.ts': 1 }), 'x'), base)
     assert.equal(problems.length, 1)
     assert.match(problems.join('\n'), /new\.ts: 1 .* the base revision has 0/)
+  })
+})
+
+describe('a file or rule name that holds a tab', () => {
+  /** A baseline text with one suppression for each `[file, rule]` pair. */
+  const pairs = (...entries) => {
+    const data = {}
+    for (const [file, rule] of entries) data[file] = { ...data[file], [rule]: { count: 1 } }
+    return JSON.stringify(data)
+  }
+  /** The base holds (`src/a<TAB>b.ts`, `r`); the change holds (`src/a`, `b.ts<TAB>r`). */
+  const baseText = pairs(['src/a\tb.ts', 'r'])
+  const newText = pairs(['src/a', 'b.ts\tr'])
+
+  it('keeps two different pairs apart even when joining them with a tab would give one key', () => {
+    const current = parseSuppressions(newText, 'x')
+    const base = parseSuppressions(baseText, 'x')
+    const problems = growthOf(current, base)
+    assert.equal(problems.length, 1)
+    assert.match(problems[0], /src\/a: 1 `b\.ts\tr` suppression\(s\), the base revision has 0/)
+  })
+
+  it('fails the command for a new suppression that shares a tab-joined key with a base one', () => {
+    const root = mkdtempSync(join(tmpdir(), 'suppressions-'))
+    const git = (...args) => execFileSync('git', args, { cwd: root, stdio: 'ignore' })
+    try {
+      git('init', '-q')
+      git('config', 'user.email', 'test@example.com')
+      git('config', 'user.name', 'test')
+      writeFileSync(join(root, 'eslint-suppressions.json'), baseText)
+      git('add', '-A')
+      git('commit', '-q', '-m', 'base')
+      writeFileSync(join(root, 'eslint-suppressions.json'), newText)
+      const result = spawnSync('node', [SCRIPT, '--root', root, '--base', 'HEAD'], {
+        encoding: 'utf8'
+      })
+      assert.equal(result.status, 1)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 
