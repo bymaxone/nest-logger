@@ -1,6 +1,5 @@
 {
   "files": {
-    "scripts/check-published-surface.mjs": 882,
-    "src/server/utils/redact-by-name.util.spec.ts": 890
+    "scripts/check-published-surface.mjs": 882
   }
 }
