@@ -1,6 +1,3 @@
 {
-  "files": [
-    "src/server/services/destination-registry.service.spec.ts",
-    "src/server/utils/redact-by-name.util.spec.ts"
-  ]
+  "files": ["src/server/utils/redact-by-name.util.spec.ts"]
 }
