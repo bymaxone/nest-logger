@@ -33,6 +33,9 @@ import type { ILogDestination } from '../interfaces/log-destination.interface'
  *   health.isFailed(destination)     // true  → not a live sink
  *   health.shouldRescue(destination) // true  → and nothing else survived
  */
+/** The least time between two overflow reports for one destination, in milliseconds. */
+export const DROP_REPORT_INTERVAL_MS = 10_000
+
 @Injectable()
 export class DestinationHealth {
   /** Destinations whose `onInit()` rejected. Identity-keyed, not name-keyed. */
@@ -81,7 +84,13 @@ export class DestinationHealth {
   private readonly pendingWrites = new Map<ILogDestination, number>()
 
   /** The `Writable` that fronts each destination, whose buffer is the queue of entries it holds. */
-  private readonly streams = new Map<ILogDestination, { readonly writableLength: number }>()
+  private readonly streams = new Map<ILogDestination, { readonly queuedBytes: number }>()
+
+  /** Entries dropped for want of queue room, per destination, and when the last one was reported. */
+  private readonly drops = new Map<
+    ILogDestination,
+    { total: number; unreported: number; lastReportAt: number | undefined }
+  >()
 
   /** The failed destination designated to rescue entries, if any. */
   private rescuer: ILogDestination | undefined
@@ -106,12 +115,53 @@ export class DestinationHealth {
   }
 
   /**
+   * Record one entry dropped because the destination's queue was full, and say whether the drop is
+   * due a report.
+   *
+   * A report is due on the first drop and then at most once every {@link DROP_REPORT_INTERVAL_MS},
+   * so a sustained overflow costs one stderr line per window and not one per entry.
+   *
+   * @param destination - The destination whose queue was full.
+   * @param now - A monotonic reading in milliseconds (`performance.now()`).
+   * @returns The number of drops since the last report when one is due, otherwise `undefined`.
+   */
+  recordDrop(destination: ILogDestination, now: number): number | undefined {
+    const record = this.drops.get(destination) ?? {
+      total: 0,
+      unreported: 0,
+      lastReportAt: undefined
+    }
+    this.drops.set(destination, record)
+    record.total += 1
+    record.unreported += 1
+    // An entry the destination was not given is one it did not deliver, as with a write that threw.
+    this.writeFailed.add(destination)
+    if (record.lastReportAt !== undefined && now - record.lastReportAt < DROP_REPORT_INTERVAL_MS) {
+      return undefined
+    }
+    record.lastReportAt = now
+    const due = record.unreported
+    record.unreported = 0
+    return due
+  }
+
+  /**
+   * How many entries a destination has had dropped for want of queue room.
+   *
+   * @param destination - The destination to ask about.
+   * @returns The count since startup, `0` when none.
+   */
+  droppedTotal(destination: ILogDestination): number {
+    return this.drops.get(destination)?.total ?? 0
+  }
+
+  /**
    * Record the stream that fronts a destination, whose buffer is the queue of entries it holds.
    *
    * @param destination - The destination.
-   * @param stream - Its `Writable` adapter, read only for the size of its buffer.
+   * @param stream - Its `Writable` adapter, read only for the bytes it holds queued.
    */
-  registerStream(destination: ILogDestination, stream: { readonly writableLength: number }): void {
+  registerStream(destination: ILogDestination, stream: { readonly queuedBytes: number }): void {
     this.streams.set(destination, stream)
   }
 
@@ -120,11 +170,11 @@ export class DestinationHealth {
    * destination has not yet taken, the write in flight included. Zero means nothing is queued.
    *
    * @param destination - The destination to ask about.
-   * @returns The queued size in the stream's own unit (characters of the NDJSON line), `0` for a
+   * @returns The queued size in bytes of NDJSON, `0` for a
    *   destination whose stream is not known.
    */
   queuedSize(destination: ILogDestination): number {
-    return this.streams.get(destination)?.writableLength ?? 0
+    return this.streams.get(destination)?.queuedBytes ?? 0
   }
 
   /**

@@ -61,6 +61,16 @@ export interface ILogDestination {
   write(payload: string): void | PromiseLike<void>
 
   /**
+   * Optional: the bytes this destination holds in a buffer of its own that has not reached its
+   * medium yet. The module adds it to its own queue in front of the destination and drops an entry
+   * that would take the total past `destinationQueue.maxBytes`. Report only a buffer that grows
+   * when the medium stalls (a stream's write queue, a batch waiting to be sent). A destination that
+   * does not buffer, or does not define it, is bounded by the module's queue alone. A value that
+   * is not a finite number, or a throw, counts as `0`.
+   */
+  queuedBytes?(): number
+
+  /**
    * Optional lifecycle hook — called once during NestJS module init.
    * Use for opening connections, allocating buffers, scheduling flushers.
    */
@@ -91,7 +101,8 @@ export interface ILogDestination {
    * @param status.heldEntriesDeliveredElsewhere - Whether another live sink
    *   accepted everything this destination accepted, as far as this library can
    *   see. `true` requires that sink to be not this one, initialized, at or below
-   *   this level, with no write failure and no write still in flight; anything
+   *   this level, with no write failure, no entry dropped for want of queue room and no write
+   *   still in flight; anything
    *   less certain is `false`.
    *
    *   **What it cannot see:** a write still QUEUED inside the `Writable` adapter,

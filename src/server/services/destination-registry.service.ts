@@ -301,7 +301,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * point in the shutdown sequence.
    */
   async onApplicationShutdown(): Promise<void> {
-    const startedAt = Date.now()
+    const startedAt = performance.now()
     const { timeoutMs, drainTimeoutMs } = this.options.shutdown
     const deadline = startedAt + timeoutMs
     // Emitted BEFORE the sinks are torn down — a shutdown entry written after
@@ -331,7 +331,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
     // reported as skipped.
     const skipped: string[] = []
     for (const destination of [...this.active].reverse()) {
-      const remaining = deadline - Date.now()
+      const remaining = deadline - performance.now()
       if (remaining <= 0) {
         skipped.push(toSingleLineMessage(safeDestinationName(destination)))
         continue
@@ -342,10 +342,26 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         this.reportShutdownFailure(destination, cause)
       }
     }
+    this.reportDropTotals()
     if (skipped.length > 0) {
       writeStderrSafely(
         `[DestinationRegistry] Shutdown budget of ${String(timeoutMs)} ms spent; onShutdown not called for: ${skipped.map((name) => `"${name}"`).join(', ')}\n`
       )
+    }
+  }
+
+  /**
+   * Say, once, how many entries each destination had dropped for want of queue room, when any did.
+   * It carries the name and the count and no entry content.
+   */
+  private reportDropTotals(): void {
+    for (const destination of this.registered) {
+      const total = this.health.droppedTotal(destination)
+      if (total > 0) {
+        writeStderrSafely(
+          `[DestinationRegistry] Destination "${toSingleLineMessage(safeDestinationName(destination))}" dropped ${String(total)} entries in total because its queue was full\n`
+        )
+      }
     }
   }
 
@@ -359,13 +375,13 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * error. An entry written during the wait extends it, up to the deadline. When the deadline ends it,
    * one line names the destinations and their queued sizes; it carries no entry content.
    *
-   * @param drainDeadline - The time, in `Date.now()` milliseconds, the wait ends at.
+   * @param drainDeadline - The time, in `performance.now()` milliseconds, the wait ends at.
    */
   private async drain(drainDeadline: number): Promise<void> {
     for (;;) {
       const queued = this.active.filter((destination) => this.health.queuedSize(destination) > 0)
       if (queued.length === 0) return
-      const remaining = drainDeadline - Date.now()
+      const remaining = drainDeadline - performance.now()
       if (remaining <= 0) {
         const named = queued.map(
           (destination) =>

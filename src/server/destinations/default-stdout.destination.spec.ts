@@ -82,4 +82,18 @@ describe('DefaultStdoutDestination', () => {
     const dest = new DefaultStdoutDestination({})
     expect(dest.minLevel).toBeUndefined()
   })
+
+  it(/*
+   * The module bounds what stdout holds through this report, so it has to read the stream's own
+   * queue, in bytes, and nothing else.
+   */
+  'should report the bytes process.stdout holds queued', () => {
+    Object.defineProperty(process.stdout, 'writableLength', { value: 4096, configurable: true })
+
+    try {
+      expect(new DefaultStdoutDestination().queuedBytes()).toBe(4096)
+    } finally {
+      Reflect.deleteProperty(process.stdout, 'writableLength')
+    }
+  })
 })

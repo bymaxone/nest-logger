@@ -650,7 +650,7 @@ export function buildPinoInstance(
   }
 
   const streams = destinations.map((destination) => {
-    const stream = destinationToStream(destination, health)
+    const stream = destinationToStream(destination, health, options.destinationQueue.maxBytes)
     // The registry drains this buffer before it tells the destination to shut down.
     health.registerStream(destination, stream)
     return {

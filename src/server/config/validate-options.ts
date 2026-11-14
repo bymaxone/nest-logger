@@ -17,7 +17,11 @@
  */
 import { types } from 'node:util'
 
-import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from '../constants/lifecycle-timeouts.constants'
+import {
+  DEFAULT_SHUTDOWN_TIMEOUT_MS,
+  MAX_QUEUE_MAX_BYTES,
+  MIN_QUEUE_MAX_BYTES
+} from '../constants/lifecycle-timeouts.constants'
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 
@@ -72,6 +76,25 @@ function checkTimerMs(path: string, value: unknown): void {
   if (value === undefined) return
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > MAX_TIMER_MS) {
     reject(path, `must be an integer from 1 to ${String(MAX_TIMER_MS)}`, value)
+  }
+}
+
+/** `destinationQueue.maxBytes`: `0` for no bound, otherwise an integer in the documented range. */
+function validateQueue(options: BymaxLoggerModuleOptions): void {
+  const queue = checkGroup('destinationQueue', options.destinationQueue)
+  const maxBytes = queue?.['maxBytes']
+  if (maxBytes === undefined || maxBytes === 0) return
+  if (
+    typeof maxBytes !== 'number' ||
+    !Number.isInteger(maxBytes) ||
+    maxBytes < MIN_QUEUE_MAX_BYTES ||
+    maxBytes > MAX_QUEUE_MAX_BYTES
+  ) {
+    reject(
+      'destinationQueue.maxBytes',
+      `must be 0 (no bound) or an integer from ${String(MIN_QUEUE_MAX_BYTES)} to ${String(MAX_QUEUE_MAX_BYTES)}`,
+      maxBytes
+    )
   }
 }
 
@@ -353,6 +376,7 @@ export function validateOptions(options: BymaxLoggerModuleOptions): void {
   validateErrorFields(options)
   validateDestinations(options)
   validateLifecycle(options)
+  validateQueue(options)
   validateHttp(options)
   validateOtel(options)
 }

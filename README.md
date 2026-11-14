@@ -308,6 +308,20 @@ Shutdown first drains the queue each destination holds, then calls each destinat
 | `shutdown.timeoutMs`      | `number` | `10000` | Total shutdown budget in ms, covering the drain and every `onShutdown` (an integer from 1 to 2147483647)                                                                                                    |
 | `shutdown.drainTimeoutMs` | `number` | `5000`  | Longest the drain may take, in ms, and not above `shutdown.timeoutMs`. When it ends with entries still queued, one stderr line names the destinations and the size of what each holds, and shutdown goes on |
 
+### `destinationQueue` options
+
+Pino hands every entry to a destination whether or not the destination has taken the last one, so a destination slower than the application, or a stdout whose reader has stalled, queues without limit and the process grows until it is killed. The module bounds what each destination may hold. Past the bound it drops the **new** entry for that destination, counts it, and says so: one stderr line for the first drop and then at most one every 10 seconds per destination, with the destination's name, the number dropped and the limit, never an entry's content, and a last line at shutdown with the total. The other destinations still receive the entry.
+
+The count is the module's own queue in front of the destination plus what the destination reports through `ILogDestination.queuedBytes`, which the default stdout destination does for `process.stdout`, so a stalled stdout is bounded too. One entry is always accepted when nothing is held, so a bound smaller than an entry cannot drop everything. When every destination failed `onInit`, the one elected to write entries to stdout as a last resort is bounded on what `process.stdout` holds; a failed destination that is not elected receives nothing and is never bounded.
+
+**A stalled stdout consumer now loses entries past `destinationQueue.maxBytes` instead of growing the process; set `0` to restore the old behaviour.** Measured on 400000 lines to a pipe nobody reads: the process grew by 289865728 bytes with no bound and by 69681152 bytes with a 4 MiB bound.
+
+An entry still queued when the process ends is lost. `process.exit()` does not wait for a queue: measured on a pipe, 568 of 200000 lines were delivered after `process.exit()`, and `await app.close()` before the exit delivers them all, within the `shutdown` budget above.
+
+| Option                      | Type     | Default    | Description                                                                                                              |
+| --------------------------- | -------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `destinationQueue.maxBytes` | `number` | `33554432` | The most UTF-8 bytes of NDJSON one destination may hold queued: an integer from 1024 to 2147483647, or `0` for no bound. |
+
 ### Options from a class
 
 `forRootAsync` accepts a class that produces the options, for when they depend on a provider already in the DI graph. It implements `BymaxLoggerModuleOptionsFactory`; pass it as `useClass` (the module instantiates it) or `useExisting` (an instance another module provides). `createLoggerOptions()` may return the options or a promise of them.
@@ -1093,6 +1107,8 @@ interface ILogDestination {
   readonly minLevel?: LogLevel
   /** `payload` is a newline-terminated JSON entry, UTF-8 encoded — not an object. */
   write(payload: string): void | PromiseLike<void>
+  /** Bytes you hold in a buffer of your own; counted against `destinationQueue.maxBytes`. */
+  queuedBytes?(): number
   onInit?(): void | PromiseLike<void>
   /** Called once after EVERY destination's `onInit` settled. Only useful if you buffer. */
   onRegistryReady?(status: {
