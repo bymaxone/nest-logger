@@ -33,20 +33,21 @@ overrides:
   'brace-expansion@5': '^5.0.12'
   # minimatch: denial of service through globparts amplification, vulnerable >= 7.0.0 < 11.0.1 and
   # patched only in 11.0.1, with no backport. Dev-only. The 10.x copies (typescript-estree, stryker
-  # core, glob 13) are floored to 11, which glob 13 accepts: it still matches the same files. The 9.x
-  # copy came through glob 10 (jest coverage's test-exclude 7), and glob 10 on minimatch 11 matches
-  # NOTHING and says nothing, so it is not floored: test-exclude is moved to 8, which uses glob 13.
-  # Never floor minimatch under a glob 10. REMOVE when the parents above ask for >= 11.0.1.
+  # core, glob 13) are floored to 11. The 9.x copy came through glob 10 (jest coverage's test-exclude
+  # 7), and glob 10 on minimatch 11 matches NOTHING and says nothing, so test-exclude is moved to 8.
+  # Never floor minimatch under a glob 10: glob is floored to 14 below, which is what makes it safe.
+  # REMOVE when the parents above ask for >= 11.0.1.
   'minimatch@10': '^11.0.1'
+  'test-exclude@7': '^8.0.0'
   # glob: GHSA-3g3m-2fjr-6pw4, vulnerable >= 9 < 14.0.2 and patched only in 14.0.2, with no backport. Reached
-  # only through test, mutation and lint tooling (jest reporters and config, test-exclude 8). glob 14 asks
-  # for minimatch 11, the floor above. 'glob@10' and 'minimatch@9' name majors this tree no longer
-  # resolves; they stay so that a parent that asks for one is floored rather than silently vulnerable.
+  # only through test, mutation and lint tooling: jest reporters, jest-config and jest-runtime, and
+  # test-exclude 8. glob 14 asks for minimatch 11, the floor above. 'glob@10' and 'minimatch@9' name
+  # majors this tree no longer resolves; they stay so that a parent that asks for one cannot resolve a
+  # vulnerable copy.
   # REMOVE the glob and minimatch entries when the parents' own ranges are above the floors.
   'glob@10': '^14.0.2'
   'glob@13': '^14.0.2'
   'minimatch@9': '^11.0.1'
-  'test-exclude@7': '^8.0.0'
   'esbuild': '^0.28.1'
   # A range here is NOT evidence that a package is patched. An override is a floor
   # on resolution, and nothing re-resolves a lockfile that already satisfies the
