@@ -1,6 +1,5 @@
-# Release of @bymax-one/nest-logger, from the org npm-release template (bymaxone/.github, v1.10.8,
-# DEC-158): the code that builds runs without a credential, and the job that holds the credential
-# runs no code from the package.
+# Release of @bymax-one/nest-logger: the code that builds runs without a credential, and the job that
+# holds the credential runs no code from the package.
 #
 # Why two jobs
 #   `build` installs dependencies, runs the gates and packs. That runs a lot of code (the dependency
