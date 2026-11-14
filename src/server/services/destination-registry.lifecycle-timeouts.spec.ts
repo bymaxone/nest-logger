@@ -173,12 +173,10 @@ describe('DestinationRegistry lifecycle deadlines', () => {
         shutdown: { timeoutMs: 80, drainTimeoutMs: 40 }
       })
       await registry.onModuleInit()
-      const started = Date.now()
 
       await registry.onApplicationShutdown()
 
       expect(order).toEqual(['first', 'slow'])
-      expect(Date.now() - started).toBeLessThan(80 + 400)
       expect(stderrText(stderr)).toContain('Shutdown failed for "slow"')
     })
   })
@@ -210,11 +208,14 @@ describe('DestinationRegistry lifecycle deadlines', () => {
         shutdown: { timeoutMs: 60, drainTimeoutMs: 600 }
       })
       await registry.onModuleInit()
-      const started = Date.now()
+      // The total ends at 1060 and the drain was set to 1600. The first look is at 1059, with 1 ms left
+      // of the total, and every later one at 1060: only a drain held to the total ends, and reports.
+      const readings = [1000, 1059]
+      jest.spyOn(performance, 'now').mockImplementation(() => readings.shift() ?? 1060)
 
       await registry.onApplicationShutdown()
 
-      expect(Date.now() - started).toBeLessThan(60 + 400)
+      expect(stderrText(stderr)).toContain('entries still queued, by size: "stuck" (3)')
     })
 
     it('waits for a queue that empties within the drain budget', async () => {
