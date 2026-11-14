@@ -1,7 +1,7 @@
 /**
- * Covers censoring of the flat [name, value, ...] header arrays under rawHeaders and rawTrailers:
- * default names under the names and paths strategies, a host-added name with the defaults
- * disabled, a request held by an Error, and an object inside the array.
+ * Covers censoring of the flat [name, value, ...] header arrays under rawHeaders: default names
+ * under the names and paths strategies, a host-added name with the defaults disabled, a request
+ * held by an Error, an object inside the array, and the rawTrailers key.
  * Layer: server/utils, tests.
  */
 import { applyDefaults } from '../config/default-options'
