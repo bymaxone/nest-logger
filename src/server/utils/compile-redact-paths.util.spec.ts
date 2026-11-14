@@ -1,3 +1,7 @@
+/**
+ * Pins how default and consumer redact paths are merged, deduplicated, or used alone when defaults are disabled.
+ * Layer: server/utils, tests.
+ */
 import { DEFAULT_REDACT_PATHS } from '../constants/default-redact-paths.constants'
 import { compileRedactPaths } from './compile-redact-paths.util'
 

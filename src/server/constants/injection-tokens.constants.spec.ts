@@ -1,3 +1,7 @@
+/**
+ * Pins the injection tokens as pairwise distinct Symbols whose descriptions contain BYMAX_LOGGER.
+ * Layer: server/constants, tests.
+ */
 import {
   LOG_CONTEXT_TOKEN,
   LOGGER_DESTINATIONS_TOKEN,

@@ -1,3 +1,7 @@
+/**
+ * Pins the performance decorator: which event it logs for fast and slow calls, that return values and exceptions pass through, and that a missing or failing logger never masks the result.
+ * Layer: server/decorators, tests.
+ */
 import pino from 'pino'
 
 import { LogPerformance } from './log-performance.decorator'

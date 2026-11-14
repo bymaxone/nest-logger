@@ -1,3 +1,7 @@
+/**
+ * Pins that path exclusion gives the same answer on repeated calls for stateful patterns, keeps the pattern flags that decide what matches, and tolerates frozen patterns.
+ * Layer: server/utils, tests.
+ */
 import { matchesExcludePath } from './matches-exclude-path.util'
 
 describe('matchesExcludePath', () => {
