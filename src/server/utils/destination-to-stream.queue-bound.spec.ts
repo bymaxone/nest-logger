@@ -282,6 +282,30 @@ describe('destinationToStream, the queue bound', () => {
     expect(stream.queuedBytes).toBe(0)
     expect(health.droppedTotal(destination)).toBe(0)
   })
+
+  it('accepts an entry that brings the queue exactly to the bound, and drops the one after it', () => {
+    const { destination, seen } = stalledDestination()
+    const stream = destinationToStream(destination, health, 100)
+
+    stream.write('a'.repeat(60))
+    stream.write('b'.repeat(40))
+    stream.write('c')
+
+    expect(seen).toEqual(['a'.repeat(60)])
+    expect(stream.queuedBytes).toBe(100)
+    expect(health.droppedTotal(destination)).toBe(1)
+  })
+
+  it('does not let a negative report lower what the queue holds, so the bound is still kept', () => {
+    const { destination } = stalledDestination({ queuedBytes: () => -30 })
+    const stream = destinationToStream(destination, health, 100)
+
+    stream.write('a'.repeat(60))
+    stream.write('b'.repeat(60))
+
+    expect(stream.queuedBytes).toBe(60)
+    expect(health.droppedTotal(destination)).toBe(1)
+  })
 })
 
 describe('DestinationHealth, the drop record', () => {

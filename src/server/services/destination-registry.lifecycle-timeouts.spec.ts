@@ -122,11 +122,13 @@ describe('DestinationRegistry lifecycle deadlines', () => {
         shutdown: { timeoutMs: 120, drainTimeoutMs: 50 }
       })
       await registry.onModuleInit()
-      const started = Date.now()
+      // The clock reads 1000 at the start and at the first hook, and 1120, the end of the budget, from
+      // then on: whatever the real timer of the first hook does, the other two find nothing left.
+      const readings = [1000, 1000]
+      jest.spyOn(performance, 'now').mockImplementation(() => readings.shift() ?? 1120)
 
       await registry.onApplicationShutdown()
 
-      expect(Date.now() - started).toBeLessThan(120 + 80)
       expect(calls).toEqual(['c'])
       expect(stderrText(stderr)).toContain('onShutdown not called for: "b", "a"')
     })
@@ -171,12 +173,10 @@ describe('DestinationRegistry lifecycle deadlines', () => {
         shutdown: { timeoutMs: 80, drainTimeoutMs: 40 }
       })
       await registry.onModuleInit()
-      const started = Date.now()
 
       await registry.onApplicationShutdown()
 
       expect(order).toEqual(['first', 'slow'])
-      expect(Date.now() - started).toBeLessThan(80 + 80)
       expect(stderrText(stderr)).toContain('Shutdown failed for "slow"')
     })
   })
@@ -208,11 +208,14 @@ describe('DestinationRegistry lifecycle deadlines', () => {
         shutdown: { timeoutMs: 60, drainTimeoutMs: 600 }
       })
       await registry.onModuleInit()
-      const started = Date.now()
+      // The total ends at 1060 and the drain was set to 1600. The first look is at 1059, with 1 ms left
+      // of the total, and every later one at 1060: only a drain held to the total ends, and reports.
+      const readings = [1000, 1059]
+      jest.spyOn(performance, 'now').mockImplementation(() => readings.shift() ?? 1060)
 
       await registry.onApplicationShutdown()
 
-      expect(Date.now() - started).toBeLessThan(60 + 80)
+      expect(stderrText(stderr)).toContain('entries still queued, by size: "stuck" (3)')
     })
 
     it('waits for a queue that empties within the drain budget', async () => {

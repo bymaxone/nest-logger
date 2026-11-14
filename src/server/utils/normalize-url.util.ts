@@ -77,7 +77,9 @@ function isSecretSegment(segment: string, extra: readonly RegExp[]): boolean {
 /** The segment without a trailing file extension: `<token>.pdf` carries the token. */
 function withoutExtension(segment: string): string {
   const dot = segment.lastIndexOf('.')
-  return dot > 0 && segment.length - dot <= 9 ? segment.slice(0, dot) : segment
+  // Stryker disable next-line ConditionalExpression,EqualityOperator: `dot > 0` replaced by `true` or by `dot >= 0` is equivalent. It only changes a segment with no dot (dot -1) of at most 8 characters, or one that starts with a dot (dot 0) of at most 9: the result is then a shorter string, and `looksLikeToken` is false for both the segment and its shortening, because a hex run, a hex value and an opaque token need 32 characters or more and a JWT needs `eyJ` first and two dots, which neither a dotless segment nor one starting with a dot has. The output is the same for every input.
+  const dotAfterStart = dot > 0
+  return dotAfterStart && segment.length - dot <= 9 ? segment.slice(0, dot) : segment
 }
 
 /** A hex value, a JWT, or an opaque token that is not a slug or a UUID. */
