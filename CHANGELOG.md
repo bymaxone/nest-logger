@@ -11,6 +11,37 @@ heading here.
 
 ## [Unreleased]
 
+### Changed (Security)
+
+- **A dotted credential in a path segment no longer reaches a log line.** A segment such as
+  `ya29.<token>` (a Google OAuth access token), `v4.local.<token>` (a PASETO) or three dotted opaque
+  parts was written in clear in `fullUrl`, the access-log message and the exception `url`, because the
+  dots are outside the token alphabet and the whole segment never matched. Measured on 1.4.17: all of
+  them in clear. A segment that holds a dot is now also judged one dot-separated part at a time, with
+  the test an undotted segment already gets: 32 or more characters of the token alphabet that are not
+  slug-shaped and not a UUID. The threshold is that same 32: on 7 credential shapes and 29 ordinary
+  dotted values (names, versions, hostnames, file names, hashed bundle names), it catches all 7 and
+  adds no false positive, where 24 would flag a 26-character ULID file name. A token part made only of
+  lowercase letters and digits joined by `-` or `_` stays in clear, as an undotted one does;
+  `http.secretPathSegments` closes it.
+
+### Fixed
+
+- **`PinoUnexpectedErrorSink` writes what nest-core 1.6.10 reports.** A window summary was
+  indistinguishable from a first occurrence, so a log read two failures where five happened, and no
+  line carried the exception's own `code` or `details`. The entry now has `repeated` when the report
+  carries a positive whole count, `errorCode` (up to 128 characters) and `errorDetails` (censored like
+  any other metadata) from the exception's response, flat or under `error`, whatever `errorOwnFields`
+  says. A response that cannot be read loses those fields and the entry is still written.
+  `UnexpectedErrorReport` gains `repeated?: number`. `details` is not size-capped and can carry what a
+  driver put there, such as a `host:port`, so keep access to the log controlled.
+- **A destination that refuses every write costs one stderr line per window, not one per entry.**
+  `LOGGER_DESTINATION_WRITE_FAILED` was written for each failed entry, which under a log flood is a
+  disk and CPU load of its own. The first failure is written at once and the rest of a 10-second
+  window is counted into `suppressed` on the next line, as for a full queue. The destination is still
+  marked as having failed a write at once, so readiness does not change, and shutdown says how many
+  writes a destination failed in total when it failed more than one.
+
 ## [1.4.17] - 2026-11-14
 
 ### Changed (Security)

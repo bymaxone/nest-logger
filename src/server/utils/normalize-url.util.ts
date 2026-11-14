@@ -69,9 +69,19 @@ function isSecretSegment(segment: string, extra: readonly RegExp[]): boolean {
   return (
     looksLikeToken(decoded) ||
     looksLikeToken(withoutExtension(decoded)) ||
+    hasTokenPart(decoded) ||
     EMAIL_SECRET_REGEX.test(decoded) ||
     matchesExcludePath(extra, decoded)
   )
+}
+
+/**
+ * Whether any dot-separated part of a segment is a token on its own: `ya29.<token>` and
+ * `v4.local.<token>` carry the credential in a part, which the whole-segment test cannot see
+ * because the dots are not in the token alphabet. Each part is judged as an undotted segment is.
+ */
+function hasTokenPart(segment: string): boolean {
+  return segment.split('.').some(looksLikeToken)
 }
 
 /** The segment without a trailing file extension: `<token>.pdf` carries the token. */

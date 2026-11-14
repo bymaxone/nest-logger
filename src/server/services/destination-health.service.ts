@@ -36,6 +36,37 @@ import type { ILogDestination } from '../interfaces/log-destination.interface'
 /** The least time between two overflow reports for one destination, in milliseconds. */
 export const DROP_REPORT_INTERVAL_MS = 10_000
 
+/** What is kept per destination for a report that is windowed: all of it, and what is not yet said. */
+interface WindowedCount {
+  total: number
+  unreported: number
+  lastReportAt: number | undefined
+}
+
+/**
+ * Count one event for a destination and say whether a report is due: on the first event, and then
+ * at most once every {@link DROP_REPORT_INTERVAL_MS}.
+ *
+ * @returns The events since the last report, this one included, when one is due, else `undefined`.
+ */
+function countInWindow(
+  records: Map<ILogDestination, WindowedCount>,
+  destination: ILogDestination,
+  now: number
+): number | undefined {
+  const record = records.get(destination) ?? { total: 0, unreported: 0, lastReportAt: undefined }
+  records.set(destination, record)
+  record.total += 1
+  record.unreported += 1
+  if (record.lastReportAt !== undefined && now - record.lastReportAt < DROP_REPORT_INTERVAL_MS) {
+    return undefined
+  }
+  record.lastReportAt = now
+  const due = record.unreported
+  record.unreported = 0
+  return due
+}
+
 @Injectable()
 export class DestinationHealth {
   /** Destinations whose `onInit()` rejected. Identity-keyed, not name-keyed. */
@@ -87,10 +118,10 @@ export class DestinationHealth {
   private readonly streams = new Map<ILogDestination, { readonly queuedBytes: number }>()
 
   /** Entries dropped for want of queue room, per destination, and when the last one was reported. */
-  private readonly drops = new Map<
-    ILogDestination,
-    { total: number; unreported: number; lastReportAt: number | undefined }
-  >()
+  private readonly drops = new Map<ILogDestination, WindowedCount>()
+
+  /** Writes a destination refused, per destination, and when the last one was reported. */
+  private readonly writeFailures = new Map<ILogDestination, WindowedCount>()
 
   /** The failed destination designated to rescue entries, if any. */
   private rescuer: ILogDestination | undefined
@@ -126,23 +157,38 @@ export class DestinationHealth {
    * @returns The number of drops since the last report when one is due, otherwise `undefined`.
    */
   recordDrop(destination: ILogDestination, now: number): number | undefined {
-    const record = this.drops.get(destination) ?? {
-      total: 0,
-      unreported: 0,
-      lastReportAt: undefined
-    }
-    this.drops.set(destination, record)
-    record.total += 1
-    record.unreported += 1
     // An entry the destination was not given is one it did not deliver, as with a write that threw.
     this.writeFailed.add(destination)
-    if (record.lastReportAt !== undefined && now - record.lastReportAt < DROP_REPORT_INTERVAL_MS) {
-      return undefined
-    }
-    record.lastReportAt = now
-    const due = record.unreported
-    record.unreported = 0
-    return due
+    return countInWindow(this.drops, destination, now)
+  }
+
+  /**
+   * Record one write the destination refused (it threw or rejected), and say whether the failure is
+   * due a report.
+   *
+   * The destination is marked as having failed a write at once, as {@link markWriteFailed} does; only
+   * the report is windowed, in the same way as {@link recordDrop}: the first failure is due at once
+   * and then at most once every {@link DROP_REPORT_INTERVAL_MS}, so a destination that refuses every
+   * entry costs one stderr line per window and not one per entry.
+   *
+   * @param destination - The destination whose write failed.
+   * @param now - A monotonic reading in milliseconds (`performance.now()`).
+   * @returns The number of failures since the last report, this one included, when one is due,
+   *   otherwise `undefined`.
+   */
+  recordWriteFailure(destination: ILogDestination, now: number): number | undefined {
+    this.writeFailed.add(destination)
+    return countInWindow(this.writeFailures, destination, now)
+  }
+
+  /**
+   * How many writes a destination has refused since startup.
+   *
+   * @param destination - The destination to ask about.
+   * @returns The count, `0` when none.
+   */
+  failedWriteTotal(destination: ILogDestination): number {
+    return this.writeFailures.get(destination)?.total ?? 0
   }
 
   /**

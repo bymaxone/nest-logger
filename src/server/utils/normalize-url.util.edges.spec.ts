@@ -32,11 +32,9 @@ describe('the file extension after a token', () => {
     expect(out).not.toContain(TOKEN)
   })
 
-  it('is not read when it is longer, because the segment is then a name and not a token', () => {
-    expect(scrubSecretSegments(`/download/${TOKEN}.abcdefghi`)).toBe(`/download/${TOKEN}.abcdefghi`)
-    expect(scrubSecretSegments(`/download/${TOKEN}.abcdefghijklmnop`)).toBe(
-      `/download/${TOKEN}.abcdefghijklmnop`
-    )
+  it('does not hide the token when it is longer, because the token part is judged on its own', () => {
+    expect(scrubSecretSegments(`/download/${TOKEN}.abcdefghi`)).toBe('/download/:redacted')
+    expect(scrubSecretSegments(`/download/${TOKEN}.abcdefghijklmnop`)).toBe('/download/:redacted')
   })
 
   it('is not made up where there is none: a last character that is not a dot is not an extension', () => {
