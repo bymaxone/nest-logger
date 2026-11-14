@@ -307,4 +307,17 @@ describe('DestinationHealth, the drop record', () => {
     expect(health.droppedTotal(other)).toBe(0)
     expect(health.queuedSize(other)).toBe(0)
   })
+
+  it('stops crediting a sink that dropped an entry with having delivered it, as with a failed write', () => {
+    const health = new DestinationHealth()
+    const dropper: ILogDestination = { name: 'dropper', write: jest.fn() }
+    const buffering: ILogDestination = { name: 'buffering', write: jest.fn() }
+    health.markHealthy(dropper, 'info')
+    health.markHealthy(buffering, 'info')
+    expect(health.deliveredByHealthySink(buffering, 'info')).toBe(true)
+
+    health.recordDrop(dropper, 0)
+
+    expect(health.deliveredByHealthySink(buffering, 'info')).toBe(false)
+  })
 })

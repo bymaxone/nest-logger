@@ -101,7 +101,8 @@ export interface ILogDestination {
    * @param status.heldEntriesDeliveredElsewhere - Whether another live sink
    *   accepted everything this destination accepted, as far as this library can
    *   see. `true` requires that sink to be not this one, initialized, at or below
-   *   this level, with no write failure and no write still in flight; anything
+   *   this level, with no write failure, no entry dropped for want of queue room and no write
+   *   still in flight; anything
    *   less certain is `false`.
    *
    *   **What it cannot see:** a write still QUEUED inside the `Writable` adapter,

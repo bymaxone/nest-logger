@@ -134,6 +134,8 @@ export class DestinationHealth {
     this.drops.set(destination, record)
     record.total += 1
     record.unreported += 1
+    // An entry the destination was not given is one it did not deliver, as with a write that threw.
+    this.writeFailed.add(destination)
     if (record.lastReportAt !== undefined && now - record.lastReportAt < DROP_REPORT_INTERVAL_MS) {
       return undefined
     }
