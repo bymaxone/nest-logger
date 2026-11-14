@@ -207,6 +207,28 @@ describe('destinationToStream, the queue bound', () => {
     expect(stream.queuedBytes).toBe(0)
   })
 
+  it('releases the bytes of entries buffered behind a write in flight when the stream is destroyed', async () => {
+    const releases: Array<() => void> = []
+    const destination: ILogDestination = {
+      name: 'slow',
+      write: () => new Promise<void>((resolve) => releases.push(resolve))
+    }
+    const stream = destinationToStream(destination, health, 4096)
+    stream.on('error', () => undefined)
+    stream.write('aaaa\n')
+    stream.write('bbbb\n')
+    stream.write('cccc\n')
+    expect(stream.queuedBytes).toBe(15)
+
+    stream.destroy()
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(stream.queuedBytes).toBe(0)
+    for (const release of releases) release()
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(stream.queuedBytes).toBe(0)
+  })
+
   it('does not count a write after end either', () => {
     const { destination } = stalledDestination()
     const stream = destinationToStream(destination, health, 4096)

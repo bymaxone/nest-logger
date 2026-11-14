@@ -110,6 +110,15 @@ export class BoundedWritable extends Writable {
     super(options)
   }
 
+  /**
+   * A destroyed stream holds nothing: Writable fails the chunks still buffered without calling the
+   * write handler, so nothing else would release their bytes.
+   */
+  override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
+    this.queue.bytes = 0
+    super._destroy(error, callback)
+  }
+
   /** The bytes of NDJSON waiting for the destination, the write in flight included. */
   get queuedBytes(): number {
     return this.queue.bytes
@@ -205,7 +214,8 @@ export function destinationToStream(
       // The bytes this chunk held in the queue are released when its write settles, however it settles.
       const bytes = Buffer.byteLength(chunk)
       const callback = (error?: Error | null): void => {
-        queue.bytes -= bytes
+        // Never below zero: a destroyed stream has already reset the count.
+        queue.bytes = Math.max(0, queue.bytes - bytes)
         settled(error)
       }
       // A destination failure is CONTAINED, not propagated: calling the callback
