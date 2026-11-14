@@ -38,6 +38,14 @@ overrides:
   # NOTHING and says nothing, so it is not floored: test-exclude is moved to 8, which uses glob 13.
   # Never floor minimatch under a glob 10. REMOVE when the parents above ask for >= 11.0.1.
   'minimatch@10': '^11.0.1'
+  # glob: GHSA-3g3m-2fjr-6pw4, vulnerable >= 9 < 14.0.2 and patched only in 14.0.2, with no backport. Reached
+  # only through test, mutation and lint tooling (jest reporters and config, test-exclude 8). glob 14 asks
+  # for minimatch 11, the floor above. 'glob@10' and 'minimatch@9' name majors this tree no longer
+  # resolves; they stay so that a parent that asks for one is floored rather than silently vulnerable.
+  # REMOVE the glob and minimatch entries when the parents' own ranges are above the floors.
+  'glob@10': '^14.0.2'
+  'glob@13': '^14.0.2'
+  'minimatch@9': '^11.0.1'
   'test-exclude@7': '^8.0.0'
   'esbuild': '^0.28.1'
   # A range here is NOT evidence that a package is patched. An override is a floor
