@@ -2,8 +2,9 @@
 
 All notable changes to `@bymax-one/nest-logger` are documented here.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+Versioning is **not** strict [SemVer](https://semver.org/spec/v2.0.0.html) while this API is pre-stable: breaking changes ship in minor and patch releases by explicit `@bymax-one` policy, so a version number carries no compatibility information. The **Apply to a derived backend** note, on the entries that carry one, is the compatibility contract — read it, not the number.
 
 The `release.yml` workflow extracts the section matching the pushed `vX.Y.Z` tag
 as the GitHub Release body, so each released version needs a matching `## [X.Y.Z]`

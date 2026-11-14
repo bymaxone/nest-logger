@@ -3,6 +3,9 @@
 > **Version:** 2.0.0
 > **Last updated:** 2026-06-18
 > **Status:** ✅ COMPLETE — v1.0.0 published to npm on 2026-06-18
+> **Versioning:** the semver bump rules and the bump-from-commits flow written below are the plan as drafted and do not
+> govern releases. Breaking changes ship in minor and patch releases, and the migration note in `CHANGELOG.md` carries the
+> compatibility information the number does not (see `AGENTS.md`).
 > **Reference spec:** [`docs/technical_specification.md`](./technical_specification.md)
 > **Target engine:** Pino 10.x + OpenTelemetry SDK 1.x (optional)
 > **Derived document:** `docs/development_tasks.md` (Layer 3 — generated from this plan)

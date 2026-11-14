@@ -3,6 +3,9 @@
 > **Version:** 2.1.0
 > **Last updated:** 2026-05-29
 > **Status:** Draft for execution
+> **Versioning:** the semver bump rules and the bump-from-commits flow written below are the plan as drafted and do not
+> govern releases. Breaking changes ship in minor and patch releases, and the migration note in `CHANGELOG.md` carries the
+> compatibility information the number does not (see `AGENTS.md`).
 > **Based on:** [`development_plan.md`](./development_plan.md) + [`technical_specification.md`](./technical_specification.md)
 > **Total tasks:** 73 (post-audit: +9 — LOG-003b, LOG-013b, LOG-021b, LOG-024 split into LOG-024a + LOG-024b, LOG-034b, LOG-040b, LOG-049b, LOG-053b, LOG-062b)
 
