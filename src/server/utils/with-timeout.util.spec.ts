@@ -1,5 +1,5 @@
 /**
- * Pins that the timeout helper settles with the work outcome or a timeout error at the deadline, leaves no timer behind, and that the timeout error is identifiable.
+ * Pins that the timeout helper settles with the work outcome or a timeout error at the deadline, clears its timer once the work settles, and that the timeout error is identifiable.
  * Layer: server/utils, tests.
  */
 import { HookTimeoutError, withTimeout } from './with-timeout.util'
