@@ -1,5 +1,5 @@
 /**
- * Verifies HttpAccessLogMiddleware: the START entry with a normalized URL and no query string, skipped paths and
+ * Verifies HttpAccessLogMiddleware: the START entry with a normalized URL and no query string, a skipped path and
  * disabled logging, terminal entries chosen by status and delivery, errorMessage handling on a 4xx, and standing
  * down when the request is already claimed.
  *
