@@ -74,9 +74,10 @@ export const depth = (field: string): readonly string[] =>
  * Under the legacy `'paths'` strategy the same names are expanded to depths 1–4
  * by {@link depth} to build {@link DEFAULT_REDACT_PATHS}.
  *
- * Append-only: a name may be added in a minor release; removing one requires a
- * major, because a field that silently stopped being redacted is a leak no
- * consumer would notice.
+ * Append-only: a name may be added in any release, and none is removed without
+ * a recorded decision and an Apply note in `CHANGELOG.md` that names the field,
+ * because a field that silently stopped being redacted is a leak no consumer
+ * would notice.
  */
 export const REDACT_COMMON_FIELDS: readonly string[] = [
   // Passwords (5)
