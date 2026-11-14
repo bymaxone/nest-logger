@@ -85,6 +85,12 @@ updates:
       prefix: ci
       include: scope
     groups:
+      # The org template ships this group for a caller that pins `agents-sync.yml` to a commit. This
+      # repository does not: every Bymax reusable here is on the `@v1` alias (AGENTS.md), which
+      # Dependabot leaves alone, so the group stays idle until a caller pins that one.
+      bymax-agents-sync:
+        patterns:
+          - 'bymaxone/.github/.github/workflows/agents-sync.yml'
       # The CodeQL sub-actions are one product with one version. `init` writes a config
       # that `analyze` reads back, and the reader refuses a config written by a
       # different version:
@@ -105,3 +111,7 @@ updates:
           - major
           - minor
           - patch
+    ignore:
+      # A new major of an org workflow is a deliberate migration, never an automatic bump.
+      - dependency-name: 'bymaxone/.github*'
+        update-types: ['version-update:semver-major']
