@@ -73,6 +73,10 @@ heading here.
   is no longer written (`socket`, `rawHeaders`, a framework field such as `params`) stops carrying
   it. Log the field you need under its own key, or register `serializers.req`.
 
+### Documentation
+
+- The README states the limits of the request serializer and of the shutdown budget.
+
 ### Fixed
 
 - **Shutdown waits for the queue of a slow destination, and no destination hook can hold the
