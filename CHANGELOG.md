@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.19] - 2026-11-14
+
 ### Changed
 
 - The `REDACT_COMMON_FIELDS` JSDoc and the README's notes on `DEFAULT_REDACT_PATHS` said a removal
@@ -2901,7 +2903,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.18...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.19...HEAD
+[1.4.19]: https://github.com/bymaxone/nest-logger/compare/v1.4.18...v1.4.19
 [1.4.18]: https://github.com/bymaxone/nest-logger/compare/v1.4.17...v1.4.18
 [1.4.17]: https://github.com/bymaxone/nest-logger/compare/v1.4.16...v1.4.17
 [1.4.16]: https://github.com/bymaxone/nest-logger/compare/v1.4.15...v1.4.16
