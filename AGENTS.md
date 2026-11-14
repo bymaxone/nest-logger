@@ -359,9 +359,9 @@ never "this is a bug".
 
 ### `DEFAULT_REDACT_PATHS` is append-only
 
-Paths may be added; a path is never removed or reworded without a major version bump, because
-removing one silently widens what reaches a sink for every consumer that never configured
-redaction. Extend coverage with the `redactPaths` option. `shouldDisableDefaultRedact` exists and
+Paths may be added; a path is never removed or reworded without a recorded decision and an Apply
+note in `CHANGELOG.md` that names the field, because removing one silently widens what reaches a
+sink for every consumer that never configured redaction. Extend coverage with the `redactPaths` option. `shouldDisableDefaultRedact` exists and
 is not a normal thing to set — a diff that sets it needs a stated reason.
 
 ### Redaction is field-based, so a value interpolated into `msg` has no name to match
