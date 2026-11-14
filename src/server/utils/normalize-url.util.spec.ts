@@ -6,6 +6,48 @@ import {
   withoutRequestSecretsIfText
 } from './normalize-url.util'
 
+/** The input grows by this factor between the two sizes a growth check compares. */
+const SIZE_FACTOR = 4
+
+/**
+ * The most the time may grow when the input grows by {@link SIZE_FACTOR}. Linear work grows by that
+ * factor, quadratic work by its square (16); the limit sits between them, so noise of a factor of two
+ * does not fail a linear function and a quadratic one cannot pass.
+ */
+const GROWTH_LIMIT = 8
+
+/** The shortest time a growth check divides by: a run this fast says nothing about the ratio. */
+const MIN_MEASURABLE_MS = 0.05
+
+/** How many runs each size gets; the least of them is the run the machine disturbed least. */
+const GROWTH_RUNS = 7
+
+/** The least time of `GROWTH_RUNS` runs of `work`, in milliseconds. */
+function leastMs(work: () => void): number {
+  let least = Number.POSITIVE_INFINITY
+  for (let run = 0; run < GROWTH_RUNS; run += 1) {
+    const started = performance.now()
+    work()
+    least = Math.min(least, performance.now() - started)
+  }
+  return least
+}
+
+/**
+ * How many times longer `work` takes on an input `SIZE_FACTOR` times larger, by the least of several
+ * runs at each size. A ratio does not depend on how fast the machine is, which an absolute time bound
+ * does.
+ *
+ * @param work - Does the work for an input of the given size.
+ * @param size - The smaller size.
+ * @returns The time at the larger size over the time at the smaller one.
+ */
+function growth(work: (size: number) => void, size: number): number {
+  const small = leastMs(() => work(size))
+  const large = leastMs(() => work(size * SIZE_FACTOR))
+  return large / Math.max(small, MIN_MEASURABLE_MS)
+}
+
 describe('normalizeUrl', () => {
   it(/*
    * A canonical UUID v4 segment must collapse to `/:id`. This is the most
@@ -359,13 +401,13 @@ describe('scrubSecretSegments, the edges of the detector', () => {
   })
 
   it('tests an email segment in linear time, whatever the dots and at signs', () => {
-    const hostile = `/x/a@${'.'.repeat(16_000)}@`
-    const started = Date.now()
+    const work = (dots: number): void => {
+      const hostile = `/x/a@${'.'.repeat(dots)}@`
+      scrubSecretSegments(hostile)
+      secretPathSegments(hostile)
+    }
 
-    scrubSecretSegments(hostile)
-    secretPathSegments(hostile)
-
-    expect(Date.now() - started).toBeLessThan(100)
+    expect(growth(work, 4_000)).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('still reads an email address with several dots in its domain', () => {
@@ -405,14 +447,19 @@ describe('a credential the segment split and the replacement order could hide', 
     )
   })
 
-  it('stays fast for a request path made of many distinct credentials', () => {
-    const url = `/${Array.from({ length: 400 }, (_, i) => `${String(i).padStart(32, 'a')}`).join('/')}`
-    const started = Date.now()
+  it('replaces a request path made of many distinct credentials in time linear in their number', () => {
+    const pathOf = (count: number): string =>
+      `/${Array.from({ length: count }, (_, i) => String(i).padStart(32, 'a')).join('/')}`
 
-    const out = withoutRequestSecrets(`Cannot GET ${url}`, [], url)
+    const out = withoutRequestSecrets(`Cannot GET ${pathOf(400)}`, [], pathOf(400))
 
-    expect(Date.now() - started).toBeLessThan(200)
     expect(out).not.toContain('aaaaaaaa')
+    expect(
+      growth((count) => {
+        const url = pathOf(count)
+        withoutRequestSecrets(`Cannot GET ${url}`, [], url)
+      }, 400)
+    ).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('reads a host pattern that is frozen, which assigning to lastIndex would throw on', () => {
