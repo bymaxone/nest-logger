@@ -1,16 +1,8 @@
 /**
- * The requests an interceptor cannot see, and the one it saw wrongly.
- *
- * NestJS runs middleware → guards → interceptors → handler, so an interceptor
- * never observes a guard rejection or an unmatched route: 401, 403, 429 and 404
- * produced no log line at all, which made brute force and route enumeration
- * invisible. It also cannot judge delivery — the response has not been flushed
- * when it completes — so an aborted request was logged as the success the
- * handler intended.
- *
- * These are e2e rather than unit because the defect was one of POSITION in the
- * request pipeline: a unit test of any single component passes while the
- * pipeline as a whole stays blind.
+ * Asserts that the prefixed root route and an unmatched 404 are logged, that a guard 401 carries ip and
+ * userAgent, that http disabled emits no access log, that the query string is stripped, that a request is
+ * not logged twice, and that an aborted request is logged as ABORTED with its correlation id.
+ * Layer: e2e.
  */
 import net from 'node:net'
 

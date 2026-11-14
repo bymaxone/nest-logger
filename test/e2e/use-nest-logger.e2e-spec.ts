@@ -1,3 +1,9 @@
+/**
+ * Asserts that after useNestLogger the NestJS Logger emits structured JSON through PinoLoggerService
+ * with context and service metadata, and that useNestLogger resolves a logger imported in a feature
+ * module without throwing and calls useLogger.
+ * Layer: e2e.
+ */
 import { Logger, Module } from '@nestjs/common'
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'

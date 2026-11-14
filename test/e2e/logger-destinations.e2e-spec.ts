@@ -1,3 +1,9 @@
+/**
+ * Asserts that a custom destination receives serialized entries, that onInit runs on boot and onShutdown
+ * on close, that LOGGER_SHUTDOWN_OK precedes teardown, that a failing onInit is isolated, and that raw
+ * NDJSON reaches stdout when the configured destination fails to initialize.
+ * Layer: e2e.
+ */
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import { BymaxLoggerModule, PinoLoggerService } from '@bymax-one/nest-logger'

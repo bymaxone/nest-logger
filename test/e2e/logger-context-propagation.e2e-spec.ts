@@ -1,3 +1,9 @@
+/**
+ * Asserts that AsyncLocalStorage context (userId, context, fields added with set()) reaches serialized
+ * entries, including across nested async operations, that an explicit userId wins, that concurrent scopes
+ * stay isolated, and that fields are omitted outside a scope.
+ * Layer: e2e.
+ */
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import { BymaxLoggerModule, LogContextService, PinoLoggerService } from '@bymax-one/nest-logger'

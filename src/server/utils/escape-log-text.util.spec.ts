@@ -1,3 +1,9 @@
+/**
+ * Asserts that toSingleLineMessage escapes line terminators, ESC and other control characters but keeps
+ * tabs and ordinary text, that escapeControlCharacters keeps newlines and escapes carriage return, and that
+ * toBoundedMessage escapes line breaks before cutting at the limit.
+ * Layer: server/utils, tests.
+ */
 import {
   toBoundedMessage,
   escapeControlCharacters,
