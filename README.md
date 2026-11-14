@@ -318,9 +318,9 @@ The count is the module's own queue in front of the destination plus what the de
 
 An entry still queued when the process ends is lost. `process.exit()` does not wait for a queue: measured on a pipe, 568 of 200000 lines were delivered after `process.exit()`, and `await app.close()` before the exit delivers them all, within the `shutdown` budget above.
 
-| Option                      | Type     | Default    | Description                                                                                                                                                             |
-| --------------------------- | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `destinationQueue.maxBytes` | `number` | `33554432` | The most UTF-8 bytes of NDJSON one destination may hold queued: an integer from 1024 to 2147483647, or `0` for no bound. 32 MiB is about 140000 lines of the usual size |
+| Option                      | Type     | Default    | Description                                                                                                              |
+| --------------------------- | -------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `destinationQueue.maxBytes` | `number` | `33554432` | The most UTF-8 bytes of NDJSON one destination may hold queued: an integer from 1024 to 2147483647, or `0` for no bound. |
 
 ### Options from a class
 
