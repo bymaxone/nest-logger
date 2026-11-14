@@ -13,7 +13,10 @@ import { serializeRequestValue, withSerializedRequest } from './serialize-reques
 
 const HEX = 'a3f1c9d2b7e4086f5a1c3d9e7b2f4a6c8d0e1f3a5b7c9d2e4f6a8b0c1d3e5f7a'
 
-/** A real request with the given raw headers and URL. */
+/**
+ * A real `IncomingMessage` with the given raw headers and URL, not an object literal: its `headers` is
+ * a prototype accessor and its `rawHeaders` holds every header value beside its name.
+ */
 function request(rawHeaders: string[], url = '/probe?token=QUERY-SECRET'): IncomingMessage {
   const req = new IncomingMessage(new Socket())
   req.method = 'POST'
