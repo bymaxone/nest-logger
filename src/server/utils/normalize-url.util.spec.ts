@@ -58,7 +58,7 @@ function leastMs(work: () => void, runs: number): number {
  * @param work - Does the work for an input of the given size.
  * @param size - The smaller size.
  * @returns The time at the larger size over the time at the smaller one.
- * @throws When the probe at a quarter of the larger size already grows like quadratic work.
+ * @throws When the probe at `PROBE_FACTOR` times the smaller size already grows like quadratic work.
  */
 function growth(work: (size: number) => void, size: number): number {
   const small = Math.max(
