@@ -858,7 +858,7 @@ A `LOGGER_BOOTSTRAP_WARNING` is emitted on startup so security reviews can audit
 
 ### An append-only default list
 
-`DEFAULT_REDACT_PATHS` is append-only by contract: a path may be added in a minor release, but removing one requires a major version. A field that silently stopped being redacted is a leak nobody would notice.
+`DEFAULT_REDACT_PATHS` is append-only by contract: a path may be added in any release, and none is removed without a recorded decision and an Apply note in `CHANGELOG.md` that names the field. A field that silently stopped being redacted is a leak nobody would notice.
 
 ### Validated trace identifiers
 
@@ -928,7 +928,7 @@ Every serializer, the default `err` one and any you supply, is wrapped so a fiel
 | PCI DSS             | `cardNumber`, `cardCvv`, `cvv`, `cvc`, `cardExpiry`                                                     |
 | LGPD documents      | `cpf`, `cnpj`, `rg`, plus `email` as a conservative default                                             |
 | HTTP headers        | `authorization`, `cookie`, `x-api-key`, `x-auth-token`, `set-cookie`                                    |
-| Redact list         | `DEFAULT_REDACT_PATHS` is append-only; removal requires a major version                                 |
+| Redact list         | `DEFAULT_REDACT_PATHS` is append-only; a removal needs a recorded decision and an Apply note            |
 | Trace injection     | `isValidTraceId` / `isValidSpanId` validate every identifier before it is written                       |
 | URL cardinality     | UUIDs, ULIDs, nanoids and numeric IDs become `:id`; the query string is stripped                        |
 | Destination failure | Every `write()` is wrapped; a failure goes to `stderr` and is swallowed                                 |
