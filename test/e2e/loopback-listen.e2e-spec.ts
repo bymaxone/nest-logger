@@ -161,10 +161,13 @@ describe('Loopback listen (e2e)', () => {
     const target = server()
 
     const together = await Promise.all([request(target).get('/a'), request(target).get('/b')])
+    const closedAfterTheGroup = target.listening
     const after = await request(target).get('/c')
 
     expect(together.map((response) => response.text)).toEqual([LOOPBACK_HOST, LOOPBACK_HOST])
+    expect(closedAfterTheGroup).toBe(false)
     expect(after.text).toBe(LOOPBACK_HOST)
+    expect(target.listening).toBe(false)
   })
 
   /**
