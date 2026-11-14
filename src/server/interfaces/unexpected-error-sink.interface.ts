@@ -27,6 +27,11 @@ export interface UnexpectedErrorReport {
   readonly correlationId?: string
   /** The active OpenTelemetry trace id. The key is absent when nothing is recording. */
   readonly traceId?: string
+  /**
+   * How many further occurrences of the same failure were withheld in the window that just ended.
+   * Present only on the summary that closes a window; absent on a report of one occurrence.
+   */
+  readonly repeated?: number
 }
 
 /**

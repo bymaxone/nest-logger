@@ -32,8 +32,9 @@ import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { DestinationHealth } from '../services/destination-health.service'
 
 /**
- * Report one destination write failure — one line per failed write (not
- * throttled, so a sustained outage stays visible rather than silently dropping).
+ * Report one destination write failure, throttled by the caller: the first failure of a window is
+ * written and the rest of the window is counted, so a destination that refuses every entry costs
+ * one stderr line per window and not one per entry.
  *
  * Formatting and the stderr-vs-logger reasoning live in
  * {@link reportDestinationFailure}, shared with the registry's init-failure path
@@ -43,8 +44,9 @@ import type { DestinationHealth } from '../services/destination-health.service'
  *   under `safeDestinationName` here rather than at the call site, which sits
  *   inside the catch and the rejection handler.
  * @param cause - The thrown or rejected value.
+ * @param due - The failures since the last report, this one included.
  */
-function reportWriteFailure(destination: ILogDestination, cause: unknown): void {
+function reportWriteFailure(destination: ILogDestination, cause: unknown, due: number): void {
   // The name is read HERE, under `safeDestinationName`, not at the call site: the
   // call site is inside the catch and the rejection handler, where a throwing
   // getter would skip `callback()` and become the very unhandled rejection this
@@ -54,7 +56,8 @@ function reportWriteFailure(destination: ILogDestination, cause: unknown): void 
     RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
     name,
     cause,
-    `Log destination "${name}" failed to write; the entry was dropped`
+    `Log destination "${name}" failed to write; the entry was dropped`,
+    due - 1
   )
 }
 
@@ -225,7 +228,7 @@ export function destinationToStream(
       }
       // A destination failure is CONTAINED, not propagated: calling the callback
       // with an error would surface as an unhandled stream 'error' and crash the
-      // host. Report to stderr (one line per failure), then signal success so the
+      // host. Report to stderr (one line per window, see `recordWriteFailure`), then signal success so the
       // fan-out continues.
       const onFailure = (cause: unknown): void => {
         // Recorded, not only reported. A destination that threw on a write did
@@ -233,8 +236,10 @@ export function destinationToStream(
         // delivery from init health and level alone — telling a buffering sink
         // its held copies are safe elsewhere when the sink it is trusting has
         // been dropping them.
-        health.markWriteFailed(destination)
-        reportWriteFailure(destination, cause)
+        const due = health.recordWriteFailure(destination, performance.now())
+        if (due !== undefined) {
+          reportWriteFailure(destination, cause, due)
+        }
         callback()
       }
       try {

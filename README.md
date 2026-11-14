@@ -347,7 +347,7 @@ Set `http.isEnabled: true`, then wire the access log with `applyAccessLog(app)` 
 
 `HTTP_REQUEST_START` is emitted **before guards**, so it carries no `userId`: authentication runs in a guard and there is no principal yet. The acting user is on the terminal entry. Both entries carry the same `requestId`.
 
-URLs are normalized (`/users/550e8400-e29b-41d4-a716-446655440000` becomes `/users/:id`) so label cardinality stays bounded. The **query string is stripped** from every logged URL and from the message of a logged exception, because a magic-link token in a query parameter is a secret no key-name redaction can scrub out of a string. Only a literal `?` starts a query. A path segment that looks like a credential (a long hex value, a JWT, an opaque token, an email address) is written as `:redacted` in `url`, `fullUrl` and the not-found message, and `http.secretPathSegments` adds your own patterns. `fullUrl` is the raw path without its query and with those segments replaced, not the request as received. A long camelCase or Pascal-case name cannot be told from a token and is replaced too. A secret the rules cannot see, such as `;jsessionid=...` in a segment, stays in `url`, and the message of a 5xx error is the application's own text, which is not scrubbed.
+URLs are normalized (`/users/550e8400-e29b-41d4-a716-446655440000` becomes `/users/:id`) so label cardinality stays bounded. The **query string is stripped** from every logged URL and from the message of a logged exception, because a magic-link token in a query parameter is a secret no key-name redaction can scrub out of a string. Only a literal `?` starts a query. A path segment that looks like a credential (a long hex value, a JWT, an opaque token, an email address, or a dotted token such as `ya29.…` or `v4.local.…` of which any dot-separated part is a long opaque token) is written as `:redacted` in `url`, `fullUrl` and the not-found message, and `http.secretPathSegments` adds your own patterns. `fullUrl` is the raw path without its query and with those segments replaced, not the request as received. A long camelCase or Pascal-case name cannot be told from a token and is replaced too. A secret the rules cannot see, such as `;jsessionid=...` in a segment, stays in `url`, and the message of a 5xx error is the application's own text, which is not scrubbed.
 
 For a body that does not parse (`entity.parse.failed`), one the parser's `verify` refuses (`entity.verify.failed`), or an unsupported content encoding or charset, `HTTP_EXCEPTION_HANDLED` carries a fixed message and the parser `type` in `bodyParserType`, because the parser's message can quote part of the body. The response the client receives is the application's concern. The malformed-JSON case needs the Express adapter and a body parser mounted before `app.init()`, as Nest's default one is; with another adapter, or a parser mounted after `app.init()`, that entry keeps the parser's message.
 
@@ -414,14 +414,17 @@ export class UnexpectedErrorSinkModule {}
 
 Import it next to `BymaxLoggerModule`. The binding resolves `PinoLoggerService` because that module is global by default; with `isGlobal: false`, add the same `forRoot`/`forRootAsync` result to the sink module's `imports`, kept in a constant (a second `forRoot` call builds a second logger). Each unexpected error then produces one `error` entry with the key `HTTP_UNEXPECTED_ERROR`:
 
-| Field           | Content                                                                                                 |
-| --------------- | ------------------------------------------------------------------------------------------------------- |
-| `err`           | The original error through the `err` serializer: type, message, scrubbed stack, cause chain, own fields |
-| `method`        | HTTP method                                                                                             |
-| `route`         | Matched route template (`/invoices/:id`), or `<unmatched>` before routing — never the raw URL           |
-| `correlationId` | nest-core's correlation id, when one resolved                                                           |
+| Field           | Content                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------- |
+| `err`           | The original error through the `err` serializer: type, message, scrubbed stack, cause chain, own fields     |
+| `method`        | HTTP method                                                                                                 |
+| `route`         | Matched route template (`/invoices/:id`), or `<unmatched>` before routing — never the raw URL               |
+| `correlationId` | nest-core's correlation id, when one resolved                                                               |
+| `repeated`      | On the summary that closes a nest-core window, how many further occurrences it stands for; absent otherwise |
+| `errorCode`     | For an `HttpException`, the `code` of its response (flat or under `error`), up to 128 characters            |
+| `errorDetails`  | For an `HttpException`, the `details` object of its response, censored like any other metadata              |
 
-The sink adds no body, headers or query string. The error is serialized as on every `err` entry, own fields included, so an error that itself carries request data brings it along, under the same key-name redaction. `record()` never throws, so a failing destination cannot change the response. This package does not import nest-core: the class matches its contract by shape, and `IUnexpectedErrorSink` and `UnexpectedErrorReport` are exported for reference.
+`errorCode` and `errorDetails` are written whatever `errorOwnFields` says, and only when the exception carries them; an error that is not an exception, or one whose response cannot be read, is still written without them. `errorDetails` is not size-capped and nest-core withholds details only from the HTTP body, so it can carry what a driver put there, such as a `host:port`: keep access to the log controlled. The sink adds no body, headers or query string. The error is serialized as on every `err` entry, own fields included, so an error that itself carries request data brings it along, under the same key-name redaction. `record()` never throws, so a failing destination cannot change the response. This package does not import nest-core: the class matches its contract by shape, and `IUnexpectedErrorSink` and `UnexpectedErrorReport` are exported for reference.
 
 ---
 
@@ -863,7 +866,7 @@ The OTel mixin passes the active span's identifiers through `isValidTraceId` / `
 
 ### Destination failures are contained
 
-Every `write()` runs inside a try/catch. A destination that throws or rejects produces a `LOGGER_DESTINATION_WRITE_FAILED` line on `stderr` (never back through the logger, which would loop) and the entry is dropped for that sink only. A destination whose `onInit()` rejects is reported as `LOGGER_DESTINATION_INIT_FAILED` and removed from the fan-out and shutdown, and never blocks boot.
+Every `write()` runs inside a try/catch. A destination that throws or rejects produces a `LOGGER_DESTINATION_WRITE_FAILED` line on `stderr` (never back through the logger, which would loop) and the entry is dropped for that sink only. The line is written for the first failure and then at most once every 10 seconds per destination, with `suppressed` counting the failures it stands in for, and shutdown says how many writes the destination failed in total when it failed more than one. A destination whose `onInit()` rejects is reported as `LOGGER_DESTINATION_INIT_FAILED` and removed from the fan-out and shutdown, and never blocks boot.
 
 ### What redaction covers, and what it cannot
 

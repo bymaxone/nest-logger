@@ -356,10 +356,19 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    */
   private reportDropTotals(): void {
     for (const destination of this.registered) {
+      const name = toSingleLineMessage(safeDestinationName(destination))
       const total = this.health.droppedTotal(destination)
       if (total > 0) {
         writeStderrSafely(
-          `[DestinationRegistry] Destination "${toSingleLineMessage(safeDestinationName(destination))}" dropped ${String(total)} entries in total because its queue was full\n`
+          `[DestinationRegistry] Destination "${name}" dropped ${String(total)} entries in total because its queue was full\n`
+        )
+      }
+      // The per-failure report is throttled to one line a window, so the total is said here.
+      // One failure was reported in full when it happened and needs no total.
+      const failed = this.health.failedWriteTotal(destination)
+      if (failed > 1) {
+        writeStderrSafely(
+          `[DestinationRegistry] Destination "${name}" failed ${String(failed)} writes in total; each dropped its entry\n`
         )
       }
     }

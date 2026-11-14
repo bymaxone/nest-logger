@@ -75,6 +75,10 @@ export class PinoUnexpectedErrorSink implements IUnexpectedErrorSink {
       if (report.correlationId !== undefined) {
         metadata['correlationId'] = report.correlationId
       }
+      if (isCount(report.repeated)) {
+        metadata['repeated'] = report.repeated
+      }
+      Object.assign(metadata, exceptionFields(report.error))
       this.logger.errorStructured(
         RESERVED_LOG_KEYS.HTTP_UNEXPECTED_ERROR,
         toLoggableError(report.error),
@@ -111,4 +115,52 @@ function toLoggableError(value: unknown): Error {
   // Neither call throws: `isErrorLike` answers for a value whose `name` or `message` cannot
   // be read, and `sanitizeError` degrades such a value to its `SanitizeFailed` node.
   return isErrorLike(value) ? value : sanitizeError(value)
+}
+
+/** Longest `code` written: a code is a short identifier, and the field is not a place for a message. */
+const MAX_CODE_LENGTH = 128
+
+/** A positive whole number a counter can hold exactly. */
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+}
+
+/** Whether a value is a non-null object, the shape a response carrier and `details` take. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/**
+ * The `code` and `details` a typed exception carries in its response, as the metadata fields
+ * `errorCode` and `errorDetails`.
+ *
+ * nest-core answers with `{ code, message, details }` flat on the response, or nested under `error`;
+ * both are read the way nest-core reads them. An error with no `getResponse`, one whose response is
+ * text, or one that throws while being read has no such fields, and the report is still written
+ * without them: reading these is a courtesy to the operator and never a reason to lose the entry.
+ *
+ * @param error - The value nest-core reported, by identity.
+ * @returns The fields that could be read, possibly none.
+ */
+function exceptionFields(error: unknown): Record<string, unknown> {
+  try {
+    // Stryker disable next-line ConditionalExpression: `typeof error['getResponse'] !== 'function'` replaced by `false` is equivalent. The call below then throws for a value that is not a function and the catch returns the same empty result; the check only spares an ordinary error, the common case, a thrown exception.
+    if (!isRecord(error) || typeof error['getResponse'] !== 'function') return {}
+    const response: unknown = (error['getResponse'] as () => unknown)()
+    if (!isRecord(response)) return {}
+    const nested = response['error']
+    const carrier = isRecord(nested) && typeof nested['code'] === 'string' ? nested : response
+    const fields: Record<string, unknown> = {}
+    const code = carrier['code']
+    if (typeof code === 'string') {
+      fields['errorCode'] = code.slice(0, MAX_CODE_LENGTH)
+    }
+    const details = carrier['details']
+    if (isRecord(details)) {
+      fields['errorDetails'] = details
+    }
+    return fields
+  } catch {
+    return {}
+  }
 }

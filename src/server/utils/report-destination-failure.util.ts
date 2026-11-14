@@ -33,12 +33,16 @@ import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
  * @param name - The failing destination's name.
  * @param cause - The thrown or rejected value, in whatever shape it arrived.
  * @param msg - Human-readable explanation, including what happens to the entry.
+ * @param suppressed - How many failures since the last line were not reported, when a report is
+ *   throttled. Written as `suppressed` only when it is positive, so a caller that never throttles
+ *   writes the same line as before.
  */
 export function reportDestinationFailure(
   logKey: ReservedLogKey,
   name: string,
   cause: unknown,
-  msg: string
+  msg: string,
+  suppressed = 0
 ): void {
   // Escaped per sink, like every other path that can reach a terminal.
   // `JSON.stringify` escapes C0 and nothing else, so DEL, the C1 range
@@ -51,7 +55,8 @@ export function reportDestinationFailure(
       logKey,
       destination: toSingleLineMessage(name),
       err: describeCause(cause),
-      msg: toSingleLineMessage(msg)
+      msg: toSingleLineMessage(msg),
+      ...(suppressed > 0 ? { suppressed } : {})
     }) + '\n'
   )
 }
