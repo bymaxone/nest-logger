@@ -44,23 +44,29 @@ const PROBE_RUNS = 3
 /** The most the probe may grow: linear work grows by the probe factor (4) and quadratic work by 16. */
 const PROBE_LIMIT = 12
 
-/** The least time of `runs` timed runs of `work`, in milliseconds, after the warm-up runs. */
-function leastMs(work: () => void, runs: number): number {
+/**
+ * The least CPU time of `runs` timed runs of `work`, in milliseconds, after the warm-up runs. It is
+ * the user plus system time this process spent, so time the scheduler gave to other processes while
+ * the run waited is not counted, as it is in a wall-clock reading.
+ */
+function leastCpuMs(work: () => void, runs: number): number {
   for (let run = 0; run < WARM_UP_RUNS; run += 1) work()
   let least = Number.POSITIVE_INFINITY
   for (let run = 0; run < runs; run += 1) {
-    const started = performance.now()
+    const started = process.cpuUsage()
     work()
-    least = Math.min(least, performance.now() - started)
+    const spent = process.cpuUsage(started)
+    least = Math.min(least, (spent.user + spent.system) / 1000)
   }
   return least
 }
 
 /**
- * How many times longer `work` takes on an input `SIZE_FACTOR` times larger, by the least of several
- * runs at each size. A ratio does not depend on how fast the machine is, which an absolute time bound
- * does. The small size is large enough that one run takes about 2 ms, well above the clock's
- * resolution.
+ * How many times more CPU time `work` takes on an input `SIZE_FACTOR` times larger, by the least of
+ * several runs at each size. A ratio does not depend on how fast the machine is, which an absolute
+ * time bound does, and CPU time, unlike a wall-clock reading, does not count the time other
+ * processes took while the run waited. The small size is large enough that one run takes about 2 ms,
+ * well above the clock's resolution.
  *
  * @param work - Does the work for an input of the given size.
  * @param size - The smaller size.
@@ -69,14 +75,14 @@ function leastMs(work: () => void, runs: number): number {
  */
 function growth(work: (size: number) => void, size: number): number {
   const small = Math.max(
-    leastMs(() => work(size), GROWTH_RUNS),
+    leastCpuMs(() => work(size), GROWTH_RUNS),
     MIN_MEASURABLE_MS
   )
-  const probe = leastMs(() => work(size * PROBE_FACTOR), PROBE_RUNS) / small
+  const probe = leastCpuMs(() => work(size * PROBE_FACTOR), PROBE_RUNS) / small
   if (probe > PROBE_LIMIT) {
     throw new Error(`The work grew ${probe.toFixed(1)} times for ${PROBE_FACTOR} times the input`)
   }
-  return leastMs(() => work(size * SIZE_FACTOR), GROWTH_RUNS) / small
+  return leastCpuMs(() => work(size * SIZE_FACTOR), GROWTH_RUNS) / small
 }
 
 describe('normalizeUrl', () => {
