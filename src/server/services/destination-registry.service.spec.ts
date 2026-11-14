@@ -63,11 +63,11 @@ describe('DestinationRegistry', () => {
   }
 
   describe('onModuleInit', () => {
-    it(/*
+    /*
      * Every registered destination must be initialized and marked active —
      * including one with no onInit hook (the optional-chain must not break it).
      */
-    'initializes every destination and marks them active', async () => {
+    it('initializes every destination and marks them active', async () => {
       const withHook = makeDestination('with-hook', { onInit: jest.fn() })
       const hookless = makeDestination('hookless')
       const registry = new DestinationRegistry([withHook, hookless], logger, options, health)
@@ -78,12 +78,12 @@ describe('DestinationRegistry', () => {
       expect(registry.getActive()).toEqual([withHook, hookless])
     })
 
-    it(/*
+    /*
      * A destination whose onInit throws must be dropped from the active set and
      * reported as LOGGER_DESTINATION_INIT_FAILED — without aborting boot or
      * preventing the healthy destinations from initializing.
      */
-    'skips a failing destination and reports it without blocking the others', async () => {
+    it('skips a failing destination and reports it without blocking the others', async () => {
       const boom = makeDestination('boom', {
         onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
       })
@@ -101,14 +101,14 @@ describe('DestinationRegistry', () => {
       })
     })
 
-    it(/*
+    /*
      * The human-readable message is the operator-facing half of the report: it
      * has to name the destination, say that it will receive nothing, AND state
      * the stdout fallback — that last sentence is what tells a developer staring
      * at raw NDJSON where it is coming from. Asserted because mutation testing
      * showed the message could be emptied entirely without a test noticing.
      */
-    'explains the consequence and the fallback in the report message', async () => {
+    it('explains the consequence and the fallback in the report message', async () => {
       const boom = makeDestination('boom', {
         onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
       })
@@ -122,14 +122,14 @@ describe('DestinationRegistry', () => {
       expect(msg).toContain('fall back to raw NDJSON on stdout')
     })
 
-    it(/*
+    /*
      * REGRESSION — the init failure must NOT be reported through the logger. Doing
      * so routes the explanation into the very sink set that just failed: with
      * `destinations` replacing the default stdout sink, a single failing sink
      * produced an application that booted, ran, exited 0 and wrote nothing
      * anywhere — with the diagnostic naming the cause delivered into the dead sink.
      */
-    'reports the failure to stderr and never through the logger', async () => {
+    it('reports the failure to stderr and never through the logger', async () => {
       const boom = makeDestination('boom', {
         onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
       })
@@ -141,12 +141,12 @@ describe('DestinationRegistry', () => {
       expect(errorSpy).not.toHaveBeenCalled()
     })
 
-    it(/*
+    /*
      * A failed destination must be marked in the shared health record — that is
      * what removes it from the write fan-out, which the multistream (built before
      * any onInit ran) cannot do for itself.
      */
-    'marks a failed destination in the shared health record', async () => {
+    it('marks a failed destination in the shared health record', async () => {
       const boom = makeDestination('boom', {
         onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
       })
@@ -161,14 +161,14 @@ describe('DestinationRegistry', () => {
       expect(health.shouldRescue(boom)).toBe(false)
     })
 
-    it(/*
+    /*
      * When EVERY destination fails, one must be elected to rescue entries as raw
      * NDJSON — and the election must happen before announceBootstrap() runs, or
      * the bootstrap entries (including LOGGER_BOOTSTRAP_WARNING, the signal that
      * PII redaction was disabled) are lost exactly when the configuration is
      * already known to be broken.
      */
-    'elects a rescuer before announcing bootstrap when every destination fails', async () => {
+    it('elects a rescuer before announcing bootstrap when every destination fails', async () => {
       const electedDuringAnnounce: boolean[] = []
       const boom = makeDestination('boom', {
         onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
@@ -184,11 +184,11 @@ describe('DestinationRegistry', () => {
       expect(electedDuringAnnounce).toEqual([true])
     })
 
-    it(/*
+    /*
      * A destination's effective level (minLevel when set, otherwise the module
      * level) must be what is recorded, since the rescuer is elected by level.
      */
-    'records the destination minLevel as its effective level', async () => {
+    it('records the destination minLevel as its effective level', async () => {
       const quiet: ILogDestination = {
         ...makeDestination('quiet', {
           onInit: jest.fn().mockRejectedValue(new Error('init-fail'))
@@ -208,11 +208,11 @@ describe('DestinationRegistry', () => {
       expect(health.shouldRescue(quiet)).toBe(false)
     })
 
-    it(/*
+    /*
      * A non-Error thrown from onInit (e.g. a bare string) must be coerced into a
      * serializable envelope so the stderr report is always valid NDJSON.
      */
-    'coerces a non-Error onInit failure into a serializable envelope', async () => {
+    it('coerces a non-Error onInit failure into a serializable envelope', async () => {
       const weird = makeDestination('weird', {
         onInit: jest.fn().mockRejectedValue('string-failure')
       })
@@ -225,14 +225,14 @@ describe('DestinationRegistry', () => {
       })
     })
 
-    it(/*
+    /*
      * REGRESSION — the never-throw contract has to cover READING the rejected
      * value, not just writing the report. A value whose `toString` throws was
      * coerced outside the guard, so the exception escaped the registry's own
      * catch and aborted application bootstrap: the failure handler became a
      * harder failure than the one it was handling.
      */
-    'survives a rejection value that throws while being coerced', async () => {
+    it('survives a rejection value that throws while being coerced', async () => {
       const hostile = {
         toString(): string {
           throw new Error('hostile toString')
@@ -247,13 +247,13 @@ describe('DestinationRegistry', () => {
       expect(health.isFailed(boom)).toBe(true)
     })
 
-    it(/*
+    /*
      * Control characters in a consumer-named destination must not reach a
      * terminal unescaped. `JSON.stringify` escapes C0 and nothing else, so DEL,
      * C1 (U+0085 NEL), U+2028 and U+2029 would survive verbatim into a line an
      * operator reads — enough to forge a rendered entry.
      */
-    'escapes control characters in the reported destination name', async () => {
+    it('escapes control characters in the reported destination name', async () => {
       const sneaky = makeDestination('evil\u0085forged', {
         onInit: jest.fn().mockRejectedValue(new Error('nope'))
       })
@@ -266,12 +266,12 @@ describe('DestinationRegistry', () => {
       expect(reportedInitFailure()['destination']).toContain('evil')
     })
 
-    it(/*
+    /*
      * Reporting a broken sink must never become the crash it exists to prevent —
      * stderr itself can be a closed pipe (`node app | head`), and EPIPE there must
      * be swallowed rather than aborting bootstrap.
      */
-    'survives stderr itself failing', async () => {
+    it('survives stderr itself failing', async () => {
       stderrSpy.mockImplementation(() => {
         throw new Error('EPIPE')
       })
@@ -285,11 +285,11 @@ describe('DestinationRegistry', () => {
   })
 
   describe('getActive', () => {
-    it(/*
+    /*
      * Before onModuleInit runs, the active set must be empty (not the registered
      * list) — nothing is "active" until it has successfully initialized.
      */
-    'returns an empty list before initialization', () => {
+    it('returns an empty list before initialization', () => {
       const registry = new DestinationRegistry([makeDestination('a')], logger, options, health)
       expect(registry.getActive()).toEqual([])
     })
@@ -320,14 +320,14 @@ describe('DestinationRegistry — OTel availability warning', () => {
       (call) => (call[3] as { reason?: string } | undefined)?.reason === 'OTEL_API_UNAVAILABLE'
     )
 
-  it(/*
+  /*
    * REGRESSION — a missing `@opentelemetry/api` used to be indistinguishable from
    * "no active span": both produce entries with no `traceId`. The consumer asked
    * for auto-injection, so the failure to deliver it has to be visible at boot,
    * exactly once, or the misconfiguration is invisible for the life of the
    * process.
    */
-  'warns once when auto-injection is on and the OTel API is unavailable', async () => {
+  it('warns once when auto-injection is on and the OTel API is unavailable', async () => {
     mockedDetect.mockReturnValue(undefined)
 
     await boot({ service: { name: 'app', version: '1.0.0' } })
@@ -346,11 +346,11 @@ describe('DestinationRegistry — OTel availability warning', () => {
     )
   })
 
-  it(/*
+  /*
    * Nothing was asked for, so nothing is missing. A logger with auto-injection
    * off must not nag about an optional peer it was never going to use.
    */
-  'stays silent when auto-injection is disabled', async () => {
+  it('stays silent when auto-injection is disabled', async () => {
     mockedDetect.mockReturnValue(undefined)
 
     await boot({
@@ -361,11 +361,11 @@ describe('DestinationRegistry — OTel availability warning', () => {
     expect(otelWarnings()).toHaveLength(0)
   })
 
-  it(/*
+  /*
    * The peer resolves, so auto-injection will work — warning here would train
    * consumers to ignore the signal.
    */
-  'stays silent when the OTel API resolves', async () => {
+  it('stays silent when the OTel API resolves', async () => {
     mockedDetect.mockReturnValue({ getActiveSpan: () => undefined })
 
     await boot({ service: { name: 'app', version: '1.0.0' } })

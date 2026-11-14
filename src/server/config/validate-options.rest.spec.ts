@@ -21,11 +21,11 @@ const withOption = (key: string, value: unknown): BymaxLoggerModuleOptions =>
 const goodDestination = { name: 'sink', write: (): void => {} }
 
 describe('validateOptions: scalars and customization hooks', () => {
-  it(/*
+  /*
    * Every value below is a valid configuration. A tightening of the validator must
    * not reject what the documented types accept.
    */
-  'accepts a fully specified valid configuration', () => {
+  it('accepts a fully specified valid configuration', () => {
     expect(() =>
       validateOptions({
         ...base,
@@ -114,11 +114,11 @@ describe('validateOptions: scalars and customization hooks', () => {
     }
   )
 
-  it(/*
+  /*
    * A serializer that is not a function would throw on the first entry that carries
    * its key, inside the logging path. The message names the offending key.
    */
-  'rejects a serializer that is not a function and names its key', () => {
+  it('rejects a serializer that is not a function and names its key', () => {
     expect(() =>
       validateOptions(withOption('serializers', { order: (o: unknown) => o, user: 'nope' }))
     ).toThrow(/options\.serializers\.user must be a function/)
@@ -180,12 +180,12 @@ describe('validateOptions: destinations', () => {
     }
   )
 
-  it(/*
+  /*
    * A destination may expose `name` through a getter that throws; the registry reads
    * it under a guard and reports 'unknown'. Validation must not turn that tolerated
    * case into a bootstrap failure.
    */
-  'tolerates a destination whose name getter throws', () => {
+  it('tolerates a destination whose name getter throws', () => {
     const hostile = {
       get name(): string {
         throw new Error('boom')
@@ -215,10 +215,10 @@ describe('validateOptions: destinations', () => {
     }
   )
 
-  it(/*
+  /*
    * An empty list is valid and means the stdout default, so it must not be rejected.
    */
-  'accepts an empty destinations list', () => {
+  it('accepts an empty destinations list', () => {
     expect(() => validateOptions(withOption('destinations', []))).not.toThrow()
   })
 })
@@ -254,11 +254,11 @@ describe('validateOptions: http', () => {
     }
   )
 
-  it(/*
+  /*
    * Each entry is `.test()`-ed against every request path, so the list itself must be
    * an array.
    */
-  'rejects http.excludePaths that is not an array', () => {
+  it('rejects http.excludePaths that is not an array', () => {
     expect(() => validateOptions(withOption('http', { excludePaths: /^\/health$/ }))).toThrow(
       /options\.http\.excludePaths must be an array of RegExp/
     )
@@ -301,13 +301,13 @@ describe('validateOptions: http', () => {
     ).not.toThrow()
   })
 
-  it(/*
+  /*
    * `readonly RegExp[]` also admits a pattern built in another realm (a `vm`
    * context, a worker, a test sandbox boundary), for which `instanceof RegExp` is
    * false although `.test()` works. Rejecting it would turn a configuration that
    * booted before into a bootstrap failure, so the check is realm-independent.
    */
-  'accepts a RegExp built in another realm in http.excludePaths', () => {
+  it('accepts a RegExp built in another realm in http.excludePaths', () => {
     const foreign = runInNewContext('/^\\/probe$/') as RegExp
     expect(foreign instanceof RegExp).toBe(false)
     expect(() => validateOptions(withOption('http', { excludePaths: [foreign] }))).not.toThrow()
@@ -368,10 +368,10 @@ describe('validateOptions: otel', () => {
     }
   )
 
-  it(/*
+  /*
    * The switch is read as a boolean, and a string would be truthy.
    */
-  'rejects a non-boolean otel.shouldAutoInjectTraceContext', () => {
+  it('rejects a non-boolean otel.shouldAutoInjectTraceContext', () => {
     expect(() =>
       validateOptions(withOption('otel', { shouldAutoInjectTraceContext: 'false' }))
     ).toThrow(/options\.otel\.shouldAutoInjectTraceContext must be a boolean/)

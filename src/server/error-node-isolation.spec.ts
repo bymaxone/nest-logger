@@ -103,10 +103,10 @@ describe('errorStructured with an error that cannot be read', () => {
     }
   )
 
-  it(/*
+  /*
    * The control: a readable error is emitted as before, with no marker.
    */
-  'emits a readable error unchanged', () => {
+  it('emits a readable error unchanged', () => {
     const { service, entries } = createPipeline()
 
     service.errorStructured('PAYMENT_FAILED', new TypeError('boom'), 'u1', { paymentId: 'p1' })
@@ -117,11 +117,11 @@ describe('errorStructured with an error that cannot be read', () => {
     expect(entry['err']).not.toHaveProperty('_errorFieldsIncomplete')
   })
 
-  it(/*
+  /*
    * A record whose metadata is hostile still fails closed as a whole: only an Error node is
    * isolated, so the envelope keeps its documented meaning.
    */
-  'still fails the record when the metadata, not the error, is hostile', () => {
+  it('still fails the record when the metadata, not the error, is hostile', () => {
     const { service, entries } = createPipeline()
     // Nested one level, so it passes the service's own metadata copy and reaches the walk.
     const hostile = {

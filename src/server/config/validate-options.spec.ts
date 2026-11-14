@@ -12,12 +12,12 @@ describe('validateOptions', () => {
     service: { name: 'app', version: '1.0.0' }
   }
 
-  it(/*
+  /*
    * The minimal-valid shape (only `service`) must pass — every other field
    * is optional. Guards against an accidental tightening of the required
    * surface.
    */
-  'should accept the minimal valid options', () => {
+  it('should accept the minimal valid options', () => {
     expect(() => validateOptions(validOpts)).not.toThrow()
   })
 
@@ -39,11 +39,11 @@ describe('validateOptions', () => {
     }
   )
 
-  it(/*
+  /*
    * Unknown `level` strings must be rejected so consumers spot the typo at
    * bootstrap rather than discover silent drops at runtime.
    */
-  'should throw when level is not a valid LogLevel', () => {
+  it('should throw when level is not a valid LogLevel', () => {
     // Assert that at least one comma-space separator appears in the level list
     // so the `join(', ')` literal is pinned — an empty separator mutant collapses
     // the list into a single unreadable token.
@@ -52,22 +52,22 @@ describe('validateOptions', () => {
     )
   })
 
-  it(/*
+  /*
    * Non-string service.name must be rejected — pins the `typeof !== 'string'`
    * guard so it cannot be mutated away. TypeScript callers cannot reach this
    * branch, but JavaScript callers can.
    */
-  'should throw when service.name is not a string', () => {
+  it('should throw when service.name is not a string', () => {
     expect(() =>
       validateOptions({ ...validOpts, service: { name: 123 as never, version: '1.0.0' } })
     ).toThrow('[BymaxLoggerModule] options.service.name must be a non-empty string')
   })
 
-  it(/*
+  /*
    * Non-string service.version must be rejected — same guard as above, for the
    * version field.
    */
-  'should throw when service.version is not a string', () => {
+  it('should throw when service.version is not a string', () => {
     expect(() =>
       validateOptions({ ...validOpts, service: { name: 'app', version: [] as never } })
     ).toThrow('[BymaxLoggerModule] options.service.version must be a non-empty string')
@@ -89,41 +89,41 @@ describe('validateOptions', () => {
     }
   )
 
-  it(/*
+  /*
    * A positive maxEntrySizeBytes must still pass — keeps the validator from
    * over-rejecting in the happy path.
    */
-  'should accept a positive maxEntrySizeBytes', () => {
+  it('should accept a positive maxEntrySizeBytes', () => {
     expect(() => validateOptions({ ...validOpts, maxEntrySizeBytes: 1024 })).not.toThrow()
   })
 
-  it(/*
+  /*
    * Every valid LogLevel must pass — guards against an accidental removal
    * from the VALID_LEVELS allow-list inside the validator.
    */
-  'should accept every valid LogLevel', () => {
+  it('should accept every valid LogLevel', () => {
     const levels = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const
     for (const level of levels) {
       expect(() => validateOptions({ ...validOpts, level })).not.toThrow()
     }
   })
 
-  it(/*
+  /*
    * `redactStrategy` selects the engine behind the DEFAULT PII protection, so a
    * typo must fail loudly at bootstrap rather than silently falling back to one
    * of the two — a silent fallback to the wrong engine is a security posture
    * change nobody would notice.
    */
-  'should reject an unknown redactStrategy', () => {
+  it('should reject an unknown redactStrategy', () => {
     expect(() => validateOptions({ ...validOpts, redactStrategy: 'name' as never })).toThrow(
       /redactStrategy/
     )
   })
 
-  it(/*
+  /*
    * Both documented strategies, and omitting the option entirely, must pass.
    */
-  'should accept the documented redactStrategy values and undefined', () => {
+  it('should accept the documented redactStrategy values and undefined', () => {
     expect(() => validateOptions({ ...validOpts, redactStrategy: 'names' })).not.toThrow()
     expect(() => validateOptions({ ...validOpts, redactStrategy: 'paths' })).not.toThrow()
     expect(() => validateOptions(validOpts)).not.toThrow()
@@ -140,12 +140,12 @@ describe('validateOptions — P1 closed-set options', () => {
     }
   )
 
-  it(/*
+  /*
    * An unrecognised value falls through to the nested branch and SHIPS, so a
    * typo in a config file would look like it worked while emitting a shape the
    * consumer did not ask for.
    */
-  'rejects an unrecognised resourceFormat', () => {
+  it('rejects an unrecognised resourceFormat', () => {
     expect(() => validateOptions({ ...base, resourceFormat: 'nested ' as never })).toThrow(
       /resourceFormat must be 'nested' or 'flat'/
     )
@@ -158,11 +158,11 @@ describe('validateOptions — P1 closed-set options', () => {
     }
   )
 
-  it(/*
+  /*
    * Only `'pino'` short-circuits, so an unrecognised value behaves as `'both'` —
    * silently adding attributes the consumer never enabled.
    */
-  'rejects an unrecognised errorFormat', () => {
+  it('rejects an unrecognised errorFormat', () => {
     expect(() => validateOptions({ ...base, errorFormat: 'semconv2' as never })).toThrow(
       /errorFormat must be 'pino', 'semconv' or 'both'/
     )
@@ -176,11 +176,11 @@ describe('validateOptions — P1 closed-set options', () => {
     expect(() => validateOptions({ ...base, eventNameField: false })).not.toThrow()
   })
 
-  it(/*
+  /*
    * An empty field name would write a key called `''` onto every structured
    * entry — valid JSON, unqueryable, and impossible to notice in a dashboard.
    */
-  'rejects an empty eventNameField', () => {
+  it('rejects an empty eventNameField', () => {
     expect(() => validateOptions({ ...base, eventNameField: '' })).toThrow(
       /eventNameField must be a non-empty string or false/
     )
@@ -200,11 +200,11 @@ describe('validateOptions: error own fields', () => {
     expect(() => validateOptions({ ...validOpts, errorOwnFields: mode })).not.toThrow()
   })
 
-  it(/*
+  /*
    * A typo in the mode would silently keep writing every own field, which is the
    * posture the consumer was trying to leave.
    */
-  'should reject a mode that is neither all nor safe', () => {
+  it('should reject a mode that is neither all nor safe', () => {
     expect(() =>
       validateOptions({ ...validOpts, errorOwnFields: 'strict' as unknown as 'safe' })
     ).toThrow(/errorOwnFields must be 'all' or 'safe'/)

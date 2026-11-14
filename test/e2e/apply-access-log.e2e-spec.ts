@@ -177,13 +177,13 @@ describe('applyAccessLog', () => {
     earlyCapture.clear()
   })
 
-  it(/*
+  /*
    * THE defect this helper exists for. A body the JSON parser rejects never
    * reaches module middleware, a guard, an interceptor or a route, so the access
    * log never saw it. Mounted ahead of the parser it must emit START and a
    * terminal 4xx entry around whatever the exception filter produces.
    */
-  'logs a request the body parser rejects', async () => {
+  it('logs a request the body parser rejects', async () => {
     await request(await listeningServer(app))
       .post('/examples')
       .set('Content-Type', 'application/json')
@@ -198,14 +198,14 @@ describe('applyAccessLog', () => {
     ])
   })
 
-  it(/*
+  /*
    * The rejected request must be CORRELATABLE, not merely counted: the id the
    * client sent has to reach both entries. An id in the response with no line to
    * join it to is a token the client can quote and nothing more — that was the
    * failed first attempt at this fix, and this assertion is what distinguishes
    * the two.
    */
-  'carries the inbound request id onto the entries for a rejected body', async () => {
+  it('carries the inbound request id onto the entries for a rejected body', async () => {
     const res = await request(await listeningServer(app))
       .post('/examples')
       .set('Content-Type', 'application/json')
@@ -222,12 +222,12 @@ describe('applyAccessLog', () => {
     expect(requestIds).toEqual(['measure-me', 'measure-me', 'measure-me'])
   })
 
-  it(/*
+  /*
    * The terminal entry must carry the status the server actually produced, so a
    * rejected body is queryable as the 400 it was rather than being lumped in
    * with successes.
    */
-  'records the real status code for a rejected body', async () => {
+  it('records the real status code for a rejected body', async () => {
     await request(await listeningServer(app))
       .post('/examples')
       .set('Content-Type', 'application/json')
@@ -241,12 +241,12 @@ describe('applyAccessLog', () => {
     expect(terminal?.statusCode).toBe(400)
   })
 
-  it(/*
+  /*
    * A request that DOES reach the handler must still be logged exactly once
    * end-to-end — the early mount must not regress the ordinary path it shares
    * with the module-middleware wiring.
    */
-  'still logs a well-formed request exactly once', async () => {
+  it('still logs a well-formed request exactly once', async () => {
     await request(await listeningServer(app))
       .post('/examples')
       .send({ label: 'ok' })
@@ -277,12 +277,12 @@ describe('applyRequestIdMiddleware (positive control for the parser gap)', () =>
     lateCapture.clear()
   })
 
-  it(/*
+  /*
    * The control that makes the assertion above mean something. A zero is only
    * evidence when the same measurement produces a non-zero somewhere it should:
    * the module-middleware wiring logs a well-formed request perfectly well...
    */
-  'logs a well-formed request', async () => {
+  it('logs a well-formed request', async () => {
     await request(await listeningServer(app))
       .post('/examples')
       .send({ label: 'ok' })
@@ -295,14 +295,14 @@ describe('applyRequestIdMiddleware (positive control for the parser gap)', () =>
     ])
   })
 
-  it(/*
+  /*
    * ...and for the rejected body it emits ONE line and no access log, because
    * NestJS registers the parser before module middleware. Measured rather than
    * assumed: the auto-wired exception filter DOES catch a parser rejection on the
    * sync path, so this is not the flat zero it first looks like. It is one line
    * short of an access log — no START, no terminal entry, no status/duration/ip.
    */
-  'emits only the filter line, and no access log, for a rejected body', async () => {
+  it('emits only the filter line, and no access log, for a rejected body', async () => {
     await request(await listeningServer(app))
       .post('/examples')
       .set('Content-Type', 'application/json')
@@ -313,7 +313,7 @@ describe('applyRequestIdMiddleware (positive control for the parser gap)', () =>
     expect(lateCapture.httpKeys()).toEqual([RESERVED_LOG_KEYS.HTTP_EXCEPTION_HANDLED])
   })
 
-  it(/*
+  /*
    * And the line it does emit is UNCORRELATED, which is the half that matters.
    * The correlation middleware is mounted behind the parser too, so no scope is
    * ever opened: the client sent `x-request-id: measure-me` and the entry carries
@@ -321,7 +321,7 @@ describe('applyRequestIdMiddleware (positive control for the parser gap)', () =>
    * defect as a missing 400, wearing a healthier face — this is the assertion
    * that separates "the request is logged" from "the request is traceable".
    */
-  'emits that line without the correlation id the client sent', async () => {
+  it('emits that line without the correlation id the client sent', async () => {
     await request(await listeningServer(app))
       .post('/examples')
       .set('Content-Type', 'application/json')
@@ -356,12 +356,12 @@ describe('applyAccessLog alongside applyRequestIdMiddleware', () => {
     bothCapture.clear()
   })
 
-  it(/*
+  /*
    * Both helpers wired at once is a reasonable state to be in mid-migration, and
    * it must not double the access log: the second access-log mount finds the
    * request's lifecycle already claimed and stands down.
    */
-  'logs a request exactly once with both helpers wired', async () => {
+  it('logs a request exactly once with both helpers wired', async () => {
     await request(await listeningServer(app))
       .post('/examples')
       .send({ label: 'ok' })
@@ -374,13 +374,13 @@ describe('applyAccessLog alongside applyRequestIdMiddleware', () => {
     ])
   })
 
-  it(/*
+  /*
    * Nor may it mint two ids. Before the middleware became idempotent, two mounts
    * with no inbound header produced two different UUIDs — the outer set the
    * response header to one, the inner overwrote the context with the other — so
    * the header and the log entries disagreed about the request's identity.
    */
-  'mints exactly one request id with both helpers wired', async () => {
+  it('mints exactly one request id with both helpers wired', async () => {
     const res = await request(await listeningServer(app))
       .post('/examples')
       .send({ label: 'ok' })
@@ -427,7 +427,7 @@ describe('applyAccessLog under setGlobalPrefix', () => {
     prefixCapture.clear()
   })
 
-  it(/*
+  /*
    * A global prefix is exactly where this library has been bitten before: the
    * middleware default used to be `'*'`, which stops matching the prefixed root
    * under `setGlobalPrefix`, so requests silently vanished from the log. This
@@ -435,7 +435,7 @@ describe('applyAccessLog under setGlobalPrefix', () => {
    * mechanism with the same failure mode available to it — pinned rather than
    * assumed.
    */
-  'logs a prefixed request', async () => {
+  it('logs a prefixed request', async () => {
     await request(await listeningServer(app))
       .post('/api/examples')
       .send({ label: 'ok' })
@@ -448,13 +448,13 @@ describe('applyAccessLog under setGlobalPrefix', () => {
     ])
   })
 
-  it(/*
+  /*
    * And it must log the WHOLE path. A mounted middleware sees `url` relative to
    * its mount point, so logging `url` instead of `originalUrl` would drop the
    * prefix from every entry and stop an `excludePaths` pattern written against
    * the real path from ever matching.
    */
-  'records the full prefixed path', async () => {
+  it('records the full prefixed path', async () => {
     await request(await listeningServer(app))
       .post('/api/examples')
       .send({ label: 'ok' })
@@ -467,11 +467,11 @@ describe('applyAccessLog under setGlobalPrefix', () => {
     expect(start?.url).toBe('/api/examples')
   })
 
-  it(/*
+  /*
    * The parser gap must stay closed under a prefix too — the reason the helper
    * exists does not get to depend on the app's routing configuration.
    */
-  'still logs a rejected body under a prefix', async () => {
+  it('still logs a rejected body under a prefix', async () => {
     await request(await listeningServer(app))
       .post('/api/examples')
       .set('Content-Type', 'application/json')
@@ -514,14 +514,14 @@ describe('applyAccessLog with a non-global logger module', () => {
     await app.close()
   })
 
-  it(/*
+  /*
    * `isGlobal: false` puts the providers in a feature module rather than the root
    * one, so a STRICT container lookup would not find them and the helper would
    * throw "BymaxLoggerModule was not imported" at a consumer who imported it
    * perfectly well. The lookup is deliberately non-strict; this is the
    * configuration that tells the two apart.
    */
-  'resolves its dependencies and logs', async () => {
+  it('resolves its dependencies and logs', async () => {
     await request(await listeningServer(app))
       .post('/examples')
       .send({ label: 'ok' })
@@ -536,12 +536,12 @@ describe('applyAccessLog with a non-global logger module', () => {
 })
 
 describe('applyAccessLog without the module', () => {
-  it(/*
+  /*
    * Calling the helper on an app that never imported BymaxLoggerModule must fail
    * with a message naming the cause, not with a raw DI error about an unknown
    * provider — the same contract `useNestLogger` already offers.
    */
-  'throws a clear error when BymaxLoggerModule was not imported', async () => {
+  it('throws a clear error when BymaxLoggerModule was not imported', async () => {
     @Module({ controllers: [EchoController] })
     class BareModule {}
 
@@ -565,11 +565,11 @@ describe('applyAccessLog without the module', () => {
     await app.close()
   })
 
-  it(/*
+  /*
    * The original DI failure must survive as `cause` — the clear message is an
    * addition to the diagnosis, never a replacement that discards it.
    */
-  'preserves the original DI failure as cause', async () => {
+  it('preserves the original DI failure as cause', async () => {
     @Module({ controllers: [EchoController] })
     class BareModule {}
 

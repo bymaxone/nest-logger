@@ -50,11 +50,11 @@ function run(exception: unknown, request: Partial<LoggableRequest> = {}): Outcom
 }
 
 describe('HttpExceptionFilter', () => {
-  it(/*
+  /*
    * A 4xx HttpException must log HTTP_EXCEPTION_HANDLED at warn level and the response must echo
    * the exception's own status and body.
    */
-  'logs HTTP_EXCEPTION_HANDLED (warn) and renders a 4xx', () => {
+  it('logs HTTP_EXCEPTION_HANDLED (warn) and renders a 4xx', () => {
     const { warn, error, status, json } = run(new BadRequestException('bad input'))
 
     expect(status).toHaveBeenCalledWith(400)
@@ -70,11 +70,11 @@ describe('HttpExceptionFilter', () => {
     expect(error).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * A 5xx HttpException must log HTTP_EXCEPTION_UNHANDLED at error level, with a sanitized error,
    * and render the exception's own status and body, not the generic internal-error body.
    */
-  'logs HTTP_EXCEPTION_UNHANDLED (error) for a 5xx HttpException and renders its own body', () => {
+  it('logs HTTP_EXCEPTION_UNHANDLED (error) for a 5xx HttpException and renders its own body', () => {
     const { warn, error, status, json } = run(new InternalServerErrorException('explicit 500'))
 
     expect(error).toHaveBeenCalledWith(
@@ -90,11 +90,11 @@ describe('HttpExceptionFilter', () => {
     )
   })
 
-  it(/*
+  /*
    * A non-HttpException must be treated as an unhandled 500: logged as HTTP_EXCEPTION_UNHANDLED and
    * rendered with the generic internal-error body, which does not carry its message.
    */
-  'treats a generic Error as an unhandled 500', () => {
+  it('treats a generic Error as an unhandled 500', () => {
     const { warn, error, status, json } = run(new Error('kaboom'))
 
     expect(status).toHaveBeenCalledWith(500)
@@ -124,11 +124,11 @@ describe('HttpExceptionFilter', () => {
     )
   })
 
-  it(/*
+  /*
    * The logged `url` must have its query string stripped: query params routinely carry secrets
    * (reset tokens, OAuth codes) and cannot be redacted as a substring once embedded in the URL.
    */
-  'strips the query string from the logged url', () => {
+  it('strips the query string from the logged url', () => {
     const { error } = run(new Error('kaboom'), { url: '/boom?token=supersecret&x=1' })
 
     const metadata = error.mock.calls.at(-1)?.[3] as Record<string, unknown>

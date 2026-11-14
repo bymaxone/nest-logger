@@ -105,7 +105,7 @@ describe('Logger E2E — middleware mounting and the disabled path', () => {
     stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
   })
 
-  it(/*
+  /*
    * REGRESSION — the motivating behaviour of mounting at `'/'` instead of
    * matching `'*'`. Under NestJS 11 (Express 5 / path-to-regexp v8) a wildcard is
    * a named parameter with segment-count semantics, so `'*'` and `'{*splat}'`
@@ -114,7 +114,7 @@ describe('Logger E2E — middleware mounting and the disabled path', () => {
    * with no error. Asserting that `'/'` reaches Nest is not enough: only a booted
    * app with a global prefix exercises the router behaviour that broke.
    */
-  'logs the prefixed root route under setGlobalPrefix', async () => {
+  it('logs the prefixed root route under setGlobalPrefix', async () => {
     const moduleRef = await Test.createTestingModule({ imports: [PrefixedAppModule] }).compile()
     const app = moduleRef.createNestApplication({ logger: false })
     app.setGlobalPrefix('api')
@@ -133,13 +133,13 @@ describe('Logger E2E — middleware mounting and the disabled path', () => {
     await app.close()
   })
 
-  it(/*
+  /*
    * REGRESSION — `applyRequestIdMiddleware` is ALSO the public wiring for
    * correlation alone, and `http.isEnabled` defaults to false. Registering the
    * access-log middleware there made consumers who asked only for a `requestId`
    * start emitting an access log they never opted into.
    */
-  'emits no access log when http logging is disabled', async () => {
+  it('emits no access log when http logging is disabled', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [CorrelationOnlyAppModule]
     }).compile()
@@ -180,12 +180,12 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
   /** Log keys emitted so far, in order. */
   const keys = (): string[] => parseLogEntries(stdoutSpy).map((e) => String(e['logKey']))
 
-  it(/*
+  /*
    * A guard rejection is the case that motivated this: `UnauthorizedException`
    * is thrown BEFORE any interceptor runs, so a 401 used to emit nothing at all —
    * no line, and no `requestId` to correlate a brute-force attempt by.
    */
-  'logs a guard rejection (401) that no interceptor can observe', async () => {
+  it('logs a guard rejection (401) that no interceptor can observe', async () => {
     await request(await listeningServer(app))
       .get('/guarded')
       .expect(401)
@@ -199,11 +199,11 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
     expect(terminal?.['statusCode']).toBe(401)
   })
 
-  it(/*
+  /*
    * An unmatched route has no controller to intercept at all, so route
    * enumeration by a scanner was equally invisible.
    */
-  'logs an unmatched route (404)', async () => {
+  it('logs an unmatched route (404)', async () => {
     await request(await listeningServer(app))
       .get('/no-such-route')
       .expect(404)
@@ -214,12 +214,12 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
     expect(terminal?.['statusCode']).toBe(404)
   })
 
-  it(/*
+  /*
    * The START entry must carry what an investigation needs. The middleware is the
    * only point that observes a request BEFORE a guard can reject it, so it is the
    * only place `ip` and `userAgent` can be captured for a rejected one.
    */
-  'carries ip and userAgent on a rejected request', async () => {
+  it('carries ip and userAgent on a rejected request', async () => {
     await request(await listeningServer(app))
       .get('/guarded')
       .set('user-agent', 'probe/1.0')
@@ -237,12 +237,12 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
     )
   })
 
-  it(/*
+  /*
    * The query string may carry a magic-link token or a reset code. It is stripped
    * from every logged URL, because no key-name redaction can scrub a secret out of
    * a string VALUE.
    */
-  'strips the query string from the logged URL', async () => {
+  it('strips the query string from the logged URL', async () => {
     await request(await listeningServer(app))
       .get('/open?token=SECRET-VALUE')
       .expect(200)
@@ -250,12 +250,12 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
     expect(JSON.stringify(parseLogEntries(stdoutSpy))).not.toContain('SECRET-VALUE')
   })
 
-  it(/*
+  /*
    * REGRESSION — the middleware and the interceptor both observe an ordinary
    * request. Exactly one START and one terminal entry must be emitted: the
    * middleware claims the lifecycle and the interceptor stands down.
    */
-  'does not double-log a request both components can see', async () => {
+  it('does not double-log a request both components can see', async () => {
     await request(await listeningServer(app))
       .get('/open')
       .expect(200)
@@ -265,13 +265,13 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
     expect(emitted.filter((k) => k === 'HTTP_REQUEST_SUCCESS')).toHaveLength(1)
   })
 
-  it(/*
+  /*
    * REGRESSION — destroying the socket does not cancel the handler: it runs to
    * completion, writes to a dead connection and the observable completes, so the
    * interceptor reported the 200 it intended. Delivery is a separate axis from
    * status, and `writableFinished` is what separates them.
    */
-  'logs an aborted request as ABORTED rather than a success', async () => {
+  it('logs an aborted request as ABORTED rather than a success', async () => {
     await new Promise<void>((resolve) => {
       const socket = net.connect(port, '127.0.0.1', () => {
         socket.write('GET /slow HTTP/1.1\r\nHost: localhost\r\n\r\n')
@@ -294,14 +294,14 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
     expect(terminal?.['statusCode']).toBe(200)
   })
 
-  it(/*
+  /*
    * The terminal entry is emitted from a `'close'` listener, which Node may run
    * in a different execution context than the one active at registration. Without
    * `AsyncResource.bind` the AsyncLocalStorage store is undefined there — measured
    * to fail on the ABORTED path specifically — and the entry loses its
    * correlation id, in the case where correlation matters most.
    */
-  'keeps the correlation id on the terminal entry of an aborted request', async () => {
+  it('keeps the correlation id on the terminal entry of an aborted request', async () => {
     await new Promise<void>((resolve) => {
       const socket = net.connect(port, '127.0.0.1', () => {
         socket.write('GET /slow HTTP/1.1\r\nHost: localhost\r\n\r\n')

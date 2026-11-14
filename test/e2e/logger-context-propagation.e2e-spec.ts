@@ -49,7 +49,7 @@ describe('Logger E2E — ALS context propagation', () => {
     return parseLogEntries(stdoutSpy).find((entry) => entry['logKey'] === logKey)
   }
 
-  it(/*
+  /*
    * REGRESSION — audit finding C-1. `emitStructured` wrote `userId: undefined`
    * as an own property whenever the argument was omitted, and Pino's default
    * `mixinMergeStrategy` (`Object.assign(mixinResult, mergeObject)`) let that
@@ -57,7 +57,7 @@ describe('Logger E2E — ALS context propagation', () => {
    * store. The key then vanished during serialization, so the documented
    * "set the user once per request" pattern silently produced nothing.
    */
-  'carries an ALS userId into a structured entry when the argument is omitted', () => {
+  it('carries an ALS userId into a structured entry when the argument is omitted', () => {
     logContext.run({ requestId: 'r_1', tenantId: 't_1', userId: 'u_als' }, () => {
       logger.info('CONTEXT_INFO', 'probe')
     })
@@ -68,11 +68,11 @@ describe('Logger E2E — ALS context propagation', () => {
     expect(entry?.['tenantId']).toBe('t_1')
   })
 
-  it(/*
+  /*
    * The same clobber applied to every structured emitter, not just `info` —
    * `warnStructured` and `errorStructured` build the payload the same way.
    */
-  'carries an ALS userId into warn and error entries', () => {
+  it('carries an ALS userId into warn and error entries', () => {
     logContext.run({ userId: 'u_als' }, () => {
       logger.warnStructured('CONTEXT_WARN', 'probe')
       logger.errorStructured('CONTEXT_ERROR', new Error('boom'))
@@ -82,12 +82,12 @@ describe('Logger E2E — ALS context propagation', () => {
     expect(findEntry('CONTEXT_ERROR')?.['userId']).toBe('u_als')
   })
 
-  it(/*
+  /*
    * Precedence is explicit-argument > ALS. A call site that names the acting
    * user must still win over the ambient one — otherwise fixing the clobber
    * would have traded one wrong value for another.
    */
-  'lets an explicit userId argument win over the ALS value', () => {
+  it('lets an explicit userId argument win over the ALS value', () => {
     logContext.run({ userId: 'u_als' }, () => {
       logger.info('CONTEXT_OVERRIDE', 'probe', 'u_explicit')
     })
@@ -95,12 +95,12 @@ describe('Logger E2E — ALS context propagation', () => {
     expect(findEntry('CONTEXT_OVERRIDE')?.['userId']).toBe('u_explicit')
   })
 
-  it(/*
+  /*
    * `context` was clobbered by the same mechanism on the NestJS-variadic path:
    * `emitNestStyle` wrote `context: undefined` when neither a trailing string
    * nor an instance context was present, erasing an ambient one.
    */
-  'carries an ALS context through the NestJS variadic path', () => {
+  it('carries an ALS context through the NestJS variadic path', () => {
     logContext.run({ context: 'AmbientContext', requestId: 'r_2' }, () => {
       logger.log('plain nest-style message')
     })
@@ -112,11 +112,11 @@ describe('Logger E2E — ALS context propagation', () => {
     expect(entry?.['requestId']).toBe('r_2')
   })
 
-  it(/*
+  /*
    * A field added mid-scope with `set()` — the documented way to attach the
    * authenticated user after a guard has run — must reach the record too.
    */
-  'carries a field added mid-scope with set()', () => {
+  it('carries a field added mid-scope with set()', () => {
     logContext.run({ requestId: 'r_3' }, () => {
       logContext.set('userId', 'u_late')
       logContext.set('sessionId', 's_1')
@@ -128,12 +128,12 @@ describe('Logger E2E — ALS context propagation', () => {
     expect(entry?.['sessionId']).toBe('s_1')
   })
 
-  it(/*
+  /*
    * Context must survive a nested async chain — a timer, an awaited promise and
    * a microtask — because that is what a real request handler looks like. ALS
    * propagates through native async hooks, but nothing pinned it end-to-end.
    */
-  'survives nested async operations inside one scope', async () => {
+  it('survives nested async operations inside one scope', async () => {
     await logContext.run({ requestId: 'r_async', userId: 'u_async' }, async () => {
       await new Promise((resolve) => setTimeout(resolve, 1))
       await Promise.resolve()
@@ -148,12 +148,12 @@ describe('Logger E2E — ALS context propagation', () => {
     expect(entry?.['userId']).toBe('u_async')
   })
 
-  it(/*
+  /*
    * Concurrent scopes must not bleed into one another. Each iteration logs after
    * a jittered await, so the scopes are genuinely interleaved rather than run to
    * completion one at a time — the shape that would expose a shared-store leak.
    */
-  'keeps concurrent scopes isolated', async () => {
+  it('keeps concurrent scopes isolated', async () => {
     const count = 50
     await Promise.all(
       Array.from({ length: count }, (_unused, index) =>
@@ -174,12 +174,12 @@ describe('Logger E2E — ALS context propagation', () => {
     }
   })
 
-  it(/*
+  /*
    * Outside any scope the fields must simply be absent — the fix must not start
    * emitting empty or null correlation keys, which would pollute every log a
    * worker or a CLI writes.
    */
-  'omits context fields entirely outside any scope', () => {
+  it('omits context fields entirely outside any scope', () => {
     logger.info('CONTEXT_NONE', 'probe')
 
     const entry = findEntry('CONTEXT_NONE')

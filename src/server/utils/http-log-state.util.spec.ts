@@ -18,12 +18,12 @@ import {
 
 describe('http-log-state', () => {
   describe('recorder claim', () => {
-    it(/*
+    /*
      * A request nobody claimed must read as unclaimed. This is the branch that
      * keeps a consumer who never wired the middleware from losing HTTP logs
      * altogether: the interceptor falls back to emitting its own entries.
      */
-    'reports an unclaimed request as inactive', () => {
+    it('reports an unclaimed request as inactive', () => {
       expect(isRecorderActive({})).toBe(false)
     })
 
@@ -33,12 +33,12 @@ describe('http-log-state', () => {
       expect(isRecorderActive(req)).toBe(true)
     })
 
-    it(/*
+    /*
      * The claim is keyed by a Symbol so it can never collide with a consumer's
      * own field and never reaches a log line: `Object.keys` does not see it, and
      * neither does `JSON.stringify`.
      */
-    'stores the claim invisibly to enumeration and serialization', () => {
+    it('stores the claim invisibly to enumeration and serialization', () => {
       const req: Record<string, unknown> = { url: '/x' }
       markRecorderActive(req)
 
@@ -52,12 +52,12 @@ describe('http-log-state', () => {
       expect(readRecordedError({})).toBeUndefined()
     })
 
-    it(/*
+    /*
      * The hand-off that keeps a 5xx terminal entry carrying its stack: the
      * interceptor sees the thrown value, the middleware's close handler sees only
      * a status code.
      */
-    'round-trips the recorded error', () => {
+    it('round-trips the recorded error', () => {
       const req = {}
       const error = new Error('boom')
 
@@ -81,12 +81,12 @@ describe('http-log-state', () => {
       expect(toError(error)).toBe(error)
     })
 
-    it(/*
+    /*
      * A `throw` can carry anything. The error serializer keys off an `Error`
      * instance, so a thrown string would otherwise reach the sink with no message
      * and no stack.
      */
-    'wraps a non-Error into one carrying its text', () => {
+    it('wraps a non-Error into one carrying its text', () => {
       const wrapped = toError('just a string')
       expect(wrapped).toBeInstanceOf(Error)
       expect(wrapped.message).toBe('just a string')
@@ -102,12 +102,12 @@ describe('http-log-state', () => {
   })
 
   describe('readUserId', () => {
-    it(/*
+    /*
      * `sub` wins over `id`: the JWT subject is the authenticated identity, and
      * every `@bymax-one/nest-auth` token names it that way. Reading only `id` —
      * as the interceptor once did — dropped the user for every JWT request.
      */
-    'prefers the JWT subject over the ORM id', () => {
+    it('prefers the JWT subject over the ORM id', () => {
       expect(readUserId({ user: { sub: 'jwt-sub', id: 'orm-id' } })).toBe('jwt-sub')
     })
 

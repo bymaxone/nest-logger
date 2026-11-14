@@ -8,12 +8,12 @@
 import { sanitizeError } from './sanitize-error.util'
 
 describe('sanitizeError, the width marker of an AggregateError', () => {
-  it(/*
+  /*
    * A list the redaction walk already capped ends in its width marker. The marker says how many
    * members were left out, so that number is kept: counting the marker as one more member would
    * report 1 where 90 were omitted.
    */
-  'should keep the omitted count of a width marker the list already ends in', () => {
+  it('should keep the omitted count of a width marker the list already ends in', () => {
     const members = Array.from({ length: 10 }, (_, i) => new Error(`e${i}`))
     const marker = { _truncated: true, _reason: 'aggregate-width-exceeded', _omitted: 90 }
     const result = sanitizeError(new AggregateError([...members, marker], 'already capped'))
@@ -73,12 +73,12 @@ describe('sanitizeError, the width marker of an AggregateError', () => {
     }
   )
 
-  it(/*
+  /*
    * The member at the cut position is caller data, so it is read once and never trusted to behave:
    * a stateful getter cannot make the count differ from the one value read, and a getter that
    * throws means the member is not a marker, never that the whole aggregate node is lost.
    */
-  'should read a marker lookalike once and survive a member that throws', () => {
+  it('should read a marker lookalike once and survive a member that throws', () => {
     const members: unknown[] = Array.from({ length: 10 }, (_, i) => new Error(`e${i}`))
     let reads = 0
     members.push({
@@ -135,11 +135,11 @@ describe('sanitizeError, the width marker of an AggregateError', () => {
     expect(result.errors?.[10]).toMatchObject({ _omitted: 5 })
   })
 
-  it(/*
+  /*
    * Eleven real members are not a capped list: the eleventh is a member that is left out, so the
    * marker counts one, and a member that merely sits at that index is not mistaken for a marker.
    */
-  'should count one omitted member for eleven real members', () => {
+  it('should count one omitted member for eleven real members', () => {
     const members = Array.from({ length: 11 }, (_, i) => new Error(`e${i}`))
     const result = sanitizeError(new AggregateError(members, 'eleven'))
 

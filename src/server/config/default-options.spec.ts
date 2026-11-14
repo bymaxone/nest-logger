@@ -22,12 +22,12 @@ describe('applyDefaults', () => {
     }
   })
 
-  it(/*
+  /*
    * Every optional field must receive a documented default so downstream
    * code never needs to handle `undefined`. Acts as a contract checker for
    * the shape returned by applyDefaults.
    */
-  'should fill every optional field with the documented default', () => {
+  it('should fill every optional field with the documented default', () => {
     process.env['NODE_ENV'] = 'development'
     const result = applyDefaults(baseOptions)
     expect(result.level).toBe('debug')
@@ -43,21 +43,21 @@ describe('applyDefaults', () => {
     expect(typeof result.timestamp()).toBe('string')
   })
 
-  it(/*
+  /*
    * In production NODE_ENV the level default flips to `info` — protects
    * against accidental verbose logs being shipped to production.
    */
-  'should default to info in production', () => {
+  it('should default to info in production', () => {
     process.env['NODE_ENV'] = 'production'
     const result = applyDefaults(baseOptions)
     expect(result.level).toBe('info')
   })
 
-  it(/*
+  /*
    * Consumer-provided values must always win over defaults — guards against
    * a bug where the default short-circuits the user's choice.
    */
-  'should respect explicit consumer overrides', () => {
+  it('should respect explicit consumer overrides', () => {
     const result = applyDefaults({
       ...baseOptions,
       level: 'warn',
@@ -77,12 +77,12 @@ describe('applyDefaults', () => {
     expect(result.maxEntrySizeBytes).toBe(1024)
   })
 
-  it(/*
+  /*
    * Sub-objects (http, otel) must be spread-merged so partial overrides
    * preserve sibling defaults. A naive replacement would drop unspecified
    * fields and break downstream consumers.
    */
-  'should spread-merge http and otel sub-objects', () => {
+  it('should spread-merge http and otel sub-objects', () => {
     const result = applyDefaults({
       ...baseOptions,
       http: { isEnabled: true },
@@ -97,11 +97,11 @@ describe('applyDefaults', () => {
     expect(result.otel.traceIdField).toBe('traceId')
   })
 
-  it(/*
+  /*
    * The snake_case OTel shortcut must derive the wire-format field names
    * so consumers can opt into the OTel Logs Data Model with one flag.
    */
-  'should apply snake_case OTel shortcut when fieldFormat is snake_case', () => {
+  it('should apply snake_case OTel shortcut when fieldFormat is snake_case', () => {
     const result = applyDefaults({
       ...baseOptions,
       otel: { fieldFormat: 'snake_case' }
@@ -111,11 +111,11 @@ describe('applyDefaults', () => {
     expect(result.otel.traceFlagsField).toBe('trace_flags')
   })
 
-  it(/*
+  /*
    * Explicit `*Field` overrides must always win over the snake_case
    * shortcut — the shortcut only fills the gaps.
    */
-  'should let explicit field overrides win over the snake_case shortcut', () => {
+  it('should let explicit field overrides win over the snake_case shortcut', () => {
     const result = applyDefaults({
       ...baseOptions,
       otel: {
@@ -129,31 +129,31 @@ describe('applyDefaults', () => {
     expect(result.otel.traceFlagsField).toBe('trace_flags')
   })
 
-  it(/*
+  /*
    * Empty consumer maps must default to empty objects/arrays rather than
    * undefined so downstream consumers can iterate safely.
    */
-  'should default serializers to an empty object', () => {
+  it('should default serializers to an empty object', () => {
     const result = applyDefaults(baseOptions)
     expect(result.serializers).toEqual({})
   })
 
-  it(/*
+  /*
    * The OTel defaults (auto-inject ON, camelCase field names) must be pinned —
    * downstream trace correlation depends on these exact field names.
    */
-  'should default otel auto-inject + camelCase field names', () => {
+  it('should default otel auto-inject + camelCase field names', () => {
     const otel = applyDefaults(baseOptions).otel
     expect(otel.shouldAutoInjectTraceContext).toBe(true)
     expect(otel.spanIdField).toBe('spanId')
     expect(otel.traceFlagsField).toBe('traceFlags')
   })
 
-  it(/*
+  /*
    * The built-in credential patterns need no configuration, and a host's own list is copied and
    * frozen like `excludePaths`, so a later change to the array it passed cannot reach the logger.
    */
-  'should default secretPathSegments to none and freeze a copy of the host list', () => {
+  it('should default secretPathSegments to none and freeze a copy of the host list', () => {
     expect(applyDefaults(baseOptions).http.secretPathSegments).toEqual([])
     const own = [/^tok_/]
     const resolved = applyDefaults({ ...baseOptions, http: { secretPathSegments: own } })
@@ -163,14 +163,14 @@ describe('applyDefaults', () => {
     expect(Object.isFrozen(resolved.http.secretPathSegments)).toBe(true)
   })
 
-  it(/*
+  /*
    * The default excludePaths cover the probe endpoints a stock service exposes:
    * `/health`, the liveness and readiness probes `/health/live` and
    * `/health/ready` of `@bymax-one/nest-core`, and `/metrics`. They are ANCHORED:
    * near-miss paths (a longer segment, a deeper path, a prefix) must still be
    * logged, so a regression that drops either anchor is caught.
    */
-  'should default excludePaths to the anchored probe and metrics paths', () => {
+  it('should default excludePaths to the anchored probe and metrics paths', () => {
     const paths = applyDefaults(baseOptions).http.excludePaths
     const excluded = (path: string): boolean => paths.some((pattern) => pattern.test(path))
     for (const path of ['/health', '/health/live', '/health/ready', '/metrics']) {
@@ -192,13 +192,13 @@ describe('applyDefaults', () => {
     }
   })
 
-  it(/*
+  /*
    * The returned snapshot must be frozen at the top level AND across its nested
    * `service` / `serializers` bags, so accidental mutation by consumer code (or
    * a per-request handler) is loud rather than silently corrupting the shared
    * global options snapshot.
    */
-  'should return a snapshot frozen at the top level, service, and serializers', () => {
+  it('should return a snapshot frozen at the top level, service, and serializers', () => {
     const result = applyDefaults({ ...baseOptions, serializers: { foo: (x: unknown) => x } })
     expect(Object.isFrozen(result)).toBe(true)
     expect(Object.isFrozen(result.service)).toBe(true)
@@ -207,23 +207,23 @@ describe('applyDefaults', () => {
 })
 
 describe('applyDefaults: error own fields', () => {
-  it(/*
+  /*
    * 'all' is the default for the 1.x line: an existing consumer's error entries
    * keep every own field unless it opts in to 'safe'.
    */
-  "should default errorOwnFields to 'all' with no extra names", () => {
+  it("should default errorOwnFields to 'all' with no extra names", () => {
     const result = applyDefaults(baseOptions)
 
     expect(result.errorOwnFields).toBe('all')
     expect(result.errorOwnFieldNames).toEqual([])
   })
 
-  it(/*
+  /*
    * The mode and the names the consumer gave must reach the runtime, and the
    * list is a frozen copy so a later change to the array they passed in does not
    * change what the logger writes.
    */
-  'should keep the given mode and a frozen copy of the names', () => {
+  it('should keep the given mode and a frozen copy of the names', () => {
     const names = ['orderId']
     const result = applyDefaults({
       ...baseOptions,

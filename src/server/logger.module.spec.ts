@@ -40,43 +40,43 @@ describe('BymaxLoggerModule.forRoot', () => {
       .mockImplementation(() => undefined)
   })
 
-  it(/*
+  /*
    * forRoot must return a DynamicModule rooted at the decorated subclass (not
    * the builder base) so NestJS can resolve the module metadata.
    */
-  'returns a DynamicModule rooted at BymaxLoggerModule', () => {
+  it('returns a DynamicModule rooted at BymaxLoggerModule', () => {
     const dynamic = BymaxLoggerModule.forRoot({ service })
     expect(dynamic.module).toBe(BymaxLoggerModule)
     expect(dynamic.exports).toContain(PinoLoggerService)
   })
 
-  it(/*
+  /*
    * isGlobal defaults to true so a single forRoot import makes the logger
    * available app-wide without re-importing per feature module.
    */
-  'is global by default', () => {
+  it('is global by default', () => {
     expect(BymaxLoggerModule.forRoot({ service }).global).toBe(true)
   })
 
-  it(/*
+  /*
    * Consumers must be able to scope the module locally via isGlobal: false.
    */
-  'honors isGlobal: false', () => {
+  it('honors isGlobal: false', () => {
     expect(BymaxLoggerModule.forRoot({ service, isGlobal: false }).global).toBe(false)
   })
 
-  it(/*
+  /*
    * Invalid options must fail fast at registration time, not at first log.
    */
-  'throws on invalid options', () => {
+  it('throws on invalid options', () => {
     expect(() => BymaxLoggerModule.forRoot({} as never)).toThrow(/service is required/)
   })
 
   describe('compiled module', () => {
-    it(/*
+    /*
      * The core services must be injectable from the compiled container.
      */
-    'provides PinoLoggerService and LogContextService', async () => {
+    it('provides PinoLoggerService and LogContextService', async () => {
       const ref = await Test.createTestingModule({
         imports: [BymaxLoggerModule.forRoot({ service })]
       }).compile()
@@ -85,12 +85,12 @@ describe('BymaxLoggerModule.forRoot', () => {
       await ref.close()
     })
 
-    it(/*
+    /*
      * LOGGER_OPTIONS_TOKEN must expose the RESOLVED (defaulted) options —
      * downstream consumers (e.g. the request-id middleware) rely on defaults
      * like http.tenantIdHeader being filled.
      */
-    'exposes resolved options at LOGGER_OPTIONS_TOKEN', async () => {
+    it('exposes resolved options at LOGGER_OPTIONS_TOKEN', async () => {
       const ref = await Test.createTestingModule({
         imports: [BymaxLoggerModule.forRoot({ service })]
       }).compile()
@@ -102,11 +102,11 @@ describe('BymaxLoggerModule.forRoot', () => {
       await ref.close()
     })
 
-    it(/*
+    /*
      * With no consumer destinations, the module must register exactly one
      * default stdout sink so logs still go somewhere.
      */
-    'defaults to a single stdout destination', async () => {
+    it('defaults to a single stdout destination', async () => {
       const ref = await Test.createTestingModule({
         imports: [BymaxLoggerModule.forRoot({ service })]
       }).compile()
@@ -118,10 +118,10 @@ describe('BymaxLoggerModule.forRoot', () => {
       await ref.close()
     })
 
-    it(/*
+    /*
      * Consumer-supplied destinations must replace the default sink.
      */
-    'uses consumer destinations when provided', async () => {
+    it('uses consumer destinations when provided', async () => {
       const custom: ILogDestination = { name: 'custom', write: () => undefined }
       const ref = await Test.createTestingModule({
         imports: [BymaxLoggerModule.forRoot({ service, destinations: [custom] })]
@@ -133,11 +133,11 @@ describe('BymaxLoggerModule.forRoot', () => {
       await ref.close()
     })
 
-    it(/*
+    /*
      * LOG_CONTEXT_TOKEN is part of the public barrel, so it must resolve to the
      * same LogContextService singleton rather than throwing a DI error.
      */
-    'aliases LOG_CONTEXT_TOKEN to the LogContextService singleton', async () => {
+    it('aliases LOG_CONTEXT_TOKEN to the LogContextService singleton', async () => {
       const ref = await Test.createTestingModule({
         imports: [BymaxLoggerModule.forRoot({ service })]
       }).compile()
@@ -147,11 +147,11 @@ describe('BymaxLoggerModule.forRoot', () => {
       await ref.close()
     })
 
-    it(/*
+    /*
      * The bootstrap log must be emitted exactly once at module init — a
      * regression here would either double-log startup or go silent.
      */
-    'emits the bootstrap log exactly once', async () => {
+    it('emits the bootstrap log exactly once', async () => {
       const ref = await Test.createTestingModule({
         imports: [BymaxLoggerModule.forRoot({ service })]
       }).compile()
@@ -170,7 +170,7 @@ describe('BymaxLoggerModule.forRoot', () => {
       await ref.close()
     })
 
-    it(/*
+    /*
      * REGRESSION — audit finding D-1. The README has always described
      * LOGGER_BOOTSTRAP_WARNING as the audit trail proving when PII protection
      * was intentionally reduced ("so security reviews can audit when PII
@@ -179,7 +179,7 @@ describe('BymaxLoggerModule.forRoot', () => {
      * protected one. The message and the metadata are asserted, not just the
      * key: a security signal that says nothing is barely better than silence.
      */
-    'warns at bootstrap when default redaction is disabled', async () => {
+    it('warns at bootstrap when default redaction is disabled', async () => {
       const ref = await Test.createTestingModule({
         imports: [
           BymaxLoggerModule.forRoot({
@@ -204,12 +204,12 @@ describe('BymaxLoggerModule.forRoot', () => {
       await ref.close()
     })
 
-    it(/*
+    /*
      * The converse, and the reason the branch is a branch: a normally-configured
      * module must NOT warn. A signal that fires on every boot is noise, and a
      * security review learns to ignore it.
      */
-    'does not warn at bootstrap under the default configuration', async () => {
+    it('does not warn at bootstrap under the default configuration', async () => {
       const ref = await Test.createTestingModule({
         imports: [BymaxLoggerModule.forRoot({ service })]
       }).compile()
@@ -225,7 +225,7 @@ describe('BymaxLoggerModule.forRoot', () => {
   })
 
   describe('child-binding redaction', () => {
-    it(/*
+    /*
      * REGRESSION — the module must wire the configured redactor into
      * `PinoLoggerService`, because `child()` is the only place child bindings can
      * be scrubbed: Pino pre-serializes them into the instance's `chindings`
@@ -233,7 +233,7 @@ describe('BymaxLoggerModule.forRoot', () => {
      * not a hand-built service, so a provider that resolves to nothing (or to the
      * identity) fails here rather than silently leaking in production.
      */
-    'wires the configured redactor into PinoLoggerService.child()', async () => {
+    it('wires the configured redactor into PinoLoggerService.child()', async () => {
       infoSpy.mockRestore()
       const written: string[] = []
       const sink: ILogDestination = {
@@ -262,11 +262,11 @@ describe('BymaxLoggerModule.forRoot', () => {
   })
 
   describe('augmentLoggerModule', () => {
-    it(/*
+    /*
      * When the base lacks providers, augment must default to an empty list and
      * still carry over base exports (covers the providers-undefined branch).
      */
-    'defaults missing base providers and preserves base exports', () => {
+    it('defaults missing base providers and preserves base exports', () => {
       const sentinel = Symbol('SENTINEL_EXPORT')
       const augmented = augmentLoggerModule({ module: BymaxLoggerModule, exports: [sentinel] }, [])
       expect(augmented.providers).toEqual([])
@@ -274,11 +274,11 @@ describe('BymaxLoggerModule.forRoot', () => {
       expect(augmented.exports).toContain(PinoLoggerService)
     })
 
-    it(/*
+    /*
      * When the base lacks exports, augment must default to an empty list and
      * still carry over base providers (covers the exports-undefined branch).
      */
-    'defaults missing base exports and preserves base providers', () => {
+    it('defaults missing base exports and preserves base providers', () => {
       const sentinel = { provide: Symbol('SENTINEL_PROVIDER'), useValue: 1 }
       const augmented = augmentLoggerModule(
         { module: BymaxLoggerModule, providers: [sentinel] },
@@ -309,12 +309,12 @@ describe('BymaxLoggerModule.useNestLogger', () => {
     }
   }
 
-  it(/*
+  /*
    * The helper must fetch PinoLoggerService from the container, install it as the
    * Nest application logger, and flush buffered bootstrap logs — the one-liner
    * main.ts wiring contract. Installed before the flush, so the buffered lines reach it.
    */
-  'wires PinoLoggerService as the Nest application logger', () => {
+  it('wires PinoLoggerService as the Nest application logger', () => {
     const logger = {}
     const { app, useLogger, flushLogs } = appHolding(logger)
     const order: string[] = []
@@ -341,13 +341,13 @@ describe('BymaxLoggerModule.useNestLogger', () => {
     expect(get).toHaveBeenCalledWith(PinoLoggerService, { strict: false })
   })
 
-  it(/*
+  /*
    * When BymaxLoggerModule was never imported the helper must throw a clear,
    * actionable error instead of leaking a cryptic Nest DI exception. The
    * original DI error is attached as `.cause` so the underlying failure is
    * preserved for debugging — pins the `{ cause }` argument in the throw.
    */
-  'throws a clear error, with the DI failure as the cause, when the module was not imported', () => {
+  it('throws a clear error, with the DI failure as the cause, when the module was not imported', () => {
     const failure = new Error('Nest could not find PinoLoggerService')
     const useLogger = jest.fn()
     const app = {

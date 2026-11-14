@@ -70,7 +70,7 @@ function readmeSampleLine(): Record<string, unknown> {
 }
 
 describe('README Quick Start (sections 2 and 4)', () => {
-  it(/*
+  /*
    * Scenario: guards README "Quick Start > 2. Register the module" and "4. Inject the
    * logger in a service". It executes that flow as written (same forRoot options, same
    * @InjectLogger and logger.info calls) and captures stdout, because check:published only
@@ -82,7 +82,7 @@ describe('README Quick Start (sections 2 and 4)', () => {
    * the same key set as the real line. Change this test in the same PR as any change to that
    * README flow or sample.
    */
-  'logs the README flow as structured JSON lines on stdout', async () => {
+  it('logs the README flow as structured JSON lines on stdout', async () => {
     const lines: string[] = []
     jest.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
       lines.push(String(chunk))

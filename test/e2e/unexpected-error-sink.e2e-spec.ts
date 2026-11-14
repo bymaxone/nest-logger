@@ -116,14 +116,14 @@ describe('Logger E2E — PinoUnexpectedErrorSink bound to the nest-core token', 
     stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
   })
 
-  it(/*
+  /*
    * End to end through DI and the real Pino pipeline: the consumer binding
    * resolves PinoLoggerService from the global logger module, and the emitted
    * line carries the original error type, its stack and cause, and the request
    * coordinates — with the default redaction still applied to the cause's own
    * fields and nothing from the request beyond method and route.
    */
-  'emits one HTTP_UNEXPECTED_ERROR line with the original error', async () => {
+  it('emits one HTTP_UNEXPECTED_ERROR line with the original error', async () => {
     await request(await listeningServer(app))
       .get('/invoices/42?token=reset-code')
       .set('authorization', 'Bearer header-secret')

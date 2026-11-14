@@ -25,23 +25,23 @@ describe('parseResourceAttributes', () => {
     })
   })
 
-  it(/*
+  /*
    * Values may be percent-encoded per the W3C Baggage format the variable
    * borrows, so a namespace containing a comma or space survives the round trip.
    */
-  'percent-decodes values', () => {
+  it('percent-decodes values', () => {
     expect(parseResourceAttributes('service.namespace=team%20payments')).toEqual({
       'service.namespace': 'team payments'
     })
   })
 
-  it(/*
+  /*
    * This runs during module construction. A stray character in an environment
    * variable must never stop an application from booting — that would turn a
    * cosmetic misconfiguration into an outage — so malformed input is skipped and
    * the rest of the list is still read.
    */
-  'rejects a pair whose key is empty', () => {
+  it('rejects a pair whose key is empty', () => {
     // `=value` has its separator at index 0. Rejecting only "no `=` at all" would
     // let it through and define an attribute under the empty key.
     expect(parseResourceAttributes('=orphan,service.namespace=payments')).toStrictEqual({
@@ -49,11 +49,11 @@ describe('parseResourceAttributes', () => {
     })
   })
 
-  it(/*
+  /*
    * This runs during module construction. A stray character in an environment
    * variable must never stop an application from booting.
    */
-  'skips malformed pairs without throwing', () => {
+  it('skips malformed pairs without throwing', () => {
     expect(() =>
       parseResourceAttributes('no-equals,=novalue,service.namespace=payments,trailing=')
     ).not.toThrow()
@@ -62,24 +62,24 @@ describe('parseResourceAttributes', () => {
     ).toStrictEqual({ 'service.namespace': 'payments' })
   })
 
-  it(/*
+  /*
    * A malformed percent-escape throws `URIError` in `decodeURIComponent`. The
    * raw text is kept rather than the attribute dropped: a literal `%` in a build
    * tag is far likelier than a deliberate escape, and the value is still useful.
    */
-  'keeps the raw value when percent-decoding fails', () => {
+  it('keeps the raw value when percent-decoding fails', () => {
     expect(parseResourceAttributes('service.version=1.0%zz')).toEqual({
       'service.version': '1.0%zz'
     })
   })
 
-  it(/*
+  /*
    * Operators write these lists with spaces after the commas. Without the trim
    * the key would carry a leading space and never match the attribute name it
    * was meant to set — silently, since a mismatched attribute simply does not
    * apply.
    */
-  'trims whitespace around keys and values', () => {
+  it('trims whitespace around keys and values', () => {
     expect(
       parseResourceAttributes(' service.namespace = payments , service.version = 9.9.9 ')
     ).toEqual({
@@ -88,7 +88,7 @@ describe('parseResourceAttributes', () => {
     })
   })
 
-  it(/*
+  /*
    * REGRESSION — a repeated key calls `defineProperty` twice for the same name,
    * and redefining a non-configurable property throws `TypeError`. That exception
    * escaped `resolveServiceMetadata` and aborted MODULE CONSTRUCTION, which is
@@ -98,18 +98,18 @@ describe('parseResourceAttributes', () => {
    * Last occurrence wins, matching how an operator reading the list
    * left-to-right would expect an override to behave.
    */
-  'lets a repeated key override rather than throw', () => {
+  it('lets a repeated key override rather than throw', () => {
     expect(() => parseResourceAttributes('service.name=a,service.name=b')).not.toThrow()
     expect(parseResourceAttributes('service.name=a,service.name=b')).toStrictEqual({
       'service.name': 'b'
     })
   })
 
-  it(/*
+  /*
    * The same input reaching the resolver — the path that actually runs during
    * module construction — must not throw either.
    */
-  'resolves a duplicated attribute without aborting the boot', () => {
+  it('resolves a duplicated attribute without aborting the boot', () => {
     expect(() =>
       resolveServiceMetadata(
         { name: '', version: '' },
@@ -128,11 +128,11 @@ describe('parseResourceAttributes', () => {
     expect(parseResourceAttributes(undefined)).toEqual({})
   })
 
-  it(/*
+  /*
    * The parsed map is built with own data properties, so an attribute literally
    * named `__proto__` cannot reach the prototype chain of the result.
    */
-  'cannot be prototype-polluted through an attribute name', () => {
+  it('cannot be prototype-polluted through an attribute name', () => {
     const parsed = parseResourceAttributes('__proto__=polluted,service.namespace=payments')
 
     expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype)
@@ -141,11 +141,11 @@ describe('parseResourceAttributes', () => {
 })
 
 describe('resolveServiceMetadata — precedence', () => {
-  it(/*
+  /*
    * Explicit configuration is the most specific statement an operator can make,
    * so it beats every environment source.
    */
-  'prefers explicit options over the environment', () => {
+  it('prefers explicit options over the environment', () => {
     const resolved = resolveServiceMetadata(
       { ...BASE, namespace: 'explicit-ns', environment: 'explicit-env' },
       {
@@ -163,13 +163,13 @@ describe('resolveServiceMetadata — precedence', () => {
     })
   })
 
-  it(/*
+  /*
    * The spec is explicit: "If `service.name` is also provided in
    * `OTEL_RESOURCE_ATTRIBUTES`, then `OTEL_SERVICE_NAME` takes precedence."
    * This is a requirement, not a preference — getting it backwards makes the
    * logger disagree with the SDK reading the same two variables.
    */
-  'lets OTEL_SERVICE_NAME beat service.name inside OTEL_RESOURCE_ATTRIBUTES', () => {
+  it('lets OTEL_SERVICE_NAME beat service.name inside OTEL_RESOURCE_ATTRIBUTES', () => {
     const resolved = resolveServiceMetadata(
       { name: '', version: '' },
       {
@@ -181,12 +181,12 @@ describe('resolveServiceMetadata — precedence', () => {
     expect(resolved.name).toBe('from-service-name')
   })
 
-  it(/*
+  /*
    * There is no `OTEL_SERVICE_VERSION` in the specification — the audit assumed
    * one existed. Version comes from the attribute list or from configuration,
    * and nowhere else.
    */
-  'reads the version only from OTEL_RESOURCE_ATTRIBUTES', () => {
+  it('reads the version only from OTEL_RESOURCE_ATTRIBUTES', () => {
     const resolved = resolveServiceMetadata(
       { name: 'svc', version: '' },
       {
@@ -204,11 +204,11 @@ describe('resolveServiceMetadata — precedence', () => {
     expect(resolved.environment).toBe('staging')
   })
 
-  it(/*
+  /*
    * The attribute list is closer to the SDK's own configuration than NODE_ENV,
    * which is a Node convention rather than an OTel one.
    */
-  'prefers the OTel environment attribute over NODE_ENV', () => {
+  it('prefers the OTel environment attribute over NODE_ENV', () => {
     const resolved = resolveServiceMetadata(BASE, {
       OTEL_RESOURCE_ATTRIBUTES: 'deployment.environment.name=production',
       NODE_ENV: 'development'
@@ -217,36 +217,36 @@ describe('resolveServiceMetadata — precedence', () => {
     expect(resolved.environment).toBe('production')
   })
 
-  it(/*
+  /*
    * A variable set to the empty string is a misconfiguration, not a value.
    * Letting it win would replace a good explicit name with nothing.
    */
-  'ignores empty environment values', () => {
+  it('ignores empty environment values', () => {
     const resolved = resolveServiceMetadata(BASE, { OTEL_SERVICE_NAME: '', NODE_ENV: '' })
 
     expect(resolved.name).toBe('checkout-api')
     expect(resolved).not.toHaveProperty('environment')
   })
 
-  it(/*
+  /*
    * Absent means absent. Writing the key as `undefined` would put
    * `"namespace": null` on entries, which asserts "this service has no
    * namespace" where omission asserts nothing at all.
    */
-  'omits optional fields no source supplied', () => {
+  it('omits optional fields no source supplied', () => {
     const resolved = resolveServiceMetadata(BASE, {})
 
     expect(Object.keys(resolved).sort()).toEqual(['name', 'version'])
   })
 
-  it(/*
+  /*
    * The library must NEVER mint a `service.instance.id`. The spec requires the
    * (namespace, name, instance) triplet to be globally unique; a UUID generated
    * here would be the logger's rather than the OTel Resource's, so logs and
    * traces would claim different instances of the same process — and it would
    * change on every restart while looking authoritative.
    */
-  'never generates a service.instance.id', () => {
+  it('never generates a service.instance.id', () => {
     const resolved = resolveServiceMetadata(BASE, {})
 
     expect(resolved).not.toHaveProperty('instanceId')
@@ -270,13 +270,13 @@ describe('buildResourceBindings', () => {
     environment: 'production'
   }
 
-  it(/*
+  /*
    * The default shape EXTENDS what 1.2.0 emitted rather than replacing it, so
    * every existing `service.name` / `service.version` query keeps working.
    * `service.instance.id` nests as `service.instance.id` — flattening the dotted
    * attribute name — because `service.instanceId` is a name no convention defines.
    */
-  'nests the attributes under their dotted paths', () => {
+  it('nests the attributes under their dotted paths', () => {
     expect(buildResourceBindings(full, 'nested')).toStrictEqual({
       service: {
         name: 'checkout-api',
@@ -288,11 +288,11 @@ describe('buildResourceBindings', () => {
     })
   })
 
-  it(/*
+  /*
    * The flat shape is what a collector mapping log fields onto resource
    * attributes reads directly, with no transformation step.
    */
-  'emits verbatim dotted attribute names in flat mode', () => {
+  it('emits verbatim dotted attribute names in flat mode', () => {
     expect(buildResourceBindings(full, 'flat')).toStrictEqual({
       'service.name': 'checkout-api',
       'service.version': '2.14.3',
@@ -323,22 +323,22 @@ describe('buildResourceBindings', () => {
     }
   )
 
-  it(/*
+  /*
    * REGRESSION — `base` used to receive the consumer's whole `service` object,
    * and consumers put build metadata on it. Emitting only the attributes this
    * module knows about would silently drop those keys.
    */
-  'preserves consumer-supplied extras', () => {
+  it('preserves consumer-supplied extras', () => {
     const bindings = buildResourceBindings(full, 'nested', { buildSha: 'abc123' })
 
     expect((bindings['service'] as Record<string, unknown>)['buildSha']).toBe('abc123')
   })
 
-  it(/*
+  /*
    * A resolved attribute always wins the key it owns, so a consumer who also put
    * `name` on the object gets the resolved value rather than a duplicate.
    */
-  'lets resolved attributes win over an extra of the same name', () => {
+  it('lets resolved attributes win over an extra of the same name', () => {
     const bindings = buildResourceBindings(full, 'nested', { name: 'shadow' })
 
     expect((bindings['service'] as Record<string, unknown>)['name']).toBe('checkout-api')
@@ -370,14 +370,14 @@ describe('extraServiceFields', () => {
 })
 
 describe('resolveServiceMetadata — degenerate input', () => {
-  it(/*
+  /*
    * `name` and `version` are required by the option type, but a consumer using
    * `forRootAsync` can produce empty strings at runtime and no environment
    * source may fill them. The resolver must return empty strings rather than
    * `undefined`, because the emitted record's shape is fixed: a missing
    * `service.name` would change the entry's schema, not just its content.
    */
-  'resolves to empty strings when no source supplies name or version', () => {
+  it('resolves to empty strings when no source supplies name or version', () => {
     const resolved = resolveServiceMetadata({ name: '', version: '' }, {})
 
     expect(resolved.name).toBe('')

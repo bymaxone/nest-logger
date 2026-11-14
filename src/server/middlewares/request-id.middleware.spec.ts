@@ -58,51 +58,51 @@ function handle(
 }
 
 describe('RequestIdMiddleware', () => {
-  it(/*
+  /*
    * With no inbound x-request-id the middleware must mint a UUID, expose it on the
    * response, and propagate it into the context of what runs next — proving the scope is
    * opened before the handler runs.
    */
-  'generates a request id, exposes it, and propagates it', () => {
+  it('generates a request id, exposes it, and propagates it', () => {
     const { header, requestId } = handle()
 
     expect(header).toMatch(UUID_V4)
     expect(requestId).toBe(header)
   })
 
-  it(/*
+  /*
    * An inbound x-request-id must be honored (not regenerated) and echoed back —
    * covers the "header present" branch of the id resolution.
    */
-  'echoes and propagates an inbound x-request-id', () => {
+  it('echoes and propagates an inbound x-request-id', () => {
     const { header, requestId } = handle({ 'x-request-id': 'req-abc-123' })
 
     expect(header).toBe('req-abc-123')
     expect(requestId).toBe('req-abc-123')
   })
 
-  it(/*
+  /*
    * The configured tenant header must be read into the context when present —
    * covers the tenant "present" branch.
    */
-  'propagates the tenant id from the x-tenant-id header', () => {
+  it('propagates the tenant id from the x-tenant-id header', () => {
     expect(handle({ 'x-tenant-id': 'tenant-42' }).tenantId).toBe('tenant-42')
   })
 
-  it(/*
+  /*
    * With no tenant header the context must carry no tenantId — covers the tenant
    * "absent" branch and proves an undefined value is never written.
    */
-  'omits the tenant id when the header is absent', () => {
+  it('omits the tenant id when the header is absent', () => {
     expect(handle().tenantId).toBeUndefined()
   })
 
-  it(/*
+  /*
    * An oversized inbound x-request-id must be rejected and replaced with a fresh
    * UUID, so a client cannot push an unbounded string into every log entry —
    * covers the length-bound rejection on the request-id path.
    */
-  'rejects an oversized x-request-id and generates a fresh one', () => {
+  it('rejects an oversized x-request-id and generates a fresh one', () => {
     const oversized = 'x'.repeat(300)
 
     const { header, requestId } = handle({ 'x-request-id': oversized })
@@ -112,12 +112,12 @@ describe('RequestIdMiddleware', () => {
     expect(requestId).toBe(header)
   })
 
-  it(/*
+  /*
    * An x-request-id carrying a character outside the id-safe set (here a markup
    * fragment) must be rejected and replaced with a fresh UUID, so a client cannot
    * plant markup or a control byte into the logs and the echoed correlationId.
    */
-  'rejects a request id with disallowed characters and generates a fresh one', () => {
+  it('rejects a request id with disallowed characters and generates a fresh one', () => {
     const malicious = '<script>alert(1)</script>'
 
     const { header, requestId } = handle({ 'x-request-id': malicious })
@@ -127,28 +127,28 @@ describe('RequestIdMiddleware', () => {
     expect(requestId).toBe(header)
   })
 
-  it(/*
+  /*
    * A tenant header with a disallowed character (a space here) must be dropped,
    * not propagated into the log context — the same id-safe gate on the tenant path.
    */
-  'omits a tenant id with disallowed characters', () => {
+  it('omits a tenant id with disallowed characters', () => {
     expect(handle({ 'x-tenant-id': 'acme evil' }).tenantId).toBeUndefined()
   })
 
-  it(/*
+  /*
    * An oversized tenant header must be dropped (not propagated) — covers the
    * length-bound rejection on the tenant path.
    */
-  'omits an oversized tenant id', () => {
+  it('omits an oversized tenant id', () => {
     expect(handle({ 'x-tenant-id': 'y'.repeat(300) }).tenantId).toBeUndefined()
   })
 
-  it(/*
+  /*
    * An x-request-id at EXACTLY the 256-char bound must be honored (the check is
    * `length <= 256`, inclusive) — pins the boundary so an off-by-one (`<`) that
    * would reject a max-length id is caught.
    */
-  'honors an x-request-id at exactly the 256-char limit', () => {
+  it('honors an x-request-id at exactly the 256-char limit', () => {
     const atLimit = 'a'.repeat(256)
 
     const { header, requestId } = handle({ 'x-request-id': atLimit })
@@ -159,24 +159,24 @@ describe('RequestIdMiddleware', () => {
 })
 
 describe('RequestIdMiddleware with shouldGenerateRequestId disabled', () => {
-  it(/*
+  /*
    * With generation disabled and no inbound header, the middleware must NOT mint
    * an id: no x-request-id header is exposed and the context carries no requestId —
    * correlation is delegated to the upstream gateway. Pins both the
    * `shouldGenerateRequestId ? … : undefined` and `if (requestId !== undefined)` branches.
    */
-  'mints no request id when disabled and no header is present', () => {
+  it('mints no request id when disabled and no header is present', () => {
     const { header, requestId } = handle({}, createOptions(false))
 
     expect(header).toBeUndefined()
     expect(requestId).toBeUndefined()
   })
 
-  it(/*
+  /*
    * With generation disabled an INBOUND header must still be honored and echoed —
    * the gateway-provided id flows through unchanged.
    */
-  'still honors an inbound x-request-id when generation is disabled', () => {
+  it('still honors an inbound x-request-id when generation is disabled', () => {
     const { header, requestId } = handle({ 'x-request-id': 'gw-1' }, createOptions(false))
 
     expect(header).toBe('gw-1')
@@ -191,13 +191,13 @@ describe('RequestIdMiddleware mounted a second time', () => {
     logContext = new LogContextService()
   })
 
-  it(/*
+  /*
    * Two mounts must not mint two ids. Before this, `applyAccessLog(app)` next to
    * `applyRequestIdMiddleware(consumer)` produced UUID A on the response header
    * and UUID B in the context, so the header and the log entries disagreed about
    * which id the request had. The id already in scope wins.
    */
-  'adopts the id already in scope instead of minting a second', () => {
+  it('adopts the id already in scope instead of minting a second', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res, setHeader } = createResponse()
     const req = createRequest({ 'x-request-id': 'inbound-1' })
@@ -214,12 +214,12 @@ describe('RequestIdMiddleware mounted a second time', () => {
     expect(written).toEqual(['inbound-1', 'inbound-1'])
   })
 
-  it(/*
+  /*
    * Adopting must not open another scope at all. Asserting object IDENTITY is
    * what proves it: an equal-but-fresh store would pass a value comparison while
    * having actually opened a third scope on a request that needed none.
    */
-  'adopts without opening another scope', () => {
+  it('adopts without opening another scope', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
     const req = createRequest({ 'x-tenant-id': 't_1' })
@@ -233,14 +233,14 @@ describe('RequestIdMiddleware mounted a second time', () => {
     })
   })
 
-  it(/*
+  /*
    * An enclosing scope carrying no correlation id is NOT a second mount — it is
    * consumer code that opened its own scope. The request gets its own id, and the
    * enclosing scope's fields are carried into it rather than discarded, which is
    * the failure `run()` would produce here: a tenantId resolved at the
    * edge silently absent for the whole request.
    */
-  'takes its own scope and inherits the enclosing fields', () => {
+  it('takes its own scope and inherits the enclosing fields', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res, setHeader } = createResponse()
 
@@ -254,12 +254,12 @@ describe('RequestIdMiddleware mounted a second time', () => {
     expect(setHeader).toHaveBeenCalledWith('x-request-id', 'inbound-9')
   })
 
-  it(/*
+  /*
    * With generation disabled and no inbound header there is no id to carry, so no
    * header is exposed and no requestId reaches the scope — the gateway owns
    * correlation on that configuration — while the enclosing fields still survive.
    */
-  'exposes no id when generation is disabled and none is available', () => {
+  it('exposes no id when generation is disabled and none is available', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions(false))
     const { res, setHeader } = createResponse()
 
@@ -272,12 +272,12 @@ describe('RequestIdMiddleware mounted a second time', () => {
     expect(setHeader).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * A tenant id already in scope must not be overwritten by the header. The
    * enclosing scope resolved it deliberately — from an auth claim, say — and a
    * client-supplied header must not be able to displace that.
    */
-  'keeps a tenant id already in scope over a later header value', () => {
+  it('keeps a tenant id already in scope over a later header value', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
     const headers: Record<string, string> = { 'x-tenant-id': 'resolved-first' }
@@ -293,11 +293,11 @@ describe('RequestIdMiddleware mounted a second time', () => {
     })
   })
 
-  it(/*
+  /*
    * A scope missing the tenant id must still pick it up from the header —
    * the counterpart branch to the one above.
    */
-  'fills in a tenant id the first mount did not have', () => {
+  it('fills in a tenant id the first mount did not have', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
     const headers: Record<string, string> = {}
@@ -312,12 +312,12 @@ describe('RequestIdMiddleware mounted a second time', () => {
     })
   })
 
-  it(/*
+  /*
    * An unacceptable tenant header (a space is outside the id-safe set) must be
    * dropped on the enrich path too, not just when opening a fresh scope — the
    * validation gate cannot be bypassed by arriving through the second mount.
    */
-  'drops an unacceptable tenant header on the adopt path', () => {
+  it('drops an unacceptable tenant header on the adopt path', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
     const headers: Record<string, string> = {}
@@ -335,7 +335,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
       })
     })
   })
-  it(/*
+  /*
    * REGRESSION — two requests must never share a correlation id.
    *
    * An earlier version of this middleware ENRICHED an enclosing scope in place
@@ -346,7 +346,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
    * both had finished. Correlation that silently merges two requests is worse than
    * no correlation, because it is trusted.
    */
-  'gives two requests inside one enclosing scope different ids', () => {
+  it('gives two requests inside one enclosing scope different ids', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
     const seen: (string | undefined)[] = []
@@ -368,12 +368,12 @@ describe('RequestIdMiddleware mounted a second time', () => {
     expect(seen[0]).not.toBe(seen[1])
   })
 
-  it(/*
+  /*
    * The library's OWN correlation fields still reach the request — isolation must
    * not be bought by discarding the tenant a consumer resolved at the edge, which
    * is the trade plain `run()` makes.
    */
-  'carries the enclosing tenant into each isolated request scope', () => {
+  it('carries the enclosing tenant into each isolated request scope', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
 
@@ -384,7 +384,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
       })
     })
   })
-  it(/*
+  /*
    * SECURITY — an id a consumer put in the store is NOT adopted.
    *
    * `LogContextService.set()` takes `unknown`, so consumer middleware can place a
@@ -395,7 +395,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
    * only for an id THIS middleware established, which the per-request mark
    * establishes and the store alone cannot.
    */
-  'does not adopt a request id the middleware did not set', () => {
+  it('does not adopt a request id the middleware did not set', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res, setHeader } = createResponse()
 
@@ -410,13 +410,13 @@ describe('RequestIdMiddleware mounted a second time', () => {
     expect(written).toMatch(UUID_V4)
   })
 
-  it(/*
+  /*
    * The same gate for the length bound: an oversized value in an enclosing scope
    * must not reach the response header. `setHeader` accepts a 5000-character
    * value without complaint — measured — so nothing downstream would catch it,
    * and it would ride on every entry for the request's lifetime.
    */
-  'does not adopt an oversized request id from an enclosing scope', () => {
+  it('does not adopt an oversized request id from an enclosing scope', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res, setHeader } = createResponse()
     const oversized = 'y'.repeat(5000)
@@ -432,13 +432,13 @@ describe('RequestIdMiddleware mounted a second time', () => {
     expect(written).toMatch(UUID_V4)
   })
 
-  it(/*
+  /*
    * With generation disabled and no inbound header the middleware sets no id, so
    * a second mount finds the request marked but the store empty and simply takes
    * the ordinary path again. Pins the third branch of the mark/store pair, which
    * is reachable and would otherwise be an untested combination.
    */
-  'takes the ordinary path on a second mount that established no id', () => {
+  it('takes the ordinary path on a second mount that established no id', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions(false))
     const { res, setHeader } = createResponse()
     const req = createRequest()
@@ -451,7 +451,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
 
     expect(setHeader).not.toHaveBeenCalled()
   })
-  it(/*
+  /*
    * SECURITY — a value written into the store BETWEEN two mounts is not echoed.
    *
    * The previous fix marked the request with a boolean, which proved only that
@@ -462,7 +462,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
    * application. The id is now read back from the REQUEST, so what is echoed is
    * what was validated, whatever the store holds by then.
    */
-  'echoes its own id even when the store was overwritten between mounts', () => {
+  it('echoes its own id even when the store was overwritten between mounts', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res, setHeader } = createResponse()
     const req = createRequest({ 'x-request-id': 'validated-1' })
@@ -483,7 +483,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
     expect(written).toEqual(['validated-1', 'validated-1'])
   })
 
-  it(/*
+  /*
    * SECURITY — a client-supplied x-tenant-id must not displace a tenant the
    * application already resolved.
    *
@@ -493,7 +493,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
    * tenant; this pins the same rule on the path that opens the scope, which is
    * where the asymmetry actually bit.
    */
-  'does not let the tenant header override a tenant already resolved upstream', () => {
+  it('does not let the tenant header override a tenant already resolved upstream', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
 
@@ -504,12 +504,12 @@ describe('RequestIdMiddleware mounted a second time', () => {
     })
   })
 
-  it(/*
+  /*
    * The counterpart branch: with no tenant in the enclosing scope the header is
    * still the source, so the gate above narrows the rule rather than disabling
    * tenant propagation.
    */
-  'still takes the tenant header when the enclosing scope has none', () => {
+  it('still takes the tenant header when the enclosing scope has none', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
 
@@ -521,14 +521,14 @@ describe('RequestIdMiddleware mounted a second time', () => {
       })
     })
   })
-  it(/*
+  /*
    * Pins the documented behaviour of the DEFAULT generation mode under a
    * long-lived enclosing scope, because the JSDoc used to warn about the
    * opposite. Adoption reads a value recorded on the REQUEST, which a scope
    * opened elsewhere does not have — so the enclosing id reaches neither the
    * header nor the entries, and two requests differ.
    */
-  'never adopts an enclosing scope id when generation is on', () => {
+  it('never adopts an enclosing scope id when generation is on', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res, setHeader } = createResponse()
     const seen: (string | undefined)[] = []
@@ -549,13 +549,13 @@ describe('RequestIdMiddleware mounted a second time', () => {
     expect(setHeader.mock.calls.map(([, value]) => value)).not.toContain('LONG-LIVED')
   })
 
-  it(/*
+  /*
    * The other generation mode, and the one where an enclosing id DOES reach the
    * entries — by the request scope inheriting the consumer's own, not by
    * adoption. Nothing is minted and no header is exposed, which is what
    * `shouldGenerateRequestId: false` means: the gateway owns the id.
    */
-  'inherits an enclosing scope id when generation is off, without echoing it', () => {
+  it('inherits an enclosing scope id when generation is off, without echoing it', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions(false))
     const { res, setHeader } = createResponse()
     const seen: (string | undefined)[] = []
@@ -570,7 +570,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
     expect(seen).toEqual(['LONG-LIVED'])
     expect(setHeader).not.toHaveBeenCalled()
   })
-  it(/*
+  /*
    * SECURITY — a request must never inherit an authenticated identity.
    *
    * `userId` is resolved by a guard that runs AFTER this middleware, so an
@@ -579,7 +579,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
    * `userId: 'admin-u1'` was logged under `admin-u1`, because the mixin copies
    * the store onto every entry and omitting the argument does not erase it.
    */
-  'does not inherit userId from an enclosing scope', () => {
+  it('does not inherit userId from an enclosing scope', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
 
@@ -593,14 +593,14 @@ describe('RequestIdMiddleware mounted a second time', () => {
     })
   })
 
-  it(/*
+  /*
    * SECURITY — and the reason this is an ALLOWLIST rather than a list of
    * forbidden names. `LogContext` explicitly permits arbitrary consumer keys, so
    * no denylist can be complete: an application-defined `accountId` or
    * `sessionId` misattributes a request exactly the way `userId` did. Measured on
    * the denylist version, a request inside a scope holding both inherited both.
    */
-  'does not inherit an arbitrary consumer identity field', () => {
+  it('does not inherit an arbitrary consumer identity field', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
 
@@ -612,7 +612,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
     })
   })
 
-  it(/*
+  /*
    * Trace correlation is per-request and is never inherited, whatever the fields
    * are NAMED. The mixin overwrites them from the active span but only when there
    * IS one, so a stale value would survive into every entry of a request without
@@ -620,7 +620,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
    * `snake_case` wire shape, and any individual override — without the exclusion
    * having to track the option names.
    */
-  'does not inherit trace fields under any naming', () => {
+  it('does not inherit trace fields under any naming', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
 
@@ -642,11 +642,11 @@ describe('RequestIdMiddleware mounted a second time', () => {
     )
   })
 
-  it(/*
+  /*
    * The enclosing scope must be left exactly as it was — the request starts from
    * a copy, never by deleting from the caller's store.
    */
-  'leaves the enclosing scope intact', () => {
+  it('leaves the enclosing scope intact', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions())
     const { res } = createResponse()
 
@@ -656,7 +656,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
     })
   })
 
-  it(/*
+  /*
    * REGRESSION — a second mount must not open another scope even when the first
    * established NO id. With `shouldGenerateRequestId: false` and no inbound
    * header there is nothing to record as the validated id, and collapsing "a
@@ -665,7 +665,7 @@ describe('RequestIdMiddleware mounted a second time', () => {
    * `userId` a guard had set between the mounts. Measured: the authenticated
    * identity was gone from every log after that point.
    */
-  'keeps an identity set between mounts when no id was established', () => {
+  it('keeps an identity set between mounts when no id was established', () => {
     const middleware = new RequestIdMiddleware(logContext, createOptions(false))
     const { res } = createResponse()
     const req = createRequest()

@@ -63,12 +63,12 @@ describe('Logger E2E — HTTP error and redirect lifecycle', () => {
     stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
   })
 
-  it(/*
+  /*
    * A thrown 400 must produce the access-log START plus BOTH warn-level error
    * entries: HTTP_REQUEST_CLIENT_ERROR (interceptor) and HTTP_EXCEPTION_HANDLED
    * (filter) — and the client still receives a 400.
    */
-  'logs CLIENT_ERROR and EXCEPTION_HANDLED for a thrown 400', async () => {
+  it('logs CLIENT_ERROR and EXCEPTION_HANDLED for a thrown 400', async () => {
     await request(await listeningServer(app))
       .get('/bad-request')
       .expect(400)
@@ -85,11 +85,11 @@ describe('Logger E2E — HTTP error and redirect lifecycle', () => {
     expect(handled?.['status']).toBe(400)
   })
 
-  it(/*
+  /*
    * A 404 thrown from a real handler must carry the 404 status on the
    * interceptor's CLIENT_ERROR entry — not collapse to a generic error.
    */
-  'tags the CLIENT_ERROR entry with the 404 status', async () => {
+  it('tags the CLIENT_ERROR entry with the 404 status', async () => {
     await request(await listeningServer(app))
       .get('/not-found')
       .expect(404)
@@ -100,11 +100,11 @@ describe('Logger E2E — HTTP error and redirect lifecycle', () => {
     expect(clientError?.['statusCode']).toBe(404)
   })
 
-  it(/*
+  /*
    * A 3xx response must be logged as HTTP_REQUEST_REDIRECT at info level (the
    * non-throwing success branch), never as an error.
    */
-  'logs REDIRECT for a 3xx response', async () => {
+  it('logs REDIRECT for a 3xx response', async () => {
     await request(await listeningServer(app))
       .get('/moved')
       .expect(301)

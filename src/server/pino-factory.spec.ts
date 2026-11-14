@@ -11,11 +11,11 @@ import { PinoLoggerService } from './services/pino-logger.service'
 import { buildPinoInstance, createCapture, baseOptions } from './__tests__/pino-factory.fixtures'
 
 describe('buildPinoInstance', () => {
-  it(/*
+  /*
    * The factory must honor the configured minimum level so consumers can
    * silence verbose logs in production.
    */
-  'applies the configured level', () => {
+  it('applies the configured level', () => {
     const logger = buildPinoInstance(
       applyDefaults({ ...baseOptions, level: 'warn' }),
       new LogContextService(),
@@ -24,13 +24,13 @@ describe('buildPinoInstance', () => {
     expect(logger.level).toBe('warn')
   })
 
-  it(/*
+  /*
    * A custom `timestamp` is interpolated into the JSON line by Pino's contract
    * (`,"time":<value>`), so a returned quote, backslash or newline would break
    * the line, and a crafted value would add fields to it. Each value below must
    * come out as the `time` string, byte for byte, and nothing else.
    */
-  'JSON-escapes a custom timestamp so it cannot break or inject into the line', () => {
+  it('JSON-escapes a custom timestamp so it cannot break or inject into the line', () => {
     const hostile = ['a"b', 'line1\nline2', 'back\\slash', '","injected":"yes', '\u2028']
     for (const raw of hostile) {
       const capture = createCapture()
@@ -46,11 +46,11 @@ describe('buildPinoInstance', () => {
     }
   })
 
-  it(/*
+  /*
    * The factory must always return a usable logger wired to the supplied
    * destinations — the branch the module uses at runtime.
    */
-  'returns a usable logger wired to destinations', () => {
+  it('returns a usable logger wired to destinations', () => {
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       createCapture().destination
     ])
@@ -58,12 +58,12 @@ describe('buildPinoInstance', () => {
     expect(typeof logger.child).toBe('function')
   })
 
-  it(/*
+  /*
    * Level must serialize as a string label (not the numeric code) and every
    * entry must carry the service base bindings + a timestamp — log aggregators
    * key on these fields.
    */
-  'emits string level, service base, and timestamp', () => {
+  it('emits string level, service base, and timestamp', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       capture.destination
@@ -76,11 +76,11 @@ describe('buildPinoInstance', () => {
     expect(typeof entry?.['time']).toBe('string')
   })
 
-  it(/*
+  /*
    * The trace mixin must merge AsyncLocalStorage context into every entry so
    * requestId / tenantId propagate without prop drilling.
    */
-  'merges request context via the trace mixin', () => {
+  it('merges request context via the trace mixin', () => {
     const capture = createCapture()
     const logContext = new LogContextService()
     const logger = buildPinoInstance(applyDefaults(baseOptions), logContext, [capture.destination])
@@ -90,11 +90,11 @@ describe('buildPinoInstance', () => {
     expect(entry?.['tenantId']).toBe('t_1')
   })
 
-  it(/*
+  /*
    * Default redact paths must censor nested secrets so PII never reaches the
    * sink. Protects the security-critical default redaction wiring.
    */
-  'redacts default PII paths', () => {
+  it('redacts default PII paths', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       capture.destination
@@ -104,14 +104,14 @@ describe('buildPinoInstance', () => {
     expect((entry?.['user'] as Record<string, unknown>)['password']).toBe('[REDACTED]')
   })
 
-  it(/*
+  /*
    * A secret at the RECORD ROOT must be censored too, not only one nested a
    * level deep. `emitStructured` spreads caller metadata at the root, so this is
    * the shape the library's own `info(key, msg, userId, { password })` produces
    * — the case that previously slipped past the depth-1+ wildcards and logged in
    * clear. This pins the depth-0 redact entries that close it.
    */
-  'redacts a secret at the record root (caller metadata)', () => {
+  it('redacts a secret at the record root (caller metadata)', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       capture.destination
@@ -123,11 +123,11 @@ describe('buildPinoInstance', () => {
     expect(entry?.['apiKey']).toBe('[REDACTED]')
   })
 
-  it(/*
+  /*
    * The default `err` serializer must expand Error objects into structured
    * fields (type / message / stack) for downstream parsing.
    */
-  'serializes errors via the default err serializer', () => {
+  it('serializes errors via the default err serializer', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       capture.destination
@@ -140,14 +140,14 @@ describe('buildPinoInstance', () => {
     expect(typeof err['stack']).toBe('string')
   })
 
-  it(/*
+  /*
    * REGRESSION — `service` is CONSUMER-supplied and `applyDefaults` keeps whatever
    * it was handed, so a `{ name, version, apiKey }` reached the sink in clear once
    * base bindings stopped going through the path expansion that had covered it
    * via `*.*.apiKey`. Redacted at `formatters.bindings`, which is where Pino
    * hands base over — once, at construction.
    */
-  'redacts a sensitive field a consumer put on service metadata', () => {
+  it('redacts a sensitive field a consumer put on service metadata', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(
       applyDefaults({
@@ -165,12 +165,12 @@ describe('buildPinoInstance', () => {
     expect(service['version']).toBe('1.0.0')
   })
 
-  it(/*
+  /*
    * Redacting base rather than trimming it to the two declared fields is a
    * deliberate choice: a consumer's extra, non-sensitive metadata must survive
    * rather than be silently dropped.
    */
-  'keeps non-sensitive extra service metadata', () => {
+  it('keeps non-sensitive extra service metadata', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(
       applyDefaults({
@@ -187,7 +187,7 @@ describe('buildPinoInstance', () => {
     )
   })
 
-  it(/*
+  /*
    * The three binding surfaces reach the sink together, each redacted by its own
    * hook: `base` at `formatters.bindings`, the record at `formatters.log`, and
    * child bindings inside `PinoLoggerService.child()` — Pino pre-serializes the
@@ -198,7 +198,7 @@ describe('buildPinoInstance', () => {
    * semantics; the redacted path is `PinoLoggerService.child()`, pinned in that
    * service's spec.
    */
-  'carries base, child and record fields through together', () => {
+  it('carries base, child and record fields through together', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       capture.destination
@@ -210,7 +210,7 @@ describe('buildPinoInstance', () => {
     expect(entry?.['password']).toBe('[REDACTED]')
   })
 
-  it(/*
+  /*
    * REGRESSION — the ROOT of a log record must never honour a `toJSON` method.
    * Pino ITERATES that object rather than serializing it, so returning the
    * method's result replaced the entire record: `logger.info(key, msg, userId,
@@ -218,7 +218,7 @@ describe('buildPinoInstance', () => {
    * every other field. Nested values keep `toJSON`, because those DO reach
    * `JSON.stringify`.
    */
-  'keeps the record intact when caller metadata carries a toJSON', () => {
+  it('keeps the record intact when caller metadata carries a toJSON', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       capture.destination
@@ -233,13 +233,13 @@ describe('buildPinoInstance', () => {
     expect(entry).not.toHaveProperty('0')
   })
 
-  it(/*
+  /*
    * The root exception must NOT leak into the serializer hook. A serializer's
    * output does reach `JSON.stringify`, so a `toJSON` on it is honoured — and a
    * serializer that synthesizes such an object is the one shape where skipping
    * it would emit the secret verbatim.
    */
-  'honors toJSON on a serializer output', () => {
+  it('honors toJSON on a serializer output', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(
       applyDefaults({
@@ -258,7 +258,7 @@ describe('buildPinoInstance', () => {
     expect(account['password']).toBe('[REDACTED]')
   })
 
-  it(/*
+  /*
    * SECURITY — the serializer's output is redacted under `redactStrategy:
    * 'paths'` too, which is NOT what that option controls.
    *
@@ -275,7 +275,7 @@ describe('buildPinoInstance', () => {
    * serializer synthesizes is this library's output, and the name walk (which has
    * no depth ceiling) covers it either way.
    */
-  'redacts serializer output even under the legacy paths strategy', () => {
+  it('redacts serializer output even under the legacy paths strategy', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(
       applyDefaults({ ...baseOptions, redactStrategy: 'paths' }),
@@ -292,7 +292,7 @@ describe('buildPinoInstance', () => {
     expect(line).toContain('[REDACTED]')
   })
 
-  it(/*
+  /*
    * SECURITY — an error's own properties now travel at EVERY depth of the cause
    * chain (1.2.7), which widened what reaches a sink: a secret attached to an
    * error two levels down used to be dropped by accident, and is now carried on
@@ -303,7 +303,7 @@ describe('buildPinoInstance', () => {
    * the property belongs to the composition — `size-bound(redact(serialize))` —
    * and a serializer that stopped being wrapped would still pass a direct test.
    */
-  'redacts an own property carried on a nested cause', () => {
+  it('redacts an own property carried on a nested cause', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       capture.destination
@@ -326,12 +326,12 @@ describe('buildPinoInstance', () => {
     expect(cause['safe']).toBe('keep-me')
   })
 
-  it(/*
+  /*
    * The converse, so the root exception stays surgical: a NESTED value with a
    * `toJSON` is still inspected through that method, because `JSON.stringify`
    * will call it.
    */
-  'still redacts through toJSON on a nested value', () => {
+  it('still redacts through toJSON on a nested value', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       capture.destination
@@ -343,7 +343,7 @@ describe('buildPinoInstance', () => {
     expect(nested['password']).toBe('[REDACTED]')
   })
 
-  it(/*
+  /*
    * REGRESSION — `formatters.log` is not the first code to read the caller's
    * object: Pino merges the mixin result with it first, and the default strategy's
    * `Object.assign` invokes every own getter. A throwing getter therefore crashed
@@ -351,7 +351,7 @@ describe('buildPinoInstance', () => {
    * factory now owns the merge so the guarantee actually holds through the real
    * pipeline.
    */
-  'contains a throwing getter on the caller object instead of crashing', () => {
+  it('contains a throwing getter on the caller object instead of crashing', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
       capture.destination
@@ -373,7 +373,7 @@ describe('buildPinoInstance', () => {
     expect(entry?.['msg']).toBe('x')
   })
 
-  it(/*
+  /*
    * REGRESSION — the record is dropped WHOLE, not up to the property that threw.
    * `Object.assign` copies key by key, so merging into the mixin's own object left
    * everything read before the hostile getter already written into it, and the
@@ -381,7 +381,7 @@ describe('buildPinoInstance', () => {
    * NOT a sensitive name: the name walk would have censored one that was, which
    * is exactly what made the prefix easy to miss.
    */
-  'drops the whole record when a getter throws, not just the failing property', () => {
+  it('drops the whole record when a getter throws, not just the failing property', () => {
     const capture = createCapture()
     const logContext = new LogContextService()
     const logger = buildPinoInstance(applyDefaults(baseOptions), logContext, [capture.destination])
@@ -405,12 +405,12 @@ describe('buildPinoInstance', () => {
     expect(entry?.['requestId']).toBe('r_1')
   })
 
-  it(/*
+  /*
    * Consumer `redactPaths` are always `fast-redact` paths and must keep working
    * alongside the name walk — the walk owns the DEFAULT set, not the consumer's
    * own entries. Both must land in the same record.
    */
-  'applies consumer redactPaths alongside the default name walk', () => {
+  it('applies consumer redactPaths alongside the default name walk', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(
       applyDefaults({ ...baseOptions, redactPaths: ['*.ssn'] }),
@@ -424,13 +424,13 @@ describe('buildPinoInstance', () => {
     expect(user['name']).toBe('ok')
   })
 
-  it(/*
+  /*
    * The legacy `'paths'` strategy is the one configuration where Pino's own
    * `redact` option is load-bearing: the name walk is off, so dropping the option
    * would silence redaction entirely. Asserted here at unit level because that is
    * what mutation testing can see.
    */
-  'wires Pino redact so the legacy paths strategy still censors', () => {
+  it('wires Pino redact so the legacy paths strategy still censors', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(
       applyDefaults({ ...baseOptions, redactStrategy: 'paths' }),
@@ -445,11 +445,11 @@ describe('buildPinoInstance', () => {
     )
   })
 
-  it(/*
+  /*
    * A custom censor string must override the default so consumers can match
    * their own log-scrubbing conventions.
    */
-  'honors a custom redact censor', () => {
+  it('honors a custom redact censor', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(
       applyDefaults({ ...baseOptions, redactCensor: '***' }),
@@ -461,11 +461,11 @@ describe('buildPinoInstance', () => {
     expect((entry?.['user'] as Record<string, unknown>)['password']).toBe('***')
   })
 
-  it(/*
+  /*
    * Multi-stream must fan every entry out to ALL registered destinations — the
    * core contract of the destination system.
    */
-  'fans every entry out to every destination', () => {
+  it('fans every entry out to every destination', () => {
     const first = createCapture('first')
     const second = createCapture('second')
     const logger = buildPinoInstance(applyDefaults(baseOptions), new LogContextService(), [
@@ -477,12 +477,12 @@ describe('buildPinoInstance', () => {
     expect(second.entries()[0]?.['msg']).toBe('broadcast')
   })
 
-  it(/*
+  /*
    * A destination minLevel ABOVE the global level must gate that destination
    * independently: it receives only entries at/above its own threshold, while a
    * default destination still receives everything.
    */
-  'honors a per-destination minLevel above the global level', () => {
+  it('honors a per-destination minLevel above the global level', () => {
     const errorsOnly = createCapture('errors-only')
     const all = createCapture('all')
     const logger = buildPinoInstance(
@@ -496,7 +496,7 @@ describe('buildPinoInstance', () => {
     expect(all.entries().map((entry) => entry['msg'])).toEqual(['info-msg', 'error-msg'])
   })
 
-  it(/*
+  /*
    * REGRESSION — a destination whose `minLevel` is a throwing getter must not stop
    * the logger from being built. This read happens at provider-construction time,
    * BEFORE any lifecycle hook, so an escape here fails the factory and the
@@ -508,7 +508,7 @@ describe('buildPinoInstance', () => {
    * Asserted on the sink still RECEIVING at the module level, not merely on the
    * absence of a throw.
    */
-  'builds the logger when a destination minLevel getter throws', () => {
+  it('builds the logger when a destination minLevel getter throws', () => {
     const capture = createCapture('hostile')
     const hostile = { ...capture.destination }
     Object.defineProperty(hostile, 'minLevel', {
@@ -527,12 +527,12 @@ describe('buildPinoInstance', () => {
     expect(capture.entries().map((entry) => entry['msg'])).toEqual(['info-msg'])
   })
 
-  it(/*
+  /*
    * Both the default and consumer-supplied serializers must be size-bounded:
    * an oversized custom-serialized field is replaced by the truncation envelope
    * rather than flooding the sink (verifies the LOG-047 wiring in the factory).
    */
-  'size-bounds serializers and truncates oversized fields', () => {
+  it('size-bounds serializers and truncates oversized fields', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(
       applyDefaults({
@@ -548,13 +548,13 @@ describe('buildPinoInstance', () => {
     expect((entry?.['blob'] as Record<string, unknown>)['_truncated']).toBe(true)
   })
 
-  it(/*
+  /*
    * Redaction must run BEFORE the size bound, so the 200-character `_preview` of
    * a truncated field carries the censor rather than the head of a secret. The
    * other ordering would turn the truncation envelope into a leak channel for
    * exactly the oversized payloads most likely to contain one.
    */
-  'redacts a field before size-bounding it, so the preview carries no secret', () => {
+  it('redacts a field before size-bounding it, so the preview carries no secret', () => {
     const capture = createCapture()
     const logger = buildPinoInstance(
       applyDefaults({

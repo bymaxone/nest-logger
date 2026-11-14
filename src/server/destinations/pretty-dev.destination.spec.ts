@@ -34,21 +34,21 @@ describe('PrettyDevDestination', () => {
   })
 
   describe('constructor', () => {
-    it(/*
+    /*
      * With no options the destination must accept every level (minLevel
      * undefined), so the default dev sink never silently drops entries.
      */
-    'leaves minLevel undefined by default', () => {
+    it('leaves minLevel undefined by default', () => {
       const dest = new PrettyDevDestination()
       expect(dest.minLevel).toBeUndefined()
       expect(dest.name).toBe('pretty-dev')
     })
 
-    it(/*
+    /*
      * A provided minLevel must be retained so the multi-stream wiring can gate
      * this destination independently of the global level.
      */
-    'retains a provided minLevel', () => {
+    it('retains a provided minLevel', () => {
       const dest = new PrettyDevDestination({ minLevel: 'warn' })
       expect(dest.minLevel).toBe('warn')
     })
@@ -65,7 +65,7 @@ describe('PrettyDevDestination', () => {
       }
     })
 
-    it(/*
+    /*
      * The destination renders ANSI colour through a main-thread transform, which is
      * development output: registered with `NODE_ENV=production` it would put escape
      * sequences into the log stream and spend the logging thread on prettifying. It
@@ -73,7 +73,7 @@ describe('PrettyDevDestination', () => {
      * registry contains the failure, reports it on stderr and rescues to stdout when
      * no other destination is live.
      */
-    'refuses to initialize when NODE_ENV is production', async () => {
+    it('refuses to initialize when NODE_ENV is production', async () => {
       process.env['NODE_ENV'] = 'production'
       const dest = new PrettyDevDestination()
       await expect(dest.onInit()).rejects.toThrow(
@@ -81,12 +81,12 @@ describe('PrettyDevDestination', () => {
       )
     })
 
-    it(/*
+    /*
      * After the refusal the destination is in the same state as after any other init
      * failure: a later write is dropped, neither buffered nor printed, so it cannot
      * duplicate an entry another sink already took.
      */
-    'drops writes after refusing in production', async () => {
+    it('drops writes after refusing in production', async () => {
       process.env['NODE_ENV'] = 'production'
       const dest = new PrettyDevDestination()
       await expect(dest.onInit()).rejects.toThrow()
@@ -112,17 +112,17 @@ describe('PrettyDevDestination', () => {
   })
 
   describe('onInit', () => {
-    it(/*
+    /*
      * When pino-pretty resolves, onInit must build the transform without
      * throwing — the happy path every dev environment hits.
      */
-    'builds the pretty transform when pino-pretty is available', async () => {
+    it('builds the pretty transform when pino-pretty is available', async () => {
       const dest = new PrettyDevDestination()
       await expect(dest.onInit()).resolves.toBeUndefined()
       await dest.onShutdown()
     })
 
-    it(/*
+    /*
      * The library installs NO stdout `'error'` listener of its own here, and this
      * pins that as a decision rather than leaving it to drift. pino-pretty's
      * `build({ destination: process.stdout })` attaches two listeners itself, and
@@ -135,7 +135,7 @@ describe('PrettyDevDestination', () => {
      * If it ever stops attaching any, this goes red — and the answer then is to
      * guard the stream here, not to weaken the assertion.
      */
-    'leaves the stdout guard to pino-pretty, which attaches its own', async () => {
+    it('leaves the stdout guard to pino-pretty, which attaches its own', async () => {
       const before = process.stdout.listenerCount('error')
 
       await jest.isolateModulesAsync(async () => {
@@ -148,13 +148,13 @@ describe('PrettyDevDestination', () => {
       expect(process.stdout.listenerCount('error')).toBeGreaterThan(before)
     })
 
-    it(/*
+    /*
      * When pino-pretty is not installed, onInit must throw an actionable error
      * (not a cryptic module-resolution failure) so the consumer knows to either
      * install the peer dep or drop this destination — it must NOT crash boot
      * silently.
      */
-    'throws an actionable error when pino-pretty is missing', async () => {
+    it('throws an actionable error when pino-pretty is missing', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
           throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
@@ -171,13 +171,13 @@ describe('PrettyDevDestination', () => {
       jest.dontMock('pino-pretty')
     })
 
-    it(/*
+    /*
      * onInit must configure pino-pretty with the exact documented options
      * (colorize, SYS time format, ignored base fields, multi-line, stdout sink).
      * Asserting the build() arguments pins each value so a regression in any one
      * is caught.
      */
-    'configures pino-pretty with the documented options', async () => {
+    it('configures pino-pretty with the documented options', async () => {
       await jest.isolateModulesAsync(async () => {
         const captured: Record<string, unknown>[] = []
         jest.doMock('pino-pretty', () => ({
@@ -199,12 +199,12 @@ describe('PrettyDevDestination', () => {
       jest.dontMock('pino-pretty')
     })
 
-    it(/*
+    /*
      * A consumer-chosen view must reach pino-pretty, overriding only the fields it
      * names — the terminal rendering is the whole point of the option, and a view
      * that silently kept the defaults would be another inert knob.
      */
-    'passes the consumer view through, overriding only the named fields', async () => {
+    it('passes the consumer view through, overriding only the named fields', async () => {
       await jest.isolateModulesAsync(async () => {
         const captured: Record<string, unknown>[] = []
         jest.doMock('pino-pretty', () => ({
@@ -229,14 +229,14 @@ describe('PrettyDevDestination', () => {
       jest.dontMock('pino-pretty')
     })
 
-    it(/*
+    /*
      * REGRESSION — `destination` is applied AFTER the consumer's view, so it cannot
      * be overridden. `PrettyViewOptions` omits it, but omitting from a type is only
      * a suggestion: an untyped JavaScript caller can still pass it, and a redirected
      * stream would route around the multistream fan-out and the last-resort rescue.
      * Ordering the spread is what enforces the contract.
      */
-    'ignores a destination smuggled in through the view', async () => {
+    it('ignores a destination smuggled in through the view', async () => {
       await jest.isolateModulesAsync(async () => {
         const captured: Record<string, unknown>[] = []
         jest.doMock('pino-pretty', () => ({
@@ -263,12 +263,12 @@ describe('PrettyDevDestination', () => {
   })
 
   describe('write', () => {
-    it(/*
+    /*
      * After init, written entries must flow through the pino-pretty transform —
      * verified by asserting the stdout output is the prettified form (carries
      * the message but not the raw JSON envelope).
      */
-    'forwards entries to the pretty transform once initialized', async () => {
+    it('forwards entries to the pretty transform once initialized', async () => {
       const stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
       const dest = new PrettyDevDestination()
       await dest.onInit()
@@ -284,7 +284,7 @@ describe('PrettyDevDestination', () => {
       expect(output).not.toContain('"msg":"hello-pretty"')
     })
 
-    it(/*
+    /*
      * Before onInit runs (e.g. every entry NestJS emits while instantiating
      * providers) write must not throw and must not lose the entry. It used to
      * print raw immediately; it now HOLDS the entry so the transform can render
@@ -293,7 +293,7 @@ describe('PrettyDevDestination', () => {
      * safe before init, and nothing is emitted raw while rendering is still
      * possible.
      */
-    'holds a pre-init write instead of printing it raw', () => {
+    it('holds a pre-init write instead of printing it raw', () => {
       const stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
       try {
         const dest = new PrettyDevDestination()
@@ -306,12 +306,12 @@ describe('PrettyDevDestination', () => {
       }
     })
 
-    it(/*
+    /*
      * After a FAILED init (pino-pretty absent) the destination is dropped from
      * the registry's active set, so its writes must be dropped too — NOT fall
      * back to stdout, which would silently duplicate raw NDJSON for every entry.
      */
-    'drops writes after a failed init instead of duplicating to stdout', async () => {
+    it('drops writes after a failed init instead of duplicating to stdout', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
           throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
@@ -341,32 +341,32 @@ describe('PrettyDevDestination', () => {
   })
 
   describe('onShutdown', () => {
-    it(/*
+    /*
      * After init, onShutdown must flush and close the transform, resolving only
      * once the stream has fully ended — graceful shutdown depends on this.
      */
-    'flushes and resolves after init', async () => {
+    it('flushes and resolves after init', async () => {
       jest.spyOn(process.stdout, 'write').mockReturnValue(true)
       const dest = new PrettyDevDestination()
       await dest.onInit()
       await expect(dest.onShutdown()).resolves.toBeUndefined()
     })
 
-    it(/*
+    /*
      * Calling onShutdown before init must be a safe no-op — a destination that
      * failed to initialize must still allow a clean application shutdown.
      */
-    'is a no-op before init', async () => {
+    it('is a no-op before init', async () => {
       const dest = new PrettyDevDestination()
       await expect(dest.onShutdown()).resolves.toBeUndefined()
     })
 
-    it(/*
+    /*
      * onShutdown must END the transform AND register an 'error' listener (so a
      * teardown error rejects cleanly rather than hanging / crashing). Asserting
      * the exact stream calls pins both behaviors.
      */
-    'ends the stream and registers an error listener', async () => {
+    it('ends the stream and registers an error listener', async () => {
       await jest.isolateModulesAsync(async () => {
         const end = jest.fn((cb?: () => void) => cb?.())
         const once = jest.fn()
@@ -416,7 +416,7 @@ describe('PrettyDevDestination', () => {
       expect(process.stdout.listeners('error')).toEqual(stdoutBaseline)
     })
 
-    it(/*
+    /*
      * The transform cannot exist before onInit — loading the optional peer is
      * async — so everything NestJS emits while instantiating providers arrives
      * first. Those entries used to go out as raw NDJSON: nothing lost, but a real
@@ -424,7 +424,7 @@ describe('PrettyDevDestination', () => {
      * developer who had just enabled pretty concluded it had not worked. They are
      * now held and RENDERED, in arrival order.
      */
-    'renders pre-init entries through the transform, in order', async () => {
+    it('renders pre-init entries through the transform, in order', async () => {
       await jest.isolateModulesAsync(async () => {
         const rendered: string[] = []
         jest.doMock('pino-pretty', () => ({
@@ -448,7 +448,7 @@ describe('PrettyDevDestination', () => {
       })
     })
 
-    it(/*
+    /*
      * REGRESSION — the buffer must never become a way to LOSE entries the old
      * raw-passthrough would have printed. When init fails AND nothing else
      * initialized, everything held goes out raw.
@@ -459,7 +459,7 @@ describe('PrettyDevDestination', () => {
      * duplicate. Asserting nothing was written BEFORE the hook is half of this
      * case — without it, the drain could move back into the catch and still pass.
      */
-    'flushes the buffer raw when init fails and no sink survived', async () => {
+    it('flushes the buffer raw when init fails and no sink survived', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
           throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
@@ -479,7 +479,7 @@ describe('PrettyDevDestination', () => {
       })
     })
 
-    it(/*
+    /*
      * REGRESSION — a live sink at a HIGHER level never received these entries, so
      * "something survived" is not "your entries were delivered".
      * `pino.multistream` filters per stream: a healthy `error` sink never saw the
@@ -487,7 +487,7 @@ describe('PrettyDevDestination', () => {
      * carried a single boolean and would have discarded them — losing exactly what
      * the buffer exists to protect. Found by Copilot on the readiness hook itself.
      */
-    'drains raw when the only live sink sits above its level', async () => {
+    it('drains raw when the only live sink sits above its level', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
           throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
@@ -505,7 +505,7 @@ describe('PrettyDevDestination', () => {
       })
     })
 
-    it(/*
+    /*
      * POLICY — with nothing proven delivered, this drains, even though another
      * failed destination may drain the same entries and duplicate them.
      *
@@ -517,7 +517,7 @@ describe('PrettyDevDestination', () => {
      * duplicating one in an already-degraded boot is. So the only discard path
      * left is proven delivery.
      */
-    'drains when delivery is not proven, accepting a possible duplicate', async () => {
+    it('drains when delivery is not proven, accepting a possible duplicate', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
           throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
@@ -535,7 +535,7 @@ describe('PrettyDevDestination', () => {
       })
     })
 
-    it(/*
+    /*
      * REGRESSION (1.2.6) — the counterpart, and the defect this hook exists for:
      * when ANOTHER sink initialized, the held entries are already delivered,
      * because the fan-out hands every entry to every registered destination.
@@ -543,7 +543,7 @@ describe('PrettyDevDestination', () => {
      * `[DefaultStdoutDestination(), PrettyDevDestination()]` pair — measured on
      * the published 1.2.6 as two occurrences of one entry.
      */
-    'discards the buffer when another sink initialized', async () => {
+    it('discards the buffer when another sink initialized', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
           throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
@@ -566,13 +566,13 @@ describe('PrettyDevDestination', () => {
       })
     })
 
-    it(/*
+    /*
      * Nothing guarantees onInit ever runs, so the buffer is bounded. On overflow
      * it drains what it holds BEFORE writing the entry that tripped it — draining
      * afterwards would replay old entries after newer ones, which reads as
      * corruption rather than as a fallback.
      */
-    'drains in order and falls back to raw once the bound is reached', async () => {
+    it('drains in order and falls back to raw once the bound is reached', async () => {
       await jest.isolateModulesAsync(async () => {
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -591,7 +591,7 @@ describe('PrettyDevDestination', () => {
       })
     })
 
-    it(/*
+    /*
      * REGRESSION — the entry COUNT does not bound memory. A payload has no
      * whole-record size limit (`maxEntrySizeBytes` bounds what a serializer emits
      * for one field, not the entry), so entries carrying large metadata could
@@ -599,7 +599,7 @@ describe('PrettyDevDestination', () => {
      * passthrough this buffer replaced retained nothing at all. A buffer added
      * for legibility must not become a memory risk during boot.
      */
-    'falls back to raw once the byte ceiling is reached, well before the count', () => {
+    it('falls back to raw once the byte ceiling is reached, well before the count', () => {
       const dest = new PrettyDevDestination()
       // 512 KiB each: nine of these pass 4 MiB while the count is nowhere near
       // 1000, so only the byte ceiling can be what stops the buffering.
@@ -613,13 +613,13 @@ describe('PrettyDevDestination', () => {
       expect(stdoutSpy.mock.calls.length).toBeLessThan(1000)
     })
 
-    it(/*
+    /*
      * The ceiling is inclusive: an entry that lands EXACTLY on the limit is still
      * held. Pinning the boundary rather than a value comfortably inside it — the
      * comparison is the whole bound, and off-by-one there is the difference
      * between "holds 4 MiB" and "holds 4 MiB minus one entry".
      */
-    'still holds an entry that lands exactly on the byte ceiling', () => {
+    it('still holds an entry that lands exactly on the byte ceiling', () => {
       const dest = new PrettyDevDestination()
       // Exactly 4 MiB of single-byte characters, newline included.
       const exact = 'x'.repeat(4 * 1024 * 1024 - 1) + '\n'
@@ -629,12 +629,12 @@ describe('PrettyDevDestination', () => {
       expect(stdoutSpy).not.toHaveBeenCalled()
     })
 
-    it(/*
+    /*
      * Shutdown before onInit ever ran: the held entries were buffered for a
      * transform that will now never exist, so they go out raw rather than dying
      * with the process.
      */
-    'flushes the buffer raw when shut down before init', async () => {
+    it('flushes the buffer raw when shut down before init', async () => {
       await jest.isolateModulesAsync(async () => {
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()
@@ -646,7 +646,7 @@ describe('PrettyDevDestination', () => {
       })
     })
 
-    it(/*
+    /*
      * REGRESSION — a transform write that throws during the replay must not be
      * reported as a missing peer, and must not take the rest of the buffer with it.
      *
@@ -658,7 +658,7 @@ describe('PrettyDevDestination', () => {
      * entry after it were lost. A buffer that loses a boot log is worse than no
      * buffer, since losing them is the thing it was added to prevent.
      */
-    'degrades one failing replay write to raw and keeps replaying', async () => {
+    it('degrades one failing replay write to raw and keeps replaying', async () => {
       await jest.isolateModulesAsync(async () => {
         const rendered: string[] = []
         jest.doMock('pino-pretty', () => ({
@@ -688,7 +688,7 @@ describe('PrettyDevDestination', () => {
       })
     })
 
-    it(/*
+    /*
      * A flush must EMPTY the buffer, so a second flush emits nothing. Both drain
      * paths can run for one destination — the registry hook drains raw, then
      * shutdown finds no stream and drains again — and an entry emitted twice on a
@@ -696,7 +696,7 @@ describe('PrettyDevDestination', () => {
      * happened. Mutation testing found this: emptying was untested, because a
      * single flush cannot observe it.
      */
-    'emits nothing on a second flush', async () => {
+    it('emits nothing on a second flush', async () => {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('pino-pretty', () => {
           throw Object.assign(new Error("Cannot find module 'pino-pretty'"), {
@@ -718,11 +718,11 @@ describe('PrettyDevDestination', () => {
       })
     })
 
-    it(/*
+    /*
      * Writes to stdout can fail (EPIPE on a closed pipe, `node app | head`).
      * Salvaging a held entry must not become the crash it exists to prevent.
      */
-    'survives a throwing stdout while draining', async () => {
+    it('survives a throwing stdout while draining', async () => {
       await jest.isolateModulesAsync(async () => {
         const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
         const dest = new Fresh()

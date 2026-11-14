@@ -52,22 +52,22 @@ function firstColumn(): string[] {
 }
 
 describe('README error catalog', () => {
-  it(/*
+  /*
    * A thrown error is only findable by its message. A throw site the catalog does not name
    * is an error a consumer meets and cannot look up.
    */
-  'names the message of every throw site in src', () => {
+  it('names the message of every throw site in src', () => {
     const sites = thrownPrefixes()
     expect(sites.length).toBeGreaterThanOrEqual(7)
     const missing = sites.filter(({ prefix }) => !CATALOG.includes(prefix.replace(/\.$/, '')))
     expect(missing).toEqual([])
   })
 
-  it(/*
+  /*
    * The reverse: a thrown-error row whose message no source file contains documents an error
    * the library does not throw.
    */
-  'lists no thrown error that src does not throw', () => {
+  it('lists no thrown error that src does not throw', () => {
     const source = sourceFiles(join(ROOT, 'src'))
       .map((file) => readFileSync(file, 'utf-8'))
       .join('\n')
@@ -77,11 +77,11 @@ describe('README error catalog', () => {
     expect(stale).toEqual([])
   })
 
-  it(/*
+  /*
    * A log-key row is only worth listing if the library can write it. Every uppercase code in
    * the second table must be a reserved key, so a renamed or removed key fails here.
    */
-  'lists only log keys the library reserves', () => {
+  it('lists only log keys the library reserves', () => {
     const codes = firstColumn().filter((cell) => /^[A-Z][A-Z_]+$/.test(cell))
     expect(codes.length).toBeGreaterThanOrEqual(5)
     const reserved = Object.values(RESERVED_LOG_KEYS) as string[]

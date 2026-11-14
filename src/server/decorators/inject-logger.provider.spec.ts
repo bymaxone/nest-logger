@@ -56,36 +56,36 @@ class RootConsumer {
 }
 
 describe('getContextLoggerToken', () => {
-  it(/*
+  /*
    * The same context name must always resolve to the same token (memoized), so
    * the decorator's @Inject(token) and the module's provider agree.
    */
-  'returns the same token for the same context', () => {
+  it('returns the same token for the same context', () => {
     expect(getContextLoggerToken('SameCtx')).toBe(getContextLoggerToken('SameCtx'))
   })
 
-  it(/*
+  /*
    * Distinct contexts must get distinct tokens, so each resolves to its own child.
    */
-  'returns different tokens for different contexts', () => {
+  it('returns different tokens for different contexts', () => {
     expect(getContextLoggerToken('CtxAlpha')).not.toBe(getContextLoggerToken('CtxBeta'))
   })
 
-  it(/*
+  /*
    * The token symbol's description must embed the context (prefixed
    * `INJECTED_LOGGER_`) so DI errors and debugging surface a readable token name.
    */
-  'names the token symbol after the context', () => {
+  it('names the token symbol after the context', () => {
     expect(getContextLoggerToken('DescCtx').description).toBe('INJECTED_LOGGER_DescCtx')
   })
 })
 
 describe('createContextLoggerProvider', () => {
-  it(/*
+  /*
    * The provider factory must return a child PinoLoggerService whose every entry
    * carries the bound context — without the caller setting it.
    */
-  'produces a child logger whose entries carry the bound context', () => {
+  it('produces a child logger whose entries carry the bound context', () => {
     const capture = createCapture()
     const root = new PinoLoggerService(pino({ base: {} }, capture.destination))
     const provider = createContextLoggerProvider('DirectCtx') as FactoryProvider
@@ -101,11 +101,11 @@ describe('createContextLoggerProvider', () => {
 })
 
 describe('collectContextLoggerProviders / collectContextLoggerTokens', () => {
-  it(/*
+  /*
    * Every discovered context must yield exactly one provider and one matching
    * token, so the module wires them consistently.
    */
-  'expose one provider and one token per discovered context', () => {
+  it('expose one provider and one token per discovered context', () => {
     getContextLoggerToken('CollectProbe')
     expect(collectContextLoggerTokens()).toContain(getContextLoggerToken('CollectProbe'))
     expect(collectContextLoggerProviders()).toHaveLength(collectContextLoggerTokens().length)
@@ -113,12 +113,12 @@ describe('collectContextLoggerProviders / collectContextLoggerTokens', () => {
 })
 
 describe('@InjectLogger integration', () => {
-  it(/*
+  /*
    * A constructor param decorated with @InjectLogger('UsersController') must
    * receive a logger that stamps context: 'UsersController' on every entry — the
    * headline ergonomic contract for context-bound injection.
    */
-  'injects a context-bound child logger', async () => {
+  it('injects a context-bound child logger', async () => {
     const capture = createCapture()
     const ref = await Test.createTestingModule({
       imports: [BymaxLoggerModule.forRoot({ service, destinations: [capture.destination] })],
@@ -133,11 +133,11 @@ describe('@InjectLogger integration', () => {
     await ref.close()
   })
 
-  it(/*
+  /*
    * Different contexts must resolve to DIFFERENT child instances — proof there is
    * no shared, mutated singleton being handed to every call site.
    */
-  'gives different contexts different child instances', async () => {
+  it('gives different contexts different child instances', async () => {
     const ref = await Test.createTestingModule({
       imports: [
         BymaxLoggerModule.forRoot({ service, destinations: [createCapture().destination] })
@@ -149,11 +149,11 @@ describe('@InjectLogger integration', () => {
     await ref.close()
   })
 
-  it(/*
+  /*
    * @InjectLogger() with no context must still resolve to the shared root
    * PinoLoggerService, preserving backward compatibility with unparameterized injection.
    */
-  'resolves the root PinoLoggerService when no context is given', async () => {
+  it('resolves the root PinoLoggerService when no context is given', async () => {
     const ref = await Test.createTestingModule({
       imports: [
         BymaxLoggerModule.forRoot({ service, destinations: [createCapture().destination] })
@@ -165,12 +165,12 @@ describe('@InjectLogger integration', () => {
     await ref.close()
   })
 
-  it(/*
+  /*
    * The child-logger path must NEVER call setContext on the shared singleton —
    * doing so would race the context across feature modules. The binding rides on
    * the Pino child instead.
    */
-  'never mutates the shared singleton via setContext', async () => {
+  it('never mutates the shared singleton via setContext', async () => {
     const setContextSpy = jest.spyOn(PinoLoggerService.prototype, 'setContext')
     const ref = await Test.createTestingModule({
       imports: [
@@ -185,12 +185,12 @@ describe('@InjectLogger integration', () => {
     await ref.close()
   })
 
-  it(/*
+  /*
    * AsyncLocalStorage context (requestId / tenantId) must survive into the child
    * logger's entries: the child inherits the root's trace mixin, so per-request
    * correlation is preserved alongside the bound context.
    */
-  'preserves ALS context (requestId / tenantId) in child entries', async () => {
+  it('preserves ALS context (requestId / tenantId) in child entries', async () => {
     const capture = createCapture()
     const ref = await Test.createTestingModule({
       imports: [BymaxLoggerModule.forRoot({ service, destinations: [capture.destination] })],

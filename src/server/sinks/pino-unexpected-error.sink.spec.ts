@@ -71,12 +71,12 @@ describe('PinoUnexpectedErrorSink — nest-core contract', () => {
     h = createHarness()
   })
 
-  it(/*
+  /*
    * The class is bound to nest-core's token by shape alone, so its shape is the
    * contract. Assigning it to the local copy of nest-core's interface fails
    * typecheck when nest-core's report stops providing a field this sink reads.
    */
-  'is structurally assignable to the nest-core sink contract', () => {
+  it('is structurally assignable to the nest-core sink contract', () => {
     const asNestCore: NestCoreUnexpectedErrorSink = h.sink
 
     asNestCore.record({ error: new Error('boom'), method: 'GET', route: '/x' })
@@ -92,12 +92,12 @@ describe('PinoUnexpectedErrorSink — entry shape', () => {
     h = createHarness()
   })
 
-  it(/*
+  /*
    * One error-level entry with the stable key, the ORIGINAL error by identity
    * (so the configured `err` serializer keeps its real type, stack and cause),
    * and the request coordinates the report carries.
    */
-  'writes one HTTP_UNEXPECTED_ERROR entry with the error and request coordinates', () => {
+  it('writes one HTTP_UNEXPECTED_ERROR entry with the error and request coordinates', () => {
     const error = new TypeError('x is undefined')
 
     h.sink.record({ error, method: 'GET', route: '/invoices/:id', correlationId: 'req-1' })
@@ -113,11 +113,11 @@ describe('PinoUnexpectedErrorSink — entry shape', () => {
     expect(h.errorSpy.mock.calls[0][1]).toBe('x is undefined')
   })
 
-  it(/*
+  /*
    * nest-core leaves the key out when no correlation id resolved; the entry
    * must not then carry `correlationId: undefined`.
    */
-  'omits correlationId when the report has none', () => {
+  it('omits correlationId when the report has none', () => {
     h.sink.record({ error: new Error('boom'), method: 'POST', route: '<unmatched>' })
 
     expect(Object.keys(h.emittedPayload())).not.toContain('correlationId')
@@ -131,12 +131,12 @@ describe('PinoUnexpectedErrorSink — what the entry leaves out', () => {
     h = createHarness()
   })
 
-  it(/*
+  /*
    * The trace mixin already stamps the active span's trace id under the
    * configured field. Writing `report.traceId` here would override that field
    * and bypass `shouldAutoInjectTraceContext: false`.
    */
-  'does not write the report traceId', () => {
+  it('does not write the report traceId', () => {
     h.sink.record({
       error: new Error('boom'),
       method: 'GET',
@@ -147,13 +147,13 @@ describe('PinoUnexpectedErrorSink — what the entry leaves out', () => {
     expect(Object.keys(h.emittedPayload())).not.toContain('traceId')
   })
 
-  it(/*
+  /*
    * Only the named coordinates are copied. A report object that carries more
    * than the contract (a future nest-core field, or a caller passing the
    * request) must not smuggle body, headers, query or the raw URL into the
    * entry.
    */
-  'copies nothing from the report beyond the contract fields', () => {
+  it('copies nothing from the report beyond the contract fields', () => {
     const report = {
       error: new Error('boom'),
       method: 'GET',
@@ -178,25 +178,25 @@ describe('PinoUnexpectedErrorSink — arbitrary thrown values', () => {
     h = createHarness()
   })
 
-  it(/*
+  /*
    * nest-core passes the thrown value uncut, and a thrown value need not be an
    * Error. A string must still produce a readable entry rather than a blank
    * message or a throw.
    */
-  'normalizes a non-error thrown value', () => {
+  it('normalizes a non-error thrown value', () => {
     h.sink.record({ error: 'plain string', method: 'GET', route: '/x' })
 
     expect(h.emittedPayload()['err']).toEqual({ name: 'UnknownError', message: 'plain string' })
     expect(h.errorSpy.mock.calls[0][1]).toBe('plain string')
   })
 
-  it(/*
+  /*
    * The thrown value is arbitrary application data. One whose `name` or
    * `message` getter throws must still produce the entry — degraded to the
    * sanitizer's failure shape — rather than being dropped while detecting
    * whether it is an error at all.
    */
-  'still writes the entry when the thrown value has a throwing getter', () => {
+  it('still writes the entry when the thrown value has a throwing getter', () => {
     const hostile = Object.defineProperty({ name: 'Error' }, 'message', {
       enumerable: true,
       get(): string {
@@ -234,11 +234,11 @@ describe('PinoUnexpectedErrorSink — failure containment', () => {
     return JSON.parse(String(stderrSpy.mock.calls[0]?.[0])) as Record<string, unknown>
   }
 
-  it(/*
+  /*
    * The sink runs on nest-core's response path. A failing logger (a throwing
    * serializer or destination surfacing synchronously) must not escape.
    */
-  'never throws when the logger throws', () => {
+  it('never throws when the logger throws', () => {
     h.errorSpy.mockImplementation(() => {
       throw new Error('serializer exploded')
     })
@@ -249,13 +249,13 @@ describe('PinoUnexpectedErrorSink — failure containment', () => {
     expect(h.errorSpy).toHaveBeenCalledTimes(1)
   })
 
-  it(/*
+  /*
    * The entry is the only log record of an unhandled exception, so a report that cannot
    * be written must never vanish silently. Stdout is no place for the notice, because the
    * logger is the thing that failed: a dropped report leaves one line on stderr naming
    * what was lost and why, outside the sink set, the way a destination failure does.
    */
-  'writes one stderr line when the logger throws and the report is dropped', () => {
+  it('writes one stderr line when the logger throws and the report is dropped', () => {
     h.errorSpy.mockImplementation(() => {
       throw new Error('serializer exploded')
     })
@@ -271,10 +271,10 @@ describe('PinoUnexpectedErrorSink — failure containment', () => {
     })
   })
 
-  it(/*
+  /*
    * A hostile report — a getter that throws — must not escape either.
    */
-  'never throws on a report whose fields throw when read', () => {
+  it('never throws on a report whose fields throw when read', () => {
     const report: UnexpectedErrorReport = { error: new Error('boom'), method: 'GET', route: '/x' }
     Object.defineProperty(report, 'method', {
       get(): string {
@@ -288,11 +288,11 @@ describe('PinoUnexpectedErrorSink — failure containment', () => {
     expect(h.errorSpy).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * The same contract for a report that cannot be read: nothing reaches the logger,
    * and the drop is still announced on stderr instead of vanishing.
    */
-  'writes one stderr line when the report cannot be read', () => {
+  it('writes one stderr line when the report cannot be read', () => {
     const report: UnexpectedErrorReport = { error: new Error('boom'), method: 'GET', route: '/x' }
     Object.defineProperty(report, 'route', {
       get(): string {
@@ -310,10 +310,10 @@ describe('PinoUnexpectedErrorSink — failure containment', () => {
     })
   })
 
-  it(/*
+  /*
    * A well-formed report writes nothing to stderr: the new line is for a drop only.
    */
-  'writes nothing to stderr when the report is logged', () => {
+  it('writes nothing to stderr when the report is logged', () => {
     h.sink.record({ error: new Error('boom'), method: 'GET', route: '/x' })
 
     expect(stderrSpy).not.toHaveBeenCalled()

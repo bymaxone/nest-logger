@@ -25,49 +25,49 @@ describe('event name derivation', () => {
     return capture.entries()
   }
 
-  it(/*
+  /*
    * The event name is DERIVED, not mirrored. OTel's naming rules call for
    * lowercase dot-namespaced names, so emitting `PAYMENT_FAILED` verbatim would
    * produce a non-conforming event name and defeat the point of the field.
    * `logKey` itself is untouched — this is additive, never a rename.
    */
-  'derives a lowercase dotted name and leaves logKey alone', () => {
+  it('derives a lowercase dotted name and leaves logKey alone', () => {
     const [structured] = emit()
 
     expect(structured?.['event.name']).toBe('payment.failed')
     expect(structured?.['logKey']).toBe('PAYMENT_FAILED')
   })
 
-  it(/*
+  /*
    * The NestJS variadic bridge carries no log key, and an ordinary diagnostic
    * line is not an Event — so it correctly gets no event name rather than an
    * empty or fabricated one.
    */
-  'omits the event name on calls that carry no log key', () => {
+  it('omits the event name on calls that carry no log key', () => {
     const [, variadic] = emit()
 
     expect(variadic?.['event.name']).toBeUndefined()
     expect(variadic?.['msg']).toBe('a plain nest-style message')
   })
 
-  it(/*
+  /*
    * The field name is configurable because the value is meant to be mapped onto
    * the LogRecord's `EventName` field, and different pipelines read different
    * keys. The same-named OTLP *attribute* is deprecated, which is exactly why
    * the carrier key must not be hard-coded.
    */
-  'honours a custom field name', () => {
+  it('honours a custom field name', () => {
     const [structured] = emit({ eventNameField: 'otel.event_name' })
 
     expect(structured?.['otel.event_name']).toBe('payment.failed')
     expect(structured?.['event.name']).toBeUndefined()
   })
 
-  it(/*
+  /*
    * `false` is a meaningful value, not an absent one — `??` in the defaults is
    * what preserves it, where `||` would silently restore the default.
    */
-  'emits nothing when disabled', () => {
+  it('emits nothing when disabled', () => {
     const [structured] = emit({ eventNameField: false })
 
     expect(structured?.['event.name']).toBeUndefined()
@@ -101,12 +101,12 @@ describe('event name derivation', () => {
 })
 
 describe('event name — degenerate log keys', () => {
-  it(/*
+  /*
    * An empty log key is not an event. Deriving from it would put `""` on the
    * entry, which is worse than absence: it asserts the record IS an Event and
    * names it nothing.
    */
-  'emits no event name for an empty log key', () => {
+  it('emits no event name for an empty log key', () => {
     const capture = createCapture()
     const logger = new PinoLoggerService(
       buildPinoInstance(

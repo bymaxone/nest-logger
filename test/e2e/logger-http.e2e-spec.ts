@@ -33,11 +33,11 @@ describe('Logger E2E — HTTP lifecycle', () => {
     stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
   })
 
-  it(/*
+  /*
    * A 200 request must emit both HTTP_REQUEST_START and HTTP_REQUEST_SUCCESS —
    * the full access-log lifecycle through the real interceptor.
    */
-  'logs START and SUCCESS for a 200 request', async () => {
+  it('logs START and SUCCESS for a 200 request', async () => {
     await request(await listeningServer(app))
       .get('/hello')
       .expect(200)
@@ -51,11 +51,11 @@ describe('Logger E2E — HTTP lifecycle', () => {
     expect(success).toMatchObject({ level: 'info', statusCode: 200, method: 'GET', url: '/hello' })
   })
 
-  it(/*
+  /*
    * A high-cardinality id in the path must be normalized to /users/:id so log
    * keys stay low-cardinality for aggregation.
    */
-  'normalizes a UUID path param to /users/:id', async () => {
+  it('normalizes a UUID path param to /users/:id', async () => {
     await request(await listeningServer(app))
       .get('/users/4bf92f35-77b3-4da6-a3ce-929d0e0e4736')
       .expect(200)
@@ -64,11 +64,11 @@ describe('Logger E2E — HTTP lifecycle', () => {
     expect(urls).toContain('/users/:id')
   })
 
-  it(/*
+  /*
    * An uncaught error must surface as HTTP_REQUEST_SERVER_ERROR and a 500 — the
    * exception is logged, never swallowed.
    */
-  'logs SERVER_ERROR for an uncaught 500', async () => {
+  it('logs SERVER_ERROR for an uncaught 500', async () => {
     await request(await listeningServer(app))
       .get('/boom')
       .expect(500)
@@ -79,11 +79,11 @@ describe('Logger E2E — HTTP lifecycle', () => {
     expect(serverError).toMatchObject({ level: 'error', statusCode: 500, method: 'GET' })
   })
 
-  it(/*
+  /*
    * The excluded /health path must produce NO HTTP_REQUEST_START — monitoring
    * probes must never flood the logs (verifies excludePaths end-to-end).
    */
-  'does not log the excluded /health path', async () => {
+  it('does not log the excluded /health path', async () => {
     await request(await listeningServer(app))
       .get('/health')
       .expect(200)
@@ -94,11 +94,11 @@ describe('Logger E2E — HTTP lifecycle', () => {
     expect(healthStarts).toHaveLength(0)
   })
 
-  it(/*
+  /*
    * The x-request-id header must propagate into every log entry of the request
    * via the AsyncLocalStorage scope opened by the request-id middleware.
    */
-  'propagates x-request-id across the request logs', async () => {
+  it('propagates x-request-id across the request logs', async () => {
     await request(await listeningServer(app))
       .get('/hello')
       .set('x-request-id', 'req-e2e-123')
@@ -110,11 +110,11 @@ describe('Logger E2E — HTTP lifecycle', () => {
     expect(start?.['requestId']).toBe('req-e2e-123')
   })
 
-  it(/*
+  /*
    * A handler logging via @InjectLogger('TestController') must stamp that context
    * onto its entries — the child-logger wiring working through real HTTP.
    */
-  'stamps the @InjectLogger context onto handler logs', async () => {
+  it('stamps the @InjectLogger context onto handler logs', async () => {
     await request(await listeningServer(app))
       .get('/users/abc')
       .expect(200)

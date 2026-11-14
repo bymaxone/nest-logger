@@ -56,7 +56,7 @@ describe('DestinationRegistry', () => {
   })
 
   describe('onApplicationShutdown', () => {
-    it(/*
+    /*
      * REGRESSION — audit finding D-1. `LOGGER_SHUTDOWN_OK` was declared in the
      * reserved catalog and never written. It is the bookend to
      * `LOGGER_BOOTSTRAP_OK`: its absence in a log stream is how an operator
@@ -64,7 +64,7 @@ describe('DestinationRegistry', () => {
      * asserted, and the emission must happen BEFORE any sink is torn down —
      * an entry written after the destinations closed would have nowhere to go.
      */
-    'emits LOGGER_SHUTDOWN_OK before tearing any destination down', async () => {
+    it('emits LOGGER_SHUTDOWN_OK before tearing any destination down', async () => {
       const seenAtShutdown: number[] = []
       const destination = makeDestination('sink', {
         onInit: jest.fn(),
@@ -89,11 +89,11 @@ describe('DestinationRegistry', () => {
       expect(seenAtShutdown).toEqual([2])
     })
 
-    it(/*
+    /*
      * Destinations must shut down in REVERSE registration order so the
      * first-registered sink (typically stdout) closes last.
      */
-    'shuts down active destinations in reverse order', async () => {
+    it('shuts down active destinations in reverse order', async () => {
       const order: string[] = []
       const first = makeDestination('first', {
         onInit: jest.fn(),
@@ -115,11 +115,11 @@ describe('DestinationRegistry', () => {
       expect(order).toEqual(['second', 'first'])
     })
 
-    it(/*
+    /*
      * The detail of a failed shutdown without a stack is the thrown value's message, and that
      * text is cut at the same limit as every message the logger writes.
      */
-    'cuts the message of a destination that failed to shut down without a stack', async () => {
+    it('cuts the message of a destination that failed to shut down without a stack', async () => {
       const failing = makeDestination('failing', {
         onInit: jest.fn(),
         onShutdown: jest.fn(() => {
@@ -137,12 +137,12 @@ describe('DestinationRegistry', () => {
       expect(line).toContain('x'.repeat(16_384) + '…[truncated]')
     })
 
-    it(/*
+    /*
      * The detail of a failed shutdown carries the thrown error's stack to stderr as given, and a
      * stack can be megabytes long when the error's name and message are themselves errors, so it
      * is cut at the same limit as every stack the logger writes.
      */
-    'cuts the stack of a destination that failed to shut down', async () => {
+    it('cuts the stack of a destination that failed to shut down', async () => {
       const failing = makeDestination('failing', {
         onInit: jest.fn(),
         onShutdown: jest.fn(() => {
@@ -162,10 +162,10 @@ describe('DestinationRegistry', () => {
       expect(line).toContain('…[truncated]')
     })
 
-    it(/*
+    /*
      * A destination without an onShutdown hook must not break graceful shutdown.
      */
-    'tolerates a destination without an onShutdown hook', async () => {
+    it('tolerates a destination without an onShutdown hook', async () => {
       const hookless = makeDestination('hookless', { onInit: jest.fn() })
       const registry = new DestinationRegistry([hookless], logger, options, health)
       await registry.onModuleInit()
@@ -173,11 +173,11 @@ describe('DestinationRegistry', () => {
       await expect(registry.onApplicationShutdown()).resolves.toBeUndefined()
     })
 
-    it(/*
+    /*
      * If a destination's onShutdown throws an Error, the failure must fall back
      * to process.stderr.write using the error's stack (or message when no stack).
      */
-    'falls back to process.stderr.write when onShutdown throws an Error', async () => {
+    it('falls back to process.stderr.write when onShutdown throws an Error', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const boom = makeDestination('boom', {
         onInit: jest.fn(),
@@ -192,7 +192,7 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * REGRESSION — a cause whose own READ throws must not abort the teardown of
      * the destinations still queued behind it. The report used to coerce above
      * its guard: `String(cause)` on a value with a throwing `Symbol.toPrimitive`,
@@ -204,7 +204,7 @@ describe('DestinationRegistry', () => {
      * Asserted on the SECOND destination actually shutting down, not merely on the
      * absence of a throw: the point of the guard is that teardown continues.
      */
-    'keeps tearing down when the thrown cause cannot even be read', async () => {
+    it('keeps tearing down when the thrown cause cannot even be read', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const hostile = {
         get stack(): string {
@@ -235,7 +235,7 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * REGRESSION — the SHUTDOWN report escapes control characters, and that is
      * asserted rather than assumed. Every other shutdown test uses plain ASCII, so
      * replacing `escapeControlCharacters` with an identity function would leave
@@ -243,7 +243,7 @@ describe('DestinationRegistry', () => {
      * terminal. A stack is legitimately multi-line, so its newlines must SURVIVE
      * while the escape sequence does not — both halves are checked.
      */
-    'escapes control characters in the shutdown report but keeps stack newlines', async () => {
+    it('escapes control characters in the shutdown report but keeps stack newlines', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const hostile = new Error('boom')
       hostile.stack = 'Error: boom\n    at \u001b[31mevil\u0085 (a.ts:1:1)'
@@ -268,7 +268,7 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * REGRESSION — a throwing `minLevel` getter must not abort bootstrap either.
      * `effectiveLevelOf` reads it on BOTH branches of the init loop, including
      * inside the catch that exists so a failing destination cannot stop the
@@ -279,7 +279,7 @@ describe('DestinationRegistry', () => {
      * Asserted on the LATER destination initializing, not merely on the absence of
      * a throw — continuing the loop is the property that matters.
      */
-    'still boots when a destination cannot report its own minLevel', async () => {
+    it('still boots when a destination cannot report its own minLevel', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const poison = makeDestination('poison', { onInit: jest.fn() })
       Object.defineProperty(poison, 'minLevel', {
@@ -296,13 +296,13 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * REGRESSION — a throwing `name` getter must not abort BOOTSTRAP either. The
      * init reporter read the name at its call site, inside the catch that exists
      * so a failing destination cannot stop the application from starting; the
      * throw escaped `onModuleInit` and did exactly what that catch forbids.
      */
-    'still boots when a failing destination cannot report its own name', async () => {
+    it('still boots when a failing destination cannot report its own name', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const healthy = makeDestination('healthy', { onInit: jest.fn() })
       const poison = makeDestination('poison', {
@@ -333,7 +333,7 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * REGRESSION — a newline-bearing cause WITHOUT a stack must not forge a second
      * stderr record. `escapeControlCharacters` preserves newlines on purpose, since
      * a stack is legitimately multi-line; routing a `message` or a non-Error value
@@ -343,7 +343,7 @@ describe('DestinationRegistry', () => {
      * Asserted on the emitted text being ONE line, not merely on the escape being
      * present.
      */
-    'never lets a newline in a stackless cause open a second stderr line', async () => {
+    it('never lets a newline in a stackless cause open a second stderr line', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const stackless = new Error('failed\n[forged entry]')
       delete stackless.stack
@@ -366,7 +366,7 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * REGRESSION — the destination's own `name` is read inside the guard too.
      * `readonly name: string` does not stop a consumer implementing it as a
      * getter, and reading it at the call site would put it back inside the
@@ -374,7 +374,7 @@ describe('DestinationRegistry', () => {
      * cause would. Guarded separately from the detail, so one unreadable value
      * does not cost the other.
      */
-    'keeps tearing down when the destination name itself cannot be read', async () => {
+    it('keeps tearing down when the destination name itself cannot be read', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const survivor = makeDestination('survivor', { onInit: jest.fn(), onShutdown: jest.fn() })
       const poison = makeDestination('named', {
@@ -400,11 +400,11 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * When the thrown cause is a non-Error value (e.g. a string), String(cause)
      * must be used as the detail — covers the instanceof-false branch.
      */
-    'falls back to process.stderr.write when onShutdown throws a non-Error', async () => {
+    it('falls back to process.stderr.write when onShutdown throws a non-Error', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const boom = makeDestination('boom', {
         onInit: jest.fn(),
@@ -419,11 +419,11 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * When the Error has no stack (e.g. stripped by a transpiler), the message
      * must be used as the detail — covers the stack ?? message branch.
      */
-    'uses error.message when stack is absent', async () => {
+    it('uses error.message when stack is absent', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const stacklessError = new Error('no-stack')
       Reflect.deleteProperty(stacklessError, 'stack')

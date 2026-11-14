@@ -77,12 +77,12 @@ describe('Logger E2E — OpenTelemetry trace context', () => {
     return parseLogEntries(stdoutSpy).find((entry) => entry['logKey'] === logKey)
   }
 
-  it(/*
+  /*
    * With a valid active span, every entry must carry traceId / spanId
    * (camelCase defaults) and the trace flags formatted as two lowercase hex
    * digits.
    */
-  'injects traceId, spanId and traceFlags from the active span (camelCase)', async () => {
+  it('injects traceId, spanId and traceFlags from the active span (camelCase)', async () => {
     mockActiveSpan = {
       spanContext: () => ({ traceId: VALID_TRACE_ID, spanId: VALID_SPAN_ID, traceFlags: 1 })
     }
@@ -96,12 +96,12 @@ describe('Logger E2E — OpenTelemetry trace context', () => {
     expect(entry?.['traceFlags']).toBe('01')
   })
 
-  it(/*
+  /*
    * A malformed (all-zeros) trace ID is the OTel "no trace" sentinel and a
    * potential log-injection vector — the validators must reject it so NO trace
    * fields are emitted.
    */
-  'rejects an all-zero trace ID and injects nothing', async () => {
+  it('rejects an all-zero trace ID and injects nothing', async () => {
     mockActiveSpan = {
       spanContext: () => ({ traceId: '0'.repeat(32), spanId: VALID_SPAN_ID, traceFlags: 1 })
     }
@@ -114,11 +114,11 @@ describe('Logger E2E — OpenTelemetry trace context', () => {
     expect(entry?.['spanId']).toBeUndefined()
   })
 
-  it(/*
+  /*
    * The `snake_case` field format must emit trace_id / span_id / trace_flags —
    * the OTel Logs Data Model wire names.
    */
-  'uses snake_case field names when configured', async () => {
+  it('uses snake_case field names when configured', async () => {
     mockActiveSpan = {
       spanContext: () => ({ traceId: VALID_TRACE_ID, spanId: VALID_SPAN_ID, traceFlags: 1 })
     }
@@ -133,11 +133,11 @@ describe('Logger E2E — OpenTelemetry trace context', () => {
     expect(entry?.['traceId']).toBeUndefined()
   })
 
-  it(/*
+  /*
    * With `shouldAutoInjectTraceContext: false`, detection is skipped entirely —
    * no trace fields even when a valid span is active.
    */
-  'injects nothing when auto-injection is disabled', async () => {
+  it('injects nothing when auto-injection is disabled', async () => {
     mockActiveSpan = {
       spanContext: () => ({ traceId: VALID_TRACE_ID, spanId: VALID_SPAN_ID, traceFlags: 1 })
     }
@@ -148,11 +148,11 @@ describe('Logger E2E — OpenTelemetry trace context', () => {
     expect(findEntry('OTEL_OFF')?.['traceId']).toBeUndefined()
   })
 
-  it(/*
+  /*
    * With no active span, entries carry no trace fields — the common case when
    * no request is currently traced.
    */
-  'injects nothing when there is no active span', async () => {
+  it('injects nothing when there is no active span', async () => {
     mockActiveSpan = undefined
     const logger = await bootLogger({})
 

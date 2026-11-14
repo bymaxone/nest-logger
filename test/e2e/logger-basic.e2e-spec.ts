@@ -34,11 +34,11 @@ describe('Logger E2E — basic bootstrap', () => {
     await app.close()
   })
 
-  it(/*
+  /*
    * Booting the module must emit exactly one structured bootstrap entry carrying
    * the service metadata — the signal a consumer's wiring succeeded.
    */
-  'emits a single structured bootstrap log entry', () => {
+  it('emits a single structured bootstrap log entry', () => {
     const bootstrap = bootstrapEntries.filter(
       (entry) => entry['logKey'] === RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK
     )
@@ -47,10 +47,10 @@ describe('Logger E2E — basic bootstrap', () => {
     expect(bootstrap[0]?.['msg']).toBe('BymaxLoggerModule initialized')
   })
 
-  it(/*
+  /*
    * The core service must be resolvable from the booted application container.
    */
-  'exposes PinoLoggerService from the container', () => {
+  it('exposes PinoLoggerService from the container', () => {
     expect(app.get(PinoLoggerService, { strict: false })).toBeInstanceOf(PinoLoggerService)
   })
 })
