@@ -129,6 +129,9 @@ export class BoundedWritable extends Writable {
     encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
     callback?: (error?: Error | null) => void
   ): boolean {
+    // Only strings and Buffers are counted, which is all Pino writes: a chunk type that Writable
+    // refuses with a synchronous throw (an ArrayBuffer) would stay counted, and the adapter is not
+    // reachable from outside the module.
     // A stream that has ended or been destroyed refuses the chunk without calling the handler, so
     // nothing would release the bytes; it is left to Writable to report, and is not counted.
     if (this.writableEnded || this.destroyed) {
