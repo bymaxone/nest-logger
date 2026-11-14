@@ -1,5 +1,5 @@
 # Commits that only move text and change no behaviour, so `git blame` skips them.
 # GitHub reads this file; locally run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 
-# Put each test's block comment above its it() call (775 calls in 74 specs).
+# Only the placement of test block comments differs here; no assertion and no runtime behaviour does.
 5ecd3ad3c72d3c8c0150c5d1e45a22f9fa1bf42e
