@@ -8,8 +8,9 @@
  *
  * Fail-soft contract (the library's core guarantee): a destination whose
  * `write()` throws or rejects MUST NOT crash the host application. The failure is
- * CONTAINED here — each failed write emits one
- * `LOGGER_DESTINATION_WRITE_FAILED` line to `process.stderr` and is then swallowed
+ * CONTAINED here — the first failed write of a window emits a
+ * `LOGGER_DESTINATION_WRITE_FAILED` line to `process.stderr`, later failures of the window are
+ * counted into the next line's `suppressed`, and every failed write is then swallowed
  * (the stream callback is invoked WITHOUT an error). Propagating it via `callback(err)` would make the
  * wrapper `Writable` emit an unhandled `'error'` event, which crashes the process.
  * The report goes to stderr — NEVER back through the logger — so a broken
