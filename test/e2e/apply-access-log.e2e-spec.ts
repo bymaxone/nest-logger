@@ -22,6 +22,7 @@ import {
   RESERVED_LOG_KEYS,
   type ILogDestination
 } from '@bymax-one/nest-logger'
+import { listeningServer } from './support/listening-server'
 
 /** A body the JSON parser cannot accept — the request under measurement. */
 const TRUNCATED_JSON = '{"label":'
@@ -183,7 +184,7 @@ describe('applyAccessLog', () => {
    * terminal 4xx entry around whatever the exception filter produces.
    */
   'logs a request the body parser rejects', async () => {
-    await request(app.getHttpServer())
+    await request(await listeningServer(app))
       .post('/examples')
       .set('Content-Type', 'application/json')
       .send(TRUNCATED_JSON)
@@ -205,7 +206,7 @@ describe('applyAccessLog', () => {
    * the two.
    */
   'carries the inbound request id onto the entries for a rejected body', async () => {
-    const res = await request(app.getHttpServer())
+    const res = await request(await listeningServer(app))
       .post('/examples')
       .set('Content-Type', 'application/json')
       .set('x-request-id', 'measure-me')
@@ -227,7 +228,7 @@ describe('applyAccessLog', () => {
    * with successes.
    */
   'records the real status code for a rejected body', async () => {
-    await request(app.getHttpServer())
+    await request(await listeningServer(app))
       .post('/examples')
       .set('Content-Type', 'application/json')
       .send(TRUNCATED_JSON)
@@ -246,7 +247,10 @@ describe('applyAccessLog', () => {
    * with the module-middleware wiring.
    */
   'still logs a well-formed request exactly once', async () => {
-    await request(app.getHttpServer()).post('/examples').send({ label: 'ok' }).expect(201)
+    await request(await listeningServer(app))
+      .post('/examples')
+      .send({ label: 'ok' })
+      .expect(201)
     await waitForHttpEntries(earlyCapture, 2)
 
     expect(earlyCapture.httpKeys()).toEqual([
@@ -279,7 +283,10 @@ describe('applyRequestIdMiddleware (positive control for the parser gap)', () =>
    * the module-middleware wiring logs a well-formed request perfectly well...
    */
   'logs a well-formed request', async () => {
-    await request(app.getHttpServer()).post('/examples').send({ label: 'ok' }).expect(201)
+    await request(await listeningServer(app))
+      .post('/examples')
+      .send({ label: 'ok' })
+      .expect(201)
     await waitForHttpEntries(lateCapture, 2)
 
     expect(lateCapture.httpKeys()).toEqual([
@@ -296,7 +303,7 @@ describe('applyRequestIdMiddleware (positive control for the parser gap)', () =>
    * short of an access log — no START, no terminal entry, no status/duration/ip.
    */
   'emits only the filter line, and no access log, for a rejected body', async () => {
-    await request(app.getHttpServer())
+    await request(await listeningServer(app))
       .post('/examples')
       .set('Content-Type', 'application/json')
       .send(TRUNCATED_JSON)
@@ -315,7 +322,7 @@ describe('applyRequestIdMiddleware (positive control for the parser gap)', () =>
    * that separates "the request is logged" from "the request is traceable".
    */
   'emits that line without the correlation id the client sent', async () => {
-    await request(app.getHttpServer())
+    await request(await listeningServer(app))
       .post('/examples')
       .set('Content-Type', 'application/json')
       .set('x-request-id', 'measure-me')
@@ -355,7 +362,10 @@ describe('applyAccessLog alongside applyRequestIdMiddleware', () => {
    * request's lifecycle already claimed and stands down.
    */
   'logs a request exactly once with both helpers wired', async () => {
-    await request(app.getHttpServer()).post('/examples').send({ label: 'ok' }).expect(201)
+    await request(await listeningServer(app))
+      .post('/examples')
+      .send({ label: 'ok' })
+      .expect(201)
     await waitForHttpEntries(bothCapture, 2)
 
     expect(bothCapture.httpKeys()).toEqual([
@@ -371,7 +381,7 @@ describe('applyAccessLog alongside applyRequestIdMiddleware', () => {
    * the header and the log entries disagreed about the request's identity.
    */
   'mints exactly one request id with both helpers wired', async () => {
-    const res = await request(app.getHttpServer())
+    const res = await request(await listeningServer(app))
       .post('/examples')
       .send({ label: 'ok' })
       .expect(201)
@@ -426,7 +436,10 @@ describe('applyAccessLog under setGlobalPrefix', () => {
    * assumed.
    */
   'logs a prefixed request', async () => {
-    await request(app.getHttpServer()).post('/api/examples').send({ label: 'ok' }).expect(201)
+    await request(await listeningServer(app))
+      .post('/api/examples')
+      .send({ label: 'ok' })
+      .expect(201)
     await waitForHttpEntries(prefixCapture, 2)
 
     expect(prefixCapture.httpKeys()).toEqual([
@@ -442,7 +455,10 @@ describe('applyAccessLog under setGlobalPrefix', () => {
    * the real path from ever matching.
    */
   'records the full prefixed path', async () => {
-    await request(app.getHttpServer()).post('/api/examples').send({ label: 'ok' }).expect(201)
+    await request(await listeningServer(app))
+      .post('/api/examples')
+      .send({ label: 'ok' })
+      .expect(201)
     await waitForHttpEntries(prefixCapture, 2)
 
     const start = prefixCapture.entries.find(
@@ -456,7 +472,7 @@ describe('applyAccessLog under setGlobalPrefix', () => {
    * exists does not get to depend on the app's routing configuration.
    */
   'still logs a rejected body under a prefix', async () => {
-    await request(app.getHttpServer())
+    await request(await listeningServer(app))
       .post('/api/examples')
       .set('Content-Type', 'application/json')
       .send(TRUNCATED_JSON)
@@ -506,7 +522,10 @@ describe('applyAccessLog with a non-global logger module', () => {
    * configuration that tells the two apart.
    */
   'resolves its dependencies and logs', async () => {
-    await request(app.getHttpServer()).post('/examples').send({ label: 'ok' }).expect(201)
+    await request(await listeningServer(app))
+      .post('/examples')
+      .send({ label: 'ok' })
+      .expect(201)
     await waitForHttpEntries(scopedCapture, 2)
 
     expect(scopedCapture.httpKeys()).toEqual([

@@ -16,6 +16,7 @@ import { applyAccessLog, BymaxLoggerModule } from '@bymax-one/nest-logger'
 import request from 'supertest'
 
 import { parseLogEntries } from './fixtures/parse-log-entries'
+import { listeningServer } from './support/listening-server'
 
 const HEX_TOKEN = 'a3f1c9d2b7e4086f5a1c3d9e7b2f4a6c8d0e1f3a5b7c9d2e4f6a8b0c1d3e5f7a'
 const JWT =
@@ -74,7 +75,7 @@ describe.each([
     ['a base64url token', B64],
     ['an email address', EMAIL]
   ])('writes no line that carries %s from a routed path', async (_label, secret) => {
-    const res = await request(app.getHttpServer()).get(`${base}/auth/reset/${secret}`)
+    const res = await request(await listeningServer(app)).get(`${base}/auth/reset/${secret}`)
 
     const entries = parseLogEntries(stdout)
     const start = entries.find((entry) => entry['logKey'] === 'HTTP_REQUEST_START')
@@ -87,7 +88,7 @@ describe.each([
     ['a 64-char hex token', HEX_TOKEN],
     ['a JWT', JWT]
   ])('writes no line that carries %s from a path that matched no route', async (_label, secret) => {
-    const res = await request(app.getHttpServer()).get(`${base}/missing/${secret}`)
+    const res = await request(await listeningServer(app)).get(`${base}/missing/${secret}`)
 
     const handled = parseLogEntries(stdout).find(
       (entry) => entry['logKey'] === 'HTTP_EXCEPTION_HANDLED'
@@ -98,7 +99,7 @@ describe.each([
   })
 
   it('keeps the route shape for an ordinary path', async () => {
-    await request(app.getHttpServer()).get(`${base}/auth/reset/short-slug`)
+    await request(await listeningServer(app)).get(`${base}/auth/reset/short-slug`)
 
     const start = parseLogEntries(stdout).find((entry) => entry['logKey'] === 'HTTP_REQUEST_START')
     expect(String(start?.['fullUrl'])).toBe(`${base}/auth/reset/short-slug`)
@@ -146,8 +147,8 @@ describe.each([
   })
 
   it('censors a segment the host pattern matches, in a routed path and in a not-found message', async () => {
-    await request(app.getHttpServer()).get('/pay/tok_live_SECRET-REF')
-    await request(app.getHttpServer()).get('/missing/tok_live_SECRET-REF')
+    await request(await listeningServer(app)).get('/pay/tok_live_SECRET-REF')
+    await request(await listeningServer(app)).get('/missing/tok_live_SECRET-REF')
 
     const lines = stdout.mock.calls.map((call) => String(call[0])).join('')
     expect(lines).not.toContain('SECRET-REF')
@@ -156,7 +157,7 @@ describe.each([
   })
 
   it('still writes a segment the pattern does not match', async () => {
-    await request(app.getHttpServer()).get('/pay/plain-ref')
+    await request(await listeningServer(app)).get('/pay/plain-ref')
 
     expect(stdout.mock.calls.map((call) => String(call[0])).join('')).toContain('/pay/plain-ref')
   })

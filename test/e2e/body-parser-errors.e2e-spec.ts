@@ -18,6 +18,7 @@ import { json } from 'express'
 import request from 'supertest'
 
 import { parseLogEntries } from './fixtures/parse-log-entries'
+import { listeningServer } from './support/listening-server'
 
 const SECRET = 'hunter2-SENTINEL'
 
@@ -61,7 +62,7 @@ async function logged(
   act: (server: ReturnType<INestApplication['getHttpServer']>) => request.Test
 ): Promise<{ status: number; message: string; handled: Record<string, unknown>; text: string }> {
   stdout.mockClear()
-  const res = await act(app.getHttpServer())
+  const res = await act(await listeningServer(app))
   const entries = parseLogEntries(stdout)
   const handled = entries.find((entry) => entry['logKey'] === 'HTTP_EXCEPTION_HANDLED') ?? {}
   const text = stdout.mock.calls.map((call) => String(call[0])).join('')

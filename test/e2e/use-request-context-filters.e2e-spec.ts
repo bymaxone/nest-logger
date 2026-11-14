@@ -6,7 +6,7 @@
  * the consumer, with or without an injected dependency, is answered by the library's filter. Without
  * `http.isEnabled` the library registers none and the consumer's `APP_FILTER` answers.
  *
- * Layer: end-to-end tests (boots the module through `@nestjs/testing`).
+ * Layer: e2e tests (boots the module through `@nestjs/testing`).
  */
 import { ArgumentsHost, Catch, Controller, Inject, Module, Post } from '@nestjs/common'
 import type { ExceptionFilter, INestApplication, Type } from '@nestjs/common'
@@ -14,6 +14,7 @@ import { APP_FILTER } from '@nestjs/core'
 import { Test } from '@nestjs/testing'
 import { BymaxLoggerModule, LogContextService } from '@bymax-one/nest-logger'
 import request from 'supertest'
+import { listeningServer } from './support/listening-server'
 
 /** Writes the status and a marker, with no dependency. */
 @Catch()
@@ -70,7 +71,7 @@ async function bootstrap(
 }
 
 async function refuse(app: INestApplication): Promise<request.Response> {
-  return request(app.getHttpServer())
+  return request(await listeningServer(app))
     .post('/echo')
     .set('content-type', 'application/json')
     .send('{"a":')

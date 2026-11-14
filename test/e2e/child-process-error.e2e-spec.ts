@@ -3,7 +3,7 @@
  * status, and its output (Buffers in own fields) as a size, never as bytes. Needs a real process,
  * so it runs here and not in the unit suite.
  *
- * Layer: end-to-end tests (boots the module through `@nestjs/testing`).
+ * Layer: e2e tests (boots the module through `@nestjs/testing`).
  */
 import { execFileSync } from 'node:child_process'
 

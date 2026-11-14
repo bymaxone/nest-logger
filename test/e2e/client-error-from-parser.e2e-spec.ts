@@ -16,6 +16,7 @@ import { BymaxLoggerModule } from '@bymax-one/nest-logger'
 import request from 'supertest'
 
 import { parseLogEntries } from './fixtures/parse-log-entries'
+import { listeningServer } from './support/listening-server'
 
 @Controller()
 class EchoController {
@@ -62,7 +63,7 @@ describe('Logger E2E — a client error from the real body parser', () => {
     ['an unsupported content encoding', { 'content-encoding': 'unknown' }, '{"a":1}', 415],
     ['truncated JSON', {}, '{"a":', 400]
   ])('answers %s with its status', async (_name, headers, body, code) => {
-    const res = await request(app.getHttpServer())
+    const res = await request(await listeningServer(app))
       .post('/echo')
       .set('content-type', 'application/json')
       .set(headers)
@@ -86,7 +87,10 @@ describe('Logger E2E — a client error from the real body parser', () => {
   ])(
     'echoes nothing of the client when it names %s the body parser does not support',
     async (_name, headers, message) => {
-      const res = await request(app.getHttpServer()).post('/echo').set(headers).send('{"a":1}')
+      const res = await request(await listeningServer(app))
+        .post('/echo')
+        .set(headers)
+        .send('{"a":1}')
 
       expect(res.status).toBe(415)
       expect(res.body).toEqual({ statusCode: 415, message })

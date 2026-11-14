@@ -18,6 +18,7 @@ import { applyAccessLog, BymaxLoggerModule } from '@bymax-one/nest-logger'
 import request from 'supertest'
 
 import { parseLogEntries } from './fixtures/parse-log-entries'
+import { listeningServer } from './support/listening-server'
 
 const QUERY = '?code=SECRET-CODE&state=SECRET-STATE&token=SECRET-TOKEN&password=SECRET-PW'
 
@@ -66,7 +67,7 @@ describe.each([
   })
 
   it('writes the not-found message without the query, and no line carries a secret', async () => {
-    const res = await request(app.getHttpServer()).get(`${base}/missing${QUERY}`)
+    const res = await request(await listeningServer(app)).get(`${base}/missing${QUERY}`)
 
     const entries = parseLogEntries(stdout)
     const handled = entries.find((entry) => entry['logKey'] === 'HTTP_EXCEPTION_HANDLED')
@@ -77,7 +78,9 @@ describe.each([
   })
 
   it('cuts a percent-encoded query too, because Nest words the message with the raw bytes', async () => {
-    await request(app.getHttpServer()).get(`${base}/missing?t=SECRET-A%20B%2FC%C3%A9&u=%3Cx%3E`)
+    await request(await listeningServer(app)).get(
+      `${base}/missing?t=SECRET-A%20B%2FC%C3%A9&u=%3Cx%3E`
+    )
 
     const entries = parseLogEntries(stdout)
     const handled = entries.find((entry) => entry['logKey'] === 'HTTP_EXCEPTION_HANDLED')
@@ -86,7 +89,9 @@ describe.each([
   })
 
   it('leaves the line of a routed request as it was', async () => {
-    await request(app.getHttpServer()).get(`${base}/ok${QUERY}`).expect(200)
+    await request(await listeningServer(app))
+      .get(`${base}/ok${QUERY}`)
+      .expect(200)
 
     const entries = parseLogEntries(stdout)
     const start = entries.find((entry) => entry['logKey'] === 'HTTP_REQUEST_START')

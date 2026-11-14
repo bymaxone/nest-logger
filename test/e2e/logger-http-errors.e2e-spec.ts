@@ -5,6 +5,7 @@ import { BymaxLoggerModule } from '@bymax-one/nest-logger'
 import request from 'supertest'
 
 import { parseLogEntries } from './fixtures/parse-log-entries'
+import { listeningServer } from './support/listening-server'
 
 /** Routes covering the 4xx (thrown) and 3xx (redirect) lifecycle branches. */
 @Controller()
@@ -62,7 +63,9 @@ describe('Logger E2E — HTTP error and redirect lifecycle', () => {
    * (filter) — and the client still receives a 400.
    */
   'logs CLIENT_ERROR and EXCEPTION_HANDLED for a thrown 400', async () => {
-    await request(app.getHttpServer()).get('/bad-request').expect(400)
+    await request(await listeningServer(app))
+      .get('/bad-request')
+      .expect(400)
 
     const entries = parseLogEntries(stdoutSpy)
     expect(entries.map((entry) => entry['logKey'])).toContain('HTTP_REQUEST_START')
@@ -81,7 +84,9 @@ describe('Logger E2E — HTTP error and redirect lifecycle', () => {
    * interceptor's CLIENT_ERROR entry — not collapse to a generic error.
    */
   'tags the CLIENT_ERROR entry with the 404 status', async () => {
-    await request(app.getHttpServer()).get('/not-found').expect(404)
+    await request(await listeningServer(app))
+      .get('/not-found')
+      .expect(404)
 
     const clientError = parseLogEntries(stdoutSpy).find(
       (entry) => entry['logKey'] === 'HTTP_REQUEST_CLIENT_ERROR'
@@ -94,7 +99,9 @@ describe('Logger E2E — HTTP error and redirect lifecycle', () => {
    * non-throwing success branch), never as an error.
    */
   'logs REDIRECT for a 3xx response', async () => {
-    await request(app.getHttpServer()).get('/moved').expect(301)
+    await request(await listeningServer(app))
+      .get('/moved')
+      .expect(301)
 
     const entries = parseLogEntries(stdoutSpy)
     const redirect = entries.find((entry) => entry['logKey'] === 'HTTP_REQUEST_REDIRECT')

@@ -18,6 +18,7 @@ import {
   LogContextService
 } from '@bymax-one/nest-logger'
 import request from 'supertest'
+import { listeningServer } from './support/listening-server'
 
 /** UUID v4 shape used to assert a generated correlation id. */
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -61,7 +62,9 @@ describe('Logger E2E — the request id middleware, mounted through the module',
   })
 
   it('generates a request id, exposes it, and propagates it into the handler', async () => {
-    const res = await request(app.getHttpServer()).get('/ctx').expect(200)
+    const res = await request(await listeningServer(app))
+      .get('/ctx')
+      .expect(200)
 
     const header = res.headers['x-request-id']
     expect(header).toMatch(UUID_V4)
@@ -69,7 +72,7 @@ describe('Logger E2E — the request id middleware, mounted through the module',
   })
 
   it('echoes and propagates an inbound x-request-id', async () => {
-    const res = await request(app.getHttpServer())
+    const res = await request(await listeningServer(app))
       .get('/ctx')
       .set('x-request-id', 'req-abc-123')
       .expect(200)
@@ -79,11 +82,13 @@ describe('Logger E2E — the request id middleware, mounted through the module',
   })
 
   it('propagates the tenant id from the x-tenant-id header, and omits it when absent', async () => {
-    const withTenant = await request(app.getHttpServer())
+    const withTenant = await request(await listeningServer(app))
       .get('/ctx')
       .set('x-tenant-id', 'tenant-42')
       .expect(200)
-    const without = await request(app.getHttpServer()).get('/ctx').expect(200)
+    const without = await request(await listeningServer(app))
+      .get('/ctx')
+      .expect(200)
 
     expect(withTenant.body.tenantId).toBe('tenant-42')
     expect(without.body.tenantId).toBeUndefined()

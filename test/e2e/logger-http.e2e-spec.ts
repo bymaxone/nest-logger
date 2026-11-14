@@ -4,6 +4,7 @@ import request from 'supertest'
 
 import { TestAppModule } from './fixtures/test-app.module'
 import { parseLogEntries } from './fixtures/parse-log-entries'
+import { listeningServer } from './support/listening-server'
 
 describe('Logger E2E — HTTP lifecycle', () => {
   let app: INestApplication
@@ -31,7 +32,9 @@ describe('Logger E2E — HTTP lifecycle', () => {
    * the full access-log lifecycle through the real interceptor.
    */
   'logs START and SUCCESS for a 200 request', async () => {
-    await request(app.getHttpServer()).get('/hello').expect(200)
+    await request(await listeningServer(app))
+      .get('/hello')
+      .expect(200)
 
     const entries = parseLogEntries(stdoutSpy)
     const keys = entries.map((entry) => entry['logKey'])
@@ -47,7 +50,7 @@ describe('Logger E2E — HTTP lifecycle', () => {
    * keys stay low-cardinality for aggregation.
    */
   'normalizes a UUID path param to /users/:id', async () => {
-    await request(app.getHttpServer())
+    await request(await listeningServer(app))
       .get('/users/4bf92f35-77b3-4da6-a3ce-929d0e0e4736')
       .expect(200)
 
@@ -60,7 +63,9 @@ describe('Logger E2E — HTTP lifecycle', () => {
    * exception is logged, never swallowed.
    */
   'logs SERVER_ERROR for an uncaught 500', async () => {
-    await request(app.getHttpServer()).get('/boom').expect(500)
+    await request(await listeningServer(app))
+      .get('/boom')
+      .expect(500)
 
     const entries = parseLogEntries(stdoutSpy)
     expect(entries.map((entry) => entry['logKey'])).toContain('HTTP_REQUEST_SERVER_ERROR')
@@ -73,7 +78,9 @@ describe('Logger E2E — HTTP lifecycle', () => {
    * probes must never flood the logs (verifies excludePaths end-to-end).
    */
   'does not log the excluded /health path', async () => {
-    await request(app.getHttpServer()).get('/health').expect(200)
+    await request(await listeningServer(app))
+      .get('/health')
+      .expect(200)
 
     const healthStarts = parseLogEntries(stdoutSpy).filter(
       (entry) => entry['logKey'] === 'HTTP_REQUEST_START' && entry['url'] === '/health'
@@ -86,7 +93,10 @@ describe('Logger E2E — HTTP lifecycle', () => {
    * via the AsyncLocalStorage scope opened by the request-id middleware.
    */
   'propagates x-request-id across the request logs', async () => {
-    await request(app.getHttpServer()).get('/hello').set('x-request-id', 'req-e2e-123').expect(200)
+    await request(await listeningServer(app))
+      .get('/hello')
+      .set('x-request-id', 'req-e2e-123')
+      .expect(200)
 
     const start = parseLogEntries(stdoutSpy).find(
       (entry) => entry['logKey'] === 'HTTP_REQUEST_START'
@@ -99,7 +109,9 @@ describe('Logger E2E — HTTP lifecycle', () => {
    * onto its entries — the child-logger wiring working through real HTTP.
    */
   'stamps the @InjectLogger context onto handler logs', async () => {
-    await request(app.getHttpServer()).get('/users/abc').expect(200)
+    await request(await listeningServer(app))
+      .get('/users/abc')
+      .expect(200)
 
     const handlerLog = parseLogEntries(stdoutSpy).find(
       (entry) => entry['logKey'] === 'USER_FETCH_OK'
