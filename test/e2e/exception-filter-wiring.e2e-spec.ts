@@ -21,6 +21,7 @@ import {
   HttpExceptionFilter,
   type ILogDestination
 } from '@bymax-one/nest-logger'
+import { listeningServer } from './support/listening-server'
 
 @Controller()
 class ThrowingController {
@@ -53,8 +54,8 @@ async function httpKeysFor(
   const app = ref.createNestApplication()
   applyAccessLog(app)
   await app.init()
-  await request(app.getHttpServer()).get('/missing')
-  const response = await request(app.getHttpServer()).get('/boom')
+  await request(await listeningServer(app)).get('/missing')
+  const response = await request(await listeningServer(app)).get('/boom')
   await app.close()
   const keys = lines
     .map((line) => (JSON.parse(line) as { logKey?: string }).logKey ?? '')

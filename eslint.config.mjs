@@ -374,6 +374,26 @@ export default [
     }
   },
 
+  // supertest starts the server it is handed when that server is not listening and closes it when its
+  // requests settle, so a spec that sends requests one after another to `app.getHttpServer()` binds a
+  // new port for each of them. `listeningServer(app)` hands it a server that is already listening.
+  // The rule names the idiomatic call, `request(app.getHttpServer())`; a server passed through a
+  // variable is out of a selector's reach, and `supertest-listener.e2e-spec.ts` pins the behaviour.
+  {
+    files: ['test/e2e/**/*.e2e-spec.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.name='request'] > CallExpression[callee.property.name='getHttpServer']",
+          message:
+            'Hand supertest `await listeningServer(app)` from ./support/listening-server: a server that is not listening gets a new listener for every request.'
+        }
+      ]
+    }
+  },
+
   // Formatting is an ERROR, on every path the lint invocation reaches.
   //
   // `'error'` and not `--max-warnings 0`: that flag raises EVERY warning, and

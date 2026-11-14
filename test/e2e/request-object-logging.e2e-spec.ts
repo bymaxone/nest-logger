@@ -18,6 +18,7 @@ import { BymaxLoggerModule, PinoLoggerService } from '@bymax-one/nest-logger'
 import request from 'supertest'
 
 import { parseLogEntries } from './fixtures/parse-log-entries'
+import { listeningServer } from './support/listening-server'
 
 @Controller()
 class RequestController {
@@ -73,7 +74,7 @@ describe('Logger E2E — a request object as metadata', () => {
   })
 
   it('writes no credential header value, in headers or in rawHeaders', async () => {
-    await request(app.getHttpServer())
+    await request(await listeningServer(app))
       .get('/probe')
       .set('Authorization', 'Bearer LEAK-BEARER')
       .set('X-Api-Key', 'LEAK-KEY')
@@ -88,7 +89,9 @@ describe('Logger E2E — a request object as metadata', () => {
   })
 
   it('keeps the facts a request line is for', async () => {
-    await request(app.getHttpServer()).get('/probe').set('User-Agent', 'probe-agent')
+    await request(await listeningServer(app))
+      .get('/probe')
+      .set('User-Agent', 'probe-agent')
 
     const entry = parseLogEntries(stdout).find((e) => e['logKey'] === 'PROBE_REQUEST')
     const req = entry?.['req'] as Record<string, unknown> | undefined
@@ -116,7 +119,7 @@ describe('Logger E2E — a request object under another key', () => {
   })
 
   it('censors the credential values in rawHeaders, which the name walk reads beside their names', async () => {
-    await request(app.getHttpServer())
+    await request(await listeningServer(app))
       .get('/nested')
       .set('Authorization', 'Bearer LEAK-BEARER')
       .set('X-Api-Key', 'LEAK-KEY')
@@ -165,7 +168,9 @@ describe('Logger E2E — a host req serializer', () => {
   })
 
   it('replaces the default, and receives the request as the redaction walk copied it', async () => {
-    await request(app.getHttpServer()).get('/probe').set('Authorization', 'Bearer LEAK-BEARER')
+    await request(await listeningServer(app))
+      .get('/probe')
+      .set('Authorization', 'Bearer LEAK-BEARER')
 
     const entry = parseLogEntries(stdout).find((e) => e['logKey'] === 'PROBE_REQUEST')
     expect(entry?.['req']).toEqual({ ownSerializer: true })
@@ -204,7 +209,7 @@ describe('Logger E2E — the host credential path patterns reach a logged reques
   })
 
   it('writes the request URL with a segment the host pattern matches replaced', async () => {
-    await request(app.getHttpServer()).get('/pay/sk_live123')
+    await request(await listeningServer(app)).get('/pay/sk_live123')
 
     const text = stdout.mock.calls.map((call) => String(call[0])).join('')
     expect(text).not.toContain('sk_live123')
@@ -241,7 +246,7 @@ describe('Logger E2E — a request object under another key, with the legacy pat
   })
 
   it('censors the credential values in rawHeaders, which no path can match by the name beside them', async () => {
-    await request(app.getHttpServer())
+    await request(await listeningServer(app))
       .get('/nested')
       .set('Authorization', 'Bearer LEAK-BEARER')
       .set('X-Api-Key', 'LEAK-KEY')
@@ -252,7 +257,9 @@ describe('Logger E2E — a request object under another key, with the legacy pat
   })
 
   it('censors them for a request under req as well', async () => {
-    await request(app.getHttpServer()).get('/probe').set('Authorization', 'Bearer LEAK-BEARER')
+    await request(await listeningServer(app))
+      .get('/probe')
+      .set('Authorization', 'Bearer LEAK-BEARER')
 
     expect(stdout.mock.calls.map((call) => String(call[0])).join('')).not.toContain('LEAK-BEARER')
   })

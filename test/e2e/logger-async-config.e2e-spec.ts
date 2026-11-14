@@ -6,6 +6,7 @@ import request from 'supertest'
 
 import { TestController } from './fixtures/test.controller'
 import { parseLogEntries } from './fixtures/parse-log-entries'
+import { listeningServer } from './support/listening-server'
 
 /** Stub config module standing in for a real ConfigService/Vault source. */
 @Module({
@@ -52,7 +53,9 @@ describe('Logger E2E — async configuration', () => {
    * with the sync path end-to-end.
    */
   'boots via forRootAsync and logs HTTP through the async interceptor gate', async () => {
-    await request(app.getHttpServer()).get('/hello').expect(200)
+    await request(await listeningServer(app))
+      .get('/hello')
+      .expect(200)
 
     const start = parseLogEntries(stdoutSpy).find(
       (entry) => entry['logKey'] === 'HTTP_REQUEST_START'

@@ -4,13 +4,14 @@
  * exception filter reads it. Without the call the module middleware sits behind the parser and a
  * refused body is answered outside any scope.
  *
- * Layer: end-to-end tests (boots the module through `@nestjs/testing`).
+ * Layer: e2e tests (boots the module through `@nestjs/testing`).
  */
 import { ArgumentsHost, Catch, Controller, Post } from '@nestjs/common'
 import type { ExceptionFilter, INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import { BymaxLoggerModule, LogContextService } from '@bymax-one/nest-logger'
 import request from 'supertest'
+import { listeningServer } from './support/listening-server'
 
 /**
  * A consumer's catch-all filter: the envelope carries the id from the log context. It is installed
@@ -72,7 +73,7 @@ describe('Logger E2E — useRequestContext', () => {
     async (_name, headers, body, code) => {
       const app = await bootstrap(true)
 
-      const res = await request(app.getHttpServer())
+      const res = await request(await listeningServer(app))
         .post('/echo')
         .set('content-type', 'application/json')
         .set(headers)
@@ -88,7 +89,7 @@ describe('Logger E2E — useRequestContext', () => {
   it('answers a refused body with no id when the helper is not called', async () => {
     const app = await bootstrap(false)
 
-    const res = await request(app.getHttpServer())
+    const res = await request(await listeningServer(app))
       .post('/echo')
       .set('content-type', 'application/json')
       .send('{"a":')

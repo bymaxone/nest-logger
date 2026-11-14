@@ -17,6 +17,7 @@ import type { Request, Response } from 'express'
 import request from 'supertest'
 
 import { parseLogEntries } from './fixtures/parse-log-entries'
+import { listeningServer } from './support/listening-server'
 
 /**
  * Stand-in for nest-core's token. nest-core 1.6.2 declares it with
@@ -117,7 +118,7 @@ describe('Logger E2E — PinoUnexpectedErrorSink bound to the nest-core token', 
    * fields and nothing from the request beyond method and route.
    */
   'emits one HTTP_UNEXPECTED_ERROR line with the original error', async () => {
-    await request(app.getHttpServer())
+    await request(await listeningServer(app))
       .get('/invoices/42?token=reset-code')
       .set('authorization', 'Bearer header-secret')
       .expect(500, { code: 'BYMAX_INTERNAL_ERROR' })

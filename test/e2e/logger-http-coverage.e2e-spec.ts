@@ -29,6 +29,7 @@ import request from 'supertest'
 import { applyRequestIdMiddleware, BymaxLoggerModule } from '@bymax-one/nest-logger'
 
 import { parseLogEntries } from './fixtures/parse-log-entries'
+import { listeningServer } from './support/listening-server'
 
 /** Rejects every request, standing in for any real authentication guard. */
 @Injectable()
@@ -127,7 +128,9 @@ describe('Logger E2E — middleware mounting and the disabled path', () => {
     app.setGlobalPrefix('api')
     await app.init()
 
-    await request(app.getHttpServer()).get('/api').expect(404)
+    await request(await listeningServer(app))
+      .get('/api')
+      .expect(404)
 
     const entries = parseLogEntries(stdoutSpy)
     const start = entries.find((e) => e['logKey'] === 'HTTP_REQUEST_START')
@@ -151,7 +154,9 @@ describe('Logger E2E — middleware mounting and the disabled path', () => {
     const app = moduleRef.createNestApplication({ logger: false })
     await app.init()
 
-    await request(app.getHttpServer()).get('/open').expect(200)
+    await request(await listeningServer(app))
+      .get('/open')
+      .expect(200)
 
     const keys = parseLogEntries(stdoutSpy).map((e) => String(e['logKey']))
     expect(keys.filter((k) => k.startsWith('HTTP_'))).toEqual([])
@@ -189,7 +194,9 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
    * no line, and no `requestId` to correlate a brute-force attempt by.
    */
   'logs a guard rejection (401) that no interceptor can observe', async () => {
-    await request(app.getHttpServer()).get('/guarded').expect(401)
+    await request(await listeningServer(app))
+      .get('/guarded')
+      .expect(401)
 
     const emitted = keys()
     expect(emitted).toContain('HTTP_REQUEST_START')
@@ -205,7 +212,9 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
    * enumeration by a scanner was equally invisible.
    */
   'logs an unmatched route (404)', async () => {
-    await request(app.getHttpServer()).get('/no-such-route').expect(404)
+    await request(await listeningServer(app))
+      .get('/no-such-route')
+      .expect(404)
 
     const terminal = parseLogEntries(stdoutSpy).find(
       (e) => e['logKey'] === 'HTTP_REQUEST_CLIENT_ERROR'
@@ -219,7 +228,10 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
    * only place `ip` and `userAgent` can be captured for a rejected one.
    */
   'carries ip and userAgent on a rejected request', async () => {
-    await request(app.getHttpServer()).get('/guarded').set('user-agent', 'probe/1.0').expect(401)
+    await request(await listeningServer(app))
+      .get('/guarded')
+      .set('user-agent', 'probe/1.0')
+      .expect(401)
 
     const start = parseLogEntries(stdoutSpy).find((e) => e['logKey'] === 'HTTP_REQUEST_START')
     expect(start?.['userAgent']).toBe('probe/1.0')
@@ -239,7 +251,9 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
    * a string VALUE.
    */
   'strips the query string from the logged URL', async () => {
-    await request(app.getHttpServer()).get('/open?token=SECRET-VALUE').expect(200)
+    await request(await listeningServer(app))
+      .get('/open?token=SECRET-VALUE')
+      .expect(200)
 
     expect(JSON.stringify(parseLogEntries(stdoutSpy))).not.toContain('SECRET-VALUE')
   })
@@ -250,7 +264,9 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
    * middleware claims the lifecycle and the interceptor stands down.
    */
   'does not double-log a request both components can see', async () => {
-    await request(app.getHttpServer()).get('/open').expect(200)
+    await request(await listeningServer(app))
+      .get('/open')
+      .expect(200)
 
     const emitted = keys()
     expect(emitted.filter((k) => k === 'HTTP_REQUEST_START')).toHaveLength(1)
