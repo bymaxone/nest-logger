@@ -70,3 +70,13 @@ describe('withTimeout', () => {
     return pending
   })
 })
+
+describe('HookTimeoutError', () => {
+  it('is an Error named for what it is, so a report can tell a deadline from a failure', () => {
+    const error = new HookTimeoutError(30)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error.name).toBe('HookTimeoutError')
+    expect(String(error)).toBe('HookTimeoutError: did not settle within 30 ms')
+  })
+})

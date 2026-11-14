@@ -183,3 +183,48 @@ describe('censorRawHeaders', () => {
     ])
   })
 })
+
+describe('serializeRequestValue, what is and is not a request', () => {
+  it('writes a request that has a method and a connection and no raw headers as the four fields', () => {
+    const input = {
+      method: 'GET',
+      url: '/x',
+      socket: { remoteAddress: '203.0.113.7' },
+      headers: { host: 'h' },
+      extra: 1
+    }
+
+    const out = serializeRequestValue(input)
+
+    expect(out).not.toBe(input)
+    expect(out).toEqual({
+      method: 'GET',
+      url: '/x',
+      headers: { host: 'h' },
+      remoteAddress: '203.0.113.7'
+    })
+  })
+
+  it.each([
+    ['a method that is not text, with a connection', { method: 5, socket: {}, url: '/x' }],
+    ['no method at all, with a connection', { socket: {}, url: '/x', id: 1 }],
+    ['a method and a socket that is not an object', { method: 'GET', socket: 'tcp', url: '/x' }]
+  ])('leaves %s as it is', (_name, value) => {
+    expect(serializeRequestValue(value)).toBe(value)
+  })
+})
+
+describe('censorRawHeaders, which entries are values', () => {
+  it('reads only the entries at odd positions as values, never a name that follows a value spelled like a sensitive name', () => {
+    const sensitive = new Set(['authorization', 'x-api-key'])
+
+    expect(censorRawHeaders(['Accept', 'authorization', 'keep-me'], sensitive, '[C]')).toEqual([
+      'Accept',
+      'authorization',
+      'keep-me'
+    ])
+    expect(
+      censorRawHeaders(['Authorization', 'LEAK', 'x-api-key', 'LEAK2'], sensitive, '[C]')
+    ).toEqual(['Authorization', '[C]', 'x-api-key', '[C]'])
+  })
+})
