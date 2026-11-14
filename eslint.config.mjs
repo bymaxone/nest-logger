@@ -382,8 +382,9 @@ export default [
   // introduces and not on what the repository inherits. Neither `pnpm lint` nor CI passes
   // `--pass-on-unpruned-suppressions`, so a suppression that no longer matches a violation (a split
   // function) fails until it is removed with `eslint --prune-suppressions`. ESLint does not stop the file
-  // from being regenerated with `--suppress-rule` after a new violation, so `check:suppressions` compares
-  // it with the base revision's in CI: a count that rose, or an entry the base lacks, fails.
+  // from being regenerated with `--suppress-rule` after a new violation, so CI runs `check:suppressions`
+  // against the baseline a pull request is based on, or a push replaced: a count that rose, or an entry
+  // that revision lacks, fails. A manual run checks only that the file parses.
   //
   // A suppression counts violations per file and rule, not per function. A new offender in a file that
   // still has suppressions is reported only when it raises that file's count, so a split and a new
