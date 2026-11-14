@@ -101,3 +101,49 @@ describe('applyDefaults: lifecycle deadlines', () => {
     expect(Object.isFrozen(resolved.shutdown)).toBe(true)
   })
 })
+
+describe('validateOptions: destinationQueue', () => {
+  it.each([[0], [1024], [33_554_432], [2_147_483_647]])('accepts maxBytes %j', (maxBytes) => {
+    expect(() => validateOptions(withOption('destinationQueue', { maxBytes }))).not.toThrow()
+  })
+
+  it('accepts a group with no maxBytes, and no group', () => {
+    expect(() => validateOptions(withOption('destinationQueue', {}))).not.toThrow()
+    expect(() => validateOptions(base)).not.toThrow()
+  })
+
+  it.each([[1], [1023], [-1], [1.5], [2_147_483_648], ['1024'], [Number.NaN], [null]])(
+    'rejects maxBytes %j, naming the range',
+    (maxBytes) => {
+      expect(() => validateOptions(withOption('destinationQueue', { maxBytes }))).toThrow(
+        /options\.destinationQueue\.maxBytes must be 0 \(no bound\) or an integer from 1024 to 2147483647/
+      )
+    }
+  )
+
+  it('rejects a group that is not an object', () => {
+    expect(() => validateOptions(withOption('destinationQueue', 1024))).toThrow(
+      /options\.destinationQueue must be an object/
+    )
+  })
+})
+
+describe('applyDefaults: destinationQueue', () => {
+  it('resolves the documented default and freezes the group', () => {
+    const resolved = applyDefaults(base)
+
+    expect(resolved.destinationQueue).toEqual({ maxBytes: 33_554_432 })
+    expect(Object.isFrozen(resolved.destinationQueue)).toBe(true)
+  })
+
+  it('keeps the value the consumer gave, including 0', () => {
+    expect(
+      applyDefaults({ ...base, destinationQueue: { maxBytes: 4096 } }).destinationQueue
+    ).toEqual({
+      maxBytes: 4096
+    })
+    expect(applyDefaults({ ...base, destinationQueue: { maxBytes: 0 } }).destinationQueue).toEqual({
+      maxBytes: 0
+    })
+  })
+})

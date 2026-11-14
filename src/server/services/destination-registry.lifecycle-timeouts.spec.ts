@@ -6,7 +6,6 @@
  * the options a consumer would pass.
  */
 import pino from 'pino'
-import { Writable } from 'node:stream'
 
 import { applyDefaults } from '../config/default-options'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
@@ -183,16 +182,10 @@ describe('DestinationRegistry lifecycle deadlines', () => {
   })
 
   describe('drain', () => {
-    /** A destination fronted by a stream that holds `queued` characters until released. */
+    /** A destination whose queue holds `queued` bytes and never empties. */
     function queuedDestination(name: string, queued: number): ILogDestination {
       const destination: ILogDestination = { name, write: jest.fn() }
-      const stream = new Writable({
-        write(_chunk, _encoding, callback): void {
-          void callback
-        }
-      })
-      stream.write('x'.repeat(queued))
-      health.registerStream(destination, stream)
+      health.registerStream(destination, { queuedBytes: queued })
       return destination
     }
 
@@ -224,14 +217,14 @@ describe('DestinationRegistry lifecycle deadlines', () => {
 
     it('waits for a queue that empties within the drain budget', async () => {
       const destination: ILogDestination = { name: 'busy', write: jest.fn() }
-      const stream = { writableLength: 5 }
+      const stream = { queuedBytes: 5 }
       health.registerStream(destination, stream)
       const registry = registryOf([destination], {
         shutdown: { timeoutMs: 400, drainTimeoutMs: 300 }
       })
       await registry.onModuleInit()
       setTimeout(() => {
-        stream.writableLength = 0
+        stream.queuedBytes = 0
       }, 30)
       const started = Date.now()
 
@@ -239,6 +232,24 @@ describe('DestinationRegistry lifecycle deadlines', () => {
 
       expect(Date.now() - started).toBeGreaterThanOrEqual(25)
       expect(stderrText(stderr)).not.toContain('entries still queued')
+    })
+  })
+
+  describe('the drop tally', () => {
+    it('says once, at shutdown, how many entries each destination had dropped, and not for one that dropped none', async () => {
+      const dropper: ILogDestination = { name: 'dropper', write: jest.fn() }
+      const clean: ILogDestination = { name: 'clean', write: jest.fn() }
+      const registry = registryOf([dropper, clean])
+      await registry.onModuleInit()
+      health.recordDrop(dropper, 0)
+      health.recordDrop(dropper, 1)
+
+      await registry.onApplicationShutdown()
+
+      expect(stderrText(stderr)).toContain(
+        'Destination "dropper" dropped 2 entries in total because its queue was full'
+      )
+      expect(stderrText(stderr)).not.toContain('"clean" dropped')
     })
   })
 })

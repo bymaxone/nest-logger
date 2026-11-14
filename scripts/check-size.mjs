@@ -33,6 +33,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-14 — server: 37.83 KiB real -> 38.0 KiB budget (~0.4% headroom). The bound on what a
+//     destination may hold queued is +1.02 KiB over the 36.81 KiB measured below: the
+//     `destinationQueue` option with its JSDoc and validation, the `Writable` subclass that drops an
+//     entry past the bound, the drop record and its rate-limited report, the shutdown tally and
+//     the `queuedBytes` of the default stdout destination, all of it executable code and its comments.
 //   - 2026-11-14 — server: 36.81 KiB real -> 36.9 KiB budget (~0.2% headroom). The lifecycle deadlines
 //     are +1.30 KiB over the 35.51 KiB measured below: the `shutdown` and `destinationHookTimeoutMs`
 //     options with their JSDoc and validation, the timeout helper, the drain of each destination's
@@ -234,7 +239,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 36.9 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 38.0 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 

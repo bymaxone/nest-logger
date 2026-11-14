@@ -101,6 +101,25 @@ heading here.
   platform gives the process. Shutdown of a process with queued entries now takes up to the drain
   budget longer.
 
+- **A destination, and stdout, can no longer grow the process without limit.** Measured before this
+  change: 1,000,000 lines to a pipe nobody reads queued 234 MB in `process.stdout` and grew the
+  process by 1.36 GB, with no signal, and a destination slower than the application queued in the
+  same way. Pino does not slow down for either. The new `destinationQueue.maxBytes` (default
+  33554432, 32 MiB; an integer from 1024 to 2147483647, or `0` for no bound) bounds what each
+  destination may hold. Past it the NEW entry is dropped for that destination, the others still
+  receive it, and stderr says so: a line for the first drop, then at most one every 10 seconds per
+  destination with the name, the count and the limit and never an entry's content, and a total at
+  shutdown. The count is the module's own queue plus what the destination reports through the new
+  optional `ILogDestination.queuedBytes()`, which the default stdout destination implements for
+  `process.stdout`. Measured on 400,000 lines to an unread pipe: growth of 289,865,728 bytes with no
+  bound and 69,681,152 bytes with a 4 MiB bound. The shutdown path now reads a monotonic clock, so a
+  wall-clock step during shutdown no longer stretches or cuts the budget.
+  **Apply to a derived backend:** a stalled stdout consumer now loses entries past
+  `destinationQueue.maxBytes` instead of growing the process; set `destinationQueue: { maxBytes: 0 }`
+  to restore the old behaviour. A custom destination that buffers on its own can implement
+  `queuedBytes()` to be counted. `process.exit()` still does not wait for a queue (measured: 568 of
+  200,000 lines delivered on a pipe); `await app.close()` before exiting delivers them.
+
 ## [1.4.16] - 2026-11-12
 
 ### Documentation

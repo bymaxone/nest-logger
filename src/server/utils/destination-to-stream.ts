@@ -22,9 +22,11 @@
  * multistream.
  */
 import { Writable } from 'node:stream'
+import type { WritableOptions } from 'node:stream'
 
+import { toSingleLineMessage } from './escape-log-text.util'
 import { reportDestinationFailure, safeDestinationName } from './report-destination-failure.util'
-import { writeStdoutSafely } from './safe-stdio.util'
+import { writeStderrSafely, writeStdoutSafely } from './safe-stdio.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { DestinationHealth } from '../services/destination-health.service'
@@ -72,21 +74,96 @@ function rescueToStdout(payload: string): void {
   writeStdoutSafely(payload)
 }
 
+/** What the queue holds, in bytes, shared by the stream and the write handler that releases it. */
+interface QueueCount {
+  bytes: number
+}
+
+/** How a destination's own buffer is read: absent, throwing or not a number all count as empty. */
+function ownQueuedBytes(destination: ILogDestination): number {
+  try {
+    const bytes = destination.queuedBytes?.() ?? 0
+    return Number.isFinite(bytes) && bytes > 0 ? bytes : 0
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * A `Writable` that refuses an entry the destination has no room for.
+ *
+ * Pino calls `write` on every stream whether or not the last write has finished, and a `Writable`
+ * buffers what it is given without limit, so the bound has to sit where the chunk enters. An entry
+ * that would take the queue, the destination's own buffer and itself past the bound is dropped and
+ * its callback is called, so the producer and the in-flight accounting see a write that completed.
+ * One entry is always accepted when nothing is queued: a bound smaller than an entry would otherwise
+ * drop everything.
+ */
+export class BoundedWritable extends Writable {
+  constructor(
+    private readonly destination: ILogDestination,
+    private readonly health: DestinationHealth,
+    private readonly maxBytes: number,
+    private readonly queue: QueueCount,
+    options: WritableOptions
+  ) {
+    super(options)
+  }
+
+  /** The bytes of NDJSON waiting for the destination, the write in flight included. */
+  get queuedBytes(): number {
+    return this.queue.bytes
+  }
+
+  override write(
+    chunk: string | Buffer,
+    encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
+    callback?: (error?: Error | null) => void
+  ): boolean {
+    const bytes = Buffer.byteLength(chunk)
+    const held = this.queue.bytes + ownQueuedBytes(this.destination)
+    if (this.maxBytes > 0 && held > 0 && held + bytes > this.maxBytes) {
+      this.dropped()
+      const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback
+      done?.()
+      return true
+    }
+    this.queue.bytes += bytes
+    return typeof encodingOrCallback === 'function'
+      ? super.write(chunk, encodingOrCallback)
+      : super.write(chunk, encodingOrCallback ?? 'utf8', callback)
+  }
+
+  /** Count the drop, and write the report when one is due. */
+  private dropped(): void {
+    const due = this.health.recordDrop(this.destination, performance.now())
+    if (due === undefined) return
+    const name = toSingleLineMessage(safeDestinationName(this.destination))
+    writeStderrSafely(
+      `[DestinationRegistry] Destination "${name}" queue full: ${String(due)} entries dropped since the last report (limit ${String(this.maxBytes)} bytes)\n`
+    )
+  }
+}
+
 /**
  * Wrap a destination as a `Writable` consumable by `pino.multistream`.
  *
  * @param destination - The destination receiving each serialized NDJSON entry.
  * @param health - Init-health record consulted before every write, so a sink that
  *   failed `onInit` is skipped and a total failure is rescued to stdout.
+ * @param maxQueueBytes - The most bytes the queue may hold before an entry is dropped; `0` for
+ *   no bound.
  * @returns A `Writable` that forwards every chunk to `destination.write`,
  *   awaiting async writes and containing per-destination failures fail-soft
  *   (reported to stderr, never propagated as a crashing stream error).
  */
 export function destinationToStream(
   destination: ILogDestination,
-  health: DestinationHealth
-): Writable {
-  return new Writable({
+  health: DestinationHealth,
+  maxQueueBytes = 0
+): Writable & { readonly queuedBytes: number } {
+  const queue = { bytes: 0 }
+  const stream = new BoundedWritable(destination, health, maxQueueBytes, queue, {
     // Keep string chunks as strings (Node's default re-encodes them to Buffers
     // before `_write`): the common Pino path emits NDJSON strings, so this skips
     // a string→Buffer→string round-trip on the hot logging path.
@@ -95,8 +172,14 @@ export function destinationToStream(
     write(
       chunk: string | Buffer,
       _encoding: BufferEncoding,
-      callback: (error?: Error | null) => void
+      settled: (error?: Error | null) => void
     ): void {
+      // The bytes this chunk held in the queue are released when its write settles, however it settles.
+      const bytes = Buffer.byteLength(chunk)
+      const callback = (error?: Error | null): void => {
+        queue.bytes -= bytes
+        settled(error)
+      }
       // A destination failure is CONTAINED, not propagated: calling the callback
       // with an error would surface as an unhandled stream 'error' and crash the
       // host. Report to stderr (one line per failure), then signal success so the
@@ -162,4 +245,5 @@ export function destinationToStream(
       }
     }
   })
+  return stream
 }

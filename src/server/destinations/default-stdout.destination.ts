@@ -4,9 +4,9 @@
  * Layer: server/destinations — the default sink registered by
  * `BymaxLoggerModule` when the consumer supplies no custom destinations.
  *
- * Constraint: thin synchronous wrapper around `process.stdout.write` so the
- * Pino producer remains the back-pressure boundary. No buffering, no
- * formatting, no async I/O at this layer.
+ * Constraint: thin wrapper around `process.stdout.write`: no buffering of its own and no
+ * formatting. What `process.stdout` holds when its reader is slower than the application is
+ * reported through `queuedBytes`, which is what lets the module bound it.
  */
 import { Injectable } from '@nestjs/common'
 
@@ -17,9 +17,10 @@ import { writeStdoutSafely } from '../utils/safe-stdio.util'
 /**
  * Canonical destination that writes log payloads to `process.stdout`.
  *
- * `process.stdout.write` is buffered by Node.js, which makes it safe to call
- * on the hot path without blocking the event loop. The Pino producer is the
- * back-pressure boundary — this destination is intentionally a thin sink.
+ * `process.stdout.write` is buffered by Node.js, which keeps the event loop from blocking on a
+ * slow reader and also means the buffer grows without limit when the reader stalls. Pino does not
+ * slow down for it, so the module bounds what this destination holds, through `queuedBytes` and
+ * `destinationQueue.maxBytes`.
  */
 @Injectable()
 export class DefaultStdoutDestination implements ILogDestination {
@@ -35,6 +36,16 @@ export class DefaultStdoutDestination implements ILogDestination {
     if (opts.minLevel !== undefined) {
       this.minLevel = opts.minLevel
     }
+  }
+
+  /**
+   * The bytes `process.stdout` holds that have not reached its reader.
+   *
+   * @returns `process.stdout.writableLength`, in bytes since Node decodes a string chunk to a
+   *   buffer before queueing it.
+   */
+  queuedBytes(): number {
+    return process.stdout.writableLength
   }
 
   /**

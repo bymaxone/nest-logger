@@ -11,6 +11,7 @@
 import {
   DEFAULT_DRAIN_TIMEOUT_MS,
   DEFAULT_HOOK_TIMEOUT_MS,
+  DEFAULT_QUEUE_MAX_BYTES,
   DEFAULT_SHUTDOWN_TIMEOUT_MS
 } from '../constants/lifecycle-timeouts.constants'
 import type {
@@ -18,7 +19,8 @@ import type {
   OtelOptions,
   ResolvedBymaxLoggerModuleOptions,
   ResolvedHttpOptions,
-  ShutdownOptions
+  ShutdownOptions,
+  DestinationQueueOptions
 } from '../interfaces/logger-module-options.interface'
 
 const DEFAULT_HTTP: ResolvedHttpOptions = {
@@ -93,10 +95,13 @@ export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxL
     options.otel
   )
 
-  const merged: Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel' | 'shutdown'>> & {
+  const merged: Required<
+    Omit<BymaxLoggerModuleOptions, 'http' | 'otel' | 'shutdown' | 'destinationQueue'>
+  > & {
     http: ResolvedHttpOptions
     otel: Required<OtelOptions>
     shutdown: Required<ShutdownOptions>
+    destinationQueue: Required<DestinationQueueOptions>
   } = {
     service: Object.freeze({ ...options.service }),
     level: options.level ?? (isProduction ? 'info' : 'debug'),
@@ -124,6 +129,9 @@ export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxL
     maxEntrySizeBytes: options.maxEntrySizeBytes ?? DEFAULT_MAX_ENTRY_SIZE_BYTES,
     destinationHookTimeoutMs: options.destinationHookTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS,
     shutdown: resolveShutdown(options.shutdown),
+    destinationQueue: Object.freeze({
+      maxBytes: options.destinationQueue?.maxBytes ?? DEFAULT_QUEUE_MAX_BYTES
+    }),
     errorOwnFields: options.errorOwnFields ?? 'all',
     errorOwnFieldNames: Object.freeze([...(options.errorOwnFieldNames ?? [])]),
     serializers: Object.freeze({ ...(options.serializers ?? {}) }),

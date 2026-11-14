@@ -105,6 +105,30 @@ export type ResolvedHttpOptions = Required<Omit<HttpOptions, 'tenantIdResolver'>
 }
 
 /**
+ * The bound on the entries each destination may hold queued.
+ *
+ * Pino hands every entry to a destination whether or not the destination has taken the last one, so
+ * a destination slower than the application, or a stdout whose reader has stalled, queues without
+ * limit and the process grows until it is killed. Past the bound the module drops the NEW entry for
+ * that destination, counts it, and says so on stderr: a bounded loss with a signal, in place of
+ * growth without one.
+ */
+export interface DestinationQueueOptions {
+  /**
+   * The most bytes one destination may hold queued, in UTF-8 bytes of the NDJSON lines. Default:
+   * 33554432 (32 MiB). An integer from 1024 to 2147483647, or `0` for no bound.
+   *
+   * The count is the module's own queue in front of the destination plus what the destination
+   * reports through `ILogDestination.queuedBytes`, which the default stdout destination does for
+   * `process.stdout`. An entry that would take the total past the bound is not written to that
+   * destination; the others still receive it. A stderr line says so, at most once every 10 seconds
+   * for each destination, with the number dropped and never an entry's content, and a last line at
+   * shutdown gives the total. `0` restores unbounded queues.
+   */
+  maxBytes?: number
+}
+
+/**
  * The time application shutdown has to flush the destinations.
  *
  * Shutdown first drains the queue each destination holds, then calls each destination's
@@ -272,6 +296,8 @@ export interface BymaxLoggerModuleOptions {
   destinationHookTimeoutMs?: number
   /** How long application shutdown may take to flush the destinations. */
   shutdown?: ShutdownOptions
+  /** How much each destination may hold queued before the module drops entries. */
+  destinationQueue?: DestinationQueueOptions
   /**
    * Which of an error's own fields are written beside its `type`, `message`, `stack` and `cause`.
    *
@@ -308,10 +334,11 @@ export interface BymaxLoggerModuleOptions {
  * `BymaxLoggerModuleOptions` the consumer supplies.
  */
 export type ResolvedBymaxLoggerModuleOptions = Readonly<
-  Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel' | 'shutdown'>> & {
+  Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel' | 'shutdown' | 'destinationQueue'>> & {
     http: ResolvedHttpOptions
     otel: Required<OtelOptions>
     shutdown: Required<ShutdownOptions>
+    destinationQueue: Required<DestinationQueueOptions>
   }
 >
 

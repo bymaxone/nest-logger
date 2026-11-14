@@ -61,6 +61,16 @@ export interface ILogDestination {
   write(payload: string): void | PromiseLike<void>
 
   /**
+   * Optional: the bytes this destination holds in a buffer of its own that has not reached its
+   * medium yet. The module adds it to its own queue in front of the destination and drops an entry
+   * that would take the total past `destinationQueue.maxBytes`. Report only a buffer that grows
+   * when the medium stalls (a stream's write queue, a batch waiting to be sent). A destination that
+   * does not buffer, or does not define it, is bounded by the module's queue alone. A value that
+   * is not a finite number, or a throw, counts as `0`.
+   */
+  queuedBytes?(): number
+
+  /**
    * Optional lifecycle hook — called once during NestJS module init.
    * Use for opening connections, allocating buffers, scheduling flushers.
    */
