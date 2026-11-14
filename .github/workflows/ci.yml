@@ -96,6 +96,17 @@ jobs:
           else
             pnpm check:spec-headers
           fi
+      - name: The lint suppression baseline does not grow
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # A pull request is compared with the baseline on its base branch: regenerating
+          # eslint-suppressions.json after a new violation would otherwise turn it into inherited debt.
+          if [ -n "$BASE_REF" ]; then
+            pnpm check:suppressions --base "origin/$BASE_REF"
+          else
+            pnpm check:suppressions
+          fi
       - name: Build all subpaths
         run: pnpm build
       - name: Verify build output integrity

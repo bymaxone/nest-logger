@@ -381,7 +381,9 @@ export default [
   // `eslint-suppressions.json`, ESLint's own bulk-suppression file, so the rule fails on what a change
   // introduces and not on what the repository inherits. Neither `pnpm lint` nor CI passes
   // `--pass-on-unpruned-suppressions`, so a suppression that no longer matches a violation (a split
-  // function) fails until it is removed with `eslint --prune-suppressions`; the baseline can only shrink.
+  // function) fails until it is removed with `eslint --prune-suppressions`. ESLint does not stop the file
+  // from being regenerated with `--suppress-rule` after a new violation, so `check:suppressions` compares
+  // it with the base revision's in CI: a count that rose, or an entry the base lacks, fails.
   //
   // A suppression counts violations per file and rule, not per function. A new offender in a file that
   // still has suppressions is reported only when it raises that file's count, so a split and a new
