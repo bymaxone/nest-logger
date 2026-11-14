@@ -120,8 +120,13 @@ export class BoundedWritable extends Writable {
     encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
     callback?: (error?: Error | null) => void
   ): boolean {
+    // A stream that has ended or been destroyed refuses the chunk without calling the handler, so
+    // nothing would release the bytes; it is left to Writable to report, and is not counted.
+    if (this.writableEnded || this.destroyed) {
+      return this.forward(chunk, encodingOrCallback, callback)
+    }
     const bytes = Buffer.byteLength(chunk)
-    const held = this.queue.bytes + ownQueuedBytes(this.destination)
+    const held = this.heldBytes()
     if (this.maxBytes > 0 && held > 0 && held + bytes > this.maxBytes) {
       this.dropped()
       const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback
@@ -129,9 +134,32 @@ export class BoundedWritable extends Writable {
       return true
     }
     this.queue.bytes += bytes
+    return this.forward(chunk, encodingOrCallback, callback)
+  }
+
+  /** `Writable.write` for either of its two signatures. */
+  private forward(
+    chunk: string | Buffer,
+    encodingOrCallback: BufferEncoding | ((error?: Error | null) => void) | undefined,
+    callback: ((error?: Error | null) => void) | undefined
+  ): boolean {
     return typeof encodingOrCallback === 'function'
       ? super.write(chunk, encodingOrCallback)
       : super.write(chunk, encodingOrCallback ?? 'utf8', callback)
+  }
+
+  /**
+   * What the entry would queue behind. A live destination holds its module queue and what it reports
+   * in a buffer of its own. A failed destination receives nothing, so what it reports does not count,
+   * and the one elected to rescue entries writes them to stdout, whose queue is what grows.
+   */
+  private heldBytes(): number {
+    if (!this.health.isFailed(this.destination)) {
+      return this.queue.bytes + ownQueuedBytes(this.destination)
+    }
+    return this.health.shouldRescue(this.destination)
+      ? this.queue.bytes + process.stdout.writableLength
+      : 0
   }
 
   /** Count the drop, and write the report when one is due. */

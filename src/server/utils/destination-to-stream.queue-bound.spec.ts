@@ -196,6 +196,58 @@ describe('destinationToStream, the queue bound', () => {
     ).toHaveLength(1)
   })
 
+  it('does not count a write to an ended or destroyed stream, which is refused without a release', () => {
+    const { destination } = stalledDestination()
+    const stream = destinationToStream(destination, health, 4096)
+    stream.on('error', () => undefined)
+
+    stream.destroy()
+    stream.write('abcdef\n')
+
+    expect(stream.queuedBytes).toBe(0)
+  })
+
+  it('does not count a write after end either', () => {
+    const { destination } = stalledDestination()
+    const stream = destinationToStream(destination, health, 4096)
+    stream.on('error', () => undefined)
+
+    stream.end()
+    stream.write('abcdef\n')
+
+    expect(stream.queuedBytes).toBe(0)
+  })
+
+  it('never drops for a failed destination that is not the rescuer, whatever it reports', () => {
+    const { destination } = stalledDestination({ queuedBytes: () => 1000 })
+    health.markFailed(destination, 'info')
+    health.markHealthy({ name: 'other', write: jest.fn() }, 'info')
+    const stream = destinationToStream(destination, health, 100)
+
+    stream.write('x'.repeat(40))
+    stream.write('y'.repeat(40))
+
+    expect(health.droppedTotal(destination)).toBe(0)
+  })
+
+  it('bounds the elected rescuer on the module queue and on what process.stdout holds', () => {
+    const { destination } = stalledDestination({ queuedBytes: () => 1000 })
+    health.markFailed(destination, 'info')
+    const stdoutWrite = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
+    Object.defineProperty(process.stdout, 'writableLength', { value: 90, configurable: true })
+
+    try {
+      const stream = destinationToStream(destination, health, 100)
+      stream.write('x'.repeat(5))
+      stream.write('y'.repeat(40))
+
+      expect(stdoutWrite).toHaveBeenCalledTimes(1)
+      expect(health.droppedTotal(destination)).toBe(1)
+    } finally {
+      Reflect.deleteProperty(process.stdout, 'writableLength')
+    }
+  })
+
   it('does not drop for a failed destination, which the stream already skips', () => {
     const { destination, seen } = stalledDestination()
     health.markFailed(destination, 'info')
