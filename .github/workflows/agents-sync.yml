@@ -26,7 +26,7 @@ jobs:
   sync:
     # Referenced by the moving alias rather than pinned, which is the convention
     # for first-party reusables and the rule the shared block itself states.
-    uses: bymaxone/.github/.github/workflows/agents-sync.yml@0a90dded8ccb4fd26a354bb730c8b1aca204311e # v1.10.9
+    uses: bymaxone/.github/.github/workflows/agents-sync.yml@v1
     permissions:
       contents: write
       pull-requests: write
