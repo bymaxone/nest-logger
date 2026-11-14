@@ -14,12 +14,11 @@ heading here.
 
 ### Changed
 
-- The removal rule for the redaction lists reads the same everywhere. The `REDACT_COMMON_FIELDS`
-  JSDoc and the README's notes on `DEFAULT_REDACT_PATHS` said a removal requires a major version,
-  which the release policy above does not provide; they now say that a name may be added in any
-  release and none is removed without a recorded decision and an Apply note in this changelog that
-  names the field. The lists stay append-only. Documentation only: the built JavaScript is unchanged
-  and there is nothing for a backend to do.
+- The `REDACT_COMMON_FIELDS` JSDoc and the README's notes on `DEFAULT_REDACT_PATHS` said a removal
+  requires a major version, which this project's versioning does not use; they now say that a name
+  may be added in any release and none is removed without a recorded decision and an Apply note in
+  this changelog that names the field. The lists stay append-only. Documentation only: the built
+  JavaScript is unchanged and there is nothing for a backend to do.
 
 ## [1.4.18] - 2026-11-14
 
