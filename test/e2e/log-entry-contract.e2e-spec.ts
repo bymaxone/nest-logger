@@ -1,7 +1,7 @@
 /**
  * Asserts on a serialized LogEntry that level is the Pino string label, that time is an ISO 8601
- * string convertible to Loki nanoseconds, that the label maps to the numeric Pino code, and that the
- * remaining structured fields match the declaration.
+ * string convertible to Loki nanoseconds, that the label maps to the numeric Pino code, and that msg,
+ * logKey, userId, service and a custom field match the declaration.
  * Layer: e2e.
  */
 import type { INestApplication } from '@nestjs/common'

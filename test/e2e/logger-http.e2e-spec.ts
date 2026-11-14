@@ -1,8 +1,7 @@
 /**
- * Asserts that a 200 request logs HTTP_REQUEST_START and HTTP_REQUEST_SUCCESS, that a UUID path param
- * becomes /users/:id, that an uncaught 500 logs HTTP_REQUEST_SERVER_ERROR, that the excluded /health
- * path is not logged, that x-request-id reaches the START entry and that the @InjectLogger context
- * reaches a handler log entry.
+ * Asserts that a 200 request logs START and SUCCESS, that a UUID path param becomes /users/:id, that
+ * an uncaught 500 logs SERVER_ERROR, that /health is not logged, that x-request-id reaches the START
+ * entry and that the @InjectLogger context reaches a handler log entry.
  * Layer: e2e.
  */
 import type { INestApplication } from '@nestjs/common'
