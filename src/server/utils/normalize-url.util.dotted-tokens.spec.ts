@@ -2,6 +2,8 @@
  * Pins how a path segment that holds a dot is judged: each dot-separated part is tested the way an
  * undotted segment is, so a dotted credential (an OAuth access token, a PASETO, an opaque token made
  * of dotted parts) is written as `:redacted` and an ordinary dotted value is left alone.
+ *
+ * Layer: server/utils, tests.
  */
 import { scrubSecretSegments, secretPathSegments } from './normalize-url.util'
 
