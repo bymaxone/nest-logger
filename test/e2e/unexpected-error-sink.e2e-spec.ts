@@ -1,3 +1,9 @@
+/**
+ * Asserts that a thrown TypeError, routed through PinoUnexpectedErrorSink and a nest-core-like filter,
+ * yields a single HTTP_UNEXPECTED_ERROR entry with the error type, message, stack, redacted cause,
+ * method, route and correlationId, and without the query string, header secret or concrete path.
+ * Layer: e2e.
+ */
 import {
   Catch,
   Controller,

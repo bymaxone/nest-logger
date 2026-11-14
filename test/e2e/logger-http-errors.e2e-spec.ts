@@ -1,3 +1,9 @@
+/**
+ * Asserts that a thrown 400 logs HTTP_REQUEST_START plus warn-level CLIENT_ERROR and EXCEPTION_HANDLED
+ * entries, that a thrown 404 tags CLIENT_ERROR with status 404, and that a 301 is logged as
+ * HTTP_REQUEST_REDIRECT at info level without a SERVER_ERROR entry.
+ * Layer: e2e.
+ */
 import { BadRequestException, Controller, Get, HttpCode, NotFoundException } from '@nestjs/common'
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'

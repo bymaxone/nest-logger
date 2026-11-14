@@ -1,3 +1,8 @@
+/**
+ * Asserts that a module booted through forRootAsync with an injected config dependency logs HTTP
+ * through the async interceptor gate, with the configured service on the HTTP_REQUEST_START entry.
+ * Layer: e2e.
+ */
 import { Module } from '@nestjs/common'
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'

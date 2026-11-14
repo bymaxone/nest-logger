@@ -1,3 +1,9 @@
+/**
+ * Asserts that default redaction censors nested credentials, auth headers and PII while keeping safe fields,
+ * that custom redactPaths and redactCensor apply, that disabling it leaks values and emits
+ * LOGGER_BOOTSTRAP_WARNING, and that deep, circular, Error, serializer, child-binding and toJSON payloads are censored.
+ * Layer: e2e.
+ */
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import { BymaxLoggerModule, PinoLoggerService } from '@bymax-one/nest-logger'

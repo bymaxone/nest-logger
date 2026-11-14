@@ -1,3 +1,9 @@
+/**
+ * Asserts which providers BymaxLoggerModule.forRoot registers (neither interceptor nor filter with http
+ * disabled, both when enabled, the interceptor alone with exception capture off) and that forRootAsync
+ * registers no exception filter with http enabled.
+ * Layer: server, tests.
+ */
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core'
 import type { DynamicModule, Provider } from '@nestjs/common'
 

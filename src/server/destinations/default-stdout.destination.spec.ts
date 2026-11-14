@@ -1,3 +1,9 @@
+/**
+ * Asserts that DefaultStdoutDestination is named stdout-json, forwards the payload to
+ * process.stdout.write, installs the stdout EPIPE guard when writing, leaves minLevel undefined by
+ * default, stores a given minLevel, and reports the bytes process.stdout holds queued.
+ * Layer: server/destinations, tests.
+ */
 import { DefaultStdoutDestination } from './default-stdout.destination'
 
 describe('DefaultStdoutDestination', () => {

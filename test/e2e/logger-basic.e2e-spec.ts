@@ -1,3 +1,8 @@
+/**
+ * Asserts that booting BymaxLoggerModule emits a single structured bootstrap entry carrying the
+ * service metadata and message, and that PinoLoggerService can be read from the container.
+ * Layer: e2e.
+ */
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import { BymaxLoggerModule, PinoLoggerService, RESERVED_LOG_KEYS } from '@bymax-one/nest-logger'
