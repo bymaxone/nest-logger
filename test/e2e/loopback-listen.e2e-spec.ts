@@ -2,7 +2,7 @@
  * End-to-end proof that the suite's listeners are bound to the IPv4 loopback address.
  *
  * Layer: e2e.
- * Goal: prove that `test/jest.loopback-listen.ts`, loaded by the e2e configuration, binds a
+ * Goal: prove that `test/e2e/jest.loopback-listen.ts`, loaded by the e2e configuration, binds a
  *   port-only `listen` to `127.0.0.1` and leaves every other `listen` signature as Node defines it;
  *   that a server bound this way cannot share its port with another `127.0.0.1` listener; and that
  *   a supertest request against a server that is not listening yet binds it there and reaches it.

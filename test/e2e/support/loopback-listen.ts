@@ -1,7 +1,7 @@
 /**
  * The loopback default for the end-to-end suite's listeners, and its installers.
  *
- * Layer: e2e support. `test/jest.loopback-listen.ts` installs both patches for every e2e file; this
+ * Layer: e2e support. `test/e2e/jest.loopback-listen.ts` installs both patches for every e2e file; this
  * module only defines them, so a suite can import it without installing anything.
  *
  * `server.listen(port)` with no host binds the unspecified IPv6 address `::`, and supertest then
@@ -136,7 +136,7 @@ export function installSupertestWait(prototype: object = Test.prototype): void {
   for (const name of SUPERTEST_METHODS) {
     if (typeof Reflect.get(prototype, name) !== 'function') {
       throw new Error(
-        `supertest's Test has no ${name}() to patch, so the e2e requests could reach another server; update test/support/loopback-listen.ts for this supertest release`
+        `supertest's Test has no ${name}() to patch, so the e2e requests could reach another server; update test/e2e/support/loopback-listen.ts for this supertest release`
       )
     }
   }
