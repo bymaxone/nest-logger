@@ -1,5 +1,6 @@
 /**
- * Pins the injection tokens as pairwise distinct Symbols whose descriptions contain BYMAX_LOGGER.
+ * Pins that the injection tokens this spec imports are pairwise distinct Symbols whose descriptions
+ * contain BYMAX_LOGGER.
  * Layer: server/constants, tests.
  */
 import {

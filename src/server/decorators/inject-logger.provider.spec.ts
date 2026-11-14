@@ -1,5 +1,5 @@
 /**
- * Pins the per-context logger tokens and providers, and that an injected logger is a context-bound child that keeps request context and never mutates the shared root.
+ * Pins the per-context logger tokens and providers, and that an injected logger is a context-bound child that keeps request context and does not call setContext on the shared root.
  * Layer: server/decorators, tests.
  */
 import { Injectable } from '@nestjs/common'

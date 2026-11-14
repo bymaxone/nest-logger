@@ -1,5 +1,5 @@
 /**
- * Pins the performance decorator: which event it logs for fast and slow calls, that return values and exceptions pass through, and that a missing or failing logger never masks the result.
+ * Pins the performance decorator: which event it logs for fast and slow calls, that return values and exceptions pass through, and that a missing logger, or one whose info() throws on the fast path, does not mask the result.
  * Layer: server/decorators, tests.
  */
 import pino from 'pino'
