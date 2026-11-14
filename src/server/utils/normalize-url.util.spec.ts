@@ -7,25 +7,41 @@ import {
 } from './normalize-url.util'
 
 /** The input grows by this factor between the two sizes a growth check compares. */
-const SIZE_FACTOR = 4
+const SIZE_FACTOR = 40
 
 /**
  * The most the time may grow when the input grows by {@link SIZE_FACTOR}. Linear work grows by that
- * factor, quadratic work by its square (16); the limit sits between them, so noise of a factor of two
- * does not fail a linear function and a quadratic one cannot pass.
+ * factor and quadratic work by its square (1600); the limit is the geometric middle of the two, so a
+ * linear function can be several times slower than ideal and a quadratic one cannot pass.
  */
-const GROWTH_LIMIT = 8
+const GROWTH_LIMIT = 253
 
 /** The shortest time a growth check divides by: a run this fast says nothing about the ratio. */
 const MIN_MEASURABLE_MS = 0.05
 
-/** How many runs each size gets; the least of them is the run the machine disturbed least. */
+/** Runs discarded at each size so the code has been compiled before it is timed. */
+const WARM_UP_RUNS = 2
+
+/** Timed runs at the two sizes; the least of them is the run the machine disturbed least. */
 const GROWTH_RUNS = 7
 
-/** The least time of `GROWTH_RUNS` runs of `work`, in milliseconds. */
-function leastMs(work: () => void): number {
+/**
+ * A quadratic function would take 1600 times as long at the large size, which hangs the test instead
+ * of failing it, so a probe at this factor ends the check first.
+ */
+const PROBE_FACTOR = 4
+
+/** Timed runs of the probe. */
+const PROBE_RUNS = 3
+
+/** The most the probe may grow: linear work grows by the probe factor (4) and quadratic work by 16. */
+const PROBE_LIMIT = 12
+
+/** The least time of `runs` timed runs of `work`, in milliseconds, after the warm-up runs. */
+function leastMs(work: () => void, runs: number): number {
+  for (let run = 0; run < WARM_UP_RUNS; run += 1) work()
   let least = Number.POSITIVE_INFINITY
-  for (let run = 0; run < GROWTH_RUNS; run += 1) {
+  for (let run = 0; run < runs; run += 1) {
     const started = performance.now()
     work()
     least = Math.min(least, performance.now() - started)
@@ -36,16 +52,24 @@ function leastMs(work: () => void): number {
 /**
  * How many times longer `work` takes on an input `SIZE_FACTOR` times larger, by the least of several
  * runs at each size. A ratio does not depend on how fast the machine is, which an absolute time bound
- * does.
+ * does. The small size is large enough that one run takes about 2 ms, well above the clock's
+ * resolution.
  *
  * @param work - Does the work for an input of the given size.
  * @param size - The smaller size.
  * @returns The time at the larger size over the time at the smaller one.
+ * @throws When the probe at a quarter of the larger size already grows like quadratic work.
  */
 function growth(work: (size: number) => void, size: number): number {
-  const small = leastMs(() => work(size))
-  const large = leastMs(() => work(size * SIZE_FACTOR))
-  return large / Math.max(small, MIN_MEASURABLE_MS)
+  const small = Math.max(
+    leastMs(() => work(size), GROWTH_RUNS),
+    MIN_MEASURABLE_MS
+  )
+  const probe = leastMs(() => work(size * PROBE_FACTOR), PROBE_RUNS) / small
+  if (probe > PROBE_LIMIT) {
+    throw new Error(`The work grew ${probe.toFixed(1)} times for ${PROBE_FACTOR} times the input`)
+  }
+  return leastMs(() => work(size * SIZE_FACTOR), GROWTH_RUNS) / small
 }
 
 describe('normalizeUrl', () => {
@@ -407,7 +431,7 @@ describe('scrubSecretSegments, the edges of the detector', () => {
       secretPathSegments(hostile)
     }
 
-    expect(growth(work, 4_000)).toBeLessThan(GROWTH_LIMIT)
+    expect(growth(work, 24_000)).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('still reads an email address with several dots in its domain', () => {
@@ -458,7 +482,7 @@ describe('a credential the segment split and the replacement order could hide', 
       growth((count) => {
         const url = pathOf(count)
         withoutRequestSecrets(`Cannot GET ${url}`, [], url)
-      }, 400)
+      }, 4_800)
     ).toBeLessThan(GROWTH_LIMIT)
   })
 
