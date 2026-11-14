@@ -33,9 +33,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-14 — server: 39,568 B (38.63 KiB) real -> 38.68 KiB budget (39,608 B, +40 B over the
+//   - 2026-11-14 — server: 39,568 B (38.64 KiB) real -> 38.68 KiB budget (39,608 B, +40 B over the
 //     measurement). The sink fields, the dotted path token test and the windowed write-failure report
-//     are +0.52 KiB over the 38.11 KiB measured on the 1.4.17 tarball: the `repeated`, `errorCode` and
+//     are +0.53 KiB over the 38.11 KiB measured on the 1.4.17 tarball: the `repeated`, `errorCode` and
 //     `errorDetails` reading with its fail-soft guard, the per-part token test, and the shared report
 //     window with the `suppressed` count and the shutdown total, all of it executable code and its
 //     comments.
