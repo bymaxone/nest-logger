@@ -14,6 +14,8 @@ const config: Config = {
   rootDir: 'test/e2e',
   testMatch: ['**/*.e2e-spec.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
+  // Binds each port-only `listen` to 127.0.0.1 and makes supertest wait for it: see the file header.
+  setupFilesAfterEnv: ['<rootDir>/jest.loopback-listen.ts'],
   // Mirror the subpath aliases declared in tsconfig.json "paths" so e2e tests
   // and production code resolve the same module instance.
   moduleNameMapper: {
