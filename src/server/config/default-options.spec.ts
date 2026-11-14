@@ -1,3 +1,9 @@
+/**
+ * Covers applyDefaults: default values for level, redaction and size options, consumer overrides,
+ * merging of the http and otel sub-objects, the snake_case OTel field shortcut, default probe
+ * exclusions, and frozen results and host-supplied lists.
+ * Layer: server/config, tests.
+ */
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { applyDefaults } from './default-options'
 

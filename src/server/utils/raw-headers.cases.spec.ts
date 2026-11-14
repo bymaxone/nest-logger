@@ -1,8 +1,8 @@
 /**
- * The cases of censoring a flat `[name, value, ...]` header array, across every redaction
- * configuration: the default names strategy, the legacy paths strategy, defaults disabled, a
- * host-added name, and a request nested inside an error. Each case reads the array through the
- * redactor the configuration resolves to.
+ * Covers censoring of the flat [name, value, ...] header arrays under rawHeaders and rawTrailers:
+ * default names under the names and paths strategies, a host-added name with the defaults
+ * disabled, a request held by an Error, and an object inside the array.
+ * Layer: server/utils, tests.
  */
 import { applyDefaults } from '../config/default-options'
 import { baseOptions } from '../__tests__/pino-factory.fixtures'

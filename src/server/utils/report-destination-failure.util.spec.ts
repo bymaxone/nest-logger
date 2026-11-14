@@ -1,3 +1,9 @@
+/**
+ * Covers reportDestinationFailure, safeMinLevel and safeDestinationName: one stderr line per
+ * failure, an unreadable cause degrades to a stand-in, an unreadable or unrecognised minLevel
+ * counts as absent, a stateful getter is read once, an unreadable name becomes unknown.
+ * Layer: server/utils, tests.
+ */
 import {
   reportDestinationFailure,
   safeDestinationName,

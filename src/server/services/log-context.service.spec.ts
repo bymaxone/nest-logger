@@ -1,3 +1,9 @@
+/**
+ * Covers LogContextService: propagation across synchronous and awaited code, isolation of two
+ * parallel scopes, set() inside and outside a scope, handling of prototype-polluting keys, and
+ * runMerged() extending, overriding and leaving the enclosing scope intact.
+ * Layer: server/services, tests.
+ */
 import type { LogContext } from '../interfaces/log-context.interface'
 
 import { LogContextService } from './log-context.service'

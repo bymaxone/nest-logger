@@ -1,3 +1,9 @@
+/**
+ * Covers the default redaction set: the wildcard depth helper, a root path for each common field,
+ * credential header names as field names, unique entries, and a floor of shipped names and header
+ * paths, with the names censored at the root and nested.
+ * Layer: server/constants, tests.
+ */
 import { applyDefaults } from '../config/default-options'
 import { resolveNameRedactor } from '../pino-factory'
 import {

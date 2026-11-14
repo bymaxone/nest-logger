@@ -1,3 +1,9 @@
+/**
+ * Covers validateOptions: a minimal valid set of options passes, and invalid service metadata,
+ * level, maxEntrySizeBytes, redactStrategy, resourceFormat, errorFormat, eventNameField and
+ * errorOwnFields values are rejected.
+ * Layer: server/config, tests.
+ */
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { validateOptions } from './validate-options'
 

@@ -1,7 +1,8 @@
 /**
- * Pins the default `req` serializer: what a Node request is written as, and that a value that is not
- * a request is left alone. The requests are real `IncomingMessage` objects, whose `headers` is a
- * prototype accessor and whose `rawHeaders` holds every header value beside its name.
+ * Covers serializeRequestValue, withSerializedRequest and censorRawHeaders: a request is written
+ * as method, URL, headers and peer address, the URL loses its query and credential segments,
+ * non-requests are returned as they are, and values beside sensitive names are censored.
+ * Layer: server/utils, tests.
  */
 import { IncomingMessage } from 'node:http'
 import { Socket } from 'node:net'

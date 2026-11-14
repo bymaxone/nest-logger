@@ -1,3 +1,9 @@
+/**
+ * Covers DestinationHealth: failures keyed by destination identity, election of one rescuer by
+ * lowest level with a tie going to the first registered, and whether a healthy sink delivered a
+ * destination's entries, by level and with pending or failed writes not credited.
+ * Layer: server/services, tests.
+ */
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 
 import { DestinationHealth } from './destination-health.service'

@@ -1,3 +1,9 @@
+/**
+ * Covers PinoUnexpectedErrorSink: it fits the nest-core sink shape, writes an error entry with the
+ * error, method, route and correlationId, leaves out the report traceId and extra fields,
+ * normalizes non-error values, and reports a dropped report on stderr.
+ * Layer: server/sinks, tests.
+ */
 import pino from 'pino'
 import type { Logger } from 'pino'
 
