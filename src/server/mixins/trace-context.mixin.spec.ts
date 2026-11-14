@@ -1,3 +1,11 @@
+/**
+ * Verifies createTraceContextMixin: merging the LogContext store, injecting trace id, span id and trace flags from an
+ * active span, and skipping injection for a zero-valued trace id, an invalid span id, no active span or disabled
+ * auto-injection. It also covers a trace API that misbehaves on a call and the scopes seen by concurrent calls.
+ *
+ * Layer: server/mixins, tests.
+ */
+
 jest.mock('../utils/otel-detector', () => ({
   ...jest.requireActual('../utils/otel-detector'),
   detectOtelTraceApi: jest.fn()

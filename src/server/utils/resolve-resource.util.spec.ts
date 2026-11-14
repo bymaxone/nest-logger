@@ -1,3 +1,10 @@
+/**
+ * Verifies parseResourceAttributes reads comma-separated pairs and skips malformed ones,
+ * resolveServiceMetadata takes explicit options before environment values and returns empty name and
+ * version when no source supplies them, and buildResourceBindings emits nested or flat attributes with extras.
+ *
+ * Layer: server/utils, tests.
+ */
 import type { ServiceMetadata } from '../../shared/types/service-metadata.type'
 
 import {

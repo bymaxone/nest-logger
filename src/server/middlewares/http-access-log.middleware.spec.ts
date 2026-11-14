@@ -1,3 +1,11 @@
+/**
+ * Verifies HttpAccessLogMiddleware: the START entry with a normalized URL and no query string, a skipped path and
+ * disabled logging, terminal entries chosen by status and delivery, errorMessage handling on a 4xx, and standing
+ * down when the request is already claimed.
+ *
+ * Layer: server/middlewares, tests.
+ */
+
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { LoggableRequest, LoggableResponse } from '../interfaces/http-context.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'

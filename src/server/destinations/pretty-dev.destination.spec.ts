@@ -1,3 +1,11 @@
+/**
+ * Verifies PrettyDevDestination: the minLevel option, refusal to initialize when NODE_ENV is production,
+ * the options handed to pino-pretty, and the missing-peer error. Written entries are rendered through the
+ * transform, and entries held before init are rendered in order or sent raw to stdout when no transform exists.
+ *
+ * Layer: server/destinations, tests.
+ */
+
 import { PrettyDevDestination } from './pretty-dev.destination'
 import type { PrettyViewOptions } from './pretty-dev.destination'
 import * as escapeLogText from '../utils/escape-log-text.util'

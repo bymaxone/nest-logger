@@ -1,3 +1,10 @@
+/**
+ * Verifies PinoLoggerService passes structured and NestJS variadic calls to the matching Pino level,
+ * keeps an Error passed to the log methods as err, escapes line breaks in messages given to
+ * errorStructured, info, warnStructured, log and string error calls, and marks unreadable metadata.
+ *
+ * Layer: server/services, tests.
+ */
 import { runInNewContext } from 'node:vm'
 
 import pino from 'pino'

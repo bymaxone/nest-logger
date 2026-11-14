@@ -1,3 +1,10 @@
+/**
+ * Verifies detectOtelTraceApi returns the trace namespace when @opentelemetry/api resolves, stays silent
+ * when it is missing and warns once on stderr when the install is broken, and that isValidTraceId and
+ * isValidSpanId accept well-formed hex ids and reject zero, wrong-length and non-hex values.
+ *
+ * Layer: server/utils, tests.
+ */
 jest.mock('node:module', () => {
   const actual = jest.requireActual<typeof import('node:module')>('node:module')
   return { ...actual, createRequire: jest.fn(actual.createRequire) }

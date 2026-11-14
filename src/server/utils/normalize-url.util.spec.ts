@@ -1,3 +1,10 @@
+/**
+ * Verifies normalizeUrl replaces UUID, ULID, nanoid and numeric path segments with :id and drops the query,
+ * scrubSecretSegments replaces hex, JWT, base64url and email segments with a placeholder, and
+ * withoutRequestSecrets removes the request query and credential segments from message text.
+ *
+ * Layer: server/utils, tests.
+ */
 import {
   normalizeUrl,
   scrubSecretSegments,

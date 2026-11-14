@@ -1,3 +1,12 @@
+/**
+ * Verifies BymaxLoggerModule.forRoot: the global and isGlobal options, rejection of invalid options, and what the
+ * compiled container provides (services, resolved options, destinations). It also covers the bootstrap log
+ * entry, the warning when default redaction is disabled, redaction of a child binding, and the useNestLogger
+ * helper.
+ *
+ * Layer: server, tests.
+ */
+
 import { Module } from '@nestjs/common'
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'

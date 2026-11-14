@@ -1,18 +1,6 @@
 {
   "files": [
-    "src/server/destinations/pretty-dev.destination.spec.ts",
-    "src/server/interceptors/http-logging.interceptor.spec.ts",
-    "src/server/logger.module.spec.ts",
-    "src/server/middlewares/http-access-log.middleware.spec.ts",
-    "src/server/middlewares/request-id.middleware.spec.ts",
-    "src/server/mixins/trace-context.mixin.spec.ts",
     "src/server/services/destination-registry.service.spec.ts",
-    "src/server/services/pino-logger.service.spec.ts",
-    "src/server/utils/destination-to-stream.spec.ts",
-    "src/server/utils/normalize-url.util.spec.ts",
-    "src/server/utils/otel-detector.spec.ts",
-    "src/server/utils/redact-by-name.util.spec.ts",
-    "src/server/utils/resolve-resource.util.spec.ts",
-    "src/server/utils/sanitize-error.util.spec.ts"
+    "src/server/utils/redact-by-name.util.spec.ts"
   ]
 }

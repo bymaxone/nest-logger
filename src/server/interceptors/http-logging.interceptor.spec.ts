@@ -1,3 +1,11 @@
+/**
+ * Verifies HttpLoggingInterceptor: START and SUCCESS entries with normalized URLs, REDIRECT entries, warn CLIENT_ERROR
+ * and error SERVER_ERROR entries for thrown errors, the acting user and user-agent fields, no info entries for
+ * the /health path, and the hand-off of a thrown error to the access-log middleware.
+ *
+ * Layer: server/interceptors, tests.
+ */
+
 import {
   BadRequestException,
   InternalServerErrorException,
