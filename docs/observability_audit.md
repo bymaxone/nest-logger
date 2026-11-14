@@ -1093,7 +1093,7 @@ Why separate rather than adding to `nest-logger`:
    a `--import` preload or the top of `main.ts`. A NestJS dynamic module runs far too late.
    These are not the same kind of artifact.
 3. **Different stability.** The OTel JS SDK is `0.2xx` and ships breaking changes routinely.
-   `nest-logger` is `1.x` under semver. Coupling them forces the stable package to inherit the
+   `nest-logger` is `1.x`. Coupling them forces the stable package to inherit the
    unstable one's release cadence.
 4. **Different consumers.** A worker, a CLI or a Lambda may want structured logs and no tracing
    at all.
