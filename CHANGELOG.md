@@ -11,6 +11,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.18] - 2026-11-14
+
 ### Changed (Security)
 
 - **A dotted credential in a path segment no longer reaches a log line.** A segment such as
@@ -24,6 +26,11 @@ heading here.
   adds no false positive, where 24 would flag a 26-character ULID file name. A token part made only of
   lowercase letters and digits joined by `-` or `_` stays in clear, as an undotted one does;
   `http.secretPathSegments` closes it.
+  **Apply to a derived backend:** a query or alert on `fullUrl`, the access-log message or the
+  exception `url` that matched a dotted token as text now sees `:redacted` in its place. A route whose
+  own segment is a name with a dot (`report.v2.pdf`, `john.doe`, a version, a hostname) is unchanged.
+  If a segment of yours holds a part of 32 or more opaque characters that is not a credential, it is
+  now written as `:redacted` too; keep the value out of the path or tell us the shape.
 
 ### Fixed
 
@@ -35,12 +42,20 @@ heading here.
   says. A response that cannot be read loses those fields and the entry is still written.
   `UnexpectedErrorReport` gains `repeated?: number`. `details` is not size-capped and can carry what a
   driver put there, such as a `host:port`, so keep access to the log controlled.
+  **Apply to a derived backend:** nothing to change in your code; the entry for a `5xx` exception
+  has `errorCode` and `errorDetails` next to `err` when the exception's response carries them. A dashboard that grouped these entries by `err.message` can group
+  by `errorCode` instead, and a window summary carries `repeated` when nest-core reports one. A sink adapter of your own that
+  implements `IUnexpectedErrorSink` receives `repeated?: number` on the report and may ignore it.
 - **A destination that refuses every write costs one stderr line per window, not one per entry.**
   `LOGGER_DESTINATION_WRITE_FAILED` was written for each failed entry, which under a log flood is a
   disk and CPU load of its own. The first failure is written at once and the rest of a 10-second
   window is counted into `suppressed` on the next line, as for a full queue. The destination is still
   marked as having failed a write at once, so readiness does not change, and shutdown says how many
   writes a destination failed in total when it failed more than one.
+  **Apply to a derived backend:** an alert that counted `LOGGER_DESTINATION_WRITE_FAILED` lines as
+  failed entries now sees one line per destination per 10 seconds. Read `suppressed` on a line for
+  the failures it stands in for, and the shutdown line for the total; an alert on the presence of
+  the line is unchanged.
 
 ## [1.4.17] - 2026-11-14
 
@@ -2877,7 +2892,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.17...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.18...HEAD
+[1.4.18]: https://github.com/bymaxone/nest-logger/compare/v1.4.17...v1.4.18
 [1.4.17]: https://github.com/bymaxone/nest-logger/compare/v1.4.16...v1.4.17
 [1.4.16]: https://github.com/bymaxone/nest-logger/compare/v1.4.15...v1.4.16
 [1.4.15]: https://github.com/bymaxone/nest-logger/compare/v1.4.14...v1.4.15
