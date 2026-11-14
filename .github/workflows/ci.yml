@@ -74,47 +74,43 @@ jobs:
         # introduced by editing a document, so the pull request that edits one is
         # where it has to fail.
         run: pnpm check:docs
-      - name: Source files stay within the length limit
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          # A pull request is also compared with the baseline on its base branch, so the baseline
-          # it carries cannot admit the offender it adds. The checkout above is not shallow.
-          if [ -n "$BASE_REF" ]; then
-            pnpm check:file-length --base "origin/$BASE_REF"
-          else
-            pnpm check:file-length
-          fi
-      - name: Spec files open with a purpose and layer header
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          # A pull request is also checked against the baseline on its base branch, so the
-          # baseline it carries cannot admit the spec it adds.
-          if [ -n "$BASE_REF" ]; then
-            pnpm check:spec-headers --base "origin/$BASE_REF"
-          else
-            pnpm check:spec-headers
-          fi
-      - name: The lint suppression baseline does not grow
+      - name: Choose the revision the baselines are compared with
         env:
           BASE_REF: ${{ github.base_ref }}
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
         run: |
-          # The baseline is compared with the one it replaces: regenerating eslint-suppressions.json after
-          # a new violation would otherwise turn that violation into inherited debt. For a pull request
-          # that is the base branch; for a push it is the commit the push replaced. A manual run, a first
-          # push (an all-zero `before`) and a force push whose old tip is not in the checkout have nothing
-          # to compare with and check only that the file parses.
+          # A baseline is compared with the one it replaces, so the baseline a change carries cannot admit
+          # the offender it adds. For a pull request that is the base branch; for a push it is the commit
+          # the push replaced. A manual run, a first push (an all-zero `before`) and a force push whose old
+          # tip is not in the checkout have nothing to compare with: the baselines are then only checked
+          # against the tree. A direct push that grows a baseline is flagged on its own run only, because
+          # the next push compares with the grown commit. The checkout above is not shallow.
           base=""
           if [ -n "$BASE_REF" ]; then
             base="origin/$BASE_REF"
           elif [ "$EVENT_NAME" = "push" ] && [ -n "$BEFORE_SHA" ] && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
             base="$BEFORE_SHA"
           fi
-          if [ -n "$base" ]; then
-            pnpm check:suppressions --base "$base"
+          echo "COMPARE_BASE=$base" >> "$GITHUB_ENV"
+      - name: Source files stay within the length limit
+        run: |
+          if [ -n "$COMPARE_BASE" ]; then
+            pnpm check:file-length --base "$COMPARE_BASE"
+          else
+            pnpm check:file-length
+          fi
+      - name: Spec files open with a purpose and layer header
+        run: |
+          if [ -n "$COMPARE_BASE" ]; then
+            pnpm check:spec-headers --base "$COMPARE_BASE"
+          else
+            pnpm check:spec-headers
+          fi
+      - name: The lint suppression baseline does not grow
+        run: |
+          if [ -n "$COMPARE_BASE" ]; then
+            pnpm check:suppressions --base "$COMPARE_BASE"
           else
             pnpm check:suppressions
           fi
