@@ -50,12 +50,12 @@ describe('LogPerformance', () => {
     infoSpy = jest.spyOn(logger, 'info')
   })
 
-  it(/*
+  /*
    * A method exceeding the threshold must emit METHOD_SLOW_EXECUTION at warn
    * level with the qualified method name and timing metadata — the core
    * slow-path signal operators alert on.
    */
-  'logs METHOD_SLOW_EXECUTION when the method exceeds the threshold', async () => {
+  it('logs METHOD_SLOW_EXECUTION when the method exceeds the threshold', async () => {
     await new ReportService(logger).slow()
 
     expect(warnSpy).toHaveBeenCalledTimes(1)
@@ -70,11 +70,11 @@ describe('LogPerformance', () => {
     expect(metadata.duration).toBeGreaterThan(5)
   })
 
-  it(/*
+  /*
    * A method under the threshold must emit METHOD_EXECUTION at info level —
    * covers the fast branch and confirms it does not warn.
    */
-  'logs METHOD_EXECUTION when the method is under the threshold', async () => {
+  it('logs METHOD_EXECUTION when the method is under the threshold', async () => {
     await new ReportService(logger).fast()
 
     expect(infoSpy).toHaveBeenCalledTimes(1)
@@ -85,12 +85,12 @@ describe('LogPerformance', () => {
     expect(metadata).toMatchObject({ method: 'ReportService.fast' })
   })
 
-  it(/*
+  /*
    * A duration EXACTLY at the threshold must count as not-slow (the comparison is
    * strictly `>`, not `>=`). Date.now is mocked to force duration === threshold,
    * pinning the boundary against an off-by-one regression.
    */
-  'treats a duration exactly at the threshold as not slow', async () => {
+  it('treats a duration exactly at the threshold as not slow', async () => {
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(100_000)
     await new ReportService(logger).fast() // @LogPerformance(100_000); mocked duration = 100_000
 
@@ -98,31 +98,31 @@ describe('LogPerformance', () => {
     expect(warnSpy).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * The decorator must forward the original return value unchanged — wrapping
    * for timing must be transparent to callers.
    */
-  'preserves the return value', async () => {
+  it('preserves the return value', async () => {
     expect(await new ReportService(logger).fast()).toBe('fast-result')
     expect(await new ReportService(logger).slow()).toBe('slow-result')
   })
 
-  it(/*
+  /*
    * Exceptions must propagate (never be swallowed) AND the timing log must still
    * fire from the finally block — observability must not mask failures.
    */
-  'propagates exceptions while still logging timing', async () => {
+  it('propagates exceptions while still logging timing', async () => {
     await expect(new ReportService(logger).boom()).rejects.toThrow('kaboom')
     expect(warnSpy).toHaveBeenCalledTimes(1)
     expect(warnSpy.mock.calls[0][0]).toBe('METHOD_SLOW_EXECUTION')
   })
 
-  it(/*
+  /*
    * Called with no argument the decorator must fall back to the default
    * threshold (1000ms) — covers the default-parameter branch. A trivially fast
    * method therefore logs METHOD_EXECUTION, not a slow warning.
    */
-  'defaults the threshold when called without an argument', async () => {
+  it('defaults the threshold when called without an argument', async () => {
     await new ReportService(logger).defaultThreshold()
 
     expect(infoSpy).toHaveBeenCalledTimes(1)
@@ -130,22 +130,22 @@ describe('LogPerformance', () => {
     expect(infoSpy.mock.calls[0][0]).toBe('METHOD_EXECUTION')
   })
 
-  it(/*
+  /*
    * With no logger on the host the decorator must stay silent and still return
    * the value — covers the `if (this.logger)` false branch (fail-safe design).
    */
-  'stays silent when the host has no logger', async () => {
+  it('stays silent when the host has no logger', async () => {
     const bare = new ReportService()
     await expect(bare.fast()).resolves.toBe('fast-result')
     expect(warnSpy).not.toHaveBeenCalled()
     expect(infoSpy).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * A throwing logger must NOT mask the method result — the timing log is
    * crash-safe. Covers the catch guard around the finally-block logging.
    */
-  'swallows a logger failure instead of masking the method result', async () => {
+  it('swallows a logger failure instead of masking the method result', async () => {
     infoSpy.mockImplementation(() => {
       throw new Error('log sink down')
     })

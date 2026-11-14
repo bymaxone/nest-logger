@@ -53,11 +53,11 @@ describe('createTraceContextMixin', () => {
     logContext = new LogContextService()
   })
 
-  it(/*
+  /*
    * With auto-injection off and no active context, the mixin must contribute
    * nothing — proves it never fabricates fields.
    */
-  'returns an empty object with no context and no OTel', () => {
+  it('returns an empty object with no context and no OTel', () => {
     const mixin = createTraceContextMixin(logContext, {
       ...defaultFields,
       shouldAutoInjectTraceContext: false
@@ -65,11 +65,11 @@ describe('createTraceContextMixin', () => {
     expect(mixin({}, 30, logger)).toEqual({})
   })
 
-  it(/*
+  /*
    * The AsyncLocalStorage store must be merged into every entry so request
    * identifiers propagate.
    */
-  'merges the LogContext store', () => {
+  it('merges the LogContext store', () => {
     const mixin = createTraceContextMixin(logContext, {
       ...defaultFields,
       shouldAutoInjectTraceContext: false
@@ -83,10 +83,10 @@ describe('createTraceContextMixin', () => {
     })
   })
 
-  it(/*
+  /*
    * An active, valid span must inject traceId/spanId and the 2-hex traceFlags.
    */
-  'injects trace context from an active valid span', () => {
+  it('injects trace context from an active valid span', () => {
     mockedDetect.mockReturnValue(
       apiWith({ traceId: VALID_TRACE_ID, spanId: SPAN_ID, traceFlags: 1 })
     )
@@ -101,11 +101,11 @@ describe('createTraceContextMixin', () => {
     })
   })
 
-  it(/*
+  /*
    * The all-zeros (no-trace) sentinel must be skipped so logs aren't tagged with
    * a meaningless trace ID.
    */
-  'skips injection when the trace ID is all zeros', () => {
+  it('skips injection when the trace ID is all zeros', () => {
     mockedDetect.mockReturnValue(
       apiWith({ traceId: ZERO_TRACE_ID, spanId: SPAN_ID, traceFlags: 1 })
     )
@@ -116,11 +116,11 @@ describe('createTraceContextMixin', () => {
     expect(mixin({}, 30, logger)).toEqual({})
   })
 
-  it(/*
+  /*
    * A valid trace ID paired with an invalid span ID must skip injection — a
    * half-valid correlation is worse than none.
    */
-  'skips injection when the span ID is invalid', () => {
+  it('skips injection when the span ID is invalid', () => {
     mockedDetect.mockReturnValue(
       apiWith({ traceId: VALID_TRACE_ID, spanId: 'not-a-span', traceFlags: 1 })
     )
@@ -131,11 +131,11 @@ describe('createTraceContextMixin', () => {
     expect(mixin({}, 30, logger)).toEqual({})
   })
 
-  it(/*
+  /*
    * shouldAutoInjectTraceContext: false must disable OTel detection entirely, even if
    * a span would otherwise be active.
    */
-  'does not inject when auto-injection is disabled', () => {
+  it('does not inject when auto-injection is disabled', () => {
     mockedDetect.mockReturnValue(
       apiWith({ traceId: VALID_TRACE_ID, spanId: SPAN_ID, traceFlags: 1 })
     )
@@ -147,11 +147,11 @@ describe('createTraceContextMixin', () => {
     expect(mockedDetect).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * Custom field names must be honored so consumers can match the OTel Logs
    * Data Model wire format.
    */
-  'honors custom field names', () => {
+  it('honors custom field names', () => {
     mockedDetect.mockReturnValue(
       apiWith({ traceId: VALID_TRACE_ID, spanId: SPAN_ID, traceFlags: 1 })
     )
@@ -168,11 +168,11 @@ describe('createTraceContextMixin', () => {
     })
   })
 
-  it(/*
+  /*
    * traceFlags of 0 (unsampled but recorded) must still be emitted — a falsy
    * value must not be mistaken for "absent".
    */
-  'emits traceFlags even when the value is zero', () => {
+  it('emits traceFlags even when the value is zero', () => {
     mockedDetect.mockReturnValue(
       apiWith({ traceId: VALID_TRACE_ID, spanId: SPAN_ID, traceFlags: 0 })
     )
@@ -187,12 +187,12 @@ describe('createTraceContextMixin', () => {
     })
   })
 
-  it(/*
+  /*
    * traceFlags larger than a byte must be masked to the low 8 bits so the
    * emitted value is always 2 hex digits (e.g. 511 -> "ff"), never longer than
    * the W3C one-byte format — guards against a malformed span.
    */
-  'masks out-of-range traceFlags to a single byte', () => {
+  it('masks out-of-range traceFlags to a single byte', () => {
     mockedDetect.mockReturnValue(
       apiWith({ traceId: VALID_TRACE_ID, spanId: SPAN_ID, traceFlags: 511 })
     )
@@ -207,11 +207,11 @@ describe('createTraceContextMixin', () => {
     })
   })
 
-  it(/*
+  /*
    * When the API is present but no span is active, the mixin must contribute
    * nothing.
    */
-  'skips injection when no span is active', () => {
+  it('skips injection when no span is active', () => {
     mockedDetect.mockReturnValue(apiWith(undefined))
     const mixin = createTraceContextMixin(logContext, {
       ...defaultFields,
@@ -220,11 +220,11 @@ describe('createTraceContextMixin', () => {
     expect(mixin({}, 30, logger)).toEqual({})
   })
 
-  it(/*
+  /*
    * A malformed span lacking a numeric traceFlags must still inject traceId/
    * spanId but skip traceFlags rather than throwing on the hot path.
    */
-  'injects ids but skips traceFlags when traceFlags is not a number', () => {
+  it('injects ids but skips traceFlags when traceFlags is not a number', () => {
     mockedDetect.mockReturnValue(
       apiWith({ traceId: VALID_TRACE_ID, spanId: SPAN_ID, traceFlags: 'oops' })
     )
@@ -354,11 +354,11 @@ describe('createTraceContextMixin — a trace API that misbehaves on a call', ()
     }
   )
 
-  it(/*
+  /*
    * The control for the table above: a well-behaved API still stamps all three fields and
    * writes nothing to stderr.
    */
-  'stamps the trace fields and stays silent when the span is well formed', () => {
+  it('stamps the trace fields and stays silent when the span is well formed', () => {
     const mixin = mixinOver(apiWith(validContext))
 
     expect(mixin({}, 30, logger)).toEqual({
@@ -374,7 +374,7 @@ describe('createTraceContextMixin — concurrency isolation', () => {
   const logger = pino({ enabled: false })
   const options = { ...defaultFields, shouldAutoInjectTraceContext: true }
 
-  it(/*
+  /*
    * The property that matters most and fails most quietly: two requests in
    * flight at once must never see each other's correlation. A leak here
    * attributes one user's log line to another user's trace, and stays invisible
@@ -384,7 +384,7 @@ describe('createTraceContextMixin — concurrency isolation', () => {
    * about itself — it has to be exercised concurrently, with the scopes
    * deliberately interleaved across await points.
    */
-  'never leaks context between concurrently interleaved scopes', async () => {
+  it('never leaks context between concurrently interleaved scopes', async () => {
     mockedDetect.mockReturnValue(apiWith(undefined))
     const logContext = new LogContextService()
     const mixin = createTraceContextMixin(logContext, options)
@@ -408,12 +408,12 @@ describe('createTraceContextMixin — concurrency isolation', () => {
     })
   })
 
-  it(/*
+  /*
    * `Promise.all` inside ONE scope must keep that scope on every branch:
    * AsyncLocalStorage propagates through the continuation, and each branch
    * belongs to the same logical request.
    */
-  'keeps one scope across Promise.all branches', async () => {
+  it('keeps one scope across Promise.all branches', async () => {
     mockedDetect.mockReturnValue(apiWith(undefined))
     const logContext = new LogContextService()
     const mixin = createTraceContextMixin(logContext, options)
@@ -431,13 +431,13 @@ describe('createTraceContextMixin — concurrency isolation', () => {
     }
   })
 
-  it(/*
+  /*
    * Nested spans: the mixin must report the span active AT THE MOMENT OF THE LOG
    * CALL, not the one active when the mixin was built. Reading the wrong level of
    * a trace attaches the line to the wrong operation — and the mixin is built
    * once per logger, so caching the span would be an easy mistake to make.
    */
-  'reports the innermost active span, not the one active at build time', () => {
+  it('reports the innermost active span, not the one active at build time', () => {
     const outer = 'a'.repeat(32)
     const inner = 'b'.repeat(32)
     let current: RawSpanContext = { traceId: outer, spanId: 'a'.repeat(16), traceFlags: 1 }

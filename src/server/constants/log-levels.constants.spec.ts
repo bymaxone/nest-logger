@@ -72,20 +72,20 @@ describe('NEST_TO_PINO_LEVEL', () => {
 })
 
 describe('LOG_LEVEL_PRIORITY', () => {
-  it(/*
+  /*
    * Priority order is consumed by destination filtering — the index of a
    * level decides whether it passes the destination's `minLevel`. Drift
    * here would cause errors to be silently dropped.
    */
-  'should list levels in ascending severity order', () => {
+  it('should list levels in ascending severity order', () => {
     expect(LOG_LEVEL_PRIORITY).toEqual(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
   })
 
-  it(/*
+  /*
    * Index-based filtering needs every Pino level to be present — guard
    * against a level being accidentally removed from the ordering array.
    */
-  'should contain every Pino level exactly once', () => {
+  it('should contain every Pino level exactly once', () => {
     expect(new Set(LOG_LEVEL_PRIORITY).size).toBe(LOG_LEVEL_PRIORITY.length)
     for (const level of Object.keys(PINO_LEVEL_NUMBERS)) {
       expect(LOG_LEVEL_PRIORITY).toContain(level)

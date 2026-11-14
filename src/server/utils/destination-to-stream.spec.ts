@@ -46,11 +46,11 @@ describe('destinationToStream', () => {
     stderrSpy.mockRestore()
   })
 
-  it(/*
+  /*
    * A synchronous string write must reach the destination unchanged and complete
    * without error — the hot path for stdout-style destinations.
    */
-  'forwards a synchronous string write to the destination', async () => {
+  it('forwards a synchronous string write to the destination', async () => {
     const destination: ILogDestination = { name: 'sync', write: jest.fn() }
     const stream = destinationToStream(destination)
 
@@ -60,11 +60,11 @@ describe('destinationToStream', () => {
     expect(stderrSpy).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * Buffer chunks (the default when Pino writes binary) must be decoded as UTF-8
    * before reaching the destination — UTF-8 is the wire format Pino emits.
    */
-  'decodes a Buffer chunk as UTF-8', async () => {
+  it('decodes a Buffer chunk as UTF-8', async () => {
     const destination: ILogDestination = { name: 'buf', write: jest.fn() }
     const stream = destinationToStream(destination)
 
@@ -73,11 +73,11 @@ describe('destinationToStream', () => {
     expect(destination.write).toHaveBeenCalledWith('buffered\n')
   })
 
-  it(/*
+  /*
    * An async destination (returns a Promise) must be awaited before the stream
    * callback fires, so back-pressure is respected.
    */
-  'awaits an async destination write', async () => {
+  it('awaits an async destination write', async () => {
     const writeMock = jest.fn().mockResolvedValue(undefined)
     const stream = destinationToStream({ name: 'async', write: writeMock })
 
@@ -86,13 +86,13 @@ describe('destinationToStream', () => {
     expect(writeMock).toHaveBeenCalledWith('async-entry\n')
   })
 
-  it(/*
+  /*
    * A rejected async write must be CONTAINED (fail-soft): the stream completes
    * WITHOUT error (never a crashing 'error' event) and the failure is reported
    * once to stderr as a structured LOGGER_DESTINATION_WRITE_FAILED line naming
    * the destination, the Error type, and the message.
    */
-  'contains a rejected async write and reports it to stderr', async () => {
+  it('contains a rejected async write and reports it to stderr', async () => {
     const stream = destinationToStream({
       name: 'async-fail',
       write: jest.fn().mockRejectedValue(new Error('async-boom'))
@@ -110,11 +110,11 @@ describe('destinationToStream', () => {
     expect(line.endsWith('\n')).toBe(true)
   })
 
-  it(/*
+  /*
    * A non-Error async rejection must also be contained, with the value coerced
    * via String() and tagged UnknownError — covers the non-Error reportWriteFailure arm.
    */
-  'contains a non-Error async rejection', async () => {
+  it('contains a non-Error async rejection', async () => {
     const stream = destinationToStream({
       name: 'async-weird',
       write: jest.fn().mockRejectedValue('string-rejection')
@@ -127,11 +127,11 @@ describe('destinationToStream', () => {
     expect(line).toContain('string-rejection')
   })
 
-  it(/*
+  /*
    * A synchronous throw inside write must be caught and contained — reported to
    * stderr, never crashing the Pino producer.
    */
-  'contains a synchronous throw and reports it to stderr', async () => {
+  it('contains a synchronous throw and reports it to stderr', async () => {
     const stream = destinationToStream({
       name: 'sync-fail',
       write: jest.fn(() => {
@@ -146,10 +146,10 @@ describe('destinationToStream', () => {
     expect(line).toContain('sync-boom')
   })
 
-  it(/*
+  /*
    * A non-Error synchronous throw must also be contained and stringified.
    */
-  'contains a non-Error synchronous throw', async () => {
+  it('contains a non-Error synchronous throw', async () => {
     const stream = destinationToStream({
       name: 'sync-weird',
       write: jest.fn(() => {
@@ -162,14 +162,14 @@ describe('destinationToStream', () => {
     expect(stderrSpy.mock.calls[0]?.[0]).toContain('string-throw')
   })
 
-  it(/*
+  /*
    * The safe sink itself can fail: if process.stderr.write throws (e.g. EPIPE on
    * a closed pipe), the failure report must be swallowed so the fail-soft
    * contract is absolute — a broken stderr must NOT turn a dropped log into a
    * host crash. The stream still completes without error. Covers the stderr
    * try/catch in reportWriteFailure.
    */
-  'swallows a throwing stderr so a write failure still cannot crash the host', async () => {
+  it('swallows a throwing stderr so a write failure still cannot crash the host', async () => {
     stderrSpy.mockImplementation(() => {
       throw new Error('EPIPE')
     })
@@ -184,7 +184,7 @@ describe('destinationToStream', () => {
     expect(stderrSpy).toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * REGRESSION — the destination's own `name` is read inside the reporter, not at
    * the call site. `readonly name: string` does not stop a consumer implementing
    * it as a getter, and the call site here sits inside the catch and the rejection
@@ -194,7 +194,7 @@ describe('destinationToStream', () => {
    * Asserted on the callback completing AND on a report naming the sink as
    * `unknown`, because "did not throw" alone would pass on a silent no-op.
    */
-  'contains a write failure even when the destination name cannot be read', async () => {
+  it('contains a write failure even when the destination name cannot be read', async () => {
     const destination: ILogDestination = {
       get name(): string {
         throw new Error('name getter exploded')
@@ -219,7 +219,7 @@ describe('destinationToStream', () => {
   })
 
   describe('a write that returns a thenable rather than a Promise', () => {
-    it(/*
+    /*
      * REGRESSION — `instanceof Promise` is realm-local and answers `false` for a
      * promise built in another realm (worker, vm context) and for any
      * structurally valid thenable. Both were measured. Such a write took the
@@ -232,7 +232,7 @@ describe('destinationToStream', () => {
      * This repo already learned the realm-local lesson from `instanceof Error`,
      * which is why `isErrorLike` exists; the same mistake sat one file away.
      */
-    'contains a rejection from a non-Promise thenable', async () => {
+    it('contains a rejection from a non-Promise thenable', async () => {
       const destination: ILogDestination = {
         name: 'thenable',
         // A valid thenable that is NOT `instanceof Promise` — what a worker
@@ -275,12 +275,12 @@ describe('destinationToStream', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * And it must be counted as in flight while it is, so readiness cannot claim
      * delivery from a sink whose write has not settled — the reason the pending
      * counter exists at all.
      */
-    'counts a thenable write as pending until it settles', async () => {
+    it('counts a thenable write as pending until it settles', async () => {
       let settle: (() => void) | undefined
       const destination: ILogDestination = {
         name: 'thenable',
@@ -321,13 +321,13 @@ describe('destinationToStream', () => {
       stdoutSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * A destination that failed onInit never became a live sink, so it must not be
      * written to — its write() may assume resources that were never acquired. The
      * multistream is wired before any onInit runs, so this check is the only place
      * the exclusion can happen.
      */
-    'does not write to a destination that failed onInit', async () => {
+    it('does not write to a destination that failed onInit', async () => {
       const destination: ILogDestination = { name: 'failed', write: jest.fn() }
       const health = new DestinationHealth()
       health.markHealthy({ name: 'other', write: jest.fn() }, 'info') // a healthy sink elsewhere
@@ -340,13 +340,13 @@ describe('destinationToStream', () => {
       expect(stdoutSpy).not.toHaveBeenCalled()
     })
 
-    it(/*
+    /*
      * REGRESSION — the defect this whole mechanism exists for. With `destinations`
      * replacing the default stdout sink, a sole destination that fails onInit left
      * the application booting, running, exiting 0 and writing NOTHING anywhere.
      * When nothing initialized, the elected rescuer must emit the raw NDJSON.
      */
-    'rescues the entry to stdout when no destination initialized', async () => {
+    it('rescues the entry to stdout when no destination initialized', async () => {
       const destination: ILogDestination = { name: 'only', write: jest.fn() }
       const health = new DestinationHealth()
       health.markFailed(destination, 'info')
@@ -358,11 +358,11 @@ describe('destinationToStream', () => {
       expect(destination.write).not.toHaveBeenCalled()
     })
 
-    it(/*
+    /*
      * Exactly one failed destination rescues an entry, so N failed sinks produce
      * one line rather than N duplicates of the same entry.
      */
-    'rescues an entry once when several destinations failed', async () => {
+    it('rescues an entry once when several destinations failed', async () => {
       const first: ILogDestination = { name: 'first', write: jest.fn() }
       const second: ILogDestination = { name: 'second', write: jest.fn() }
       const health = new DestinationHealth()
@@ -375,11 +375,11 @@ describe('destinationToStream', () => {
       expect(stdoutSpy).toHaveBeenCalledTimes(1)
     })
 
-    it(/*
+    /*
      * The rescue must not become the crash it exists to prevent: stdout can be a
      * closed pipe (`node app | head`), and EPIPE there must be swallowed.
      */
-    'survives stdout itself failing during a rescue', async () => {
+    it('survives stdout itself failing during a rescue', async () => {
       stdoutSpy.mockImplementation(() => {
         throw new Error('EPIPE')
       })

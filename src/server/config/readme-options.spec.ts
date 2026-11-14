@@ -219,11 +219,11 @@ describe('README option tables', () => {
       }
     )
 
-    it(/*
+    /*
      * `level` has no single default: production is `info` and everything else is
      * `debug`. The cell says so, and both halves are exercised.
      */
-    'documents the NODE_ENV-dependent default of `level`', () => {
+    it('documents the NODE_ENV-dependent default of `level`', () => {
       expect(TOP_LEVEL.get('level')).toBe(LEVEL_CELL)
       process.env['NODE_ENV'] = 'production'
       expect(applyDefaults(baseOptions).level).toBe('info')
@@ -231,20 +231,20 @@ describe('README option tables', () => {
       expect(applyDefaults(baseOptions).level).toBe('debug')
     })
 
-    it(/*
+    /*
      * The default clock is documented as the ISO-8601 instant of the call; the cell is
      * pinned and the function is called.
      */
-    'documents the default `timestamp` function', () => {
+    it('documents the default `timestamp` function', () => {
       expect(TOP_LEVEL.get('timestamp')).toBe(TIMESTAMP_CELL)
       expect(resolved.timestamp()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
     })
 
-    it(/*
+    /*
      * `destinations` resolves to an empty list in the options and to the stdout sink
      * only when the module is built, so the document is checked against the module.
      */
-    'documents the default sink of `destinations`', async () => {
+    it('documents the default sink of `destinations`', async () => {
       expect(TOP_LEVEL.get('destinations')).toBe(DESTINATIONS_CELL)
       const ref = await Test.createTestingModule({
         imports: [BymaxLoggerModule.forRoot(baseOptions)]
@@ -257,11 +257,11 @@ describe('README option tables', () => {
       await ref.close()
     })
 
-    it(/*
+    /*
      * The `service.*` rows: required fields are the ones the caller must pass, the dash
      * rows are never filled in by the module, and `environment` falls back to NODE_ENV.
      */
-    'documents the `service.*` fields', () => {
+    it('documents the `service.*` fields', () => {
       const rows = [...TOP_LEVEL].filter(([name]) => name.startsWith('service.'))
       expect(rows.length).toBeGreaterThan(0)
       for (const [name, cell] of rows) {
@@ -283,12 +283,12 @@ describe('README option tables', () => {
   })
 
   describe('completeness', () => {
-    it(/*
+    /*
      * Every option the module resolves has a row, and every row names a real option, so
      * an option added without documenting it, or removed without deleting its row,
      * fails. `service` has its own rows and `http` / `otel` their own tables.
      */
-    'lists exactly the top-level options', () => {
+    it('lists exactly the top-level options', () => {
       const documented = [...TOP_LEVEL.keys()].filter((name) => !name.startsWith('service.'))
       const real = Object.keys(resolved).filter(
         (key) => !['service', 'http', 'otel', 'shutdown', 'destinationQueue'].includes(key)
@@ -296,22 +296,22 @@ describe('README option tables', () => {
       expect(documented.sort()).toEqual(real.sort())
     })
 
-    it(/*
+    /*
      * The `service.*` rows are exactly the fields of `ServiceMetadata`, which the
      * top-level completeness case above leaves out because `service` is not defaulted.
      */
-    'lists exactly the service fields', () => {
+    it('lists exactly the service fields', () => {
       const documented = [...TOP_LEVEL.keys()]
         .filter((name) => name.startsWith('service.'))
         .map((name) => name.replace(/^service\./, ''))
       expect(documented.sort()).toEqual(Object.keys(everyServiceField).sort())
     })
 
-    it(/*
+    /*
      * A repeated option row must fail the parse instead of letting the last row stand in
      * for the first, which could carry the stale default.
      */
-    'rejects a table that documents one option twice', () => {
+    it('rejects a table that documents one option twice', () => {
       const table = [
         '### T',
         '',
@@ -323,36 +323,36 @@ describe('README option tables', () => {
       expect(() => parseOptionTable(table, '### T')).toThrow(/Duplicate row for "level"/)
     })
 
-    it(/*
+    /*
      * The http table lists exactly the keys of the resolved http options.
      */
-    'lists exactly the http options', () => {
+    it('lists exactly the http options', () => {
       const documented = [...HTTP.keys()].map((name) => name.replace(/^http\./, ''))
       expect(documented.sort()).toEqual(Object.keys(resolved.http).sort())
     })
 
-    it(/*
+    /*
      * The destinationQueue table lists exactly the keys of the resolved destinationQueue options.
      */
-    'lists exactly the destinationQueue options', () => {
+    it('lists exactly the destinationQueue options', () => {
       const documented = [...DESTINATION_QUEUE.keys()].map((name) =>
         name.replace(/^destinationQueue\./, '')
       )
       expect(documented.sort()).toEqual(Object.keys(resolved.destinationQueue).sort())
     })
 
-    it(/*
+    /*
      * The shutdown table lists exactly the keys of the resolved shutdown options.
      */
-    'lists exactly the shutdown options', () => {
+    it('lists exactly the shutdown options', () => {
       const documented = [...SHUTDOWN.keys()].map((name) => name.replace(/^shutdown\./, ''))
       expect(documented.sort()).toEqual(Object.keys(resolved.shutdown).sort())
     })
 
-    it(/*
+    /*
      * The otel table lists exactly the keys of the resolved otel options.
      */
-    'lists exactly the otel options', () => {
+    it('lists exactly the otel options', () => {
       const documented = [...OTEL.keys()].map((name) => name.replace(/^otel\./, ''))
       expect(documented.sort()).toEqual(Object.keys(resolved.otel).sort())
     })

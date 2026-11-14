@@ -33,12 +33,12 @@ describe('Logger E2E — useNestLogger', () => {
     stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
   })
 
-  it(/*
+  /*
    * After useNestLogger, NestJS's framework Logger must emit through our
    * PinoLoggerService as structured JSON — context and service metadata included —
    * proving bootstrap-time framework logs flow through the library.
    */
-  'routes the NestJS framework Logger through PinoLoggerService as structured JSON', () => {
+  it('routes the NestJS framework Logger through PinoLoggerService as structured JSON', () => {
     Logger.log('hello-from-nest', 'BootstrapCtx')
 
     const entry = parseLogEntries(stdoutSpy).find((item) => item['msg'] === 'hello-from-nest')

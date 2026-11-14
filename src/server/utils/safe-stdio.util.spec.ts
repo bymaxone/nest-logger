@@ -47,11 +47,11 @@ describe('safe stdio', () => {
     }
   })
 
-  it(/*
+  /*
    * The ordinary path: the payload reaches the stream unchanged. A guard that
    * quietly swallowed real output would be worse than the crash it prevents.
    */
-  'writes the payload through to stdout', () => {
+  it('writes the payload through to stdout', () => {
     const spy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
 
     writeStdoutSafely('entry\n')
@@ -59,10 +59,10 @@ describe('safe stdio', () => {
     expect(spy).toHaveBeenCalledWith('entry\n')
   })
 
-  it(/*
+  /*
    * Same for stderr, which carries the destination failure reports.
    */
-  'writes the payload through to stderr', () => {
+  it('writes the payload through to stderr', () => {
     const spy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
 
     writeStderrSafely('report\n')
@@ -70,12 +70,12 @@ describe('safe stdio', () => {
     expect(spy).toHaveBeenCalledWith('report\n')
   })
 
-  it(/*
+  /*
    * The SYNCHRONOUS half: a destroyed stream can throw from write() itself, and
    * that must not escape. This is the half a try/catch already covered — it is
    * asserted so a refactor cannot drop it while fixing the async half.
    */
-  'swallows a synchronous throw from the stream', () => {
+  it('swallows a synchronous throw from the stream', () => {
     jest.spyOn(process.stdout, 'write').mockImplementation(() => {
       throw new Error('EPIPE')
     })
@@ -83,7 +83,7 @@ describe('safe stdio', () => {
     expect(() => writeStdoutSafely('entry\n')).not.toThrow()
   })
 
-  it(/*
+  /*
    * REGRESSION — the ASYNCHRONOUS half, which is the whole reason this module
    * exists. A closed pipe reports EPIPE through the stream's 'error' event AFTER
    * write() has returned, so a try/catch never sees it and Node turns the emit
@@ -100,7 +100,7 @@ describe('safe stdio', () => {
    * `isolateModules` gives a fresh module registry, so the module's own
    * "already guarded" memory is empty and the install path must run.
    */
-  'attaches an error listener to stdout on first use', async () => {
+  it('attaches an error listener to stdout on first use', async () => {
     jest.spyOn(process.stdout, 'write').mockReturnValue(true)
     const before = process.stdout.listenerCount('error')
 
@@ -112,7 +112,7 @@ describe('safe stdio', () => {
     expect(process.stdout.listenerCount('error')).toBe(before + 1)
   })
 
-  it(/*
+  /*
    * The handler must SWALLOW the error, not merely exist. `emit('error')` on an
    * EventEmitter with no listener re-throws — which is exactly how EPIPE reaches
    * Node's uncaught-exception path and kills the process.
@@ -124,19 +124,19 @@ describe('safe stdio', () => {
    * proves the listener is ours; this one proves ours does the right thing with
    * the event.
    */
-  'swallows the error the handler receives', () => {
+  it('swallows the error the handler receives', () => {
     jest.spyOn(process.stdout, 'write').mockReturnValue(true)
     writeStdoutSafely('entry\n')
 
     expect(() => process.stdout.emit('error', new Error('EPIPE'))).not.toThrow()
   })
 
-  it(/*
+  /*
    * The handler is installed once per stream. Attaching one per write would trip
    * Node's max-listeners warning on a sustained outage — precisely when the
    * library is writing to a broken stream most often.
    */
-  'attaches it only once, however many writes follow', async () => {
+  it('attaches it only once, however many writes follow', async () => {
     jest.spyOn(process.stdout, 'write').mockReturnValue(true)
     const before = process.stdout.listenerCount('error')
 

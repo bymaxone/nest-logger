@@ -25,11 +25,11 @@ describe('PrettyDevDestination registered in production', () => {
     }
   })
 
-  it(/*
+  /*
    * As the only destination in production it refuses; the entry is rescued to stdout
    * as parseable JSON with no ANSI escape, and one stderr line names the refusal.
    */
-  'rescues entries to stdout as raw JSON and reports the refusal on stderr', async () => {
+  it('rescues entries to stdout as raw JSON and reports the refusal on stderr', async () => {
     process.env['NODE_ENV'] = 'production'
     const stdout: string[] = []
     const stderr: string[] = []

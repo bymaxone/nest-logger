@@ -107,12 +107,12 @@ describe('Logger E2E — custom destinations', () => {
     return app
   }
 
-  it(/*
+  /*
    * A consumer-supplied destination must receive the already-serialized NDJSON
    * payloads — the `destinations` option + `ILogDestination` contract working
    * end-to-end through the Pino multistream.
    */
-  'routes serialized entries to a custom destination', async () => {
+  it('routes serialized entries to a custom destination', async () => {
     const collector = new CollectorDestination()
     const booted = await bootApp({ destinations: [collector] })
 
@@ -124,11 +124,11 @@ describe('Logger E2E — custom destinations', () => {
     expect(keys).toContain('LOGGER_BOOTSTRAP_OK')
   })
 
-  it(/*
+  /*
    * The registry must call `onInit` during bootstrap and `onShutdown` during
    * `app.close()` — the full destination lifecycle.
    */
-  'invokes onInit on boot and onShutdown on close', async () => {
+  it('invokes onInit on boot and onShutdown on close', async () => {
     const destination = new LifecycleDestination()
     const booted = await bootApp({ destinations: [destination] })
 
@@ -140,14 +140,14 @@ describe('Logger E2E — custom destinations', () => {
     expect(destination.isShutdownCalled).toBe(true)
   })
 
-  it(/*
+  /*
    * REGRESSION — audit finding D-1. `LOGGER_SHUTDOWN_OK` was declared in the
    * reserved catalog and never written by any code path. It is the bookend to
    * `LOGGER_BOOTSTRAP_OK`: its absence in a log stream is how an operator tells
    * a graceful shutdown from a killed process. It must be emitted BEFORE the
    * sinks are torn down, which is why the collector still receives it.
    */
-  'emits LOGGER_SHUTDOWN_OK before tearing the destinations down', async () => {
+  it('emits LOGGER_SHUTDOWN_OK before tearing the destinations down', async () => {
     const collector = new CollectorDestination()
     const booted = await bootApp({ destinations: [collector] })
 
@@ -161,7 +161,7 @@ describe('Logger E2E — custom destinations', () => {
     expect(shutdown?.['destinations']).toBe(1)
   })
 
-  it(/*
+  /*
    * A destination whose `onInit` throws must NOT crash the app: boot succeeds, a
    * `LOGGER_DESTINATION_INIT_FAILED` report naming the offender reaches STDERR,
    * and the healthy destination keeps receiving subsequent logs.
@@ -170,7 +170,7 @@ describe('Logger E2E — custom destinations', () => {
    * that just failed may be the only ones the application has — see the
    * total-failure case below, which is what that choice exists for.
    */
-  'isolates a destination that fails to initialize', async () => {
+  it('isolates a destination that fails to initialize', async () => {
     const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
     try {
       const collector = new CollectorDestination()
@@ -195,7 +195,7 @@ describe('Logger E2E — custom destinations', () => {
     }
   })
 
-  it(/*
+  /*
    * REGRESSION — the defect that motivated the health record, end to end. Reported
    * by the community-core backend and reproduced here: `destinations` REPLACES the
    * default stdout sink, so a sole destination that fails `onInit` used to leave
@@ -205,7 +205,7 @@ describe('Logger E2E — custom destinations', () => {
    * Everything the run produces must now be accounted for: the entries fall back
    * to raw NDJSON on stdout, and stderr names the cause.
    */
-  'falls back to raw NDJSON on stdout when every destination fails to initialize', async () => {
+  it('falls back to raw NDJSON on stdout when every destination fails to initialize', async () => {
     const stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
     const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
     try {
@@ -226,7 +226,7 @@ describe('Logger E2E — custom destinations', () => {
     }
   })
 
-  it(/*
+  /*
    * REGRESSION — the audit signal itself, which the case above names as its
    * justification but does not assert.
    *
@@ -242,7 +242,7 @@ describe('Logger E2E — custom destinations', () => {
    * resolve in the runner, while this one is deterministic — and it is the warning
    * with an actual audit consequence.
    */
-  'rescues the PII-redaction-disabled warning when every destination fails', async () => {
+  it('rescues the PII-redaction-disabled warning when every destination fails', async () => {
     const stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
     const stderrSpy = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
     try {

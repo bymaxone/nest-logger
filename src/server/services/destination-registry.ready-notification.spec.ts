@@ -56,14 +56,14 @@ describe('DestinationRegistry', () => {
   })
 
   describe('onRegistryReady notification', () => {
-    it(/*
+    /*
      * REGRESSION (1.2.6) — a destination holding pre-init entries must be told
      * whether anyone else can deliver them, and told AFTER every onInit settled.
      * Deciding alone made a supported stdout+pretty pair print each boot entry
      * twice. The FAILED destination is notified too — it is precisely the one
      * still holding entries.
      */
-    'tells every registered destination whether a sink survived', async () => {
+    it('tells every registered destination whether a sink survived', async () => {
       const healthy = makeDestination('healthy')
       const failing = {
         ...makeDestination('failing'),
@@ -92,12 +92,12 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * With nothing live, the flag says so — which is what tells a buffering
      * destination its held entries exist nowhere else and must go out degraded
      * rather than be discarded.
      */
-    'reports no proven delivery when every destination failed', async () => {
+    it('reports no proven delivery when every destination failed', async () => {
       const failing = {
         ...makeDestination('failing'),
         onInit: jest.fn().mockRejectedValue(new Error('nope')),
@@ -113,12 +113,12 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * A destination that throws from the hook must not cost the bootstrap entry
      * or the remaining destinations. Failing at a courtesy notification cannot be
      * allowed to be more expensive than the notification was worth.
      */
-    'contains a throwing hook and still notifies the rest', async () => {
+    it('contains a throwing hook and still notifies the rest', async () => {
       const hostile = {
         ...makeDestination('hostile'),
         onRegistryReady: jest.fn(() => {
@@ -137,7 +137,7 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * REGRESSION — the readiness reporter reads the destination's `name` under a
      * guard, like the init, write and shutdown reporters do. This was the one
      * changed call site without such a test: every other hook case uses a plain
@@ -149,7 +149,7 @@ describe('DestinationRegistry', () => {
      * Asserted on the later destination still being notified, not merely on the
      * absence of a throw.
      */
-    'still notifies the rest when a failing hook destination cannot report its name', async () => {
+    it('still notifies the rest when a failing hook destination cannot report its name', async () => {
       const hostile = {
         ...makeDestination('hostile'),
         onRegistryReady: jest.fn(() => {
@@ -180,14 +180,14 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * REGRESSION — a hook failure must NOT reuse the init-failure message. By this
      * point `onInit` already succeeded and the destination is in the active set,
      * so telling an operator it "will receive no entries" sends them looking for
      * a silence that is not there. Reported by Copilot against the first version
      * of this loop, which shared the init reporter.
      */
-    'reports a hook failure as still-active rather than as an init failure', async () => {
+    it('reports a hook failure as still-active rather than as an init failure', async () => {
       const hostile = {
         ...makeDestination('hostile'),
         onRegistryReady: jest.fn(() => {
@@ -208,14 +208,14 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * REGRESSION — the SAME reporter is reached for a destination that already
      * failed to initialize, and the healthy wording would contradict the report
      * it just received. The loop notifies every registered destination by design,
      * so one message cannot be true for both states. Found by Copilot in a review
      * body rather than an inline thread.
      */
-    'words a hook failure differently for an already-failed destination', async () => {
+    it('words a hook failure differently for an already-failed destination', async () => {
       const failed = {
         ...makeDestination('failed'),
         onInit: jest.fn().mockRejectedValue(new Error('init died')),
@@ -234,14 +234,14 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * REGRESSION — an ASYNC hook is awaited, and its rejection is contained.
      * TypeScript accepts an `async` implementation where a void-returning member
      * is declared, so a hook that was not awaited would reject into nothing and
      * let the bootstrap entry be emitted before the buffer it was resolving had
      * been drained. Found by Copilot on the hook's own signature.
      */
-    'awaits an async hook and contains its rejection', async () => {
+    it('awaits an async hook and contains its rejection', async () => {
       const order: string[] = []
       const slow = {
         ...makeDestination('slow'),
@@ -271,7 +271,7 @@ describe('DestinationRegistry', () => {
       stderrSpy.mockRestore()
     })
 
-    it(/*
+    /*
      * REGRESSION — a `minLevel` BELOW the module level does not widen what a
      * destination receives: Pino filters at the instance level before
      * `pino.multistream` sees an entry. Recording the raw `minLevel` understated
@@ -280,7 +280,7 @@ describe('DestinationRegistry', () => {
      * pretty at `trace`, both in fact received the same entries. Found by Copilot
      * in a suppressed review body.
      */
-    'compares on the stricter of the module and destination levels', async () => {
+    it('compares on the stricter of the module and destination levels', async () => {
       const strictOptions = applyDefaults({
         service: { name: 'app', version: '1.0.0' },
         level: 'error'
@@ -309,13 +309,13 @@ describe('DestinationRegistry', () => {
       })
     })
 
-    it(/*
+    /*
      * The readiness facts are computed PER destination, not shared: a sink whose
      * level sits above another's did not receive what the lower one received.
      * Without this, one status object for the whole fleet would tell an `info`
      * destination its entries were delivered by an `error` sink.
      */
-    'computes delivery per destination level', async () => {
+    it('computes delivery per destination level', async () => {
       const errorSink = { ...makeDestination('error-sink'), minLevel: 'error' as const }
       // The info sink FAILS: it is the one holding entries, and the question is
       // whether the surviving `error` sink received them. It did not — multistream

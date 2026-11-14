@@ -77,10 +77,10 @@ describe('createNameRedactor — an Error that cannot be read', () => {
     expect(out['err']).toMatchObject({ name: expect.any(String), message: expect.any(String) })
   })
 
-  it(/*
+  /*
    * Marks the node, so an entry whose error lost fields is never mistaken for a complete one.
    */
-  'marks an error node whose own fields were not read', () => {
+  it('marks an error node whose own fields were not read', () => {
     const out = redact({ logKey: 'K', err: withThrowingGetter({ code: 'E1' }) }, true) as {
       err: Record<string, unknown>
     }
@@ -89,11 +89,11 @@ describe('createNameRedactor — an Error that cannot be read', () => {
     expect(out.err).not.toHaveProperty('code')
   })
 
-  it(/*
+  /*
    * The node does not have to be at the top: an Error nested in the metadata, or as a `cause`,
    * degrades on its own and the record survives.
    */
-  'degrades an unreadable Error nested inside the metadata', () => {
+  it('degrades an unreadable Error nested inside the metadata', () => {
     const out = redact(
       { logKey: 'K', meta: { inner: withThrowingOwnKeys(), kept: 'yes' } },
       true
@@ -137,11 +137,11 @@ describe('createNameRedactor — an Error that cannot be read', () => {
     expect(out).not.toHaveProperty('_redactionFailed')
   })
 
-  it(/*
+  /*
    * A stack that cannot be read costs the node its stack, not its other own fields: the
    * sanitized node carries the readable fields and the walk censors the sensitive one.
    */
-  'censors a readable own field of an error whose stack could not be read', () => {
+  it('censors a readable own field of an error whose stack could not be read', () => {
     const out = redact(
       { logKey: 'K', err: withThrowingStack({ password: 'clear', code: 'E1' }) },
       true
@@ -150,11 +150,11 @@ describe('createNameRedactor — an Error that cannot be read', () => {
     expect(out.err).toMatchObject({ code: 'E1', password: CENSOR, _errorFieldsIncomplete: true })
   })
 
-  it(/*
+  /*
    * The control: an Error that reads fine is walked as before and keeps the shape the `err`
    * serializer relies on, an Error instance with its message and stack.
    */
-  'leaves a readable Error exactly as before', () => {
+  it('leaves a readable Error exactly as before', () => {
     const error = Object.assign(new Error('boom'), { code: 'E1', password: 'clear' })
 
     const out = redact({ logKey: 'K', err: error }, true) as { err: Error }

@@ -29,11 +29,11 @@ const notFound = (): Error =>
   )
 
 describe('detectOtelTraceApi', () => {
-  it(/*
+  /*
    * When @opentelemetry/api is installed (it is, as a dev dependency), the
    * detector must resolve and return its `trace` namespace.
    */
-  'returns the trace API when the module resolves', () => {
+  it('returns the trace API when the module resolves', () => {
     const requireSpy = jest.fn(
       jest.requireActual<typeof import('node:module')>('node:module').createRequire(__filename)
     )
@@ -50,20 +50,20 @@ describe('detectOtelTraceApi', () => {
     expect(requireSpy).toHaveBeenCalledWith('@opentelemetry/api')
   })
 
-  it(/*
+  /*
    * Resolution failure must be swallowed and reported as undefined so a missing
    * optional peer dependency never crashes the host app. BOTH anchors have to
    * fail — the detector tries its own module location and then the working
    * directory — so the mock throws for every call rather than once.
    */
-  'returns undefined when every anchor fails to resolve', () => {
+  it('returns undefined when every anchor fails to resolve', () => {
     mockedCreateRequire.mockImplementation(() => {
       throw notFound()
     })
     expect(detectOtelTraceApi()).toBeUndefined()
   })
 
-  it(/*
+  /*
    * REGRESSION — resolution used to be anchored at `process.cwd()` alone, and
    * that silently disabled ALL trace correlation whenever the working directory
    * was not the application root: a Docker `WORKDIR`, a pnpm/Yarn workspace with
@@ -74,7 +74,7 @@ describe('detectOtelTraceApi', () => {
    * The FIRST anchor must be this module's own path, which is how Node
    * resolution is defined and what every other dependency in the process uses.
    */
-  'anchors resolution at its own module path before the working directory', () => {
+  it('anchors resolution at its own module path before the working directory', () => {
     const anchors: string[] = []
     mockedCreateRequire.mockImplementation((from) => {
       anchors.push(String(from))
@@ -88,12 +88,12 @@ describe('detectOtelTraceApi', () => {
     expect(anchors[0]).not.toContain('noop.cjs')
   })
 
-  it(/*
+  /*
    * The working directory remains the SECOND anchor, deliberately: in a bundled
    * application this module's path is the bundle's, which may sit outside any
    * `node_modules` tree, and there the working directory is the better guess.
    */
-  'falls back to the working directory when the module anchor fails', () => {
+  it('falls back to the working directory when the module anchor fails', () => {
     const anchors: string[] = []
     mockedCreateRequire.mockImplementation((from) => {
       anchors.push(String(from))
@@ -107,12 +107,12 @@ describe('detectOtelTraceApi', () => {
     expect(anchors[1]).toContain(process.cwd())
   })
 
-  it(/*
+  /*
    * The behaviour the regression is really about: with a working directory that
    * has no `node_modules` anywhere above it, detection must STILL succeed,
    * because the module anchor does not care where the process was launched.
    */
-  'still resolves under a working directory that cannot reach node_modules', () => {
+  it('still resolves under a working directory that cannot reach node_modules', () => {
     // Real resolver, so the assertion is about anchoring rather than about the mock.
     mockedCreateRequire.mockImplementation(
       jest.requireActual<typeof import('node:module')>('node:module').createRequire
@@ -153,11 +153,11 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
       throw failure
     }) as unknown as NodeJS.Require
 
-  it(/*
+  /*
    * The designed outcome stays silent: the optional peer is simply not installed, and a
    * logger never warns over an optional peer. Both anchors fail to find it.
    */
-  'stays silent when @opentelemetry/api is not installed', () => {
+  it('stays silent when @opentelemetry/api is not installed', () => {
     mockedCreateRequire.mockImplementation(requireThrows(notFound()))
 
     expect(detectOtelTraceApi()).toBeUndefined()
@@ -216,11 +216,11 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     expect(String(stderrSpy.mock.calls[0]?.[0]).endsWith('\n')).toBe(true)
   })
 
-  it(/*
+  /*
    * Once per process: the detector runs at the Pino build and again at bootstrap, and a
    * broken install must not repeat itself on every call.
    */
-  'writes the broken-install warning only once', () => {
+  it('writes the broken-install warning only once', () => {
     mockedCreateRequire.mockImplementation(requireThrows(new SyntaxError('Unexpected token')))
 
     detectOtelTraceApi()
@@ -270,11 +270,11 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     }
   )
 
-  it(/*
+  /*
    * The control for the table above: an export that carries a `trace` namespace is used as
    * it is, with nothing written to stderr, whatever else the module holds.
    */
-  'returns the trace namespace of a usable export without a warning', () => {
+  it('returns the trace namespace of a usable export without a warning', () => {
     const trace = { getActiveSpan: () => undefined }
     mockedCreateRequire.mockImplementation((() => () => ({
       trace
@@ -284,11 +284,11 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     expect(stderrSpy).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * A CommonJS module may be a function that carries its namespaces as properties, and that
    * is as usable as an object: only an export with no `trace` is broken.
    */
-  'returns the trace namespace of an export that is a function', () => {
+  it('returns the trace namespace of an export that is a function', () => {
     const trace = { getActiveSpan: () => undefined }
     const exported = Object.assign(() => undefined, { trace })
     mockedCreateRequire.mockImplementation(
@@ -299,11 +299,11 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     expect(stderrSpy).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * A failure on the FIRST anchor that the second anchor recovers from is not worth a
    * warning: correlation works.
    */
-  'does not warn when the second anchor resolves the module', () => {
+  it('does not warn when the second anchor resolves the module', () => {
     const real = jest
       .requireActual<typeof import('node:module')>('node:module')
       .createRequire(__filename)
@@ -315,11 +315,11 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     expect(stderrSpy).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * A broken first anchor followed by a missing second one still leaves correlation off,
    * and the break is the part worth reporting.
    */
-  'warns when the first anchor is broken and the second finds nothing', () => {
+  it('warns when the first anchor is broken and the second finds nothing', () => {
     mockedCreateRequire
       .mockImplementationOnce(requireThrows(new SyntaxError('first anchor is broken')))
       .mockImplementationOnce(requireThrows(notFound()))
@@ -329,13 +329,13 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     expect(lines()[0]).toMatchObject({ err: { message: 'first anchor is broken' } })
   })
 
-  it(/*
+  /*
    * A bundler that provides no `__filename` makes the first anchor itself throw. That is a
    * property of the environment, not a broken install: with the module absent it stays
    * silent (a bundled application without OpenTelemetry must not be warned at every
    * start), and with the module present the next anchor still finds it.
    */
-  'treats an anchor that cannot be computed as nothing to resolve from', () => {
+  it('treats an anchor that cannot be computed as nothing to resolve from', () => {
     const real = jest
       .requireActual<typeof import('node:module')>('node:module')
       .createRequire(__filename)
@@ -351,11 +351,11 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     expect(stderrSpy).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * A thrown value whose `code` getter throws cannot be classified as "not found", so it
    * is treated as a broken install and still reported once, with the stand-in error.
    */
-  'treats a failure whose fields cannot be read as a broken install', () => {
+  it('treats a failure whose fields cannot be read as a broken install', () => {
     const hostile = {
       get code(): never {
         throw new Error('code getter exploded')
@@ -368,11 +368,11 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
     expect(lines()[0]).toMatchObject({ logKey: 'LOGGER_OTEL_API_BROKEN' })
   })
 
-  it(/*
+  /*
    * A cause whose fields cannot be read still produces the one line: the report degrades
    * to the stand-in for the error instead of throwing out of the detector.
    */
-  'reports an unreadable failure with the stand-in error', () => {
+  it('reports an unreadable failure with the stand-in error', () => {
     mockedCreateRequire.mockImplementation(requireThrows(Object.create(null)))
 
     expect(detectOtelTraceApi()).toBeUndefined()
@@ -385,103 +385,103 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
 })
 
 describe('isValidTraceId', () => {
-  it(/*
+  /*
    * A real 32-hex-char trace ID must be accepted.
    */
-  'accepts a valid 32-char trace ID', () => {
+  it('accepts a valid 32-char trace ID', () => {
     expect(isValidTraceId('4bf92f3577b34da6a3ce929d0e0e4736')).toBe(true)
   })
 
-  it(/*
+  /*
    * The all-zeros sentinel (no active trace) must be rejected so it never gets
    * injected into logs.
    */
-  'rejects the all-zeros sentinel', () => {
+  it('rejects the all-zeros sentinel', () => {
     expect(isValidTraceId('00000000000000000000000000000000')).toBe(false)
   })
 
-  it(/*
+  /*
    * Empty input must be rejected (wrong length).
    */
-  'rejects an empty string', () => {
+  it('rejects an empty string', () => {
     expect(isValidTraceId('')).toBe(false)
   })
 
-  it(/*
+  /*
    * Too-short IDs must be rejected.
    */
-  'rejects a too-short id', () => {
+  it('rejects a too-short id', () => {
     expect(isValidTraceId('toosmall')).toBe(false)
   })
 
-  it(/*
+  /*
    * Too-long IDs must be rejected (length is exact, not minimum).
    */
-  'rejects a too-long id', () => {
+  it('rejects a too-long id', () => {
     expect(isValidTraceId('4bf92f3577b34da6a3ce929d0e0e4736toolong')).toBe(false)
   })
 
-  it(/*
+  /*
    * A 32-char but non-hex value must be rejected — guards against log-injection
    * payloads smuggled through a malformed trace ID.
    */
-  'rejects a 32-char non-hex id', () => {
+  it('rejects a 32-char non-hex id', () => {
     expect(isValidTraceId('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz')).toBe(false)
   })
 
-  it(/*
+  /*
    * A valid 32-hex id with a non-hex PREFIX must be rejected — pins the leading
    * `^` anchor so a 32-hex substring at the end can't sneak through.
    */
-  'rejects a valid hex run preceded by non-hex characters', () => {
+  it('rejects a valid hex run preceded by non-hex characters', () => {
     expect(isValidTraceId('zz4bf92f3577b34da6a3ce929d0e0e4736')).toBe(false)
   })
 
-  it(/*
+  /*
    * A valid (non-all-zero) id that merely STARTS and ENDS with a zero must be
    * accepted — pins both anchors of the all-zeros `/^0+$/` reject so a partial
    * (prefix/suffix) zero match cannot reject a legitimate id.
    */
-  'accepts a valid id that is bordered by zeros', () => {
+  it('accepts a valid id that is bordered by zeros', () => {
     expect(isValidTraceId('0bf92f3577b34da6a3ce929d0e0e4730')).toBe(true)
   })
 })
 
 describe('isValidSpanId', () => {
-  it(/*
+  /*
    * A real 16-hex-char span ID must be accepted.
    */
-  'accepts a valid 16-char span ID', () => {
+  it('accepts a valid 16-char span ID', () => {
     expect(isValidSpanId('00f067aa0ba902b7')).toBe(true)
   })
 
-  it(/*
+  /*
    * The all-zeros sentinel must be rejected.
    */
-  'rejects the all-zeros sentinel', () => {
+  it('rejects the all-zeros sentinel', () => {
     expect(isValidSpanId('0000000000000000')).toBe(false)
   })
 
-  it(/*
+  /*
    * Wrong-length span IDs must be rejected (32 chars is a trace ID, not a span).
    */
-  'rejects a wrong-length id', () => {
+  it('rejects a wrong-length id', () => {
     expect(isValidSpanId('4bf92f3577b34da6a3ce929d0e0e4736')).toBe(false)
   })
 
-  it(/*
+  /*
    * Non-hex span IDs must be rejected.
    */
-  'rejects a non-hex id', () => {
+  it('rejects a non-hex id', () => {
     expect(isValidSpanId('zzzzzzzzzzzzzzzz')).toBe(false)
   })
 
-  it(/*
+  /*
    * A valid (non-all-zero) span id that ENDS in a zero must be accepted — pins
    * the leading anchor of the all-zeros `/^0+$/` reject so a trailing-zero match
    * cannot reject a legitimate span.
    */
-  'accepts a valid span id ending in zero', () => {
+  it('accepts a valid span id ending in zero', () => {
     expect(isValidSpanId('00f067aa0ba90230')).toBe(true)
   })
 })

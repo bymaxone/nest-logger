@@ -67,12 +67,12 @@ const service = { name: 'app', version: '1.0.0' }
 const http = { isEnabled: true }
 
 describe('exception filter wiring by registration path', () => {
-  it(/*
+  /*
    * `forRoot` with HTTP logging on registers `HttpExceptionFilter`, so a thrown
    * `HttpException` and an unexpected `Error` each produce their exception entry beside
    * the access-log entries.
    */
-  'forRoot emits the exception entries', async () => {
+  it('forRoot emits the exception entries', async () => {
     const { keys } = await httpKeysFor((destination) =>
       BymaxLoggerModule.forRoot({ service, http, destinations: [destination] })
     )
@@ -81,13 +81,13 @@ describe('exception filter wiring by registration path', () => {
     )
   })
 
-  it(/*
+  /*
    * `forRootAsync` with HTTP logging on registers the access log but NOT the filter: the
    * request entries are there, the two exception entries are not, and the response is
    * the same 500 the filter would have written. The real error still reaches the
    * terminal `HTTP_REQUEST_SERVER_ERROR` entry.
    */
-  'forRootAsync emits the access log but not the exception entries', async () => {
+  it('forRootAsync emits the access log but not the exception entries', async () => {
     const { keys, status, body } = await httpKeysFor((destination) =>
       BymaxLoggerModule.forRootAsync({
         useFactory: () => ({ service, http, destinations: [destination] })
@@ -106,11 +106,11 @@ describe('exception filter wiring by registration path', () => {
     expect(body).toEqual({ statusCode: 500, message: 'Internal server error' })
   })
 
-  it(/*
+  /*
    * The remedy the README gives an asynchronous consumer: register the filter as
    * `APP_FILTER`. It produces the same exception entries the synchronous path does.
    */
-  'forRootAsync plus a hand-registered APP_FILTER emits the exception entries', async () => {
+  it('forRootAsync plus a hand-registered APP_FILTER emits the exception entries', async () => {
     const { keys } = await httpKeysFor(
       (destination) =>
         BymaxLoggerModule.forRootAsync({

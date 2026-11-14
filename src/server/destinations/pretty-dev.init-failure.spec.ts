@@ -136,13 +136,13 @@ describe('PrettyDevDestination', () => {
       }
     )
 
-    it(/*
+    /*
      * A thrown value whose fields cannot be read is still reported, with a stand-in for
      * what it said, instead of escaping the diagnosis: a `code` getter that throws cannot
      * be classified as "pino-pretty is missing", and a value with no text form has no
      * message to quote.
      */
-    'still reports a failure whose fields or text form cannot be read', async () => {
+    it('still reports a failure whose fields or text form cannot be read', async () => {
       const hostileCode = {
         get code(): never {
           throw new Error('code getter exploded')
@@ -161,12 +161,12 @@ describe('PrettyDevDestination', () => {
       expect(second.cause).toBe(noTextForm)
     })
 
-    it(/*
+    /*
      * The failure line is one line whatever the real error holds: the message is
      * routed through the same single-line escaper as every other terminal-bound
      * string, so a message with a newline cannot forge a second record.
      */
-    'keeps the failure message on one line', async () => {
+    it('keeps the failure message on one line', async () => {
       const error = (await initFailure(new Error('first\n[forged entry]'), true)) as Error
 
       expect(error.message).not.toContain('\n')

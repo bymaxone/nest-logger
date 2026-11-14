@@ -52,12 +52,12 @@ describe('Logger E2E — async configuration', () => {
     stdoutSpy = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
   })
 
-  it(/*
+  /*
    * forRootAsync must resolve options from an injected config dependency AND wire
    * HTTP logging through the async interceptor gate — proving access-log parity
    * with the sync path end-to-end.
    */
-  'boots via forRootAsync and logs HTTP through the async interceptor gate', async () => {
+  it('boots via forRootAsync and logs HTTP through the async interceptor gate', async () => {
     await request(await listeningServer(app))
       .get('/hello')
       .expect(200)

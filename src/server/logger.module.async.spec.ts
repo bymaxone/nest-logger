@@ -49,12 +49,12 @@ describe('BymaxLoggerModule.forRootAsync', () => {
     infoSpy = jest.spyOn(PinoLoggerService.prototype, 'info').mockImplementation(() => undefined)
   })
 
-  it(/*
+  /*
    * The basic useFactory path must resolve options, provide the core services,
    * expose RESOLVED (defaulted) options, and emit the bootstrap log once after
    * resolution — the headline async contract.
    */
-  'resolves via useFactory, provides services, and bootstraps once', async () => {
+  it('resolves via useFactory, provides services, and bootstraps once', async () => {
     const ref = await Test.createTestingModule({
       imports: [BymaxLoggerModule.forRootAsync({ useFactory: () => ({ service }) })]
     }).compile()
@@ -77,11 +77,11 @@ describe('BymaxLoggerModule.forRootAsync', () => {
     await ref.close()
   })
 
-  it(/*
+  /*
    * An async (Promise-returning) factory must be awaited before the Pino
    * instance is built.
    */
-  'awaits a Promise-returning useFactory', async () => {
+  it('awaits a Promise-returning useFactory', async () => {
     const ref = await Test.createTestingModule({
       imports: [BymaxLoggerModule.forRootAsync({ useFactory: () => Promise.resolve({ service }) })]
     }).compile()
@@ -89,11 +89,11 @@ describe('BymaxLoggerModule.forRootAsync', () => {
     await ref.close()
   })
 
-  it(/*
+  /*
    * `inject` + `imports` must propagate so the factory receives dependencies
    * resolved from an imported module.
    */
-  'passes injected dependencies from an imported module to the factory', async () => {
+  it('passes injected dependencies from an imported module to the factory', async () => {
     const ref = await Test.createTestingModule({
       imports: [
         BymaxLoggerModule.forRootAsync({
@@ -110,11 +110,11 @@ describe('BymaxLoggerModule.forRootAsync', () => {
     await ref.close()
   })
 
-  it(/*
+  /*
    * The `useClass` path must instantiate the factory class and call
    * `createLoggerOptions()`.
    */
-  'resolves options via useClass', async () => {
+  it('resolves options via useClass', async () => {
     const ref = await Test.createTestingModule({
       imports: [BymaxLoggerModule.forRootAsync({ useClass: LoggerOptionsFactory })]
     }).compile()
@@ -125,11 +125,11 @@ describe('BymaxLoggerModule.forRootAsync', () => {
     await ref.close()
   })
 
-  it(/*
+  /*
    * The `useExisting` path must reuse a factory provider already present in the
    * DI graph (supplied here via an imported module).
    */
-  'resolves options via useExisting', async () => {
+  it('resolves options via useExisting', async () => {
     @Module({ providers: [LoggerOptionsFactory], exports: [LoggerOptionsFactory] })
     class ExistingFactoryModule {}
 
@@ -148,20 +148,20 @@ describe('BymaxLoggerModule.forRootAsync', () => {
     await ref.close()
   })
 
-  it(/*
+  /*
    * isGlobal must default to true on the async path too, matching forRoot, so a
    * single forRootAsync import exposes the logger app-wide.
    */
-  'is global by default on the async path', () => {
+  it('is global by default on the async path', () => {
     const dynamic = BymaxLoggerModule.forRootAsync({ useFactory: () => ({ service }) })
     expect(dynamic.global).toBe(true)
   })
 
-  it(/*
+  /*
    * Consumers must be able to scope the async module locally via isGlobal: false
    * (the async counterpart of the forRoot isGlobal test).
    */
-  'honors isGlobal: false on the async path', () => {
+  it('honors isGlobal: false on the async path', () => {
     const dynamic = BymaxLoggerModule.forRootAsync({
       isGlobal: false,
       useFactory: () => ({ service })
@@ -174,12 +174,12 @@ describe('asyncHttpInterceptorProvider (async HTTP gate)', () => {
   // A real but silent Pino instance avoids fabricating a Logger mock (cast-free).
   const logger = new PinoLoggerService(pino({ enabled: false }))
 
-  it(/*
+  /*
    * When http.isEnabled resolves true on the async path, the global interceptor
    * slot must hold the REAL HttpLoggingInterceptor — giving forRootAsync access-log
    * parity with the sync forRoot.
    */
-  'resolves the real HttpLoggingInterceptor when http is enabled', () => {
+  it('resolves the real HttpLoggingInterceptor when http is enabled', () => {
     const provider = asyncHttpInterceptorProvider() as FactoryProvider
     const interceptor = provider.useFactory(
       applyDefaults({ service, http: { isEnabled: true } }),
@@ -188,11 +188,11 @@ describe('asyncHttpInterceptorProvider (async HTTP gate)', () => {
     expect(interceptor).toBeInstanceOf(HttpLoggingInterceptor)
   })
 
-  it(/*
+  /*
    * When http logging is disabled, the slot must hold a transparent pass-through
    * (not the real interceptor) so the always-registered slot adds no behavior.
    */
-  'resolves a transparent pass-through when http is disabled', () => {
+  it('resolves a transparent pass-through when http is disabled', () => {
     const provider = asyncHttpInterceptorProvider() as FactoryProvider
     const interceptor = provider.useFactory(applyDefaults({ service }), logger)
     expect(interceptor).toBeInstanceOf(PassThroughInterceptor)

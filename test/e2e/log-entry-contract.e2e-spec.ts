@@ -53,25 +53,25 @@ describe('Logger E2E — LogEntry contract', () => {
     }
   })
 
-  it(/*
+  /*
    * REGRESSION — audit finding C-2. `level` is the Pino string LABEL, never the
    * numeric code the declaration used to promise. Asserted through a variable
    * typed as the published `LogEntry`, so a future widening of the declaration
    * that drifts from the runtime fails to compile here.
    */
-  'emits level as the Pino string label matching the declaration', () => {
+  it('emits level as the Pino string label matching the declaration', () => {
     const level: LogEntry['level'] = entry.level
     expect(level).toBe('info')
     expect(typeof level).toBe('string')
   })
 
-  it(/*
+  /*
    * REGRESSION — audit finding C-2. `time` is an ISO 8601 string. The README's
    * Loki destination converted it with `BigInt(entry.time)`, which throws a
    * SyntaxError on an ISO string — the exact call is reproduced here to prove
    * the documented conversion path now works.
    */
-  'emits time as an ISO 8601 string that converts to Loki nanoseconds', () => {
+  it('emits time as an ISO 8601 string that converts to Loki nanoseconds', () => {
     const time: LogEntry['time'] = entry.time
     expect(typeof time).toBe('string')
     expect(time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
@@ -86,21 +86,21 @@ describe('Logger E2E — LogEntry contract', () => {
     expect(BigInt(nanoseconds) / 1_000_000n).toBe(BigInt(Date.parse(time)))
   })
 
-  it(/*
+  /*
    * The Prisma example stores a NUMERIC level column. With `level` being a
    * label, it has to map through `PINO_LEVEL_NUMBERS` — which is why that map is
    * now exported. Reproduces the documented conversion end to end.
    */
-  'converts the level label to the numeric Pino code for a numeric column', () => {
+  it('converts the level label to the numeric Pino code for a numeric column', () => {
     expect(PINO_LEVEL_NUMBERS[entry.level]).toBe(30)
     expect(new Date(entry.time).toISOString()).toBe(entry.time)
   })
 
-  it(/*
+  /*
    * The remaining declared fields must be present with their declared types on a
    * record produced by the library's own structured API.
    */
-  'matches the declaration for the remaining structured fields', () => {
+  it('matches the declaration for the remaining structured fields', () => {
     expect(entry.msg).toBe('probe')
     expect(entry.logKey).toBe('CONTRACT_PROBE')
     expect(entry.userId).toBe('u_1')

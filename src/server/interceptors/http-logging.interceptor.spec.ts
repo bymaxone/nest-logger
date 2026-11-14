@@ -106,11 +106,11 @@ async function run(spec: RequestSpec = {}): Promise<Run> {
 }
 
 describe('HttpLoggingInterceptor', () => {
-  it(/*
+  /*
    * A 2xx response must emit START then SUCCESS, and the high-cardinality id in
    * the path must be normalized to `/:id` in both entries.
    */
-  'logs START and SUCCESS with a normalized URL for a 2xx response', async () => {
+  it('logs START and SUCCESS with a normalized URL for a 2xx response', async () => {
     const { info } = await run({
       url: '/ok/123e4567-e89b-12d3-a456-426614174000',
       headers: { 'user-agent': 'jest-agent/9.9' }
@@ -131,11 +131,11 @@ describe('HttpLoggingInterceptor', () => {
     )
   })
 
-  it(/*
+  /*
    * A 3xx response must emit REDIRECT (not SUCCESS) — covers the redirect branch
    * of the success logger.
    */
-  'logs REDIRECT for a 3xx response', async () => {
+  it('logs REDIRECT for a 3xx response', async () => {
     const { info } = await run({ status: 302 })
 
     expect(info).toHaveBeenCalledWith(
@@ -146,11 +146,11 @@ describe('HttpLoggingInterceptor', () => {
     )
   })
 
-  it(/*
+  /*
    * A non-throwing response outside 2xx/3xx (a 418) must emit only START — covers
    * the "neither success nor redirect" fall-through with no terminal log.
    */
-  'logs only START for a non-2xx/3xx non-throwing response', async () => {
+  it('logs only START for a non-2xx/3xx non-throwing response', async () => {
     const { info } = await run({ url: '/teapot', status: 418 })
 
     expect(info).toHaveBeenCalledWith(
@@ -164,11 +164,11 @@ describe('HttpLoggingInterceptor', () => {
     expect(terminalKeys).not.toContain('HTTP_REQUEST_REDIRECT')
   })
 
-  it(/*
+  /*
    * The library builds `errorMessage` from the thrown value, so it is cut at the same limit as
    * every other message it copies from a value it does not own.
    */
-  'cuts errorMessage on a 4xx at the message limit', async () => {
+  it('cuts errorMessage on a 4xx at the message limit', async () => {
     const { warn } = await run({ status: 400, fails: new BadRequestException('x'.repeat(100_000)) })
 
     expect(warn).toHaveBeenCalledWith(
@@ -179,11 +179,11 @@ describe('HttpLoggingInterceptor', () => {
     )
   })
 
-  it(/*
+  /*
    * `message` is typed as a string, but a thrown value can carry anything. The cut applies only
    * to a string, and the interceptor still raises the error it was given.
    */
-  'copies errorMessage as given when the message of the error is not a string', async () => {
+  it('copies errorMessage as given when the message of the error is not a string', async () => {
     const failure = Object.assign(new BadRequestException('x'), { message: 42 })
 
     const { warn, raised } = await run({ status: 400, fails: failure })
@@ -197,11 +197,11 @@ describe('HttpLoggingInterceptor', () => {
     expect(raised).toBe(failure)
   })
 
-  it(/*
+  /*
    * A 4xx HttpException must emit CLIENT_ERROR at warn level (with the error
    * message) and the exception must still propagate.
    */
-  'logs CLIENT_ERROR (warn) for a 4xx and propagates it', async () => {
+  it('logs CLIENT_ERROR (warn) for a 4xx and propagates it', async () => {
     const failure = new BadRequestException('bad input')
 
     const { warn, error, raised } = await run({ status: 400, fails: failure })
@@ -243,12 +243,12 @@ describe('HttpLoggingInterceptor', () => {
     }
   )
 
-  it(/*
+  /*
    * For an error of a type whose message quotes the request body the entry carries the fixed text
    * and the parser type, never the message: no key-name redaction can censor a piece of the body
    * out of free text.
    */
-  'logs the fixed text and the parser type for an exposed error that quotes the body', async () => {
+  it('logs the fixed text and the parser type for an exposed error that quotes the body', async () => {
     const failure = Object.assign(
       new Error(`Unexpected token 'h', "hunter2-SENTINEL" is not valid JSON`),
       { status: 400, expose: true, type: 'entity.parse.failed' }
@@ -268,11 +268,11 @@ describe('HttpLoggingInterceptor', () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain('hunter2')
   })
 
-  it(/*
+  /*
    * A plain Error must emit SERVER_ERROR (error level, with the Error) and
    * propagate — the exception is logged, never swallowed.
    */
-  'logs SERVER_ERROR for a thrown Error and propagates it', async () => {
+  it('logs SERVER_ERROR for a thrown Error and propagates it', async () => {
     const failure = new Error('kaboom')
 
     const { error, raised } = await run({ status: 500, fails: failure })
@@ -286,11 +286,11 @@ describe('HttpLoggingInterceptor', () => {
     expect(raised).toBe(failure)
   })
 
-  it(/*
+  /*
    * A 5xx HttpException must also map to SERVER_ERROR — covers the HttpException
    * branch at/above 500.
    */
-  'logs SERVER_ERROR for a 5xx HttpException', async () => {
+  it('logs SERVER_ERROR for a 5xx HttpException', async () => {
     const failure = new InternalServerErrorException('explicit 500')
 
     const { error } = await run({ status: 500, fails: failure })
@@ -303,11 +303,11 @@ describe('HttpLoggingInterceptor', () => {
     )
   })
 
-  it(/*
+  /*
    * A non-Error throw must be wrapped into an Error for the SERVER_ERROR log —
    * covers the `err instanceof Error` false branch — and still be raised as it was thrown.
    */
-  'wraps a non-Error throw into an Error for SERVER_ERROR', async () => {
+  it('wraps a non-Error throw into an Error for SERVER_ERROR', async () => {
     const { error, raised } = await run({ status: 500, fails: 'plain string failure' })
 
     expect(error).toHaveBeenCalledWith(
@@ -335,11 +335,11 @@ describe('HttpLoggingInterceptor', () => {
     )
   })
 
-  it(/*
+  /*
    * A missing User-Agent header must fall back to 'unknown' — covers the
    * non-string branch of the user-agent read.
    */
-  'falls back to "unknown" when the User-Agent header is absent', async () => {
+  it('falls back to "unknown" when the User-Agent header is absent', async () => {
     const { info } = await run({ status: 418 })
 
     expect(info).toHaveBeenCalledWith(
@@ -350,24 +350,24 @@ describe('HttpLoggingInterceptor', () => {
     )
   })
 
-  it(/*
+  /*
    * A path matching the default excludePaths (`/health`) must bypass logging
    * entirely — no START and no terminal entry — so monitoring probes never flood
    * the logs. Covers the isExcluded() true branch.
    */
-  'skips logging for an excluded path', async () => {
+  it('skips logging for an excluded path', async () => {
     const { info } = await run({ url: '/health' })
 
     expect(info).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * The START and SUCCESS entries must carry human-readable messages (not empty
    * strings) and a sane, non-negative duration. Pins the message templates and
    * the `Date.now() - start` duration arithmetic (a `+` would yield an
    * epoch-sized number).
    */
-  'emits readable START/SUCCESS messages and a sane duration', async () => {
+  it('emits readable START/SUCCESS messages and a sane duration', async () => {
     const { info } = await run({ url: '/ok/4bf92f35-77b3-4da6-a3ce-929d0e0e4736' })
 
     const start = info.mock.calls.find((call) => call[0] === 'HTTP_REQUEST_START')
@@ -379,12 +379,12 @@ describe('HttpLoggingInterceptor', () => {
     expect(duration).toBeLessThan(60_000)
   })
 
-  it(/*
+  /*
    * Exactly 300 is the REDIRECT lower boundary: it must log REDIRECT, never
    * SUCCESS. Pins `statusCode < HTTP_REDIRECT_MIN` (success upper bound) and
    * `statusCode >= HTTP_REDIRECT_MIN` (redirect lower bound).
    */
-  'logs REDIRECT (not SUCCESS) at the 300 boundary', async () => {
+  it('logs REDIRECT (not SUCCESS) at the 300 boundary', async () => {
     const { info } = await run({ status: 300 })
 
     const keys = info.mock.calls.map((call) => call[0])
@@ -392,11 +392,11 @@ describe('HttpLoggingInterceptor', () => {
     expect(keys).not.toContain('HTTP_REQUEST_SUCCESS')
   })
 
-  it(/*
+  /*
    * A non-throwing 400 is the REDIRECT upper boundary: it must log only START
    * (neither REDIRECT nor SUCCESS). Pins `statusCode < HTTP_CLIENT_ERROR_MIN`.
    */
-  'logs only START for a non-throwing 400', async () => {
+  it('logs only START for a non-throwing 400', async () => {
     const { info } = await run({ status: 400 })
 
     const keys = info.mock.calls.map((call) => call[0])
@@ -405,11 +405,11 @@ describe('HttpLoggingInterceptor', () => {
     expect(keys).not.toContain('HTTP_REQUEST_SUCCESS')
   })
 
-  it(/*
+  /*
    * The error path must also report a sane, non-negative duration — pins the
    * `Date.now() - start` arithmetic in the catchError branch.
    */
-  'reports a sane duration on the error path', async () => {
+  it('reports a sane duration on the error path', async () => {
     const { error } = await run({ status: 500, fails: new Error('kaboom') })
 
     const errorCall = error.mock.calls.find((call) => call[0] === 'HTTP_REQUEST_SERVER_ERROR')
@@ -441,12 +441,12 @@ describe('HttpLoggingInterceptor unit', () => {
     } as never
   }
 
-  it(/*
+  /*
    * A 1xx (informational) response is neither 2xx nor 3xx, so logSuccess must
    * emit only the START entry. Pins the `statusCode >= HTTP_SUCCESS_MIN` (≥ 200)
    * guard — a mutation to `true` would incorrectly log SUCCESS for 1xx.
    */
-  'logs only START (not SUCCESS or REDIRECT) for a 1xx response', async () => {
+  it('logs only START (not SUCCESS or REDIRECT) for a 1xx response', async () => {
     const infoSpy = jest.fn()
     const interceptor = makeInterceptor(infoSpy)
     const { handler: callHandler, subscribed } = tracked(() => of(undefined))
@@ -526,13 +526,13 @@ describe('HttpLoggingInterceptor unit', () => {
     } as never
   }
 
-  it(/*
+  /*
    * REGRESSION — when the middleware owns the lifecycle the interceptor must not
    * emit anything. Both observe an ordinary request, so emitting here too would
    * double every START and terminal line while still leaving the requests only
    * the middleware sees uncovered.
    */
-  'emits nothing when the access-log middleware claimed the request', async () => {
+  it('emits nothing when the access-log middleware claimed the request', async () => {
     const infoSpy = jest.fn()
     const interceptor = makeInterceptor(infoSpy)
     const { handler: callHandler, subscribed } = tracked(() => of(undefined))
@@ -548,13 +548,13 @@ describe('HttpLoggingInterceptor unit', () => {
     expect(infoSpy).not.toHaveBeenCalled()
   })
 
-  it(/*
+  /*
    * What the interceptor uniquely has is the thrown value: the middleware's
    * `'close'` handler sees only a status code, so without this hand-off a 5xx
    * terminal entry would lose its stack. The exception must still propagate —
    * the interceptor observes, it never swallows.
    */
-  'records the thrown error for the middleware and re-throws it', async () => {
+  it('records the thrown error for the middleware and re-throws it', async () => {
     const interceptor = makeInterceptor(jest.fn())
     const thrown = new Error('handler exploded')
     const callHandler: CallHandler = { handle: () => throwError(() => thrown) }
@@ -571,11 +571,11 @@ describe('HttpLoggingInterceptor unit', () => {
     expect(readRecordedError(req)?.error).toBe(thrown)
   })
 
-  it(/*
+  /*
    * A `throw` can carry anything. The recorded value is normalized to an `Error`
    * so the terminal entry's serializer has a message and a stack to work with.
    */
-  'normalizes a non-Error throw before recording it', async () => {
+  it('normalizes a non-Error throw before recording it', async () => {
     const interceptor = makeInterceptor(jest.fn())
     const callHandler: CallHandler = { handle: () => throwError(() => 'plain string') }
     const req = { method: 'GET', url: '/probe', ip: '127.0.0.1', headers: {} }

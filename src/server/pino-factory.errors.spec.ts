@@ -27,7 +27,7 @@ describe('err serializer', () => {
     return capture.entries()[0]?.['err'] as Record<string, unknown>
   }
 
-  it(/*
+  /*
    * REGRESSION — the defect the audit named. `pino.stdSerializers.err` derives
    * `type` from the value's CONSTRUCTOR, so anything already normalized into a
    * plain object — which is exactly what `HttpExceptionFilter` produces — came
@@ -35,7 +35,7 @@ describe('err serializer', () => {
    * mislabelled, and the earlier fix that read `error.name` was defeated one
    * layer below it.
    */
-  'reports the real type for a plain error-like object, never "Object"', () => {
+  it('reports the real type for a plain error-like object, never "Object"', () => {
     const err = serializeThrough({ name: 'ForbiddenException', message: 'denied', stack: 'at x' })
 
     expect(err['type']).toBe('ForbiddenException')
@@ -51,23 +51,23 @@ describe('err serializer', () => {
     expect(err['message']).toBe('card declined')
   })
 
-  it(/*
+  /*
    * A custom `name` is what typed exceptions set, and it must win over the
    * constructor — that is the whole distinction the regression erased.
    */
-  'prefers a custom name over the constructor', () => {
+  it('prefers a custom name over the constructor', () => {
     const error = new Error('denied')
     error.name = 'ForbiddenException'
 
     expect(serializeThrough(error)['type']).toBe('ForbiddenException')
   })
 
-  it(/*
+  /*
    * REGRESSION — `sanitizeError` computed the cause chain and the service threw
    * it away, so `Error.cause` never reached a log line. Modern JavaScript error
    * chaining was invisible in production.
    */
-  'preserves an Error.cause chain', () => {
+  it('preserves an Error.cause chain', () => {
     const err = serializeThrough(
       new Error('outer', { cause: new Error('middle', { cause: new Error('root') }) })
     )
@@ -87,11 +87,11 @@ describe('err serializer', () => {
     expect(members[0]?.['message']).toBe('first')
   })
 
-  it(/*
+  /*
    * A cause cycle must not hang the serializer. The walk is circular-safe, and
    * this is the shape that would otherwise recurse forever.
    */
-  'collapses a circular cause rather than recursing', () => {
+  it('collapses a circular cause rather than recursing', () => {
     const outer = new Error('outer')
     const inner = new Error('inner')
     Object.defineProperty(outer, 'cause', { value: inner, enumerable: false })
@@ -101,7 +101,7 @@ describe('err serializer', () => {
     expect(JSON.stringify(serializeThrough(outer))).toContain('Circular')
   })
 
-  it(/*
+  /*
    * `name`, `message` and `stack` are ordinary properties a caller can redefine
    * as throwing accessors — V8 already exposes `stack` as one. The record must
    * degrade rather than take the process down, and only the error node degrades:
@@ -113,7 +113,7 @@ describe('err serializer', () => {
    * the record-level envelope. That envelope stays for a record that really cannot
    * be read, pinned in `error-node-isolation.spec.ts`.
    */
-  'degrades a hostile error to a marked error node and keeps the record', () => {
+  it('degrades a hostile error to a marked error node and keeps the record', () => {
     const hostile = new Error('boom')
     Object.defineProperty(hostile, 'message', {
       get(): never {
@@ -139,7 +139,7 @@ describe('err serializer', () => {
     expect(entry?.['err']).toMatchObject({ type: 'SanitizeFailed' })
   })
 
-  it(/*
+  /*
    * The serializer's own never-throw guard, asserted where it actually runs.
    *
    * Going through the sink does not exercise this: the redaction hook reads the error
@@ -149,7 +149,7 @@ describe('err serializer', () => {
    * one that identifies the error (its message): a missing stack or cause is a smaller
    * loss, which keeps the node and marks it, and is pinned in `sanitize-error.util.spec.ts`.
    */
-  'degrades to the SanitizeFailed envelope when reading the value throws', () => {
+  it('degrades to the SanitizeFailed envelope when reading the value throws', () => {
     const hostile = { name: 'Weird' }
     Object.defineProperty(hostile, 'message', {
       get(): never {
@@ -168,11 +168,11 @@ describe('err serializer', () => {
     })
   })
 
-  it(/*
+  /*
    * The legacy key names are what every existing query, dashboard and alert
    * reads. The cause chain is additive on top of them, never a rename.
    */
-  'keeps the legacy type/message/stack key names', () => {
+  it('keeps the legacy type/message/stack key names', () => {
     const err = serializeThrough(new Error('boom'))
 
     expect(Object.keys(err).sort()).toEqual(['message', 'stack', 'type'])
@@ -196,12 +196,12 @@ describe('errorFormat', () => {
     return capture.entries()[0] as Record<string, unknown>
   }
 
-  it(/*
+  /*
    * The DEFAULT must not change what an existing consumer sees. `err.*` is what
    * every dashboard, alert and LogQL query already reads, so the semconv
    * attributes are opt-in rather than a silent addition to every record.
    */
-  'emits only the legacy err object by default', () => {
+  it('emits only the legacy err object by default', () => {
     const entry = emitError('pino')
 
     expect(entry['err']).toMatchObject({ type: 'PaymentDeclined', message: 'card declined' })
@@ -209,12 +209,12 @@ describe('errorFormat', () => {
     expect(entry['error.type']).toBeUndefined()
   })
 
-  it(/*
+  /*
    * The semconv `exception.message` is copied from the error before the serializer runs, so it
    * is cut here at the same limit as the message of the `err` slot and as `msg`; a 100000
    * character message would otherwise be written whole in every semconv entry.
    */
-  'cuts exception.message at the message limit in semconv and both modes', () => {
+  it('cuts exception.message at the message limit in semconv and both modes', () => {
     for (const errorFormat of ['semconv', 'both'] as const) {
       const capture = createCapture()
       const logger = new PinoLoggerService(
@@ -232,11 +232,11 @@ describe('errorFormat', () => {
     }
   })
 
-  it(/*
+  /*
    * `exception.type` and `error.type` are copied from the error's name before the serializer
    * runs, so they are cut at the same limit as every other text copied from an error.
    */
-  'cuts exception.type and error.type at the text limit in semconv and both modes', () => {
+  it('cuts exception.type and error.type at the text limit in semconv and both modes', () => {
     for (const errorFormat of ['semconv', 'both'] as const) {
       const capture = createCapture()
       const logger = new PinoLoggerService(
@@ -258,12 +258,12 @@ describe('errorFormat', () => {
     }
   })
 
-  it(/*
+  /*
    * All four attributes are Stable in SemConv v1.44.0. The spec requires at
    * least one of `exception.type` / `exception.message`; both are present here
    * because both come from the same value.
    */
-  'emits the stable semconv attributes in semconv mode', () => {
+  it('emits the stable semconv attributes in semconv mode', () => {
     const entry = emitError('semconv')
 
     expect(entry['exception.type']).toBe('PaymentDeclined')
@@ -272,13 +272,13 @@ describe('errorFormat', () => {
     expect(entry['error.type']).toBe('PaymentDeclined')
   })
 
-  it(/*
+  /*
    * REGRESSION — the legacy object is rebuilt out rather than `delete`d: the
    * redaction walk defines every property of its snapshot as non-configurable,
    * so `delete` throws `TypeError` and, caught, would silently leave `err` in
    * place. Measured behaviour, not an assumption about Pino.
    */
-  'removes the legacy err object in semconv mode', () => {
+  it('removes the legacy err object in semconv mode', () => {
     const entry = emitError('semconv')
 
     expect(entry).not.toHaveProperty('err')
@@ -287,11 +287,11 @@ describe('errorFormat', () => {
     expect(entry['msg']).toBe('card declined')
   })
 
-  it(/*
+  /*
    * The migration path: nothing breaks and the new fields are already there, so
    * dashboards can move over one at a time.
    */
-  'emits both shapes in both mode', () => {
+  it('emits both shapes in both mode', () => {
     const entry = emitError('both')
 
     expect(entry['err']).toMatchObject({ type: 'PaymentDeclined' })
@@ -299,24 +299,24 @@ describe('errorFormat', () => {
     expect(entry['error.type']).toBe('PaymentDeclined')
   })
 
-  it(/*
+  /*
    * `error.type` must stay LOW cardinality — the spec is explicit that it
    * "SHOULD be predictable, and SHOULD have low cardinality". It carries the
    * class name, which is bounded by how many exception types a codebase defines;
    * putting the message there would make it unbounded and useless to aggregate.
    */
-  'keeps error.type to the class name, never the message', () => {
+  it('keeps error.type to the class name, never the message', () => {
     const entry = emitError('both')
 
     expect(entry['error.type']).toBe('PaymentDeclined')
     expect(entry['error.type']).not.toBe('card declined')
   })
 
-  it(/*
+  /*
    * An entry with no error must not gain empty exception attributes — an absent
    * attribute and one holding `undefined` mean different things to a consumer.
    */
-  'adds nothing to an entry that carries no error', () => {
+  it('adds nothing to an entry that carries no error', () => {
     const capture = createCapture()
     const logger = new PinoLoggerService(
       buildPinoInstance(
@@ -348,14 +348,14 @@ describe('semconv attributes — degenerate errors', () => {
     return capture.entries()[0] as Record<string, unknown>
   }
 
-  it(/*
+  /*
    * An `err` that carries none of the three readable fields must produce NO
    * exception attributes rather than attributes holding `undefined`. The spec
    * requires at least one of `exception.type` / `exception.message` to be
    * present, so emitting neither is the only correct answer for a value that has
    * neither — a half-populated set would assert something false.
    */
-  'emits no exception attributes for an error-shaped value with no readable fields', () => {
+  it('emits no exception attributes for an error-shaped value with no readable fields', () => {
     const entry = emitWithErr({ unrelated: 1 })
 
     expect(entry['exception.type']).toBeUndefined()
@@ -378,12 +378,12 @@ describe('semconv attributes — degenerate errors', () => {
     }
   )
 
-  it(/*
+  /*
    * A value with a name but no message still yields the attributes it can
    * support — the spec's requirement is that at least ONE of type/message be
    * present, not both.
    */
-  'emits only the attributes the value can support', () => {
+  it('emits only the attributes the value can support', () => {
     const entry = emitWithErr({ name: 'PartialError' })
 
     expect(entry['exception.type']).toBe('PartialError')
@@ -408,13 +408,13 @@ describe('err serializer — field presence', () => {
     return capture.entries()[0]?.['err'] as Record<string, unknown>
   }
 
-  it(/*
+  /*
    * An absent field must be ABSENT, not present holding `undefined`. A consumer
    * cannot distinguish `"cause": null` from a cause that genuinely was null, and
    * `JSON.stringify` drops `undefined` silently — so the only way this stays
    * honest is to never write the key.
    */
-  'omits cause and errors for an error that has neither', () => {
+  it('omits cause and errors for an error that has neither', () => {
     const err = errOf(new Error('plain'))
 
     expect(Object.keys(err)).not.toContain('cause')
@@ -428,14 +428,14 @@ describe('err serializer — field presence', () => {
     expect(err['type']).toBe('NoStack')
   })
 
-  it(/*
+  /*
    * REGRESSION — `pino.stdSerializers.err` copied an error's own enumerable
    * properties, and applications rely on it: Node puts `code` on system errors,
    * HTTP layers put `statusCode`, domain code attaches its own fields. Dropping
    * them when the serializer was replaced would have been a silent compatibility
    * loss.
    */
-  'copies an error own enumerable properties', () => {
+  it('copies an error own enumerable properties', () => {
     const error = Object.assign(new Error('failed'), { code: 'ECONNREFUSED', attempt: 3 })
 
     const err = errOf(error)
@@ -444,12 +444,12 @@ describe('err serializer — field presence', () => {
     expect(err['attempt']).toBe(3)
   })
 
-  it(/*
+  /*
    * An own property must never shadow a field the serializer owns. An error
    * carrying `type` would otherwise overwrite the real error type — reintroducing
    * exactly the mislabelling this serializer exists to fix.
    */
-  'does not let an own property shadow the serialized type', () => {
+  it('does not let an own property shadow the serialized type', () => {
     const error = Object.assign(new Error('failed'), { type: 'IMPOSTOR' })
 
     expect(errOf(error)['type']).toBe('Error')
@@ -457,13 +457,13 @@ describe('err serializer — field presence', () => {
 })
 
 describe('serializeErrorValue (direct)', () => {
-  it(/*
+  /*
    * Asserted on the RETURNED object rather than through the sink. A field
    * written as `undefined` disappears from the serialized line — `JSON.stringify`
    * drops it — so a sink-level assertion cannot tell "omitted" from "written as
    * undefined". Mutation testing is what surfaced the gap.
    */
-  'omits stack, cause and errors rather than writing them as undefined', () => {
+  it('omits stack, cause and errors rather than writing them as undefined', () => {
     const serialized = serializeErrorValue({ name: 'Bare', message: 'no extras' })
 
     expect(Object.keys(serialized).sort()).toEqual(['message', 'type'])
@@ -503,12 +503,12 @@ describe('withSemconvException (direct)', () => {
     expect('error.type' in out).toBe(false)
   })
 
-  it(/*
+  /*
    * A field the value cannot support must be ABSENT, not written as `undefined`:
    * the spec requires at least one of `exception.type` / `exception.message`, and
    * a key holding `undefined` satisfies neither while looking like it does.
    */
-  'writes only the attributes the value supports', () => {
+  it('writes only the attributes the value supports', () => {
     const out = withSemconvException(recordWith({ name: 'PartialError' }), 'both')
 
     expect(out['exception.type']).toBe('PartialError')
@@ -544,13 +544,13 @@ describe('withSemconvException (direct)', () => {
 })
 
 describe('exception.stacktrace scrubbing', () => {
-  it(/*
+  /*
    * The semconv attribute must carry the SAME scrubbed stack as the legacy
    * `err.stack`. Emitting one scrubbed and one raw would mean a consumer moving
    * to `errorFormat: 'semconv'` silently started seeing the dependency frames the
    * shape they migrated from had filtered out.
    */
-  'strips node_modules frames from exception.stacktrace', () => {
+  it('strips node_modules frames from exception.stacktrace', () => {
     const error = new Error('boom')
     error.stack = [
       'Error: boom',

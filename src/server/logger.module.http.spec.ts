@@ -30,35 +30,35 @@ function providersFor(http?: Record<string, unknown>): Provider[] | undefined {
 }
 
 describe('BymaxLoggerModule HTTP wiring (forRoot)', () => {
-  it(/*
+  /*
    * HTTP logging must be strictly opt-in: with no http config neither the global
    * interceptor nor the filter may be registered, so the lib stays inert by
    * default.
    */
-  'registers neither interceptor nor filter when http is disabled', () => {
+  it('registers neither interceptor nor filter when http is disabled', () => {
     const providers = providersFor()
 
     expect(hasProvider(providers, APP_INTERCEPTOR)).toBe(false)
     expect(hasProvider(providers, APP_FILTER)).toBe(false)
   })
 
-  it(/*
+  /*
    * Enabling http (with the default shouldCaptureExceptions) must register both
    * the global interceptor and the exception filter.
    */
-  'registers both interceptor and filter when http is enabled', () => {
+  it('registers both interceptor and filter when http is enabled', () => {
     const providers = providersFor({ isEnabled: true })
 
     expect(hasProvider(providers, APP_INTERCEPTOR)).toBe(true)
     expect(hasProvider(providers, APP_FILTER)).toBe(true)
   })
 
-  it(/*
+  /*
    * shouldCaptureExceptions:false must register the access-log interceptor but
    * NOT the catch-all filter — covers the inner conditional and lets consumers
    * keep their own exception handling.
    */
-  'registers the interceptor but not the filter when exception capture is off', () => {
+  it('registers the interceptor but not the filter when exception capture is off', () => {
     const providers = providersFor({ isEnabled: true, shouldCaptureExceptions: false })
 
     expect(hasProvider(providers, APP_INTERCEPTOR)).toBe(true)
@@ -67,13 +67,13 @@ describe('BymaxLoggerModule HTTP wiring (forRoot)', () => {
 })
 
 describe('BymaxLoggerModule HTTP wiring (forRootAsync)', () => {
-  it(/*
+  /*
    * The catch-all filter is never wired from asynchronously resolved options: a global filter
    * added from them would sit in every consumer's pipeline whether or not HTTP logging is on.
    * An asynchronous consumer registers `HttpExceptionFilter` itself, which the end-to-end cases
    * in `test/e2e/exception-filter-wiring.e2e-spec.ts` pin.
    */
-  'registers no exception filter, even with http enabled', () => {
+  it('registers no exception filter, even with http enabled', () => {
     const dynamicModule = BymaxLoggerModule.forRootAsync({
       useFactory: () => ({
         service: { name: 'http-wiring-test', version: '1.0.0' },

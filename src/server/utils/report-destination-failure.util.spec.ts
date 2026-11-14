@@ -29,11 +29,11 @@ describe('reportDestinationFailure', () => {
     return JSON.parse(String(stderrSpy.mock.calls[0]?.[0])) as Record<string, unknown>
   }
 
-  it(/*
+  /*
    * The ordinary case: an Error keeps its own name and message, so the stand-in
    * below is only for a value that cannot be read.
    */
-  'reports an Error with its own type and message', () => {
+  it('reports an Error with its own type and message', () => {
     reportDestinationFailure(
       RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
       'audit-sink',
@@ -102,20 +102,20 @@ describe('reportDestinationFailure', () => {
 })
 
 describe('safeMinLevel', () => {
-  it(/*
+  /*
    * The ordinary case: a plain `minLevel` comes back unchanged, so the guard does
    * not alter what a well-behaved destination configures.
    */
-  'returns a plain minLevel unchanged', () => {
+  it('returns a plain minLevel unchanged', () => {
     expect(safeMinLevel({ minLevel: 'error' })).toBe('error')
   })
 
-  it(/*
+  /*
    * A destination without a `minLevel` and one whose getter throws give the SAME
    * answer, because both mean "no usable per-destination level" and the callers
    * fall back to the module level in either case.
    */
-  'treats an unreadable minLevel as absent', () => {
+  it('treats an unreadable minLevel as absent', () => {
     const hostile = {
       get minLevel(): LogLevel {
         throw new Error('minLevel getter exploded')
@@ -126,7 +126,7 @@ describe('safeMinLevel', () => {
     expect(safeMinLevel(hostile)).toBeUndefined()
   })
 
-  it(/*
+  /*
    * REGRESSION — a STATEFUL getter must not be able to answer differently to
    * different readers. The value is read by two independent consumers: the factory,
    * which fixes the multistream entry's level, and the registry, which records the
@@ -137,7 +137,7 @@ describe('safeMinLevel', () => {
    * Asserted by reading three times through a getter that changes on every access:
    * without the cache the second read already differs.
    */
-  'pins the first answer so a stateful getter cannot disagree with itself', () => {
+  it('pins the first answer so a stateful getter cannot disagree with itself', () => {
     const levels: LogLevel[] = ['info', 'error', 'fatal']
     let reads = 0
     const shifting = {
@@ -157,7 +157,7 @@ describe('safeMinLevel', () => {
     expect(reads).toBe(1)
   })
 
-  it(/*
+  /*
    * REGRESSION — the declared type is a compile-time claim a JavaScript consumer
    * does not have to keep. An unrecognised level is NOT rejected by
    * `pino.multistream`: it builds without complaint and the entry then matches
@@ -168,7 +168,7 @@ describe('safeMinLevel', () => {
    * Treated as absent so the destination falls back to the module level and keeps
    * receiving. Reverting the `isLogLevel` check makes this fail.
    */
-  'treats an unrecognised level as absent rather than passing it through', () => {
+  it('treats an unrecognised level as absent rather than passing it through', () => {
     // Parsed rather than asserted, because that is how the value really arrives: a
     // level read from configuration crosses into the type system without being
     // checked by it. `'verbose'` is a real NestJS level name and a natural thing to
@@ -178,30 +178,30 @@ describe('safeMinLevel', () => {
     expect(safeMinLevel(miscast)).toBeUndefined()
   })
 
-  it(/*
+  /*
    * The cache is per destination, not global: two destinations configured
    * differently must keep their own levels.
    */
-  'keeps each destination on its own level', () => {
+  it('keeps each destination on its own level', () => {
     expect(safeMinLevel({ minLevel: 'warn' })).toBe('warn')
     expect(safeMinLevel({ minLevel: 'debug' })).toBe('debug')
   })
 })
 
 describe('safeDestinationName', () => {
-  it(/*
+  /*
    * The ordinary case, so the guard does not alter a well-behaved name.
    */
-  'returns a plain name unchanged', () => {
+  it('returns a plain name unchanged', () => {
     expect(safeDestinationName({ name: 'stdout-json' })).toBe('stdout-json')
   })
 
-  it(/*
+  /*
    * A throwing `name` getter yields the `unknown` placeholder rather than escaping:
    * every reporter calls this from inside a catch, where a throw would abort the
    * teardown or bootstrap that catch exists to protect.
    */
-  'falls back to unknown when the name cannot be read', () => {
+  it('falls back to unknown when the name cannot be read', () => {
     const hostile = {
       get name(): string {
         throw new Error('name getter exploded')

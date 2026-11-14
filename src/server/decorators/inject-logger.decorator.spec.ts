@@ -12,12 +12,12 @@ import { INJECT_LOGGER_CONTEXT_METADATA_KEY, InjectLogger } from './inject-logge
 import { PinoLoggerService } from '../services/pino-logger.service'
 
 describe('InjectLogger', () => {
-  it(/*
+  /*
    * When a context label is supplied it must be recorded under the param-slot
    * metadata key (`<propertyKey>:<index>`), which a `LoggerContextInterceptor`
    * reads to auto-apply setContext(). Constructor params have an undefined propertyKey → 'undefined:0'.
    */
-  'records the context label as metadata when provided', () => {
+  it('records the context label as metadata when provided', () => {
     class WithContext {
       constructor(@InjectLogger('UsersService') readonly logger: PinoLoggerService) {}
     }
@@ -27,12 +27,12 @@ describe('InjectLogger', () => {
     ).toBe('UsersService')
   })
 
-  it(/*
+  /*
    * Without a context label no metadata may be written — covers the
    * `context !== undefined` false branch and proves the decorator stays a pure
    * @Inject convenience when unparameterized.
    */
-  'records no context metadata when omitted', () => {
+  it('records no context metadata when omitted', () => {
     class WithoutContext {
       constructor(@InjectLogger() readonly logger: PinoLoggerService) {}
     }
@@ -42,11 +42,11 @@ describe('InjectLogger', () => {
     ).toBeUndefined()
   })
 
-  it(/*
+  /*
    * The decorator must actually wire @Inject(PinoLoggerService): a DI resolution
    * of a class using @InjectLogger() must receive the registered logger instance.
    */
-  'injects the PinoLoggerService instance via DI', async () => {
+  it('injects the PinoLoggerService instance via DI', async () => {
     const stub = new PinoLoggerService(pino({ enabled: false }))
 
     @Injectable()
@@ -61,11 +61,11 @@ describe('InjectLogger', () => {
     expect(moduleRef.get(Consumer).logger).toBe(stub)
   })
 
-  it(/*
+  /*
    * The metadata key is part of the public contract and must remain stable;
    * a rename would silently break context auto-application.
    */
-  'exposes a stable metadata key', () => {
+  it('exposes a stable metadata key', () => {
     expect(INJECT_LOGGER_CONTEXT_METADATA_KEY).toBe('bymax_logger:context')
   })
 })

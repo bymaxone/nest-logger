@@ -55,11 +55,11 @@ describe('HttpExceptionFilter — the entry for a 5xx HttpException', () => {
       { cause: new Error('upstream timeout', { cause: new Error('socket hang up') }) }
     )
 
-  it(/*
+  /*
    * The cause chain reaches the entry: `errorStructured` hands the sanitized node to the `err`
    * serializer, which keeps `cause` at every level, so the root cause of a 502 is in the line.
    */
-  'logs the cause chain', () => {
+  it('logs the cause chain', () => {
     const { entry } = logEntry(exception())
 
     expect(entry).toMatchObject({ logKey: 'HTTP_EXCEPTION_UNHANDLED', url: '/pay' })
@@ -69,12 +69,12 @@ describe('HttpExceptionFilter — the entry for a 5xx HttpException', () => {
     })
   })
 
-  it(/*
+  /*
    * The response body is an own field of the exception, so it travels with the error node, and
    * the node is walked by name like the rest of the record: a secret in the body is censored, and
    * so is the query string of the URL, which is stripped before it is logged.
    */
-  'logs the response body with its secrets censored', () => {
+  it('logs the response body with its secrets censored', () => {
     const { entry, line } = logEntry(exception())
 
     expect(entry['err']).toMatchObject({
