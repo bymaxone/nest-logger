@@ -17,6 +17,7 @@
  */
 import { types } from 'node:util'
 
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from '../constants/lifecycle-timeouts.constants'
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 
@@ -61,6 +62,38 @@ function checkGroup(path: string, value: unknown): Record<string, unknown> | und
   if (value === undefined) return undefined
   if (!isRecord(value)) reject(path, 'must be an object', value)
   return value
+}
+
+/** The largest delay a timer holds; a larger one fires at once. */
+const MAX_TIMER_MS = 2_147_483_647
+
+/** `value`, when defined, must be an integer from 1 to {@link MAX_TIMER_MS}. */
+function checkTimerMs(path: string, value: unknown): void {
+  if (value === undefined) return
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > MAX_TIMER_MS) {
+    reject(path, `must be an integer from 1 to ${String(MAX_TIMER_MS)}`, value)
+  }
+}
+
+/** `destinationHookTimeoutMs` and the `shutdown` group, whose drain may not outlast its total. */
+function validateLifecycle(options: BymaxLoggerModuleOptions): void {
+  checkTimerMs('destinationHookTimeoutMs', options.destinationHookTimeoutMs)
+  const shutdown = checkGroup('shutdown', options.shutdown)
+  if (shutdown === undefined) return
+  checkTimerMs('shutdown.timeoutMs', shutdown['timeoutMs'])
+  checkTimerMs('shutdown.drainTimeoutMs', shutdown['drainTimeoutMs'])
+  const { timeoutMs, drainTimeoutMs } = shutdown
+  // A drain the consumer gave is compared with the total the module will use, which is the default
+  // when none was given. A default drain is not compared: it is capped to a short total when
+  // options resolve, and refusing it would blame an option the consumer never set.
+  const total = typeof timeoutMs === 'number' ? timeoutMs : DEFAULT_SHUTDOWN_TIMEOUT_MS
+  if (typeof drainTimeoutMs === 'number' && drainTimeoutMs > total) {
+    reject(
+      'shutdown.drainTimeoutMs',
+      'must not exceed shutdown.timeoutMs, which covers the drain and every onShutdown',
+      drainTimeoutMs
+    )
+  }
 }
 
 /** `service`, `level` and `maxEntrySizeBytes`. */
@@ -319,6 +352,7 @@ export function validateOptions(options: BymaxLoggerModuleOptions): void {
   validateCustomization(options)
   validateErrorFields(options)
   validateDestinations(options)
+  validateLifecycle(options)
   validateHttp(options)
   validateOtel(options)
 }

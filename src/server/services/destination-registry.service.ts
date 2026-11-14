@@ -49,6 +49,10 @@ import {
 } from '../utils/report-destination-failure.util'
 import { writeStderrSafely } from '../utils/safe-stdio.util'
 import { isErrorLike } from '../utils/sanitize-error.util'
+import { withTimeout } from '../utils/with-timeout.util'
+
+/** How often the shutdown drain looks at the destinations' queues, in milliseconds. */
+const DRAIN_POLL_MS = 5
 
 /**
  * Coordinates destination initialization and graceful shutdown.
@@ -104,7 +108,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
   async onModuleInit(): Promise<void> {
     for (const destination of this.registered) {
       try {
-        await destination.onInit?.()
+        await withTimeout(() => destination.onInit?.(), this.options.destinationHookTimeoutMs)
         this.active.push(destination)
         this.health.markHealthy(destination, this.effectiveLevelOf(destination))
       } catch (cause) {
@@ -142,12 +146,16 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         // declared: not awaiting one would let its rejection escape as an
         // unhandled promise, and let the bootstrap entry be emitted before the
         // buffer it is resolving had been drained.
-        await destination.onRegistryReady?.({
-          heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
-            destination,
-            this.effectiveLevelOf(destination)
-          )
-        })
+        await withTimeout(
+          () =>
+            destination.onRegistryReady?.({
+              heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
+                destination,
+                this.effectiveLevelOf(destination)
+              )
+            }),
+          this.options.destinationHookTimeoutMs
+        )
       } catch (cause) {
         this.reportHookFailure(destination, cause)
       }
@@ -293,6 +301,9 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * point in the shutdown sequence.
    */
   async onApplicationShutdown(): Promise<void> {
+    const startedAt = Date.now()
+    const { timeoutMs, drainTimeoutMs } = this.options.shutdown
+    const deadline = startedAt + timeoutMs
     // Emitted BEFORE the sinks are torn down — a shutdown entry written after
     // the destinations closed would have nowhere to go. It is the bookend to
     // `LOGGER_BOOTSTRAP_OK`: its absence in a log stream is how an operator
@@ -313,12 +324,61 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
     await new Promise<void>((resolve) => {
       setImmediate(resolve)
     })
+    // Clamped to the total: the drain is part of the budget and cannot spend more than all of it.
+    await this.drain(Math.min(deadline, startedAt + drainTimeoutMs))
+    // One budget for the drain and every hook, so the time shutdown takes does not grow with the
+    // number of destinations: each hook gets what is left, and one reached after it is spent is
+    // reported as skipped.
+    const skipped: string[] = []
     for (const destination of [...this.active].reverse()) {
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) {
+        skipped.push(toSingleLineMessage(safeDestinationName(destination)))
+        continue
+      }
       try {
-        await destination.onShutdown?.()
+        await withTimeout(() => destination.onShutdown?.(), remaining)
       } catch (cause) {
         this.reportShutdownFailure(destination, cause)
       }
+    }
+    if (skipped.length > 0) {
+      writeStderrSafely(
+        `[DestinationRegistry] Shutdown budget of ${String(timeoutMs)} ms spent; onShutdown not called for: ${skipped.map((name) => `"${name}"`).join(', ')}\n`
+      )
+    }
+  }
+
+  /**
+   * Wait until no active destination holds a queued entry, or the drain deadline passes.
+   *
+   * A destination reads its entries from a `Writable` that buffers what Pino has written, and it
+   * takes them one at a time. `onShutdown` is its signal to flush and close, so a write that begins
+   * after it is a write on a closed resource. The wait does not end the streams, because Pino may
+   * still log while the application shuts down, and an entry written after the end of a stream is an
+   * error. An entry written during the wait extends it, up to the deadline. When the deadline ends it,
+   * one line names the destinations and their queued sizes; it carries no entry content.
+   *
+   * @param drainDeadline - The time, in `Date.now()` milliseconds, the wait ends at.
+   */
+  private async drain(drainDeadline: number): Promise<void> {
+    for (;;) {
+      const queued = this.active.filter((destination) => this.health.queuedSize(destination) > 0)
+      if (queued.length === 0) return
+      const remaining = drainDeadline - Date.now()
+      if (remaining <= 0) {
+        const named = queued.map(
+          (destination) =>
+            `"${toSingleLineMessage(safeDestinationName(destination))}" (${String(this.health.queuedSize(destination))})`
+        )
+        writeStderrSafely(
+          `[DestinationRegistry] Shutdown drain ended with entries still queued, by size: ${named.join(', ')}\n`
+        )
+        return
+      }
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, Math.min(DRAIN_POLL_MS, remaining))
+      })
     }
   }
 

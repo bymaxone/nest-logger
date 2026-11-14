@@ -556,8 +556,9 @@ export function buildPinoInstance(
     createSizeBoundedSerializer((input: T) => redactSerialized(serializer(input)), maxBytes)
   // The request is serialized here, before the walk, and not as a Pino serializer: Pino runs the
   // record formatter first, so the walk would copy a whole `IncomingMessage`, its sockets and its
-  // server, and hand the serializer a copy that has lost the prototype's `headers`. A host that
-  // registers its own `req` serializer keeps the raw request for it.
+  // server, and hand the serializer a copy of own enumerable properties, which has no `headers`
+  // because Node defines it as an accessor on the prototype. A host that registers its own `req`
+  // serializer gets that copy, and `rawHeaders` is the field that carries the headers in it.
   const hostSerializesRequest = Object.hasOwn(options.serializers, 'req')
   const serializers = {
     err: bound((error) => serializeErrorValue(error, ownFields)),
@@ -648,14 +649,19 @@ export function buildPinoInstance(
     }
   }
 
-  const streams = destinations.map((destination) => ({
-    // Guarded: this runs at provider construction, BEFORE any lifecycle hook, so a
-    // consumer implementing `minLevel` as a throwing getter would fail the factory
-    // and the application would never start — earlier than any fail-soft path can
-    // contain. Unreadable and absent give the same answer: the module level.
-    level: safeMinLevel(destination) ?? options.level,
-    stream: destinationToStream(destination, health)
-  }))
+  const streams = destinations.map((destination) => {
+    const stream = destinationToStream(destination, health)
+    // The registry drains this buffer before it tells the destination to shut down.
+    health.registerStream(destination, stream)
+    return {
+      // Guarded: this runs at provider construction, BEFORE any lifecycle hook, so a
+      // consumer implementing `minLevel` as a throwing getter would fail the factory
+      // and the application would never start — earlier than any fail-soft path can
+      // contain. Unreadable and absent give the same answer: the module level.
+      level: safeMinLevel(destination) ?? options.level,
+      stream
+    }
+  })
 
   return pino(pinoOptions, pino.multistream(streams))
 }

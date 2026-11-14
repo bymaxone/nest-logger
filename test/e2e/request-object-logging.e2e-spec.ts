@@ -170,6 +170,7 @@ describe('Logger E2E — a host req serializer', () => {
     const entry = parseLogEntries(stdout).find((e) => e['logKey'] === 'PROBE_REQUEST')
     expect(entry?.['req']).toEqual({ ownSerializer: true })
     expect(received).toMatchObject({ method: 'GET', url: '/probe' })
+    expect(received).not.toHaveProperty('headers')
     expect(JSON.stringify(received)).not.toContain('LEAK-BEARER')
   })
 })

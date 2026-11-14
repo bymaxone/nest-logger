@@ -8,11 +8,17 @@
  * `serializers`, `http`, `otel`, `excludePaths`, `redactPaths`, `destinations`)
  * so per-request handlers cannot corrupt the shared runtime snapshot.
  */
+import {
+  DEFAULT_DRAIN_TIMEOUT_MS,
+  DEFAULT_HOOK_TIMEOUT_MS,
+  DEFAULT_SHUTDOWN_TIMEOUT_MS
+} from '../constants/lifecycle-timeouts.constants'
 import type {
   BymaxLoggerModuleOptions,
   OtelOptions,
   ResolvedBymaxLoggerModuleOptions,
-  ResolvedHttpOptions
+  ResolvedHttpOptions,
+  ShutdownOptions
 } from '../interfaces/logger-module-options.interface'
 
 const DEFAULT_HTTP: ResolvedHttpOptions = {
@@ -23,6 +29,15 @@ const DEFAULT_HTTP: ResolvedHttpOptions = {
   secretPathSegments: [],
   tenantIdHeader: 'x-tenant-id',
   tenantIdResolver: undefined
+}
+
+/** The shutdown group with its defaults; the default drain is never longer than the total. */
+function resolveShutdown(given: ShutdownOptions | undefined): Required<ShutdownOptions> {
+  const timeoutMs = given?.timeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS
+  return Object.freeze({
+    timeoutMs,
+    drainTimeoutMs: given?.drainTimeoutMs ?? Math.min(DEFAULT_DRAIN_TIMEOUT_MS, timeoutMs)
+  })
 }
 
 const DEFAULT_OTEL: Required<OtelOptions> = {
@@ -78,9 +93,10 @@ export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxL
     options.otel
   )
 
-  const merged: Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel'>> & {
+  const merged: Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel' | 'shutdown'>> & {
     http: ResolvedHttpOptions
     otel: Required<OtelOptions>
+    shutdown: Required<ShutdownOptions>
   } = {
     service: Object.freeze({ ...options.service }),
     level: options.level ?? (isProduction ? 'info' : 'debug'),
@@ -106,6 +122,8 @@ export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxL
     }),
     otel: Object.freeze(otel),
     maxEntrySizeBytes: options.maxEntrySizeBytes ?? DEFAULT_MAX_ENTRY_SIZE_BYTES,
+    destinationHookTimeoutMs: options.destinationHookTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS,
+    shutdown: resolveShutdown(options.shutdown),
     errorOwnFields: options.errorOwnFields ?? 'all',
     errorOwnFieldNames: Object.freeze([...(options.errorOwnFieldNames ?? [])]),
     serializers: Object.freeze({ ...(options.serializers ?? {}) }),
