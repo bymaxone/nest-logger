@@ -1,3 +1,7 @@
+/**
+ * Pins the internal error code table as frozen, convention-conforming, key-equals-value, and exactly the documented set.
+ * Layer: server/errors, tests.
+ */
 import { LOG_KEYS_CONVENTION_REGEX } from '../../shared/constants/log-keys-convention.constants'
 import { LOGGER_ERROR_CODES, type LoggerErrorCode } from './logger-error-codes.constants'
 

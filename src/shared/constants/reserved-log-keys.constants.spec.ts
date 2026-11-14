@@ -1,3 +1,7 @@
+/**
+ * Pins the reserved log key table as frozen, convention-conforming and exactly the documented set, and that each key has a production writer or a stated reserved-only reason.
+ * Layer: shared/constants, tests.
+ */
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 

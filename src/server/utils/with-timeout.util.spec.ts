@@ -1,6 +1,6 @@
 /**
- * Pins `withTimeout`: it settles with the work's own outcome when the work is first, rejects with a
- * `HookTimeoutError` when the deadline is, and leaves no timer behind.
+ * Pins that the timeout helper settles with the work outcome or a timeout error at the deadline, clears its timer once the work settles, and that the timeout error is identifiable.
+ * Layer: server/utils, tests.
  */
 import { HookTimeoutError, withTimeout } from './with-timeout.util'
 

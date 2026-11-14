@@ -1,3 +1,7 @@
+/**
+ * Pins that the request-id helper applies the correlation scope before the access log, mounts at the root by default, and honours an explicit route.
+ * Layer: server/middlewares, tests.
+ */
 import type { MiddlewareConsumer } from '@nestjs/common'
 
 import { applyRequestIdMiddleware } from './apply-request-id-middleware'

@@ -1,3 +1,7 @@
+/**
+ * Pins that the log context decorator records its label as class metadata under a stable key.
+ * Layer: server/decorators, tests.
+ */
 import 'reflect-metadata'
 
 import { LOG_CONTEXT_METADATA_KEY, LogContext } from './log-context.decorator'

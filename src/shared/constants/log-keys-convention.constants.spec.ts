@@ -1,3 +1,7 @@
+/**
+ * Pins which strings the log key convention regex accepts and which it rejects.
+ * Layer: shared/constants, tests.
+ */
 import { LOG_KEYS_CONVENTION_REGEX } from './log-keys-convention.constants'
 
 describe('LOG_KEYS_CONVENTION_REGEX', () => {

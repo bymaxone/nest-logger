@@ -1,3 +1,7 @@
+/**
+ * Pins that the pass-through interceptor forwards the downstream stream untouched.
+ * Layer: server/interceptors, tests.
+ */
 import { firstValueFrom, of } from 'rxjs'
 import type { CallHandler, ExecutionContext } from '@nestjs/common'
 

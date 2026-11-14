@@ -1,3 +1,7 @@
+/**
+ * Pins the size-bounded serializer: it passes small, unmeasurable and boundary-sized values through and replaces over-limit ones with a truncation envelope measured in UTF-8 bytes.
+ * Layer: server/utils, tests.
+ */
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 import { createSizeBoundedSerializer } from './truncate-large-entries'

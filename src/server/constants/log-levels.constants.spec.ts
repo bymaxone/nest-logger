@@ -1,3 +1,7 @@
+/**
+ * Pins the Pino level number and name tables, the NestJS-to-Pino level bridge, and the ascending severity order of the priority list.
+ * Layer: server/constants, tests.
+ */
 import {
   LOG_LEVEL_PRIORITY,
   NEST_TO_PINO_LEVEL,

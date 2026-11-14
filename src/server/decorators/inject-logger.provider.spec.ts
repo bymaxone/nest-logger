@@ -1,3 +1,7 @@
+/**
+ * Pins the per-context logger tokens and providers, and that an injected logger is a context-bound child that keeps request context and does not call setContext on the shared root.
+ * Layer: server/decorators, tests.
+ */
 import { Injectable } from '@nestjs/common'
 import type { FactoryProvider } from '@nestjs/common'
 import { Test } from '@nestjs/testing'

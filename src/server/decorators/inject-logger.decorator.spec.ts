@@ -1,3 +1,7 @@
+/**
+ * Pins that the logger injection decorator records an optional context label as parameter metadata under a stable key and injects the logger service through DI.
+ * Layer: server/decorators, tests.
+ */
 import 'reflect-metadata'
 
 import { Injectable } from '@nestjs/common'
