@@ -101,13 +101,18 @@ describe('destinationToStream, the write-failure report', () => {
     expect(health.deliveredByHealthySink(other, 'info')).toBe(false)
   })
 
-  it('names the cause and the entry loss on every line, and never the entry', () => {
+  it('names the cause and the entry loss on a first line and on one after the window, and never the entry', () => {
     const stream = destinationToStream(refusing('flooded'), health)
 
     stream.write('SECRET-ENTRY\n')
+    clock += DROP_REPORT_INTERVAL_MS
+    stream.write('SECRET-ENTRY-2\n')
 
-    const [line] = reports()
-    expect(line?.['msg']).toContain('the entry was dropped')
-    expect(JSON.stringify(line)).not.toContain('SECRET-ENTRY')
+    expect(reports()).toHaveLength(2)
+    for (const line of reports()) {
+      expect(line['err']).toEqual({ type: 'Error', message: 'refused' })
+      expect(line['msg']).toContain('the entry was dropped')
+      expect(JSON.stringify(line)).not.toContain('SECRET-ENTRY')
+    }
   })
 })

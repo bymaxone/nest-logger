@@ -34,8 +34,7 @@ import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
  * @param cause - The thrown or rejected value, in whatever shape it arrived.
  * @param msg - Human-readable explanation, including what happens to the entry.
  * @param suppressed - How many failures since the last line were not reported, when a report is
- *   throttled. Written as `suppressed` only when it is positive, so a caller that never throttles
- *   writes the same line as before.
+ *   throttled. `suppressed` is omitted from the line when it is 0.
  */
 export function reportDestinationFailure(
   logKey: ReservedLogKey,
