@@ -3,9 +3,9 @@
  * somewhere real.
  * @layer scripts
  *
- * Split out of `check-published-surface.mjs`, which calls {@link checkLinks}. A bad HTTP status
- * fails the gate; a link the machine could not reach at all is reported as a note, since an
- * offline runner is not a defect in the documentation.
+ * `check-published-surface.mjs` calls {@link checkLinks}. A bad HTTP status fails the gate; a link
+ * the machine could not reach at all is reported as a note, since an offline runner is not a
+ * defect in the documentation.
  */
 
 import { lookup } from 'node:dns/promises'
