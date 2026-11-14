@@ -96,6 +96,28 @@ jobs:
           else
             pnpm check:spec-headers
           fi
+      - name: The lint suppression baseline does not grow
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          # The baseline is compared with the one it replaces: regenerating eslint-suppressions.json after
+          # a new violation would otherwise turn that violation into inherited debt. For a pull request
+          # that is the base branch; for a push it is the commit the push replaced. A manual run, a first
+          # push (an all-zero `before`) and a force push whose old tip is not in the checkout have nothing
+          # to compare with and check only that the file parses.
+          base=""
+          if [ -n "$BASE_REF" ]; then
+            base="origin/$BASE_REF"
+          elif [ "$EVENT_NAME" = "push" ] && [ -n "$BEFORE_SHA" ] && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            base="$BEFORE_SHA"
+          fi
+          if [ -n "$base" ]; then
+            pnpm check:suppressions --base "$base"
+          else
+            pnpm check:suppressions
+          fi
       - name: Build all subpaths
         run: pnpm build
       - name: Verify build output integrity

@@ -1,0 +1,57 @@
+{
+  "src/server/config/default-options.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "src/server/destinations/pretty-dev.destination.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "src/server/filters/http-exception.filter.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "src/server/interceptors/http-logging.interceptor.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "src/server/middlewares/http-access-log.middleware.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "src/server/middlewares/request-id.middleware.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "src/server/mixins/trace-context.mixin.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "src/server/pino-factory.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "src/server/utils/destination-to-stream.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "src/server/utils/redact-by-name.util.ts": {
+    "max-lines-per-function": {
+      "count": 2
+    }
+  },
+  "src/server/utils/sanitize-error.util.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
+  }
+}

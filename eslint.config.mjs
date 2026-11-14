@@ -374,6 +374,36 @@ export default [
     }
   },
 
+  // A function is at most 50 raw lines: blank lines and comments count, as a reader sees them, and an
+  // IIFE is a function. Spec files are exempt, since a `describe` callback holds a whole suite.
+  //
+  // The functions that were already longer when the rule was added are recorded in
+  // `eslint-suppressions.json`, ESLint's own bulk-suppression file, so the rule fails on what a change
+  // introduces and not on what the repository inherits. Neither `pnpm lint` nor CI passes
+  // `--pass-on-unpruned-suppressions`, so a suppression that no longer matches a violation (a split
+  // function) fails until it is removed with `eslint --prune-suppressions`. ESLint does not stop the file
+  // from being regenerated with `--suppress-rule` after a new violation, so CI runs `check:suppressions`
+  // against the baseline a pull request is based on, or a push replaced: a count that rose, or an entry
+  // that revision lacks, fails. A manual run checks only that the file parses, and a direct push that grows
+  // the baseline is detected on its own run only: the next push compares with the grown commit.
+  //
+  // A suppression counts violations per file and rule, not per function. A new offender in a file that
+  // still has suppressions is reported only when it raises that file's count, so a split and a new
+  // offender in the same file net to zero and go unseen. The count can only go down, which is why this is
+  // accepted, but it is not invisible: a split removes its suppression in the same change.
+  {
+    files: ['src/**/*.ts'],
+    ignores: ['**/*.spec.ts', '**/*.test.ts'],
+    // An `eslint-disable` comment would otherwise accept a long function without touching the baseline.
+    linterOptions: { noInlineConfig: true },
+    rules: {
+      'max-lines-per-function': [
+        'error',
+        { max: 50, skipBlankLines: false, skipComments: false, IIFEs: true }
+      ]
+    }
+  },
+
   // supertest starts the server it is handed when that server is not listening and closes it when its
   // requests settle, so a spec that sends requests one after another to `app.getHttpServer()` binds a
   // new port for each of them. `listeningServer(app)` hands it a server that is already listening.
