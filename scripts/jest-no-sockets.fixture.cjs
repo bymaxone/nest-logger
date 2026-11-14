@@ -5,8 +5,8 @@
  *
  * The resolver refuses the package for a module under `src/` only, so a unit spec that goes
  * through a helper outside it is not stopped there. `supertest` starts the server it is given
- * with `listen`, which the setup of the guard replaces, when the request is sent and not when it
- * is built, so the helper sends it.
+ * with `listen`, which the setup of the guard replaces. Depending on the version it does so when the
+ * request is built or when it is sent, so the helper sends it.
  */
 const http = require('node:http')
 
