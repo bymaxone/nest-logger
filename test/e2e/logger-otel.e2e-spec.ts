@@ -1,7 +1,7 @@
 /**
  * Asserts, with OTel detection mocked, that a valid active span yields traceId, spanId and traceFlags,
- * that a zero-filled trace ID injects nothing, that snake_case names apply when configured, and that
- * nothing is injected with auto-injection disabled or without an active span.
+ * that a zero-filled trace ID leaves traceId and spanId absent, that snake_case names apply when configured,
+ * and that traceId is absent with auto-injection disabled or without an active span.
  * Layer: e2e.
  */
 import type { INestApplication } from '@nestjs/common'
