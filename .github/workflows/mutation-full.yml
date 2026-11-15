@@ -38,9 +38,8 @@ jobs:
       # the week. The planner balances shards by mutant count, not by test cost, and the cost is uneven:
       # one source file carries over a quarter of the suite's test executions, so the heaviest shard
       # holds about 40% of them and is estimated at about 125 minutes with two workers. 240 leaves about
-      # twice that, because hosted runner speed alone has moved the same suite's cold run by 1.35x
-      # between two runs. Nothing blocks on this job, so an over-wide ceiling costs only the minutes it
-      # uses.
+      # twice that, because the same suite's cold run took 1.35 times as long in one run as in another.
+      # Nothing blocks on this job, so an over-wide ceiling costs only the minutes it uses.
       timeout-minutes: 240
       # A unit test the cold run did not run fails the job. The specs that judge no mutant are
       # listed, with the reason, in scripts/mutation-inventory.exempt.json.
