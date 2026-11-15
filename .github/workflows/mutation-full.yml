@@ -33,14 +33,15 @@ jobs:
   full:
     uses: bymaxone/.github/.github/workflows/mutation-full.yml@v1
     with:
-      # The ceiling is per shard job. One runner needs about 145 minutes for the whole cold run (4 workers,
-      # 3169 mutants, 2893 of them tested, plus a 1.4-minute dry run), which leaves no margin under a
-      # 150-minute ceiling, and a run the ceiling cancels leaves no score and no baseline for the week.
-      # A shard holds a quarter of the mutants with half the workers, estimated at about 75 minutes with
-      # the dry run and the setup each shard pays again; 150 leaves about twice that, because hosted
-      # runner speed varies about 1.5x on the same work. Nothing blocks on this job, so an over-wide
-      # ceiling costs only the minutes it uses.
-      timeout-minutes: 150
+      # The ceiling is per shard job. One runner needs about 145 minutes for the whole cold run, which
+      # leaves no margin under 150, and a run the ceiling cancels leaves no score and no baseline for
+      # the week. The planner balances shards by mutant count, not by test cost, and the cost is uneven:
+      # one source file carries over a quarter of the suite's test executions, so the heaviest shard
+      # holds about 40% of them and is estimated at about 125 minutes with two workers. 240 leaves about
+      # twice that, because hosted runner speed alone has moved the same suite's cold run by 1.35x
+      # between two runs. Nothing blocks on this job, so an over-wide ceiling costs only the minutes it
+      # uses.
+      timeout-minutes: 240
       # A unit test the cold run did not run fails the job. The specs that judge no mutant are
       # listed, with the reason, in scripts/mutation-inventory.exempt.json.
       inventory: enforce
