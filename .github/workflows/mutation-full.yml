@@ -33,13 +33,21 @@ jobs:
   full:
     uses: bymaxone/.github/.github/workflows/mutation-full.yml@v1
     with:
-      # Measured cold, with 2 runner processes: 41, more than 60 and 89.7 minutes on the hosted
-      # runner for 2412 to 2427 mutants, and 66 minutes on a laptop. On one machine the suite's test
-      # time moved by 9% across those runs, so most of the spread is the runner. The inventory step
-      # runs after the score, so the ceiling has to leave room for it. Generous on purpose —
-      # nothing blocks on this job, so an over-wide ceiling costs only the minutes it uses, while
-      # an under-tight one costs the whole run and leaves the week without a measured baseline.
+      # The ceiling is per shard job. One runner needs about 145 minutes for the whole cold run (4 workers,
+      # 3169 mutants, 2893 of them tested, plus a 1.4-minute dry run), which leaves no margin under a
+      # 150-minute ceiling, and a run the ceiling cancels leaves no score and no baseline for the week.
+      # A shard holds a quarter of the mutants with half the workers, estimated at about 75 minutes with
+      # the dry run and the setup each shard pays again; 150 leaves about twice that, because hosted
+      # runner speed varies about 1.5x on the same work. Nothing blocks on this job, so an over-wide
+      # ceiling costs only the minutes it uses.
       timeout-minutes: 150
       # A unit test the cold run did not run fails the job. The specs that judge no mutant are
       # listed, with the reason, in scripts/mutation-inventory.exempt.json.
       inventory: enforce
+      # Four shards of two workers each. The cold run grows with the suite, so it is split across four
+      # runners instead of given a longer one. A worker grows to several GiB over a long run and the
+      # hosted runner has 16 GB, so two workers and their parent are what one runner holds. The count
+      # and the concurrency are passed here, not written into stryker.config.json, which the per-push
+      # incremental job and local runs share.
+      shards: 4
+      concurrency: 2
