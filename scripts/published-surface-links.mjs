@@ -234,8 +234,8 @@ export async function checkLinks({ readme, root, fail }) {
       // npmjs.com serves 403 to any datacenter IP, browser User-Agent included,
       // so asking it whether a package page exists measures Cloudflare rather
       // than the package. The registry is the authoritative source for the same
-      // question and answers honestly — this redirects the check, it does not
-      // suppress it: a package that truly does not exist still fails here.
+      // question and answers honestly: the check is redirected, not dropped, and a 404 from it is
+      // only a note, expected until the first publish (below).
       const probe = url.replace(
         /^https:\/\/www\.npmjs\.com\/package\/(.+)$/,
         (_, name) => `https://registry.npmjs.org/${encodeURIComponent(name)}`
@@ -274,6 +274,16 @@ export async function checkLinks({ readme, root, fail }) {
         // failing here would block the very release that makes the link true.
         if (res.status === 404 && probe !== url) {
           console.log(`  note: ${url} is not live yet — expected until the first publish`)
+          return null
+        }
+        // A host that answers 5xx, or 429 again after the GET above, is in trouble of its own, and a link
+        // check cannot tell that from a dead link. Reported like a transport error, never fatal: this gate
+        // also guards `prepublishOnly`, and someone else's outage must not block a release. 404, 410 and the
+        // other client errors still fail.
+        if (res.status >= 500 || res.status === 429) {
+          console.log(
+            `  note: ${url} answered HTTP ${res.status}, the host's trouble and not proof that the link is dead`
+          )
           return null
         }
         return `${url} → HTTP ${res.status}`
