@@ -96,8 +96,8 @@ describe('validateOptions: scalars and customization hooks', () => {
     ['one over the largest', 2_147_483_648]
   ])(
     /*
-     * A byte ceiling above the largest value a timer, a queue bound or a buffer length can hold is a
-     * config mistake that no entry can reach: `Number.isInteger` accepts `2 ** 53` and `1e300`.
+     * A byte ceiling above the largest signed 32-bit integer is a config mistake that no entry can
+     * reach: `Number.isInteger` accepts `2 ** 53` and `1e300`.
      */
     'rejects a maxEntrySizeBytes that is %s',
     (_label, value) => {
