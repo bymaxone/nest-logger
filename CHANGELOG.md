@@ -17,11 +17,11 @@ heading here.
 - **A plain object passed as the message of `log`, `warn`, `error`, `debug`, `verbose` or `fatal`
   is written as the fields of the entry.** `new Logger('Queue').warn({ event: 'QUEUE_DRAINED',
 jobs: 7 })` through `app.useLogger(app.get(PinoLoggerService))` wrote `msg: "[object Object]"`
-  and every key was lost; the default Nest console logger prints the same call readably. The
+  and every key was lost. The
   keys are now fields of the entry, through the same redaction and `maxStringLength` pipeline as
   any other field (a `password` is censored, a long string is cut), the entry text is the
-  object's `message` string, else its `event` string, else empty, and `logKey`, `userId` and
-  `context` in the object are dropped as they are from `meta`. An `Error` keeps its own path, and a
+  object's `message` string, else its `event` string, else empty, and the keys the logger
+  owns (see the next entry) are dropped from the object as they are from `meta`. An `Error` keeps its own path, and a
   value that is not plain (a class instance, an array) is still written as its string form.
   **Apply:** code that logged an object and got `[object Object]` now gets its fields; a
   dashboard or an alert that matched `[object Object]` in `msg` matches the `event` or `message`
