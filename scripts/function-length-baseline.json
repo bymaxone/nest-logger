@@ -13,7 +13,6 @@
     "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"],[\"member\",\"<class>\",\"write\"]]": 78,
     "[\"src/server/utils/redact-by-name.hostile-hook.property.spec.ts\",[\"fn\",\"shapes\"]]": 191,
     "[\"src/server/utils/redact-by-name.util.ts\",[\"fn\",\"createNameRedactor\"]]": 51,
-    "[\"src/server/utils/redact-by-name.util.ts\",[\"fn\",\"walkProperties\"]]": 54,
     "[\"src/server/utils/sanitize-error.util.ts\",[\"fn\",\"toSanitizedError\"]]": 59
   }
 }

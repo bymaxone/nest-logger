@@ -70,8 +70,26 @@ import {
   ERROR_TEXT_FIELDS,
   type ErrorPartsHost
 } from './redact-error-parts.util'
+import {
+  LOG_KEY_FIELD,
+  REDACT_BUDGET_EXCEEDED,
+  REDACT_CIRCULAR,
+  REDACT_DEPTH_EXCEEDED,
+  REDACT_MAX_TRAVERSAL_DEPTH,
+  REDACT_MAX_VISITS
+} from './redact-limits.util'
+import type { RedactionFailedEnvelope } from './redact-limits.util'
 import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
+
+export {
+  REDACT_BUDGET_EXCEEDED,
+  REDACT_CIRCULAR,
+  REDACT_DEPTH_EXCEEDED,
+  REDACT_MAX_TRAVERSAL_DEPTH,
+  REDACT_MAX_VISITS
+} from './redact-limits.util'
+export type { RedactionFailedEnvelope } from './redact-limits.util'
 
 /** The keys of a message that hold headers as a flat `[name, value, ...]` array. */
 const RAW_HEADER_KEYS: ReadonlySet<string> = new Set(['rawheaders', 'rawtrailers'])
@@ -85,63 +103,6 @@ function censorHeaderArray(key: string, walked: unknown, rules: RedactRules): un
   return RAW_HEADER_KEYS.has(key.toLowerCase()) && Array.isArray(walked)
     ? censorRawHeaders(walked, rules.headerNames, rules.censor)
     : walked
-}
-
-/**
- * Traversal ceiling. Not a redaction ceiling in any realistic sense — real log
- * payloads are single-digit-deep, and the value it replaced was FOUR — but an
- * unbounded recursion over a pathological (or hostile) self-similar structure
- * would exhaust the call stack, and a logging concern must never crash its
- * caller. Past this depth a CONTAINER is dropped, NOT passed through: it is what
- * could hide an uninspected sensitive key, and failing closed is the only safe
- * direction for a redactor.
- *
- * A PRIMITIVE sitting exactly at the boundary is still emitted, and that is
- * deliberate rather than a gap in the ceiling: its key was compared against the
- * sensitive set by its parent — the last container the walk inspected — so it has
- * already been through the matcher. Dropping it would destroy legitimate leaf
- * data and buy no protection. The ceiling exists to bound RECURSION, and only a
- * container recurses.
- */
-export const REDACT_MAX_TRAVERSAL_DEPTH = 100
-
-/** Substituted for a value nested deeper than {@link REDACT_MAX_TRAVERSAL_DEPTH}. */
-export const REDACT_DEPTH_EXCEEDED = '[REDACTION_DEPTH_EXCEEDED]'
-
-/**
- * Containers one redaction call visits before it stops expanding. The walk expands an object once
- * per path that reaches it, so a graph that shares references grows as 2^depth in time and in
- * output; this bounds both. A call that reaches it fills every further container with
- * {@link REDACT_BUDGET_EXCEEDED}, keeps only the primitives beside them, and passes nothing through
- * unwalked. Measured, 200000 visits walk in about 100 to 150 ms.
- */
-export const REDACT_MAX_VISITS = 200_000
-
-/** Substituted for a container met after {@link REDACT_MAX_VISITS} containers were visited. */
-export const REDACT_BUDGET_EXCEEDED = '[REDACTION_BUDGET_EXCEEDED]'
-
-/**
- * Substituted for a reference already on the current traversal path.
- *
- * Matches the sentinel Pino's own stringifier emits for a cycle, so a circular
- * record serializes the same as it did before this engine existed. The ORIGINAL
- * reference is deliberately NOT returned in its place: a copied ancestor carries
- * censored values while the original still holds the raw ones, so handing the
- * original back would re-expose through the cycle exactly what was just redacted.
- */
-export const REDACT_CIRCULAR = '[Circular]'
-
-/**
- * Envelope substituted for a whole record whose traversal threw — a hostile
- * getter, a proxy that rejects reads, an exotic host object. Carries no data
- * from the record: if the record could not be walked, it could not be proven
- * safe.
- */
-export interface RedactionFailedEnvelope {
-  /** Always `true` — marks the record as unredactable. */
-  _redactionFailed: true
-  /** Reserved log key so aggregators can detect and alert on the condition. */
-  _logKey: typeof RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
 }
 
 /** A `toJSON` resolved off a value. */
@@ -321,7 +282,8 @@ function walk(
     // Under 'safe' the output is plain data, and `JSON.stringify` omits a symbol.
     if (typeof value === 'symbol' && rules.ownFields.safe) return undefined
     // The one place a string of the record is cut, whatever it sits in.
-    return typeof value === 'string' && rules.maxStringLength !== undefined
+    // What sits under a key that has a serializer is what the serializer reads, which is not cut.
+    return typeof value === 'string' && rules.maxStringLength !== undefined && !inSerialized
       ? cutText(value, false, rules.maxStringLength)
       : value
   }
@@ -543,6 +505,45 @@ function walkToJsonOutput(
   return walk(toJson.call(value), rules, depth + 1, ancestors, true, inSerialized)
 }
 
+/** What one walk of a property needs to decide the value written for it. */
+interface PropertyContext {
+  readonly rules: RedactRules
+  readonly depth: number
+  readonly ancestors: Set<object>
+  readonly honorToJson: boolean
+  readonly inSerialized: boolean
+  /** Whether the property belongs to an `Error` whose text fields are cut for the log. */
+  readonly scrubbed: boolean
+}
+
+/**
+ * The value written for one property: the censor for a sensitive name, the `logKey` of the record
+ * as it is, because it identifies the entry and `event.name` is derived from it, and otherwise the
+ * walked value.
+ *
+ * @param key - The property name.
+ * @param current - The value read for it.
+ * @param context - The state of the walk the property is in.
+ * @returns The value to write.
+ */
+function valueOf(key: string, current: unknown, context: PropertyContext): unknown {
+  const { rules, depth, ancestors, honorToJson, inSerialized, scrubbed } = context
+  if (rules.sensitive.has(key.toLowerCase())) return rules.censor
+  if (!honorToJson && key === LOG_KEY_FIELD && typeof current === 'string') return current
+  return censorHeaderArray(
+    key,
+    walk(
+      scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
+      rules,
+      depth + 1,
+      ancestors,
+      true,
+      inSerialized || (!honorToJson && rules.serializedKeys.has(key))
+    ),
+    rules
+  )
+}
+
 /**
  * Snapshot an object's own enumerable properties into a copy, censoring the sensitive ones and
  * walking the rest.
@@ -611,20 +612,7 @@ function walkProperties(
     defineOwn(
       copy,
       key,
-      rules.sensitive.has(key.toLowerCase())
-        ? rules.censor
-        : censorHeaderArray(
-            key,
-            walk(
-              scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
-              rules,
-              depth + 1,
-              ancestors,
-              true,
-              inSerialized || (!honorToJson && rules.serializedKeys.has(key))
-            ),
-            rules
-          )
+      valueOf(key, current, { rules, depth, ancestors, honorToJson, inSerialized, scrubbed })
     )
   }
   if (asData) {

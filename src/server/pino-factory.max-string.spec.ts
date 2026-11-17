@@ -6,6 +6,7 @@
  * Layer: server, tests.
  */
 import { applyDefaults } from './config/default-options'
+import { resolveNameRedactor } from './pino-factory'
 import { TEXT_TRUNCATED } from './utils/bounded-text.util'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
@@ -111,5 +112,70 @@ describe('maxStringLength through the logger', () => {
 
     const entry = capture.entries()[0] as { cause: { stack: string } }
     expect(entry.cause.stack.length).toBeGreaterThan(LIMIT * 5)
+  })
+})
+
+describe('maxStringLength through the logger: the key and what a serializer reads', () => {
+  it('keeps a logKey longer than the limit whole, and the event name derived from it', () => {
+    const { logger, capture } = loggerWith({ maxStringLength: LIMIT })
+    const key = 'PAYMENT_' + 'REFUND_'.repeat(20) + 'SUCCESS'
+
+    logger.info(key, 'message')
+
+    const entry = capture.entries()[0] as Record<string, unknown>
+    expect(entry['logKey']).toBe(key)
+    expect(entry['event.name']).toBe(key.toLowerCase().replace(/_/g, '.'))
+  })
+
+  it('keeps the text of an error-like object under err, which is not an Error', () => {
+    const { logger, capture } = loggerWith({ maxStringLength: LIMIT })
+    const stack = `Error: m\n${'    at f (x.ts:1:1)\n'.repeat(40)}`
+
+    logger.info('K', 'message', undefined, {
+      err: { name: 'Error', message: 'y'.repeat(200), stack }
+    })
+
+    const err = (capture.entries()[0] as { err: { message: string; stack: string } }).err
+    expect(err.message).toBe('y'.repeat(200))
+    expect(err.stack).toBe(stack)
+  })
+
+  it('hands a custom serializer its input whole', () => {
+    const { logger, capture } = loggerWith({
+      maxStringLength: LIMIT,
+      serializers: { order: (value: { notes: string }) => ({ notes: value.notes }) }
+    })
+
+    logger.info('K', 'message', undefined, { order: { notes: 'n'.repeat(500) } })
+
+    expect((capture.entries()[0] as { order: { notes: string } }).order.notes).toBe('n'.repeat(500))
+  })
+})
+
+describe('maxStringLength through the logger: what is written once', () => {
+  /*
+   * The service identity is a binding written when the logger is built, and a binding is not a
+   * string of a record: a long service name or version is written whole on every line.
+   */
+  it('writes a service name and version longer than the limit whole', () => {
+    const { logger, capture } = loggerWith({
+      maxStringLength: LIMIT,
+      service: { name: 'n'.repeat(LIMIT + 16), version: 'v'.repeat(LIMIT + 6) }
+    })
+
+    logger.info('K', 'message')
+
+    const service = (capture.entries()[0] as { service: { name: string; version: string } }).service
+    expect(service).toEqual({ name: 'n'.repeat(LIMIT + 16), version: 'v'.repeat(LIMIT + 6) })
+  })
+
+  it('does not cut the bindings a child logger is given', () => {
+    const redactBindings = resolveNameRedactor(
+      applyDefaults({ service: { name: 'svc', version: '1.0.0' }, maxStringLength: LIMIT })
+    )
+
+    expect(redactBindings({ context: 'C'.repeat(LIMIT + 20) }, true)).toEqual({
+      context: 'C'.repeat(LIMIT + 20)
+    })
   })
 })

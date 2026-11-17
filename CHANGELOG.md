@@ -31,8 +31,9 @@ heading here.
   megabyte. With `maxStringLength` set, a string longer than the limit is cut to that many characters
   (a cut never splits a surrogate pair) and ends with `…[truncated]`. It is an integer from 64 and it is
   off until set. It applies at any depth, after redaction, and not to a key, a value that is not text,
-  the log message, or anything inside an `Error` or a serializer's output, so no stack is lost to it. A
-  `userId` or `context` longer than the limit is cut like any other string.
+  the log message, the `logKey`, the bindings of a logger, or anything inside an `Error` or under a key
+  that has a serializer, so no stack is lost to it. A `userId` longer than the limit is cut like any
+  other string.
   `ResolvedBymaxLoggerModuleOptions` gains `maxStringLength: number | undefined`.
 
 ## [1.4.20] - 2026-11-17

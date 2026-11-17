@@ -184,3 +184,52 @@ describe('maxStringLength: what an Error keeps', () => {
     expect(record.note).toBe('n'.repeat(LIMIT) + TEXT_TRUNCATED)
   })
 })
+
+describe('maxStringLength: what identifies the entry and what a serializer reads', () => {
+  const long = 'x'.repeat(LIMIT + 10)
+  const longKey = 'K'.repeat(LIMIT + 20)
+
+  /*
+   * `event.name` is derived from the `logKey` of the record, and a key grouped on by an operator is
+   * an identifier: cutting it would split one event into as many names as it has lengths.
+   */
+  it('never cuts the logKey of the record, and cuts a sibling string', () => {
+    const record = redactorAt(LIMIT)({ logKey: longKey, note: long }, true) as {
+      logKey: string
+      note: string
+    }
+
+    expect(record.logKey).toBe(longKey)
+    expect(record.note).toBe('x'.repeat(LIMIT) + TEXT_TRUNCATED)
+  })
+
+  it('cuts a field named logKey that is not at the root of the record', () => {
+    const record = redactorAt(LIMIT)({ nested: { logKey: longKey } }, true) as {
+      nested: { logKey: string }
+    }
+
+    expect(record.nested.logKey).toBe('K'.repeat(LIMIT) + TEXT_TRUNCATED)
+  })
+
+  /*
+   * What sits under a key that has a serializer is what the serializer reads, and what it returns
+   * is bounded by `maxEntrySizeBytes`, so the text of an error-like object under `err`, which is
+   * not an `Error` instance, is not cut either.
+   */
+  it('leaves what sits under a serialized key whole, and cuts the strings around it', () => {
+    const redact = redactorAt(LIMIT, ['err', 'order'])
+
+    const record = redact(
+      {
+        err: { name: 'Error', message: long, stack: long },
+        order: { notes: [long] },
+        note: long
+      },
+      true
+    ) as { err: { message: string; stack: string }; order: { notes: string[] }; note: string }
+
+    expect(record.err).toEqual({ name: 'Error', message: long, stack: long })
+    expect(record.order.notes).toEqual([long])
+    expect(record.note).toBe('x'.repeat(LIMIT) + TEXT_TRUNCATED)
+  })
+})
