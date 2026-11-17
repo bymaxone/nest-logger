@@ -33,6 +33,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-17 — server: 40,668 B (39.71 KiB) real -> 39.74 KiB budget (40,694 B, +26 B over the
+//     measurement). An option that holds undefined or null is read as not set (`dropUnsetOptions`
+//     with its typed key lists), a list member that is undefined is refused with its type, and the
+//     factory holds a logger built from resolved options to the censor rule. It is +302 B over the
+//     40,366 B measured before it.
 //   - 2026-11-17 — server: 40,366 B (39.42 KiB) real -> 39.45 KiB budget (40,397 B, +31 B over the
 //     measurement). Refusals that name the type of the value they received and never quote it:
 //     `describeValue` is a switch over the types, and five refusals that printed `String(value)`
@@ -264,7 +269,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 39.45 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 39.74 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 
