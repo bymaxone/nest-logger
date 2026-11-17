@@ -69,7 +69,9 @@ async function runOne(
 }
 
 /** The raw lines the call wrote, to look at keys that a parse would merge. */
-async function runRaw(act: (logger: Logger) => void): Promise<string[]> {
+async function runRaw(
+  act: (logger: Logger, service: PinoLoggerService) => void
+): Promise<string[]> {
   const collector = new Collector()
 
   @Module({
@@ -85,7 +87,7 @@ async function runRaw(act: (logger: Logger) => void): Promise<string[]> {
   const app = await NestFactory.createApplicationContext(AppModule, { logger: false })
   app.useLogger(app.get(PinoLoggerService))
   const booted = collector.payloads.length
-  act(new Logger('LibContext'))
+  act(new Logger('LibContext'), app.get(PinoLoggerService))
   await app.close()
   return collector.payloads.slice(booted).filter((line) => !line.includes('"LOGGER_'))
 }
@@ -224,12 +226,13 @@ describe('Logger E2E — an object as the message', () => {
     expect(entry['time']).not.toBe(1)
   })
 
-  it('keeps a __proto__ key from a parsed object as data and does not change the entry', async () => {
+  it('drops a __proto__ key from a parsed object and does not change the entry', async () => {
     const parsed = JSON.parse('{"event":"LIB_EVENT","__proto__":{"polluted":true}}') as object
 
     const entry = await runOne((logger) => logger.warn(parsed))
 
     expect(entry).toMatchObject({ msg: 'LIB_EVENT' })
+    expect(Object.hasOwn(entry, '__proto__')).toBe(false)
     expect(entry).not.toHaveProperty('polluted')
     expect(({} as Record<string, unknown>)['polluted']).toBeUndefined()
   })
@@ -301,11 +304,22 @@ describe('Logger E2E — metadata cannot replace the structure of the entry', ()
     }
   )
 
-  it('writes event.name once, from the log key, whatever the object carries', async () => {
+  it('writes the event.name of an object message once when the call has no log key', async () => {
     const [raw] = await runRaw((logger) =>
-      logger.warn({ event: 'LIB_EVENT', 'event.name': 'forged' })
+      logger.warn({ event: 'LIB_EVENT', 'event.name': 'from-object' })
     )
 
     expect(raw?.match(/"event\.name"/g) ?? []).toHaveLength(1)
+    expect(raw).toContain('"event.name":"from-object"')
+  })
+
+  it('derives event.name from the log key of a structured call and not from the metadata', async () => {
+    const [raw] = await runRaw((_logger, service) =>
+      service.info('LIB_EVENT', 'text', undefined, { 'event.name': 'forged' })
+    )
+
+    expect(raw?.match(/"event\.name"/g) ?? []).toHaveLength(1)
+    expect(raw).toContain('"event.name":"lib.event"')
+    expect(raw).not.toContain('forged')
   })
 })

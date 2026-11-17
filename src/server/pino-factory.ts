@@ -607,7 +607,15 @@ function mergeMixinSafely(mergeObject: object, mixinObject: object): object {
     // structured call names the acting user as an argument, which must win over the ambient one.
     for (const [key, value] of Object.entries(mixinObject)) {
       if (value === undefined) continue
-      if (key === EXPLICIT_USER_KEY && Reflect.get(merged, key) !== undefined) continue
+      // An own value only: a parsed object's `__proto__` key swaps the prototype of `merged`, and
+      // what it carries is not the call's own `userId`.
+      if (
+        key === EXPLICIT_USER_KEY &&
+        Object.hasOwn(merged, key) &&
+        Reflect.get(merged, key) !== undefined
+      ) {
+        continue
+      }
       Reflect.set(merged, key, value)
     }
     return merged

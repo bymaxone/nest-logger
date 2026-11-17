@@ -61,6 +61,19 @@ describe('the merge of the mixin result with the caller object', () => {
     expect(entry).toMatchObject({ requestId: 'req-real', userId: 'u_explicit' })
   })
 
+  /*
+   * An own `__proto__` key of a parsed object swaps the prototype of the merge target, and a
+   * `userId` on that prototype is not the call's own value: the context's userId stays.
+   */
+  it('keeps the userId of the request context when the object carries a __proto__ key', () => {
+    const { logContext, log } = createPipeline()
+    const parsed = JSON.parse('{"__proto__":{"userId":"forged"},"attempts":3}') as object
+
+    const entry = logContext.run({ userId: 'u_als' }, () => log(parsed))
+
+    expect(entry).toMatchObject({ userId: 'u_als', attempts: 3 })
+  })
+
   it('writes the userId of the request context when the call names none', () => {
     const { logContext, log } = createPipeline()
 
