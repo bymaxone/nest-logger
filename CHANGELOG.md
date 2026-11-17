@@ -34,7 +34,7 @@ heading here.
   writes are added after the cut, so the limit does not apply to them. An `Error` placed in the metadata under any
   other key is data of the record when the cut runs, and its message and stack are cut like any
   other string. The names left whole are matched on the root key, so a key of your own named like a
-  serializer key is left whole too, and `maxEntrySizeBytes` bounds it. A `userId` longer than the
+  serializer key is left whole too. A `userId` longer than the
   limit is cut like any other string.
 
 ### Changed

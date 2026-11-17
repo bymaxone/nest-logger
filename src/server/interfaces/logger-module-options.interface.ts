@@ -297,10 +297,9 @@ export interface BymaxLoggerModuleOptions {
    * name and the `exception.*` and `error.type` fields the library writes are added after the cut,
    * so the limit does not apply to them, and a key of your own with one of those names is cut like
    * any other. The names left whole are matched on the root key, so a key of your own named like a
-   * serializer key is left whole too, and `maxEntrySizeBytes` bounds it. An `Error` placed in the
-   * metadata under any other key is data of the record when the cut runs, and its message and
-   * stack are cut like any other string. A string the caller supplies, such as a `userId` longer
-   * than the limit, is cut like any other.
+   * serializer key is left whole too. An `Error` placed in the metadata under any other key is
+   * data of the record when the cut runs, and its message and stack are cut like any other string.
+   * A string the caller supplies, such as a `userId` longer than the limit, is cut like any other.
    */
   maxStringLength?: number
   /**
