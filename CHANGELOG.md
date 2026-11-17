@@ -26,6 +26,18 @@ heading here.
   a byte ceiling. `forRoot` now rejects it with `options.maxEntrySizeBytes must be an integer`, as it
   does for every other size and timer option. **Apply:** pass a whole number of bytes.
 
+### Changed
+
+- **`PrettyDevDestination.onInit` is split into three private methods.** `refuseInProduction`,
+  `buildTransform` and `initFailure` now appear in the class declaration as `private` members.
+  Behavior is unchanged.
+
+#### Apply to a derived backend
+
+Nothing is required. A subclass of `PrettyDevDestination` that declares a member named
+`refuseInProduction`, `buildTransform` or `initFailure` no longer compiles against the new
+declaration; rename it.
+
 ## [1.4.20] - 2026-11-17
 
 ### Fixed
