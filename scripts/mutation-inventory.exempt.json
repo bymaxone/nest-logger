@@ -18,5 +18,17 @@
   {
     "file": "src/runtime-socket-guard.spec.ts",
     "reason": "Loads the Jest resolver and setup of the repository's own guard and imports nothing from src/, so it judges no mutant."
+  },
+  {
+    "file": "src/check-function-length.spec.ts",
+    "reason": "Runs scripts/check-function-length.mjs as a child process on fixture directories and imports nothing from src/, so it judges no mutant."
+  },
+  {
+    "file": "src/check-function-length.baseline.spec.ts",
+    "reason": "Runs scripts/check-function-length.mjs as a child process on fixture directories and imports nothing from src/, so it judges no mutant."
+  },
+  {
+    "file": "src/check-function-length.key.spec.ts",
+    "reason": "Runs scripts/check-function-length.mjs as a child process on fixture directories and imports nothing from src/, so it judges no mutant."
   }
 ]

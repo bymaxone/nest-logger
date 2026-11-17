@@ -39,8 +39,8 @@ const MIN_PURPOSE_LENGTH = 20
 /** A `Layer: x` sentence or an `@layer x` tag; the first word after it names the layer. */
 const LAYER_MARKER = /(?:\bLayer:|@layer)\s+([A-Za-z0-9-]+)/i
 
-/** The layers a spec may declare: the package's two subpaths, its end-to-end tests, their support files, and the repository's own scripts and checks. */
-export const LAYERS = ['server', 'shared', 'e2e', 'test', 'scripts', 'repository']
+/** The layers a spec may declare: the package's two subpaths, its end-to-end tests, their support files, the repository's own scripts and checks, and `tests`, which the family gate templates use for a spec of a script. */
+export const LAYERS = ['server', 'shared', 'e2e', 'test', 'tests', 'scripts', 'repository']
 
 /** Tracked files named like a spec: `*.spec.ts` and the end-to-end `*-spec.ts`. */
 const SPEC_FILE = /(?:\.spec\.ts|-spec\.ts)$/

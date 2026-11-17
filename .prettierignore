@@ -7,3 +7,11 @@ pnpm-lock.yaml
 dist/
 coverage/
 reports/
+
+# Copied byte-identical from the family template (bymaxone/.github check-function-length), which is
+# formatted for a wider line than this repository's printWidth; a reformat would make the copy differ.
+scripts/check-function-length.mjs
+scripts/function-length-key.mjs
+src/check-function-length.spec.ts
+src/check-function-length.baseline.spec.ts
+src/check-function-length.key.spec.ts

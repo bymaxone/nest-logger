@@ -68,7 +68,7 @@ describe('headerProblem', () => {
   })
 
   it('reads every layer the repository uses', () => {
-    for (const layer of ['server', 'shared', 'e2e', 'test', 'repository', 'scripts']) {
+    for (const layer of ['server', 'shared', 'e2e', 'test', 'tests', 'repository', 'scripts']) {
       assert.equal(
         headerProblem(
           `/**\n * Specs of the widget and what it accepts.\n * @layer ${layer}\n */\n`

@@ -112,6 +112,13 @@ jobs:
           else
             pnpm check:file-length
           fi
+      - name: Functions and test bodies stay within the length limit
+        run: |
+          if [ -n "$COMPARE_BASE" ]; then
+            pnpm check:function-length --base "$COMPARE_BASE"
+          else
+            pnpm check:function-length
+          fi
       - name: Spec files open with a purpose and layer header
         run: |
           if [ -n "$COMPARE_BASE" ]; then
