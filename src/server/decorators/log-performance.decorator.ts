@@ -72,7 +72,7 @@ function emitTimingLog(
  *   }
  */
 export function LogPerformance(thresholdMs: number = DEFAULT_THRESHOLD_MS): MethodDecorator {
-  if (typeof thresholdMs !== 'number' || !Number.isFinite(thresholdMs) || thresholdMs < 0) {
+  if (!Number.isFinite(thresholdMs) || thresholdMs < 0) {
     throw new TypeError(
       '[LogPerformance] thresholdMs must be a finite number of milliseconds, zero or more'
     )
