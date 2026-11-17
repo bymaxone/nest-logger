@@ -32,7 +32,7 @@ jobs: 7 })` through `app.useLogger(app.get(PinoLoggerService))` wrote `msg: "[ob
   or `trace_id`, `span_id` and `trace_flags` with `fieldFormat: 'snake_case'`) carried by an
   object message, by the metadata of a structured call or by the raw Pino logger replaced the
   value the logger had written, so a line could be attributed to another request, tenant or trace.
-  The logger's value now wins; a key the logger does not write, including a `requestId` outside any
+  The logger's value now wins, except `userId`, which a structured call names as an argument and which keeps winning over the one of the request context; a key the logger does not write, including a `requestId` outside any
   request, is kept as the payload has it. **Apply:** nothing is required; code that set one of
   these keys on purpose inside a request to override the context no longer gets that, so set it in
   the request context instead (`LogContextService.run`).

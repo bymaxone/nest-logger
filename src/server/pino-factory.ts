@@ -575,6 +575,9 @@ function buildSerializers(
   }
 }
 
+/** The one key a call site sets explicitly that the request context also writes. */
+const EXPLICIT_USER_KEY = 'userId'
+
 /**
  * Pino's `mixinMergeStrategy`: merge the caller's object with the mixin result without letting a
  * throwing getter crash the log call, and without letting the caller's object replace a key the
@@ -600,9 +603,12 @@ function mergeMixinSafely(mergeObject: object, mixinObject: object): object {
     const merged = Object.assign({}, mergeObject)
     // The mixin's keys are the correlation of the entry (the request, the tenant, the trace), so a
     // payload that carries the same key does not replace them. A key the mixin leaves undefined is
-    // not written, so it does not erase the payload's own value.
+    // not written, so it does not erase the payload's own value. `userId` is the exception: a
+    // structured call names the acting user as an argument, which must win over the ambient one.
     for (const [key, value] of Object.entries(mixinObject)) {
-      if (value !== undefined) Reflect.set(merged, key, value)
+      if (value === undefined) continue
+      if (key === EXPLICIT_USER_KEY && Reflect.get(merged, key) !== undefined) continue
+      Reflect.set(merged, key, value)
     }
     return merged
   } catch {

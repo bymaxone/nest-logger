@@ -51,6 +51,24 @@ describe('the merge of the mixin result with the caller object', () => {
     expect(entry).toMatchObject({ requestId: 'req-real', tenantId: 'tenant-real', attempts: 3 })
   })
 
+  it('keeps the userId a call names over the one of the request context', () => {
+    const { logContext, log } = createPipeline()
+
+    const entry = logContext.run({ requestId: 'req-real', userId: 'u_als' }, () =>
+      log({ userId: 'u_explicit' })
+    )
+
+    expect(entry).toMatchObject({ requestId: 'req-real', userId: 'u_explicit' })
+  })
+
+  it('writes the userId of the request context when the call names none', () => {
+    const { logContext, log } = createPipeline()
+
+    const entry = logContext.run({ userId: 'u_als' }, () => log({ attempts: 3 }))
+
+    expect(entry).toMatchObject({ userId: 'u_als' })
+  })
+
   it('keeps the object value for a key the context holds as undefined', () => {
     const { logContext, log } = createPipeline()
 
