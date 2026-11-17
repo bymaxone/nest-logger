@@ -33,6 +33,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-17 — server: 40,271 B (39.33 KiB) real -> 39.36 KiB budget (40,304 B, +33 B over the
+//     measurement). The refusal of a `redactCensor` longer than `maxStringLength` is +66 B over the
+//     40,205 B measured before it: one condition and its message.
 //   - 2026-11-17 — server: 40,205 B (39.26 KiB) real -> 39.3 KiB budget (40,243 B, +38 B over the
 //     measurement). `maxStringLength`, its validation and the `cutStrings` pass with the wiring
 //     that runs it are +320 B over the 39,885 B of the previous budget.
@@ -257,7 +260,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 39.3 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 39.36 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 

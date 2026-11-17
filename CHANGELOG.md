@@ -35,7 +35,8 @@ heading here.
   other key is data of the record when the cut runs, and its message and stack are cut like any
   other string. The names left whole are matched on the root key, so a key of your own named like a
   serializer key is left whole too. A `userId` longer than the
-  limit is cut like any other string.
+  limit is cut like any other string. A `redactCensor` longer than the limit is refused at startup,
+  so a censor is never cut.
 
 ### Changed
 

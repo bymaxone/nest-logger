@@ -101,7 +101,11 @@ function validateQueue(options: BymaxLoggerModuleOptions): void {
   }
 }
 
-/** `maxStringLength`, when given, must be an integer from {@link MIN_STRING_LENGTH_LIMIT} up. */
+/**
+ * `maxStringLength`, when given, must be an integer from {@link MIN_STRING_LENGTH_LIMIT} up, and
+ * the `redactCensor` may not be longer than it: the cut would otherwise truncate the censor, the
+ * text a consumer looks for in place of a secret.
+ */
 function validateStringLimit(options: BymaxLoggerModuleOptions): void {
   const limit: unknown = options.maxStringLength
   if (limit === undefined) return
@@ -115,6 +119,13 @@ function validateStringLimit(options: BymaxLoggerModuleOptions): void {
       'maxStringLength',
       `must be an integer from ${String(MIN_STRING_LENGTH_LIMIT)} to ${String(MAX_STRING_LENGTH_LIMIT)}`,
       limit
+    )
+  }
+  const censor: unknown = options.redactCensor
+  if (typeof censor === 'string' && censor.length > limit) {
+    reject(
+      'redactCensor',
+      `must be at most ${String(limit)} characters when maxStringLength is set`
     )
   }
 }

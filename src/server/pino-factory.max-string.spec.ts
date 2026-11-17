@@ -187,12 +187,11 @@ describe('maxStringLength through the logger: what is written once', () => {
 
 describe('maxStringLength through the logger: the configured censor', () => {
   /*
-   * The censor is what the operator chose to show in place of a secret, and a consumer recognizes
-   * it by its exact text, so a censor longer than the limit is written whole: cut, it would no
-   * longer match, and the marker would read as part of it.
+   * The options refuse a censor longer than the limit, so the longest one is exactly the limit, and
+   * it is written whole: a consumer recognizes the censor by its exact text.
    */
-  it('writes a censor longer than the limit whole', () => {
-    const censor = 'R'.repeat(LIMIT + 36)
+  it('writes a censor of exactly the limit whole', () => {
+    const censor = 'R'.repeat(LIMIT)
     const { logger, capture } = loggerWith({ maxStringLength: LIMIT, redactCensor: censor })
 
     logger.info('K', 'message', undefined, { password: 'secret-value', note: long })

@@ -136,6 +136,7 @@ describe('validateOptions: scalars and customization hooks', () => {
     ['isGlobal', 'yes'],
     ['shouldDisableDefaultRedact', 'false'],
     ['redactCensor', 42],
+    ['redactCensor', () => '[X]'],
     ['timestamp', 'now'],
     ['serializers', []],
     ['serializers', null],

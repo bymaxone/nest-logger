@@ -11,7 +11,6 @@ import { cutStrings } from './cut-strings.util'
 
 const LIMIT = 64
 const NONE: ReadonlySet<string> = new Set()
-const CENSOR = '[REDACTED]'
 const cutOf = (length: number): string => 'x'.repeat(length)
 
 describe('cutStrings', () => {
@@ -26,7 +25,7 @@ describe('cutStrings', () => {
       ['one over the limit', LIMIT + 1, true],
       ['far over the limit', LIMIT * 100, true]
     ])('handles a string that is %s', (_label, length, isCut) => {
-      const out = cutStrings({ note: cutOf(length) }, LIMIT, NONE, CENSOR)
+      const out = cutStrings({ note: cutOf(length) }, LIMIT, NONE)
 
       expect(out['note']).toBe(isCut ? cutOf(LIMIT) + TEXT_TRUNCATED : cutOf(length))
     })
@@ -34,7 +33,7 @@ describe('cutStrings', () => {
     it('never splits a surrogate pair at the boundary', () => {
       const text = 'x'.repeat(LIMIT - 1) + '😀' + 'tail'
 
-      const out = cutStrings({ note: text }, LIMIT, NONE, CENSOR)
+      const out = cutStrings({ note: text }, LIMIT, NONE)
 
       expect(out['note']).toBe('x'.repeat(LIMIT - 1) + TEXT_TRUNCATED)
     })
@@ -44,7 +43,7 @@ describe('cutStrings', () => {
     it('cuts a string inside an object and an array at any depth', () => {
       const long = cutOf(LIMIT + 10)
 
-      const out = cutStrings({ a: { b: [{ c: long }, long] } }, LIMIT, NONE, CENSOR)
+      const out = cutStrings({ a: { b: [{ c: long }, long] } }, LIMIT, NONE)
 
       expect(out).toEqual({
         a: { b: [{ c: cutOf(LIMIT) + TEXT_TRUNCATED }, cutOf(LIMIT) + TEXT_TRUNCATED] }
@@ -57,8 +56,7 @@ describe('cutStrings', () => {
       const out = cutStrings(
         { [longKey]: 1, flag: true, nothing: null, missing: undefined },
         LIMIT,
-        NONE,
-        CENSOR
+        NONE
       )
 
       expect(out).toEqual({ [longKey]: 1, flag: true, nothing: null, missing: undefined })
@@ -77,7 +75,7 @@ describe('cutStrings', () => {
     ])('returns %s as the same object', (_label, make) => {
       const instance = make()
 
-      const out = cutStrings({ held: instance }, LIMIT, NONE, CENSOR)
+      const out = cutStrings({ held: instance }, LIMIT, NONE)
 
       expect(out['held']).toBe(instance)
     })
@@ -87,7 +85,7 @@ describe('cutStrings', () => {
         note: cutOf(LIMIT + 10)
       })
 
-      const out = cutStrings({ bare }, LIMIT, NONE, CENSOR)
+      const out = cutStrings({ bare }, LIMIT, NONE)
 
       expect(out['bare']).toEqual({ note: cutOf(LIMIT) + TEXT_TRUNCATED })
     })
@@ -102,7 +100,7 @@ describe('cutStrings', () => {
         unknown
       >
 
-      const out = cutStrings(record, LIMIT, NONE, CENSOR)
+      const out = cutStrings(record, LIMIT, NONE)
 
       expect(Object.getPrototypeOf(out)).toBe(Object.prototype)
       expect(Object.keys(out)).toEqual(['__proto__'])
@@ -116,8 +114,7 @@ describe('cutStrings', () => {
       const out = cutStrings(
         { logKey: long, err: { stack: long }, note: long },
         LIMIT,
-        new Set(['logKey', 'err']),
-        CENSOR
+        new Set(['logKey', 'err'])
       )
 
       expect(out).toEqual({
@@ -128,45 +125,12 @@ describe('cutStrings', () => {
     })
   })
 
-  describe('the censor', () => {
-    const longCensor = 'R'.repeat(LIMIT + 36)
-
-    /*
-     * The censor is the replacement the walk wrote for a covered value. An operator can make it
-     * longer than the limit, and a cut censor would no longer match the text a consumer looks for.
-     */
-    it('keeps a string equal to the censor whole at any depth, however long it is', () => {
-      const out = cutStrings(
-        { password: longCensor, nested: { list: [longCensor, 'ok'] } },
-        LIMIT,
-        NONE,
-        longCensor
-      )
-
-      expect(out).toEqual({ password: longCensor, nested: { list: [longCensor, 'ok'] } })
-    })
-
-    it('still cuts a string that only starts with or contains the censor', () => {
-      const out = cutStrings(
-        { starts: longCensor + 'tail', contains: 'head' + longCensor },
-        LIMIT,
-        NONE,
-        longCensor
-      )
-
-      expect(out).toEqual({
-        starts: longCensor.slice(0, LIMIT) + TEXT_TRUNCATED,
-        contains: ('head' + longCensor).slice(0, LIMIT) + TEXT_TRUNCATED
-      })
-    })
-  })
-
   describe('the input', () => {
     it('returns a new record and leaves the one it was given unchanged', () => {
       const long = cutOf(LIMIT + 10)
       const record = { note: long, nested: { note: long } }
 
-      const out = cutStrings(record, LIMIT, NONE, CENSOR)
+      const out = cutStrings(record, LIMIT, NONE)
 
       expect(out).not.toBe(record)
       expect(record).toEqual({ note: long, nested: { note: long } })

@@ -300,6 +300,7 @@ export interface BymaxLoggerModuleOptions {
    * serializer key is left whole too. An `Error` placed in the metadata under any other key is
    * data of the record when the cut runs, and its message and stack are cut like any other string.
    * A string the caller supplies, such as a `userId` longer than the limit, is cut like any other.
+   * A `redactCensor` longer than the limit is refused at startup, so a censor is never cut.
    */
   maxStringLength?: number
   /**

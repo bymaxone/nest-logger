@@ -20,16 +20,13 @@ function isPlainRecord(node: unknown): node is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null
 }
 
-/**
- * `node` with every string in it cut at `limit`, except the censor; what is not text, an array or
- * plain data is kept.
- */
-function cutNode(node: unknown, limit: number, censor: string): unknown {
-  if (typeof node === 'string') return node === censor ? node : cutText(node, false, limit)
-  if (Array.isArray(node)) return node.map((child: unknown) => cutNode(child, limit, censor))
+/** `node` with every string in it cut at `limit`; what is not text, an array or plain data is kept. */
+function cutNode(node: unknown, limit: number): unknown {
+  if (typeof node === 'string') return cutText(node, false, limit)
+  if (Array.isArray(node)) return node.map((child: unknown) => cutNode(child, limit))
   if (isPlainRecord(node)) {
     return Object.fromEntries(
-      Object.entries(node).map(([key, child]) => [key, cutNode(child, limit, censor)])
+      Object.entries(node).map(([key, child]) => [key, cutNode(child, limit)])
     )
   }
   return node
@@ -40,27 +37,23 @@ function cutNode(node: unknown, limit: number, censor: string): unknown {
  *
  * A cut string keeps its first `limit` characters, never splitting a surrogate pair, and ends
  * with the marker the message cap uses. A key is never cut, and neither is a value that is not
- * text. A string equal to the censor is the replacement the walk wrote for a covered value, so it
- * is kept whole however long the operator made it. A root key in `exempt` is returned as it is and
- * is not entered.
+ * text. A root key in `exempt` is returned as it is and is not entered.
  *
  * @internal NOT re-exported by the package barrel.
  * @param record - The record the redaction walk wrote.
  * @param limit - The most characters a string keeps.
  * @param exempt - Root keys whose value is left whole.
- * @param censor - The replacement text of a redacted value, which is never cut.
  * @returns A new record; `record` is not changed.
  */
 export function cutStrings(
   record: Readonly<Record<string, unknown>>,
   limit: number,
-  exempt: ReadonlySet<string>,
-  censor: string
+  exempt: ReadonlySet<string>
 ): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(record).map(([key, child]) => [
       key,
-      exempt.has(key) ? child : cutNode(child, limit, censor)
+      exempt.has(key) ? child : cutNode(child, limit)
     ])
   )
 }

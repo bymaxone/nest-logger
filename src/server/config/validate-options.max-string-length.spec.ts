@@ -58,3 +58,46 @@ describe('validateOptions: maxStringLength', () => {
     )
   })
 })
+
+describe('validateOptions: maxStringLength and redactCensor', () => {
+  const withCensor = (limit: number | undefined, censor: string): BymaxLoggerModuleOptions =>
+    ({ ...base, maxStringLength: limit, redactCensor: censor }) as BymaxLoggerModuleOptions
+
+  /** The message `validateOptions` throws for `options`, or `undefined` when it accepts them. */
+  const refusalOf = (options: BymaxLoggerModuleOptions): string | undefined => {
+    try {
+      validateOptions(options)
+    } catch (error) {
+      return (error as Error).message
+    }
+    return undefined
+  }
+
+  /*
+   * The cut leaves a string of at most the limit whole, and the censor is the text a consumer looks
+   * for in place of a secret, so a censor longer than the limit would be cut and no longer match.
+   * It is refused where the options meet, at bootstrap, and not left to the cut.
+   */
+  it('refuses a redactCensor longer than maxStringLength, naming both options', () => {
+    expect(refusalOf(withCensor(64, 'R'.repeat(65)))).toBe(
+      '[BymaxLoggerModule] options.redactCensor must be at most 64 characters when maxStringLength is set'
+    )
+  })
+
+  it.each([
+    ['one under the limit', 63],
+    ['exactly the limit', 64]
+  ])('accepts a redactCensor that is %s', (_label, length) => {
+    expect(refusalOf(withCensor(64, 'R'.repeat(length)))).toBeUndefined()
+  })
+
+  it('accepts a redactCensor of any length while maxStringLength is not set', () => {
+    expect(refusalOf(withCensor(undefined, 'R'.repeat(5000)))).toBeUndefined()
+  })
+
+  it('does not echo the censor in the message', () => {
+    const censor = 'SENTINEL-' + 'R'.repeat(64)
+
+    expect(refusalOf(withCensor(64, censor))).not.toContain('SENTINEL')
+  })
+})

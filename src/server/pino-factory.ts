@@ -666,9 +666,7 @@ function buildRecordFormatter(
     // The cut follows every censor, so it can never precede a rule that needs the whole string,
     // and it precedes the fields the library derives, which are written whole after it.
     const bounded =
-      maxStringLength === undefined
-        ? redacted
-        : cutStrings(redacted, maxStringLength, wholeRoots, options.redactCensor)
+      maxStringLength === undefined ? redacted : cutStrings(redacted, maxStringLength, wholeRoots)
     return withSemconvException(withEventName(bounded, options.eventNameField), options.errorFormat)
   }
 }
