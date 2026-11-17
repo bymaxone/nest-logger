@@ -49,14 +49,21 @@ const OWNED_PAYLOAD_KEYS: readonly string[] = ['logKey', 'userId', 'context']
 
 /**
  * The keys Pino writes itself, ahead of the payload: the level, the time, the message and the
- * resource of the service. A payload that repeats one is written as a SECOND key of the same name,
+ * resource of the service and its deployment. A payload that repeats one is written as a SECOND key of the same name,
  * and a reader that keeps the last one of a repeated key sees the caller's value, so a caller could
- * forge the level or the service of its own entry. The flat resource format writes `service.*`.
+ * forge the level or the service of its own entry. The flat resource format writes `service.*` and
+ * `deployment.environment.name`.
  */
-const ENTRY_STRUCTURE_KEYS: ReadonlySet<string> = new Set(['level', 'time', 'msg', 'service'])
+const ENTRY_STRUCTURE_KEYS: ReadonlySet<string> = new Set([
+  'level',
+  'time',
+  'msg',
+  'service',
+  'deployment'
+])
 
 const isEntryStructureKey = (key: string): boolean =>
-  ENTRY_STRUCTURE_KEYS.has(key) || key.startsWith('service.')
+  ENTRY_STRUCTURE_KEYS.has(key) || key.startsWith('service.') || key.startsWith('deployment.')
 
 /**
  * Copy `metadata` without the keys the structured payload owns.
@@ -152,6 +159,29 @@ function objectMessageText(fields: Record<string, unknown>): ObjectMessageText |
     }
   }
   return undefined
+}
+
+/** A message read as the fields of an entry, with its text and the member the text came from. */
+interface ObjectMessage {
+  readonly fields: Record<string, unknown> | undefined
+  readonly text: ObjectMessageText | undefined
+  readonly payload: Record<string, unknown>
+}
+
+/**
+ * Reads a plain-object `message` as the fields of the entry: the owned-key guard of `metadata`
+ * applies, and the member the text came from is left out of the fields so it is written once.
+ * Anything that is not a plain object has no fields and an empty payload.
+ *
+ * @param message - The value the caller passed as the message.
+ * @returns The fields, the text, and the payload that carries them.
+ */
+function readObjectMessage(message: unknown): ObjectMessage {
+  const fields = isPlainRecord(message) ? message : undefined
+  const text = fields === undefined ? undefined : objectMessageText(fields)
+  const omit = text?.key === 'message' ? 'message' : undefined
+  const payload = fields === undefined ? {} : withoutOwnedKeys(fields, omit)
+  return { fields, text, payload }
 }
 
 /**
@@ -319,12 +349,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const stack = typeof optionalParams[0] === 'string' ? optionalParams[0] : undefined
     const context = typeof optionalParams[1] === 'string' ? optionalParams[1] : this.context
     // A plain-object message is the entry's fields, as in `emitNestStyle`.
-    const fields = isPlainRecord(message) ? message : undefined
-    const text = fields === undefined ? undefined : objectMessageText(fields)
-    const payload: Record<string, unknown> =
-      fields === undefined
-        ? {}
-        : withoutOwnedKeys(fields, text?.key === 'message' ? 'message' : undefined)
+    const { fields, text, payload } = readObjectMessage(message)
     assignIfDefined(payload, 'context', context)
     assignIfDefined(payload, 'stack', stack === undefined ? stack : cutText(stack))
     // An `Error` in the tail is attached as `err`, the same field the
@@ -548,12 +573,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     // A plain object is the entry's fields, not text: `String(message)` would reduce it to
     // "[object Object]" and lose every key. The fields go through the same owned-key guard as
     // `metadata`, and then through the redaction and string-limit pipeline like any other payload.
-    const fields = isPlainRecord(message) ? message : undefined
-    const text = fields === undefined ? undefined : objectMessageText(fields)
-    const payload: Record<string, unknown> =
-      fields === undefined
-        ? {}
-        : withoutOwnedKeys(fields, text?.key === 'message' ? 'message' : undefined)
+    const { fields, text, payload } = readObjectMessage(message)
     assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
     // Every level except `error` routes through here, so before this all of them
     // lost an `Error` in BOTH positions — measured at eleven of the twelve

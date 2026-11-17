@@ -68,6 +68,28 @@ async function runOne(
   return entry
 }
 
+/** The raw lines the call wrote, to look at keys that a parse would merge. */
+async function runRaw(act: (logger: Logger) => void): Promise<string[]> {
+  const collector = new Collector()
+
+  @Module({
+    imports: [
+      BymaxLoggerModule.forRoot({
+        service: { name: 'e2e-object-message', version: '0.0.0' },
+        destinations: [collector]
+      })
+    ]
+  })
+  class AppModule {}
+
+  const app = await NestFactory.createApplicationContext(AppModule, { logger: false })
+  app.useLogger(app.get(PinoLoggerService))
+  const booted = collector.payloads.length
+  act(new Logger('LibContext'))
+  await app.close()
+  return collector.payloads.slice(booted).filter((line) => !line.includes('"LOGGER_'))
+}
+
 describe('Logger E2E — an object as the message', () => {
   it('writes the keys of the object as fields and the event as the entry text', async () => {
     const entry = await runOne((logger) =>
@@ -241,14 +263,49 @@ describe('Logger E2E — metadata cannot replace the structure of the entry', ()
             msg: 'forged',
             service: { name: 'forged' },
             'service.name': 'forged',
+            deployment: { environment: { name: 'forged' } },
+            'deployment.environment.name': 'forged',
             kept: 'yes'
           }),
-        { resourceFormat }
+        {
+          resourceFormat,
+          service: { name: 'e2e-object-message', version: '0.0.0', environment: 'prod' }
+        }
       )
 
       expect(entry).toMatchObject({ level: 'info', msg: 'real text', kept: 'yes' })
       expect(entry['time']).not.toBe(1)
       expect(JSON.stringify(entry)).not.toContain('forged')
+      expect(JSON.stringify(entry)).toContain('prod')
     }
   )
+
+  it.each(['nested', 'flat'] as const)(
+    'drops the deployment of an object message too (%s)',
+    async (resourceFormat) => {
+      const entry = await runOne(
+        (logger) =>
+          logger.warn({
+            event: 'LIB_EVENT',
+            deployment: { environment: { name: 'forged' } },
+            'deployment.environment.name': 'forged'
+          }),
+        {
+          resourceFormat,
+          service: { name: 'e2e-object-message', version: '0.0.0', environment: 'prod' }
+        }
+      )
+
+      expect(JSON.stringify(entry)).not.toContain('forged')
+      expect(JSON.stringify(entry)).toContain('prod')
+    }
+  )
+
+  it('writes event.name once, from the log key, whatever the object carries', async () => {
+    const [raw] = await runRaw((logger) =>
+      logger.warn({ event: 'LIB_EVENT', 'event.name': 'forged' })
+    )
+
+    expect(raw?.match(/"event\.name"/g) ?? []).toHaveLength(1)
+  })
 })

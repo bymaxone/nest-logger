@@ -33,10 +33,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-17 — server: 40,898 B (39.94 KiB) real -> 39.97 KiB budget (40,929 B, +31 B over the
+//   - 2026-11-17 — server: 40,930 B (39.97 KiB) real -> 39.99 KiB budget (40,950 B, +20 B over the
 //     measurement). A plain object passed as the message of a Nest-style call is written as the
 //     fields of the entry (`objectMessageText`, the shared `isPlainRecord`), and the keys the logger
-//     writes itself are dropped from metadata. It is +230 B over the 40,668 B measured before it.
+//     writes itself (level, time, msg, service, deployment) are dropped from metadata. It is +262 B over
+//     the 40,668 B measured before it.
 //   - 2026-11-17 — server: 40,668 B (39.71 KiB) real -> 39.74 KiB budget (40,694 B, +26 B over the
 //     measurement). An option that holds undefined or null is read as not set (`dropUnsetOptions`
 //     with its typed key lists), a list member that is undefined is refused with its type, and the
@@ -273,7 +274,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 39.97 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 39.99 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 
