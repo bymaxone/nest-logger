@@ -577,7 +577,8 @@ function buildSerializers(
 
 /**
  * Pino's `mixinMergeStrategy`: merge the caller's object with the mixin result without letting a
- * throwing getter crash the log call.
+ * throwing getter crash the log call, and without letting the caller's object replace a key the
+ * mixin writes.
  *
  * @param mergeObject - The caller's object.
  * @param mixinObject - The mixin result.
@@ -596,7 +597,14 @@ function mergeMixinSafely(mergeObject: object, mixinObject: object): object {
     // would then emit that prefix, contradicting the sentence it is written
     // under. A disposable target keeps the partial writes in the value that
     // is about to be discarded.
-    return Object.assign({}, mixinObject, mergeObject)
+    const merged = Object.assign({}, mergeObject)
+    // The mixin's keys are the correlation of the entry (the request, the tenant, the trace), so a
+    // payload that carries the same key does not replace them. A key the mixin leaves undefined is
+    // not written, so it does not erase the payload's own value.
+    for (const [key, value] of Object.entries(mixinObject)) {
+      if (value !== undefined) Reflect.set(merged, key, value)
+    }
+    return merged
   } catch {
     // The caller's object cannot be read, so it cannot be proven safe and is
     // dropped WHOLE — not up to the property that threw. The mixin's own

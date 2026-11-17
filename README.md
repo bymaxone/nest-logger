@@ -991,7 +991,7 @@ Implements NestJS `LoggerService`. All methods are available via `@InjectLogger(
 | `warnStructured`  | `(logKey, msg, userId?, meta?)`   | Structured warn log — takes a **message string**                 |
 | `errorStructured` | `(logKey, error, userId?, meta?)` | Structured error log — takes an **`Error`**, serialized to `err` |
 
-`meta` carries arbitrary fields, except that `logKey`, `userId` and `context` belong to the payload (read from the authenticated ALS scope, so a metadata bag cannot forge them), `level`, `time`, `msg`, `service`, `service.*`, `deployment` and `deployment.*` are written by the logger itself and are dropped from `meta`, and `__proto__`, `constructor` and `prototype` are dropped, since they name a prototype chain rather than a field.
+`meta` carries arbitrary fields, except that `logKey`, `userId` and `context` belong to the payload (read from the authenticated ALS scope, so a metadata bag cannot forge them), `level`, `time`, `msg`, `service`, `service.*`, `deployment` and `deployment.*` are written by the logger itself and are dropped from `meta`, and `__proto__`, `constructor` and `prototype` are dropped, since they name a prototype chain rather than a field. Inside a request, a key the logger writes from the request context or from the active span (`requestId`, `tenantId`, the trace fields) keeps the logger's value when the payload carries the same key, for `meta`, an object message and the raw Pino logger alike; outside a request the payload's own value is kept.
 
 **NestJS `LoggerService` bridge** — the variadic contract NestJS calls, so `app.useLogger()` works. These take a message, not a log key.
 
