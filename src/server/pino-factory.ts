@@ -495,6 +495,168 @@ export function resolveRedactOption(
 }
 
 /**
+ * The serializers of the logger: the default `err` one and every consumer-supplied one, each
+ * composed as size-bound(redact(serialize)).
+ *
+ * @param options - Fully-defaulted module options.
+ * @param redactSerialized - The redactor applied to what a serializer returns.
+ * @param ownFields - The own-field policy of an error.
+ * @returns The Pino `serializers` option.
+ */
+function buildSerializers(
+  options: ResolvedBymaxLoggerModuleOptions,
+  redactSerialized: Redactor,
+  ownFields: OwnFieldPolicy
+): Record<string, (input: unknown) => unknown> {
+  const maxBytes = options.maxEntrySizeBytes
+  // Every serializer (default `err` + any consumer-supplied) is composed as
+  // size-bound(redact(serialize)). Two orderings matter here:
+  //   0. The redactor here is `buildNameRedactor`, applied ungated: it ignores
+  //      `redactStrategy`. That strategy is the consumer's choice about THEIR
+  //      OWN payload; this output is what the library synthesizes, and
+  //      `fast-redact`'s four-wildcard ceiling cannot reach the depth a cause
+  //      chain serializes to.
+  //   1. Redaction runs on the serializer's OUTPUT. This is NOT a redundant
+  //      second pass over data the `formatters.log` walk already saw — a
+  //      serializer PRODUCES a value, and can synthesize fields that existed
+  //      nowhere in the record the walk inspected (a derived token, a decoded
+  //      claim, an `Error`'s own enumerable properties, which the walk skips
+  //      because copying an `Error` would break the instance the `err`
+  //      serializer keys off). Those fields reach the sink through this hook
+  //      alone.
+  //   2. Redaction runs BEFORE the size bound, so an oversized field's 200-char
+  //      `_preview` carries `[REDACTED]` rather than the head of a secret.
+  // `Object.fromEntries` avoids a dynamic `obj[key] =` write (which would trip
+  // the object-injection lint rule).
+  const bound = <T>(serializer: (input: T) => unknown): ((input: T) => unknown) =>
+    createSizeBoundedSerializer((input: T) => redactSerialized(serializer(input)), maxBytes)
+  return {
+    err: bound((error) => serializeErrorValue(error, ownFields)),
+    ...Object.fromEntries(
+      Object.entries(options.serializers).map(
+        ([key, serializer]): [string, (input: unknown) => unknown] => [key, bound(serializer)]
+      )
+    )
+  }
+}
+
+/**
+ * Pino's `mixinMergeStrategy`: merge the caller's object with the mixin result without letting a
+ * throwing getter crash the log call.
+ *
+ * @param mergeObject - The caller's object.
+ * @param mixinObject - The mixin result.
+ * @returns The merged record, or the mixin result alone marked as a redaction failure.
+ */
+function mergeMixinSafely(mergeObject: object, mixinObject: object): object {
+  // `formatters.log` is NOT the first code to touch the caller's object: Pino
+  // merges the mixin result with it first, and the default strategy's
+  // `Object.assign` invokes every own getter. A throwing getter therefore
+  // crashed the log call before the redactor could return its fail-closed
+  // envelope. Owning the merge moves that boundary inside the guarantee.
+  try {
+    // Merged into a FRESH target rather than into `mixinObject`. `Object.assign`
+    // copies key by key, so a getter that throws part-way leaves everything
+    // read before it already written into the target — and the catch below
+    // would then emit that prefix, contradicting the sentence it is written
+    // under. A disposable target keeps the partial writes in the value that
+    // is about to be discarded.
+    return Object.assign({}, mixinObject, mergeObject)
+  } catch {
+    // The caller's object cannot be read, so it cannot be proven safe and is
+    // dropped WHOLE — not up to the property that threw. The mixin's own
+    // ambient context (requestId, trace ids) is library-produced and kept.
+    return {
+      ...mixinObject,
+      _redactionFailed: true,
+      _logKey: RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
+    }
+  }
+}
+
+/**
+ * One multistream entry for each destination, each behind its bounded queue.
+ *
+ * @param options - Fully-defaulted module options.
+ * @param destinations - The sinks to fan out to.
+ * @param health - Init-health record shared with the registry.
+ * @returns The entries `pino.multistream` takes.
+ */
+function buildStreams(
+  options: ResolvedBymaxLoggerModuleOptions,
+  destinations: readonly ILogDestination[],
+  health: DestinationHealth
+): pino.StreamEntry[] {
+  return destinations.map((destination) => {
+    const stream = destinationToStream(destination, health, options.destinationQueue.maxBytes)
+    // The registry drains this buffer before it tells the destination to shut down.
+    health.registerStream(destination, stream)
+    return {
+      // Guarded: this runs at provider construction, BEFORE any lifecycle hook, so a
+      // consumer implementing `minLevel` as a throwing getter would fail the factory
+      // and the application would never start — earlier than any fail-soft path can
+      // contain. Unreadable and absent give the same answer: the module level.
+      level: safeMinLevel(destination) ?? options.level,
+      stream
+    }
+  })
+}
+
+/**
+ * The `formatters` of the logger: the level as a label, and the name-walk redaction of the record
+ * and of the bindings.
+ *
+ * @param options - Fully-defaulted module options.
+ * @param redactRecord - The redactor of the caller's record.
+ * @returns The Pino `formatters` option.
+ */
+function buildFormatters(
+  options: ResolvedBymaxLoggerModuleOptions,
+  redactRecord: Redactor
+): NonNullable<LoggerOptions['formatters']> {
+  // The request is serialized here, before the walk, and not as a Pino serializer: Pino runs the
+  // record formatter first, so the walk would copy a whole `IncomingMessage`, its sockets and its
+  // server, and hand the serializer a copy of own enumerable properties, which has no `headers`
+  // because Node defines it as an accessor on the prototype. A host that registers its own `req`
+  // serializer gets that copy, and `rawHeaders` is the field that carries the headers in it.
+  const hostSerializesRequest = Object.hasOwn(options.serializers, 'req')
+  return {
+    // Emit the level as a string label instead of the numeric code — easier
+    // for log aggregators. Trace context is injected via `mixin`, never via
+    // `formatters.log` (which cannot see ambient ALS / OTel state).
+    level: (label) => ({ level: label }),
+    // `base` bindings never reach `formatters.log` — Pino pre-serializes them
+    // into the instance's `chindings`, the same reason `child()` has to redact
+    // its own. That matters because `service` is CONSUMER-supplied and
+    // `applyDefaults` keeps whatever it was given: a `{ name, version, apiKey }`
+    // went out in clear, where the path expansion had covered it via `*.*.apiKey`.
+    // Redacting here rather than trimming to the two declared fields keeps a
+    // consumer's extra metadata instead of silently dropping it. Runs ONCE, at
+    // logger construction — no per-entry cost. `true`: bindings are a record
+    // root, iterated rather than serialized.
+    bindings: (bindings) => redactRecord(bindings, true) as Record<string, unknown>,
+    // The name-walk redactor runs here, on the merged record (mixin output +
+    // the caller's object), which is exactly the surface a caller controls.
+    // `base` and child bindings are NOT visible at this hook — they are
+    // library-owned (`service`, the `@InjectLogger` context) and carry nothing
+    // sensitive, which `pino-factory.spec.ts` pins.
+    log: (record) =>
+      withSemconvException(
+        withEventName(
+          redactRecord(
+            hostSerializesRequest
+              ? record
+              : withSerializedRequest(record, options.http.secretPathSegments),
+            true
+          ) as Record<string, unknown>,
+          options.eventNameField
+        ),
+        options.errorFormat
+      )
+  }
+}
+
+/**
  * Build a configured Pino instance from a resolved options snapshot.
  *
  * Each destination becomes one entry in a `pino.multistream` fan-out. A
@@ -520,7 +682,6 @@ export function buildPinoInstance(
   destinations: readonly ILogDestination[],
   health: DestinationHealth
 ): PinoLogger {
-  const maxBytes = options.maxEntrySizeBytes
   // TWO redactors, deliberately, because they answer to different owners.
   //   - `redactRecord` honours `redactStrategy`: the caller's record is the
   //     caller's payload, and `'paths'` is their documented escape hatch (an e2e
@@ -532,42 +693,6 @@ export function buildPinoInstance(
   const redactRecord = resolveNameRedactor(options)
   const redactSerialized = buildNameRedactor(options)
   const ownFields = ownFieldPolicyOf(options)
-
-  // Every serializer (default `err` + any consumer-supplied) is composed as
-  // size-bound(redact(serialize)). Two orderings matter here:
-  //   0. The redactor here is `buildNameRedactor`, applied ungated: it ignores
-  //      `redactStrategy`. That strategy is the consumer's choice about THEIR
-  //      OWN payload; this output is what the library synthesizes, and
-  //      `fast-redact`'s four-wildcard ceiling cannot reach the depth a cause
-  //      chain serializes to.
-  //   1. Redaction runs on the serializer's OUTPUT. This is NOT a redundant
-  //      second pass over data the `formatters.log` walk already saw — a
-  //      serializer PRODUCES a value, and can synthesize fields that existed
-  //      nowhere in the record the walk inspected (a derived token, a decoded
-  //      claim, an `Error`'s own enumerable properties, which the walk skips
-  //      because copying an `Error` would break the instance the `err`
-  //      serializer keys off). Those fields reach the sink through this hook
-  //      alone.
-  //   2. Redaction runs BEFORE the size bound, so an oversized field's 200-char
-  //      `_preview` carries `[REDACTED]` rather than the head of a secret.
-  // `Object.fromEntries` avoids a dynamic `obj[key] =` write (which would trip
-  // the object-injection lint rule).
-  const bound = <T>(serializer: (input: T) => unknown): ((input: T) => unknown) =>
-    createSizeBoundedSerializer((input: T) => redactSerialized(serializer(input)), maxBytes)
-  // The request is serialized here, before the walk, and not as a Pino serializer: Pino runs the
-  // record formatter first, so the walk would copy a whole `IncomingMessage`, its sockets and its
-  // server, and hand the serializer a copy of own enumerable properties, which has no `headers`
-  // because Node defines it as an accessor on the prototype. A host that registers its own `req`
-  // serializer gets that copy, and `rawHeaders` is the field that carries the headers in it.
-  const hostSerializesRequest = Object.hasOwn(options.serializers, 'req')
-  const serializers = {
-    err: bound((error) => serializeErrorValue(error, ownFields)),
-    ...Object.fromEntries(
-      Object.entries(options.serializers).map(
-        ([key, serializer]): [string, (input: unknown) => unknown] => [key, bound(serializer)]
-      )
-    )
-  }
 
   const redactOption = resolveRedactOption(options)
   const pinoOptions: LoggerOptions = {
@@ -586,82 +711,11 @@ export function buildPinoInstance(
     // is encoded as a JSON string here: a quote, a backslash or a newline in it must
     // neither break the line nor add fields to it.
     timestamp: () => `,"time":${JSON.stringify(String(options.timestamp()))}`,
-    formatters: {
-      // Emit the level as a string label instead of the numeric code — easier
-      // for log aggregators. Trace context is injected via `mixin`, never via
-      // `formatters.log` (which cannot see ambient ALS / OTel state).
-      level: (label) => ({ level: label }),
-      // `base` bindings never reach `formatters.log` — Pino pre-serializes them
-      // into the instance's `chindings`, the same reason `child()` has to redact
-      // its own. That matters because `service` is CONSUMER-supplied and
-      // `applyDefaults` keeps whatever it was given: a `{ name, version, apiKey }`
-      // went out in clear, where the path expansion had covered it via `*.*.apiKey`.
-      // Redacting here rather than trimming to the two declared fields keeps a
-      // consumer's extra metadata instead of silently dropping it. Runs ONCE, at
-      // logger construction — no per-entry cost. `true`: bindings are a record
-      // root, iterated rather than serialized.
-      bindings: (bindings) => redactRecord(bindings, true) as Record<string, unknown>,
-      // The name-walk redactor runs here, on the merged record (mixin output +
-      // the caller's object), which is exactly the surface a caller controls.
-      // `base` and child bindings are NOT visible at this hook — they are
-      // library-owned (`service`, the `@InjectLogger` context) and carry nothing
-      // sensitive, which `pino-factory.spec.ts` pins.
-      log: (record) =>
-        withSemconvException(
-          withEventName(
-            redactRecord(
-              hostSerializesRequest
-                ? record
-                : withSerializedRequest(record, options.http.secretPathSegments),
-              true
-            ) as Record<string, unknown>,
-            options.eventNameField
-          ),
-          options.errorFormat
-        )
-    },
-    serializers,
+    formatters: buildFormatters(options, redactRecord),
+    serializers: buildSerializers(options, redactSerialized, ownFields),
     mixin: createTraceContextMixin(logContext, options.otel),
-    // `formatters.log` is NOT the first code to touch the caller's object: Pino
-    // merges the mixin result with it first, and the default strategy's
-    // `Object.assign` invokes every own getter. A throwing getter therefore
-    // crashed the log call before the redactor could return its fail-closed
-    // envelope. Owning the merge moves that boundary inside the guarantee.
-    mixinMergeStrategy: (mergeObject: object, mixinObject: object): object => {
-      try {
-        // Merged into a FRESH target rather than into `mixinObject`. `Object.assign`
-        // copies key by key, so a getter that throws part-way leaves everything
-        // read before it already written into the target — and the catch below
-        // would then emit that prefix, contradicting the sentence it is written
-        // under. A disposable target keeps the partial writes in the value that
-        // is about to be discarded.
-        return Object.assign({}, mixinObject, mergeObject)
-      } catch {
-        // The caller's object cannot be read, so it cannot be proven safe and is
-        // dropped WHOLE — not up to the property that threw. The mixin's own
-        // ambient context (requestId, trace ids) is library-produced and kept.
-        return {
-          ...mixinObject,
-          _redactionFailed: true,
-          _logKey: RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
-        }
-      }
-    }
+    mixinMergeStrategy: mergeMixinSafely
   }
 
-  const streams = destinations.map((destination) => {
-    const stream = destinationToStream(destination, health, options.destinationQueue.maxBytes)
-    // The registry drains this buffer before it tells the destination to shut down.
-    health.registerStream(destination, stream)
-    return {
-      // Guarded: this runs at provider construction, BEFORE any lifecycle hook, so a
-      // consumer implementing `minLevel` as a throwing getter would fail the factory
-      // and the application would never start — earlier than any fail-soft path can
-      // contain. Unreadable and absent give the same answer: the module level.
-      level: safeMinLevel(destination) ?? options.level,
-      stream
-    }
-  })
-
-  return pino(pinoOptions, pino.multistream(streams))
+  return pino(pinoOptions, pino.multistream(buildStreams(options, destinations, health)))
 }
