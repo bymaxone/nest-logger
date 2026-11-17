@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.21] - 2026-11-17
+
 ### Breaking
 
 - **`@LogPerformance(thresholdMs)` refuses a threshold that is not a finite number of zero or
@@ -23,6 +25,18 @@ heading here.
 - **`maxEntrySizeBytes` must be an integer.** A fraction such as `1.5` was accepted and compared as
   a byte ceiling. `forRoot` now rejects it with `options.maxEntrySizeBytes must be an integer`, as it
   does for every other size and timer option. **Apply:** pass a whole number of bytes.
+
+### Changed
+
+- **`PrettyDevDestination.onInit` is split into private methods.** `refuseInProduction`,
+  `buildTransform` and `initFailure` now appear in the class declaration as `private` members.
+  Behavior is unchanged.
+
+#### Apply to a derived backend
+
+Nothing is required of most consumers. A subclass of `PrettyDevDestination` that declares a member named
+`refuseInProduction`, `buildTransform` or `initFailure` no longer compiles against the new
+declaration; rename it.
 
 ## [1.4.20] - 2026-11-17
 
@@ -2927,7 +2941,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.20...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.21...HEAD
+[1.4.21]: https://github.com/bymaxone/nest-logger/compare/v1.4.20...v1.4.21
 [1.4.20]: https://github.com/bymaxone/nest-logger/compare/v1.4.19...v1.4.20
 [1.4.19]: https://github.com/bymaxone/nest-logger/compare/v1.4.18...v1.4.19
 [1.4.18]: https://github.com/bymaxone/nest-logger/compare/v1.4.17...v1.4.18
