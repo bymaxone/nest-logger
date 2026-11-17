@@ -281,7 +281,7 @@ export interface BymaxLoggerModuleOptions {
   http?: HttpOptions
   /** OpenTelemetry integration tuning. */
   otel?: OtelOptions
-  /** Maximum size in bytes per log entry. Default: 65536. */
+  /** Maximum size in bytes per log entry: an integer from 1 to 2147483647. Default: 65536. */
   maxEntrySizeBytes?: number
   /**
    * The longest a destination's `onInit` or `onRegistryReady` may take, in milliseconds. Default:

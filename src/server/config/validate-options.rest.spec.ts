@@ -91,6 +91,31 @@ describe('validateOptions: scalars and customization hooks', () => {
   )
 
   it.each([
+    ['2 to the power 53', 2 ** 53],
+    ['1e300', 1e300],
+    ['one over the largest', 2_147_483_648]
+  ])(
+    /*
+     * A byte ceiling above the largest value a timer, a queue bound or a buffer length can hold is a
+     * config mistake that no entry can reach: `Number.isInteger` accepts `2 ** 53` and `1e300`.
+     */
+    'rejects a maxEntrySizeBytes that is %s',
+    (_label, value) => {
+      expect(() => validateOptions(withOption('maxEntrySizeBytes', value))).toThrow(
+        /options\.maxEntrySizeBytes must be at most 2147483647/
+      )
+    }
+  )
+
+  it.each([
+    ['one', 1],
+    ['the default', 65_536],
+    ['the largest', 2_147_483_647]
+  ])('accepts a maxEntrySizeBytes that is %s', (_label, value) => {
+    expect(() => validateOptions(withOption('maxEntrySizeBytes', value))).not.toThrow()
+  })
+
+  it.each([
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
     ['a numeric string', '1024']

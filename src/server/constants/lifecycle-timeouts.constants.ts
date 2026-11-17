@@ -20,3 +20,6 @@ export const MIN_QUEUE_MAX_BYTES = 1024
 
 /** Largest queue bound, the largest signed 32-bit integer. */
 export const MAX_QUEUE_MAX_BYTES = 2_147_483_647
+
+/** The largest `maxEntrySizeBytes`: the largest value a timer, a queue bound or a buffer length holds. */
+export const MAX_ENTRY_SIZE_BYTES = 2_147_483_647
