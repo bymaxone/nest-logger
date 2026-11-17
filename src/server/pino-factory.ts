@@ -25,6 +25,7 @@ import type { DestinationHealth } from './services/destination-health.service'
 import type { LogContextService } from './services/log-context.service'
 import { cutText } from './utils/bounded-text.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
+import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
 import {
   createOwnFieldPolicy,
@@ -369,6 +370,45 @@ export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): 
   return buildNameRedactor(options, true, options.redactStrategy === 'names')
 }
 
+/**
+ * {@link resolveNameRedactor} for the record of an entry: the walk also runs when
+ * `maxStringLength` is set, because the cut that follows reads only what the walk wrote.
+ *
+ * @internal NOT re-exported by the package barrel.
+ * @param options - Fully-defaulted module options.
+ * @returns The redaction function of the caller's record.
+ */
+function resolveRecordRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
+  return buildNameRedactor(
+    options,
+    true,
+    options.redactStrategy === 'names',
+    options.maxStringLength !== undefined
+  )
+}
+
+/**
+ * The root keys `maxStringLength` leaves whole: the event identifier and the name derived from
+ * it, the error and what a serializer returned, and the semantic-convention fields written from
+ * an error. They are names or already bounded by the serializer's own size cap, and the first
+ * is an identifier that is read, not text.
+ *
+ * @param options - Fully-defaulted module options.
+ * @returns The set of root keys.
+ */
+function wholeRootKeys(options: ResolvedBymaxLoggerModuleOptions): ReadonlySet<string> {
+  return new Set([
+    'logKey',
+    ...(options.eventNameField === false ? [] : [options.eventNameField]),
+    'err',
+    ...Object.keys(options.serializers),
+    'exception.type',
+    'exception.message',
+    'exception.stacktrace',
+    'error.type'
+  ])
+}
+
 /** The own-field policy the configuration resolves to. */
 function ownFieldPolicyOf(options: ResolvedBymaxLoggerModuleOptions): OwnFieldPolicy {
   return createOwnFieldPolicy(options.errorOwnFields, options.errorOwnFieldNames)
@@ -423,13 +463,16 @@ function namesInsideErrors(
  *   too, since nothing else would make it so.
  * @param coversNames - `false` for the record under the `'paths'` strategy, whose names
  *   `fast-redact` covers.
+ * @param forcesWalk - `true` for the record when `maxStringLength` is set: the cut that follows
+ *   reads only what the walk wrote, so the walk runs even when it would redact nothing.
  * @returns A redaction function; the identity function when no name is covered and the policy is
  *   not `errorOwnFields: 'safe'`.
  */
 function buildNameRedactor(
   options: ResolvedBymaxLoggerModuleOptions,
   nestedErrorsAsData = false,
-  coversNames = true
+  coversNames = true,
+  forcesWalk = false
 ): Redactor {
   const allNames = [
     ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
@@ -440,7 +483,7 @@ function buildNameRedactor(
   // With no name to cover the value is still walked under 'safe', which writes plain data only the
   // walk can produce: an `Error` nested in the record, and what a serializer returns. It is also
   // walked whenever Pino's own path redaction is configured, because that cannot read a `Buffer`.
-  const walks = names.length > 0 || ownFields.safe
+  const walks = names.length > 0 || ownFields.safe || forcesWalk
   if (!walks && resolveRedactOption(options) === undefined) {
     return PASS_THROUGH
   }
@@ -603,23 +646,60 @@ function buildStreams(
 }
 
 /**
- * The `formatters` of the logger: the level as a label, and the name-walk redaction of the record
- * and of the bindings.
+ * The `formatters.log` of the logger: the caller's record is redacted, its event name and
+ * exception fields are added, and, when `maxStringLength` is set, its strings are cut.
  *
  * @param options - Fully-defaulted module options.
  * @param redactRecord - The redactor of the caller's record.
- * @returns The Pino `formatters` option.
+ * @returns The record formatter.
  */
-function buildFormatters(
+function buildRecordFormatter(
   options: ResolvedBymaxLoggerModuleOptions,
   redactRecord: Redactor
-): NonNullable<LoggerOptions['formatters']> {
+): (record: Record<string, unknown>) => Record<string, unknown> {
   // The request is serialized here, before the walk, and not as a Pino serializer: Pino runs the
   // record formatter first, so the walk would copy a whole `IncomingMessage`, its sockets and its
   // server, and hand the serializer a copy of own enumerable properties, which has no `headers`
   // because Node defines it as an accessor on the prototype. A host that registers its own `req`
   // serializer gets that copy, and `rawHeaders` is the field that carries the headers in it.
   const hostSerializesRequest = Object.hasOwn(options.serializers, 'req')
+  const maxStringLength = options.maxStringLength
+  const wholeRoots = wholeRootKeys(options)
+  return (record) => {
+    const redacted = withSemconvException(
+      withEventName(
+        redactRecord(
+          hostSerializesRequest
+            ? record
+            : withSerializedRequest(record, options.http.secretPathSegments),
+          true
+        ) as Record<string, unknown>,
+        options.eventNameField
+      ),
+      options.errorFormat
+    )
+    // The cut is the last step, over what every censor has already written, so it can never
+    // precede a rule that needs the whole string.
+    return maxStringLength === undefined
+      ? redacted
+      : cutStrings(redacted, maxStringLength, wholeRoots)
+  }
+}
+
+/**
+ * The `formatters` of the logger: the level as a label, and the name-walk redaction of the record
+ * and of the bindings.
+ *
+ * @param options - Fully-defaulted module options.
+ * @param redactRecord - The redactor of the caller's record.
+ * @param redactBindings - The redactor of the bindings, which `maxStringLength` does not limit.
+ * @returns The Pino `formatters` option.
+ */
+function buildFormatters(
+  options: ResolvedBymaxLoggerModuleOptions,
+  redactRecord: Redactor,
+  redactBindings: Redactor
+): NonNullable<LoggerOptions['formatters']> {
   return {
     // Emit the level as a string label instead of the numeric code — easier
     // for log aggregators. Trace context is injected via `mixin`, never via
@@ -634,25 +714,13 @@ function buildFormatters(
     // consumer's extra metadata instead of silently dropping it. Runs ONCE, at
     // logger construction — no per-entry cost. `true`: bindings are a record
     // root, iterated rather than serialized.
-    bindings: (bindings) => redactRecord(bindings, true) as Record<string, unknown>,
+    bindings: (bindings) => redactBindings(bindings, true) as Record<string, unknown>,
     // The name-walk redactor runs here, on the merged record (mixin output +
     // the caller's object), which is exactly the surface a caller controls.
     // `base` and child bindings are NOT visible at this hook — they are
     // library-owned (`service`, the `@InjectLogger` context) and carry nothing
     // sensitive, which `pino-factory.spec.ts` pins.
-    log: (record) =>
-      withSemconvException(
-        withEventName(
-          redactRecord(
-            hostSerializesRequest
-              ? record
-              : withSerializedRequest(record, options.http.secretPathSegments),
-            true
-          ) as Record<string, unknown>,
-          options.eventNameField
-        ),
-        options.errorFormat
-      )
+    log: buildRecordFormatter(options, redactRecord)
   }
 }
 
@@ -690,7 +758,7 @@ export function buildPinoInstance(
   //     synthesizes, and the ceiling cannot reach the depth a cause chain
   //     serializes to. Collapsing these two into one binding is what broke that
   //     e2e case, which is the check that caught it.
-  const redactRecord = resolveNameRedactor(options)
+  const redactRecord = resolveRecordRedactor(options)
   const redactSerialized = buildNameRedactor(options)
   const ownFields = ownFieldPolicyOf(options)
 
@@ -711,7 +779,7 @@ export function buildPinoInstance(
     // is encoded as a JSON string here: a quote, a backslash or a newline in it must
     // neither break the line nor add fields to it.
     timestamp: () => `,"time":${JSON.stringify(String(options.timestamp()))}`,
-    formatters: buildFormatters(options, redactRecord),
+    formatters: buildFormatters(options, redactRecord, resolveNameRedactor(options)),
     serializers: buildSerializers(options, redactSerialized, ownFields),
     mixin: createTraceContextMixin(logContext, options.otel),
     mixinMergeStrategy: mergeMixinSafely

@@ -132,6 +132,7 @@ const EXCLUDE_PATHS_CELL =
   '`[/^\\/health$/, /^\\/health\\/live$/, /^\\/health\\/ready$/, /^\\/metrics$/]`'
 const TIMESTAMP_CELL = '`() => new Date().toISOString()`'
 const DESTINATIONS_CELL = '`[new DefaultStdoutDestination()]`'
+const UNSET_CELL = 'unset (a string is written whole)'
 
 describe('README option tables', () => {
   const originalNodeEnv = process.env['NODE_ENV']
@@ -149,7 +150,8 @@ describe('README option tables', () => {
   describe('defaults', () => {
     const literalRows = [...TOP_LEVEL].filter(
       ([name]) =>
-        !name.startsWith('service.') && !['level', 'timestamp', 'destinations'].includes(name)
+        !name.startsWith('service.') &&
+        !['level', 'timestamp', 'destinations', 'maxStringLength'].includes(name)
     )
 
     it.each(literalRows)(
@@ -238,6 +240,15 @@ describe('README option tables', () => {
     it('documents the default `timestamp` function', () => {
       expect(TOP_LEVEL.get('timestamp')).toBe(TIMESTAMP_CELL)
       expect(resolved.timestamp()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    })
+
+    /*
+     * `maxStringLength` has no default value: it is not set, and a string is written whole. The
+     * cell says so in words, and the resolved options hold `undefined` for it.
+     */
+    it('documents `maxStringLength` as unset', () => {
+      expect(TOP_LEVEL.get('maxStringLength')).toContain(UNSET_CELL)
+      expect(resolved.maxStringLength).toBeUndefined()
     })
 
     /*

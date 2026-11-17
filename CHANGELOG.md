@@ -20,6 +20,21 @@ heading here.
   **Apply:** pass a ceiling of at most 2147483647 bytes; the default and every value up to that are
   unaffected.
 
+### Added
+
+- **`maxStringLength` bounds the length of every string of a log record.** A string under a metadata
+  key is the caller's own data and was written as given, so one value of a megabyte made an entry of
+  a megabyte. With `maxStringLength` set, a string longer than the limit is cut to that many
+  characters (a cut never splits a surrogate pair) and ends with `…[truncated]`. It is an integer
+  from 64 to 2147483647 and it is off until set. The cut is the last step, over the record after
+  every redaction rule has run, so it cannot cut a string before a rule that needs the whole of it.
+  It applies at any depth, and not to a key, a value that is not text, the log message, the
+  `logKey`, the bindings of a logger, anything under a key that has a serializer (`err` and the keys
+  of `serializers`), or the `exception.*` and `error.type` fields written from an error. An `Error`
+  placed in the metadata under any other key is data of the record when the cut runs, and its
+  message and stack are cut like any other string. A `userId` longer than the limit is cut like any
+  other string.
+
 ### Changed
 
 - **The steps of `PrettyDevDestination.onInit` are module functions, not methods.** 1.4.21 split
@@ -31,8 +46,13 @@ heading here.
 
 #### Apply to a derived backend
 
-Nothing is required. A subclass of `PrettyDevDestination` that defines a member named
+`PrettyDevDestination`: nothing is required. A subclass that defines a member named
 `refuseInProduction`, `buildTransform` or `initFailure` keeps it, and `onInit` no longer calls it.
+
+`maxStringLength`: nothing is required to keep the behavior, since the option is off until set.
+`ResolvedBymaxLoggerModuleOptions` gains the key `maxStringLength: number | undefined`, so a derived
+backend that builds that object itself adds `maxStringLength: undefined`; one that spreads the
+result of `applyDefaults` already has it.
 
 ## [1.4.21] - 2026-11-17
 
