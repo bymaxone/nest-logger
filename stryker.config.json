@@ -30,7 +30,6 @@
     "break": 100
   },
   "concurrency": 4,
-  "maxTestRunnerReuse": 50,
   "timeoutMS": 30000,
   "incremental": true,
   "incrementalFile": "reports/stryker-incremental.json",
