@@ -388,25 +388,16 @@ function resolveRecordRedactor(options: ResolvedBymaxLoggerModuleOptions): Redac
 }
 
 /**
- * The root keys `maxStringLength` leaves whole: the event identifier and the name derived from
- * it, the error and what a serializer returned, and the semantic-convention fields written from
- * an error. They are names or already bounded by the serializer's own size cap, and the first
- * is an identifier that is read, not text.
+ * The root keys `maxStringLength` leaves whole: the `logKey`, an identifier the event name is
+ * derived from, and the keys that have a serializer (`err` and the keys of `serializers`), whose
+ * output `maxEntrySizeBytes` already bounds. The fields the library writes itself, the event name
+ * and the exception fields, are added after the cut, so no name is left whole for them.
  *
  * @param options - Fully-defaulted module options.
  * @returns The set of root keys.
  */
 function wholeRootKeys(options: ResolvedBymaxLoggerModuleOptions): ReadonlySet<string> {
-  return new Set([
-    'logKey',
-    ...(options.eventNameField === false ? [] : [options.eventNameField]),
-    'err',
-    ...Object.keys(options.serializers),
-    'exception.type',
-    'exception.message',
-    'exception.stacktrace',
-    'error.type'
-  ])
+  return new Set(['logKey', 'err', ...Object.keys(options.serializers)])
 }
 
 /** The own-field policy the configuration resolves to. */
@@ -666,23 +657,17 @@ function buildRecordFormatter(
   const maxStringLength = options.maxStringLength
   const wholeRoots = wholeRootKeys(options)
   return (record) => {
-    const redacted = withSemconvException(
-      withEventName(
-        redactRecord(
-          hostSerializesRequest
-            ? record
-            : withSerializedRequest(record, options.http.secretPathSegments),
-          true
-        ) as Record<string, unknown>,
-        options.eventNameField
-      ),
-      options.errorFormat
-    )
-    // The cut is the last step, over what every censor has already written, so it can never
-    // precede a rule that needs the whole string.
-    return maxStringLength === undefined
-      ? redacted
-      : cutStrings(redacted, maxStringLength, wholeRoots)
+    const redacted = redactRecord(
+      hostSerializesRequest
+        ? record
+        : withSerializedRequest(record, options.http.secretPathSegments),
+      true
+    ) as Record<string, unknown>
+    // The cut follows every censor, so it can never precede a rule that needs the whole string,
+    // and it precedes the fields the library derives, which are written whole after it.
+    const bounded =
+      maxStringLength === undefined ? redacted : cutStrings(redacted, maxStringLength, wholeRoots)
+    return withSemconvException(withEventName(bounded, options.eventNameField), options.errorFormat)
   }
 }
 

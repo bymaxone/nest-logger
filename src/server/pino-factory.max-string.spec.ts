@@ -184,3 +184,40 @@ describe('maxStringLength through the logger: what is written once', () => {
     })
   })
 })
+
+describe('maxStringLength through the logger: the exception fields', () => {
+  /*
+   * The fields the library derives from an error are written after the cut, so no name has to be
+   * left whole for them, and a key of the caller's with the same name is cut like any other string:
+   * left whole it would be a string no size cap bounds, since only `err` and the serializer keys
+   * are bounded by `maxEntrySizeBytes`.
+   */
+  it.each(['pino', 'semconv'] as const)(
+    'cuts a key of the caller named like an exception field under errorFormat %s',
+    (errorFormat) => {
+      const { logger, capture } = loggerWith({ maxStringLength: LIMIT, errorFormat })
+
+      logger.info('K', 'message', undefined, {
+        'exception.message': long,
+        'exception.stacktrace': long,
+        'error.type': long
+      })
+
+      const entry = capture.entries()[0] as Record<string, unknown>
+      expect(entry['exception.message']).toBe(cutLong)
+      expect(entry['exception.stacktrace']).toBe(cutLong)
+      expect(entry['error.type']).toBe(cutLong)
+    }
+  )
+
+  it('writes the exception fields derived from the error whole, after the cut', () => {
+    const { logger, capture } = loggerWith({ maxStringLength: LIMIT, errorFormat: 'semconv' })
+    const error = new Error('m'.repeat(LIMIT + 40))
+
+    logger.errorStructured('OPERATION_FAILED', error)
+
+    const entry = capture.entries()[0] as Record<string, string>
+    expect(entry['exception.type']).toBe('Error')
+    expect(entry['exception.message']).toBe('m'.repeat(LIMIT + 40))
+  })
+})

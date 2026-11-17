@@ -29,11 +29,12 @@ heading here.
   from 64 to 2147483647 and it is off until set. The cut is the last step, over the record after
   every redaction rule has run, so it cannot cut a string before a rule that needs the whole of it.
   It applies at any depth, and not to a key, a value that is not text, the log message, the
-  `logKey`, the bindings of a logger, anything under a key that has a serializer (`err` and the keys
-  of `serializers`), or the `exception.*` and `error.type` fields written from an error. An `Error`
-  placed in the metadata under any other key is data of the record when the cut runs, and its
-  message and stack are cut like any other string. The names left whole are matched on the root
-  key, so a key of your own with one of those names is left whole too. A `userId` longer than the
+  `logKey`, the bindings of a logger, or anything under a key that has a serializer (`err` and the
+  keys of `serializers`). The event name and the `exception.*` and `error.type` fields the library
+  writes are added after the cut, so it never cuts them. An `Error` placed in the metadata under any
+  other key is data of the record when the cut runs, and its message and stack are cut like any
+  other string. The names left whole are matched on the root key, so a key of your own named like a
+  serializer key is left whole too, and `maxEntrySizeBytes` bounds it. A `userId` longer than the
   limit is cut like any other string.
 
 ### Changed
