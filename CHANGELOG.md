@@ -12,7 +12,7 @@ heading here.
 
 ## [Unreleased]
 
-### Changed
+### Breaking
 
 - **`@LogPerformance(thresholdMs)` refuses a threshold that is not a finite number of zero or
   more.** `NaN` and `Infinity` made the comparison `duration > thresholdMs` never true, so slow-call
