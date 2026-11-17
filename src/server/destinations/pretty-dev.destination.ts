@@ -213,6 +213,92 @@ function describeFailure(cause: unknown): string {
 }
 
 /**
+ * The error `onInit` throws when `NODE_ENV` is `production`.
+ *
+ * @returns The refusal, which names the destination to use instead.
+ */
+function productionRefusal(): Error {
+  return new Error(
+    '[PrettyDevDestination] refused in production (NODE_ENV=production): it renders ANSI ' +
+      'colour through a main-thread transform. Use DefaultStdoutDestination, or register ' +
+      'PrettyDevDestination only outside production.'
+  )
+}
+
+/**
+ * Resolve `pino-pretty` and build the colorized transform that renders to `process.stdout`.
+ *
+ * @param view - The consumer's view options.
+ * @returns The transform every entry is written to.
+ */
+async function buildTransform(view: PrettyViewOptions): Promise<Transform> {
+  // The named `build` export is used instead of the default: `pino-pretty`
+  // ships as `export =`, so a dynamic `import(...).default` is not typed,
+  // whereas `.build` is a declared namespace export with the same factory.
+  //
+  // This runs pino-pretty as a MAIN-THREAD transform: a documented
+  // pino-pretty API, but NOT the form Pino's docs recommend
+  // (`transport: { target: 'pino-pretty' }`, a worker). That form is
+  // unreachable here — this library owns the Pino instance and fans out
+  // through `multistream`, which does not compose with `transport`. So
+  // prettifying costs the logging thread, which is why this sink is
+  // development-only.
+  //
+  // `destination: process.stdout` makes pino-pretty render the prettified
+  // line through Node's stdout stream. Piping the transform's readable side
+  // instead (`stream.pipe(process.stdout)`) would leak the RAW NDJSON to
+  // stdout alongside the prettified output — pino-pretty writes the formatted
+  // text to its `destination` and passes the original chunk through unchanged.
+  const { build } = await import('pino-pretty')
+  return build({
+    ...DEFAULT_VIEW,
+    ...view,
+    // AFTER the consumer's view, deliberately. Omitting `destination` from
+    // `PrettyViewOptions` states that the library owns the sink; applying it
+    // last is what ENFORCES it, including against an untyped caller reaching
+    // in from JavaScript. A redirected stream would route around the fan-out
+    // and the last-resort rescue.
+    destination: process.stdout
+  })
+}
+
+/**
+ * The error `onInit` throws when the transform cannot be built.
+ *
+ * @param cause - What the import or `build()` threw.
+ * @returns The error to throw, with `cause` as its cause.
+ */
+function initFailure(cause: unknown): Error {
+  // The buffer is NOT drained here, and that is the fix for a duplicate this
+  // destination used to create. Draining now would be deciding alone, and at
+  // this moment the answer is unknowable: the fan-out already handed every
+  // held entry to every OTHER destination, so if any of them is live the
+  // entries are on a sink and a raw copy is a second one. Measured on the
+  // supported `[DefaultStdoutDestination(), PrettyDevDestination()]` pair —
+  // every boot entry printed twice.
+  //
+  // The decision moves to {@link onRegistryReady}, which the registry calls
+  // once every `onInit` has settled and it can say whether another live sink
+  // took the same entries — a signal, not a proof; see that hook for what it
+  // cannot see. Nothing is lost by waiting: `onShutdown` still drains raw for
+  // a destination that was never registered, so the hook never running is
+  // also covered.
+  //
+  // The diagnosis is the cause's, not an assumption: only a failure to resolve
+  // pino-pretty ITSELF means the peer is missing. Any other failure of the import
+  // or of `build()` is reported as what it is, because telling an operator whose
+  // package is present to install it sends them away from the real problem. The
+  // original error is the `cause` either way.
+  return new Error(
+    isPinoPrettyMissing(cause)
+      ? '[PrettyDevDestination] pino-pretty is not installed. Install it as a peer ' +
+          'dependency (`pnpm add -D pino-pretty`) or remove PrettyDevDestination from `destinations`.'
+      : `[PrettyDevDestination] pino-pretty failed to start: ${describeFailure(cause)}`,
+    { cause }
+  )
+}
+
+/**
  * Pretty-print destination backed by `pino-pretty`.
  *
  * Lifecycle contract (driven by `DestinationRegistry`):
@@ -304,7 +390,14 @@ export class PrettyDevDestination implements ILogDestination {
    *   message telling the consumer to install it or drop this destination.
    */
   async onInit(): Promise<void> {
-    this.refuseInProduction()
+    // Refused BEFORE the try below, so the failure is not reported as a missing
+    // package. The state it leaves is the one every init failure leaves: later
+    // writes are dropped, and the registry reports the refusal on stderr and, when
+    // this is the only destination, rescues entries to stdout as raw NDJSON.
+    if (process.env['NODE_ENV'] === 'production') {
+      this.initFailed = true
+      throw productionRefusal()
+    }
     // No stdout EPIPE guard is installed here, and that is a measured decision
     // rather than an oversight. pino-pretty writes to `process.stdout` itself, so
     // nothing in this library can wrap those writes — but `build({ destination:
@@ -314,9 +407,15 @@ export class PrettyDevDestination implements ILogDestination {
     // paths this destination DOES own — the pre-init drain and the raw
     // fallbacks — go through `writeStdoutSafely`, which guards lazily.
     try {
-      this.stream = await this.buildTransform()
+      this.stream = await buildTransform(this.view)
     } catch (cause) {
-      throw this.initFailure(cause)
+      // Mark as failed so subsequent writes are dropped rather than falling back
+      // to raw stdout here: with a stdout sink also registered, a fallback would
+      // print every entry twice. Dropping is safe because it is no longer the last
+      // word — `DestinationHealth` covers the case where it would have meant
+      // silence (this sink being the only one) by rescuing from the fan-out above.
+      this.initFailed = true
+      throw initFailure(cause)
     }
 
     // Replayed OUTSIDE the catch above, and guarded per entry. Both matter:
@@ -337,100 +436,6 @@ export class PrettyDevDestination implements ILogDestination {
         writeRawToStdout(payload)
       }
     })
-  }
-
-  /** Refuse to start when `NODE_ENV` is `production`. */
-  private refuseInProduction(): void {
-    // Refused BEFORE the try in `onInit`, so the failure is not reported as a missing
-    // package. The state it leaves is the one every init failure leaves: later
-    // writes are dropped, and the registry reports the refusal on stderr and, when
-    // this is the only destination, rescues entries to stdout as raw NDJSON.
-    if (process.env['NODE_ENV'] === 'production') {
-      this.initFailed = true
-      throw new Error(
-        '[PrettyDevDestination] refused in production (NODE_ENV=production): it renders ANSI ' +
-          'colour through a main-thread transform. Use DefaultStdoutDestination, or register ' +
-          'PrettyDevDestination only outside production.'
-      )
-    }
-  }
-
-  /**
-   * Resolve `pino-pretty` and build the colorized transform that renders to `process.stdout`.
-   *
-   * @returns The transform every entry is written to.
-   */
-  private async buildTransform(): Promise<Transform> {
-    // The named `build` export is used instead of the default: `pino-pretty`
-    // ships as `export =`, so a dynamic `import(...).default` is not typed,
-    // whereas `.build` is a declared namespace export with the same factory.
-    //
-    // This runs pino-pretty as a MAIN-THREAD transform: a documented
-    // pino-pretty API, but NOT the form Pino's docs recommend
-    // (`transport: { target: 'pino-pretty' }`, a worker). That form is
-    // unreachable here — this library owns the Pino instance and fans out
-    // through `multistream`, which does not compose with `transport`. So
-    // prettifying costs the logging thread, which is why this sink is
-    // development-only.
-    //
-    // `destination: process.stdout` makes pino-pretty render the prettified
-    // line through Node's stdout stream. Piping the transform's readable side
-    // instead (`stream.pipe(process.stdout)`) would leak the RAW NDJSON to
-    // stdout alongside the prettified output — pino-pretty writes the formatted
-    // text to its `destination` and passes the original chunk through unchanged.
-    const { build } = await import('pino-pretty')
-    return build({
-      ...DEFAULT_VIEW,
-      ...this.view,
-      // AFTER the consumer's view, deliberately. Omitting `destination` from
-      // `PrettyViewOptions` states that the library owns the sink; applying it
-      // last is what ENFORCES it, including against an untyped caller reaching
-      // in from JavaScript. A redirected stream would route around the fan-out
-      // and the last-resort rescue.
-      destination: process.stdout
-    })
-  }
-
-  /**
-   * Mark the destination as failed and build the error `onInit` rejects with.
-   *
-   * @param cause - What the import or `build()` threw.
-   * @returns The error to throw.
-   */
-  private initFailure(cause: unknown): Error {
-    // Mark as failed so subsequent writes are dropped rather than falling back
-    // to raw stdout here: with a stdout sink also registered, a fallback would
-    // print every entry twice. Dropping is safe because it is no longer the last
-    // word — `DestinationHealth` covers the case where it would have meant
-    // silence (this sink being the only one) by rescuing from the fan-out above.
-    this.initFailed = true
-    // The buffer is NOT drained here, and that is the fix for a duplicate this
-    // destination used to create. Draining now would be deciding alone, and at
-    // this moment the answer is unknowable: the fan-out already handed every
-    // held entry to every OTHER destination, so if any of them is live the
-    // entries are on a sink and a raw copy is a second one. Measured on the
-    // supported `[DefaultStdoutDestination(), PrettyDevDestination()]` pair —
-    // every boot entry printed twice.
-    //
-    // The decision moves to {@link onRegistryReady}, which the registry calls
-    // once every `onInit` has settled and it can say whether another live sink
-    // took the same entries — a signal, not a proof; see that hook for what it
-    // cannot see. Nothing is lost by waiting: `onShutdown` still drains raw for
-    // a destination that was never registered, so the hook never running is
-    // also covered.
-    //
-    // The diagnosis is the cause's, not an assumption: only a failure to resolve
-    // pino-pretty ITSELF means the peer is missing. Any other failure of the import
-    // or of `build()` is reported as what it is, because telling an operator whose
-    // package is present to install it sends them away from the real problem. The
-    // original error is the `cause` either way.
-    return new Error(
-      isPinoPrettyMissing(cause)
-        ? '[PrettyDevDestination] pino-pretty is not installed. Install it as a peer ' +
-            'dependency (`pnpm add -D pino-pretty`) or remove PrettyDevDestination from `destinations`.'
-        : `[PrettyDevDestination] pino-pretty failed to start: ${describeFailure(cause)}`,
-      { cause }
-    )
   }
 
   /**
