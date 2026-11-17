@@ -190,8 +190,8 @@ describe('validateOptions: the type of a list member that is undefined', () => {
 
 describe('validateOptions: a serializer key is named, not printed', () => {
   /*
-   * The key is a name the caller chose, and DEC-188 prints the type of what was refused, not text
-   * the caller wrote, so the refusal says "a serializer key" and never the key itself.
+   * A refusal names the type of what was refused and never prints text the caller wrote. The key of
+   * a serializer is such text, so the refusal says "a serializer key" and never the key itself.
    */
   it('refuses a serializer that is not a function without printing its key', () => {
     const options = {

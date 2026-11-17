@@ -5,8 +5,8 @@
  * class instance counts. The options come from the resolved defaults, so an option added later is
  * covered without an edit.
  *
- * Layer: server/config, tests. A key written as `undefined` replaced its default in the spread of a
- * group, and a `null` was refused as a value of the wrong kind, though both say "not set".
+ * Layer: server/config, tests. `undefined` and `null` both say "not set": neither replaces a default
+ * and neither is refused as a value of the wrong kind.
  */
 import { applyDefaults } from './default-options'
 import { validateOptions } from './validate-options'

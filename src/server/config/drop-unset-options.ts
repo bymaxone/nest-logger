@@ -2,9 +2,9 @@
  * Reads the options a consumer passed with the keys they left unset dropped.
  *
  * Layer: server/config — runs first in `validateOptions` and in `applyDefaults`, so both see the same
- * options. A key that holds `undefined` or `null` says "not set": left in, an `undefined` in a group
- * replaced the default in the spread that merges the two, and a `null` was refused as a value of the
- * wrong kind. Each KNOWN key is read by property access, not by `Object.entries` or a spread, so a
+ * options. A key that holds `undefined` or `null` says "not set": it is dropped, so the default
+ * applies and no validator judges it. An `undefined` left in a group would replace the default in
+ * the spread that merges the two. Each KNOWN key is read by property access, not by `Object.entries` or a spread, so a
  * getter on the prototype of a class instance counts as the value it returns.
  */
 import type {
@@ -78,11 +78,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** The keys of `source` that are set, each read by property access. */
 function readSet(source: object, keys: readonly string[]): Record<string, unknown> {
-  const read = source as Record<string, unknown>
   const set: Record<string, unknown> = {}
   for (const key of keys) {
-    const value = read[key]
-    if (value !== undefined && value !== null) set[key] = value
+    // `Reflect` reads through a getter like a property access and keeps the dynamic key off the
+    // object-injection sink list.
+    const value = Reflect.get(source, key) as unknown
+    if (value !== undefined && value !== null) Reflect.set(set, key, value)
   }
   return set
 }
@@ -99,8 +100,9 @@ export function dropUnsetOptions(options: BymaxLoggerModuleOptions): BymaxLogger
   if (!isRecord(options)) return options
   const set = readSet(options, Object.keys(OPTION_KEYS))
   for (const group of GROUP_NAMES) {
-    const value = set[group]
-    if (isRecord(value)) set[group] = readSet(value, Object.keys(GROUP_KEYS[group]))
+    const value = Reflect.get(set, group) as unknown
+    if (isRecord(value))
+      Reflect.set(set, group, readSet(value, Object.keys(Reflect.get(GROUP_KEYS, group) as object)))
   }
   return set as unknown as BymaxLoggerModuleOptions
 }
