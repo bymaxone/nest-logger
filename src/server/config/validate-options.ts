@@ -147,7 +147,19 @@ function validateStringLimit(options: BymaxLoggerModuleOptions): void {
       limit
     )
   }
-  const censor: unknown = options.redactCensor
+  refuseCensorBeyondLimit(options.redactCensor, limit)
+}
+
+/**
+ * Refuses a `redactCensor` longer than the `maxStringLength` it is set with: the cut would shorten
+ * the text a consumer looks for in place of a secret. The factory that builds the logger calls it
+ * too, so a derived backend that hands it resolved options it built itself is held to the same rule.
+ *
+ * @param censor - The configured censor.
+ * @param limit - The configured `maxStringLength`.
+ * @throws Error When `censor` is a string longer than `limit`; the message never holds the censor.
+ */
+export function refuseCensorBeyondLimit(censor: unknown, limit: number): void {
   if (typeof censor === 'string' && censor.length > limit) {
     reject(
       'redactCensor',

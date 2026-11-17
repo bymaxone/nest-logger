@@ -17,6 +17,7 @@
 import pino from 'pino'
 import type { Logger as PinoLogger, LoggerOptions } from 'pino'
 
+import { refuseCensorBeyondLimit } from './config/validate-options'
 import { REDACT_COMMON_FIELDS } from './constants/default-redact-paths.constants'
 import type { ILogDestination } from './interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from './interfaces/logger-module-options.interface'
@@ -735,6 +736,11 @@ export function buildPinoInstance(
   destinations: readonly ILogDestination[],
   health: DestinationHealth
 ): PinoLogger {
+  // `validateOptions` is not the only way to resolved options: a derived backend can build them and
+  // call this factory, so the rule that holds for the options holds here too.
+  if (options.maxStringLength !== undefined) {
+    refuseCensorBeyondLimit(options.redactCensor, options.maxStringLength)
+  }
   // TWO redactors, deliberately, because they answer to different owners.
   //   - `redactRecord` honours `redactStrategy`: the caller's record is the
   //     caller's payload, and `'paths'` is their documented escape hatch (an e2e
