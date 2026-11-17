@@ -584,7 +584,7 @@ function buildSerializers(
  * @param options - Fully-defaulted module options.
  * @returns `logger`.
  */
-function withEntryTextRedactor(
+function withEntryTextFinisher(
   logger: PinoLogger,
   options: ResolvedBymaxLoggerModuleOptions
 ): PinoLogger {
@@ -761,5 +761,5 @@ export function buildPinoInstance(
   }
 
   const streams = pino.multistream(buildStreams(options, destinations, health))
-  return withEntryTextRedactor(pino(pinoOptions, streams), options)
+  return withEntryTextFinisher(pino(pinoOptions, streams), options)
 }
