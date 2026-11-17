@@ -96,9 +96,12 @@ describe('validateOptions: a refusal never echoes the value', () => {
         expect(message).not.toContain(SENTINEL)
         expect(message).toContain(`options.${path}`)
         // The option itself refused names the type it received. A group or a list refuses the
-        // member that is wrong and names that one, with its own type or, when it is missing, none.
+        // member that is wrong and names that one, with its own type or, when it is missing, none;
+        // `serializers` does it on the option's own path, with the type of the member.
         if (message.includes(`options.${path} `)) {
-          expect(message).toContain(`Received ${typeName}`)
+          const received =
+            path === 'serializers' && typeName === 'an object' ? 'a string' : typeName
+          expect(message).toContain(`Received ${received}`)
         } else {
           expect(message).toMatch(new RegExp(`options\\.${path.replace('.', '\\.')}[.[]`))
         }
@@ -132,5 +135,75 @@ describe('validateOptions: a refusal never echoes the value', () => {
         '[BymaxLoggerModule] options.redactPaths[0] must be a non-empty string. Received null'
       )
     })
+  })
+})
+
+describe('validateOptions: the type of a list member that is undefined', () => {
+  /*
+   * A member of a list is always present, so a member that is `undefined` is a value that was
+   * refused, and the refusal names its type like any other. A MEMBER of a destination that is
+   * missing is not a value, so it keeps no clause.
+   */
+  it.each([
+    [
+      'redactPaths',
+      { redactPaths: [undefined] },
+      'options.redactPaths[0] must be a non-empty string. Received undefined'
+    ],
+    [
+      'errorOwnFieldNames',
+      { errorOwnFieldNames: [undefined] },
+      'options.errorOwnFieldNames[0] must be a non-empty string. Received undefined'
+    ],
+    [
+      'destinations',
+      { destinations: [undefined] },
+      'options.destinations[0] must be an object implementing ILogDestination. Received undefined'
+    ],
+    [
+      'http.excludePaths',
+      { http: { excludePaths: [undefined] } },
+      'options.http.excludePaths[0] must be a RegExp. Received undefined'
+    ],
+    [
+      'http.secretPathSegments',
+      { http: { secretPathSegments: [undefined] } },
+      'options.http.secretPathSegments[0] must be a RegExp. Received undefined'
+    ]
+  ])('names the type of an undefined member of %s', (_label, extra, message) => {
+    const options = { ...VALID, ...extra } as unknown as BymaxLoggerModuleOptions
+
+    expect(refusalOf(options)).toBe(`[BymaxLoggerModule] ${message}`)
+  })
+
+  it('still gives no clause for a destination member that is missing', () => {
+    const options = {
+      ...VALID,
+      destinations: [{ name: 'sink' }]
+    } as unknown as BymaxLoggerModuleOptions
+
+    expect(refusalOf(options)).toBe(
+      '[BymaxLoggerModule] options.destinations[0] must have a write(payload) method'
+    )
+  })
+})
+
+describe('validateOptions: a serializer key is named, not printed', () => {
+  /*
+   * The key is a name the caller chose, and DEC-188 prints the type of what was refused, not text
+   * the caller wrote, so the refusal says "a serializer key" and never the key itself.
+   */
+  it('refuses a serializer that is not a function without printing its key', () => {
+    const options = {
+      ...VALID,
+      serializers: { [SENTINEL]: 'not a function' }
+    } as unknown as BymaxLoggerModuleOptions
+
+    const message = refusalOf(options)
+
+    expect(message).toBe(
+      '[BymaxLoggerModule] options.serializers must map every serializer key to a function. Received a string'
+    )
+    expect(message).not.toContain(SENTINEL)
   })
 })

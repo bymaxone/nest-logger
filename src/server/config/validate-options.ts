@@ -29,16 +29,24 @@ import {
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 
-/** Throw the `[BymaxLoggerModule]` error for one option, naming it by its path. */
-function reject(path: string, rule: string, got?: unknown): never {
-  const received = got === undefined ? '' : `. Received ${describeValue(got)}`
+/**
+ * Throw the `[BymaxLoggerModule]` error for one option, naming it by its path.
+ *
+ * @param path - The option, or the member of a list, that was refused.
+ * @param rule - What it must be.
+ * @param got - What it was.
+ * @param wasGiven - Whether `got` is a value that was given: `true` for a member of a list, which is
+ *   always present even when it is `undefined`; by default only a value that is not `undefined`,
+ *   so a member that is missing keeps no clause.
+ */
+function reject(path: string, rule: string, got?: unknown, wasGiven = got !== undefined): never {
+  const received = wasGiven ? `. Received ${describeValue(got)}` : ''
   throw new Error(`[BymaxLoggerModule] options.${path} ${rule}${received}`)
 }
 
 /**
  * What a rejected value was: its type, and nothing of its content. A value handed to an option can
  * be a secret read from a config file, so only a finite number, which cannot be one, is printed.
- * `reject` calls it only for a value that was given, so `undefined` never reaches it.
  */
 function describeValue(value: unknown): string {
   switch (typeof value) {
@@ -54,6 +62,8 @@ function describeValue(value: unknown): string {
       return 'a symbol'
     case 'function':
       return 'a function'
+    case 'undefined':
+      return 'undefined'
     default:
       if (value === null) return 'null'
       return Array.isArray(value) ? 'an array' : 'an object'
@@ -254,16 +264,16 @@ function validateCustomization(options: BymaxLoggerModuleOptions): void {
     if (!Array.isArray(paths)) reject('redactPaths', 'must be an array of strings', paths)
     paths.forEach((entry: unknown, index) => {
       if (!isNonEmptyString(entry)) {
-        reject(`redactPaths[${String(index)}]`, 'must be a non-empty string', entry)
+        reject(`redactPaths[${String(index)}]`, 'must be a non-empty string', entry, true)
       }
     })
   }
   const serializers: unknown = options.serializers
   if (serializers !== undefined) {
     if (!isRecord(serializers)) reject('serializers', 'must be an object', serializers)
-    for (const [key, serializer] of Object.entries(serializers)) {
+    for (const serializer of Object.values(serializers)) {
       if (typeof serializer !== 'function') {
-        reject(`serializers.${key}`, 'must be a function', serializer)
+        reject('serializers', 'must map every serializer key to a function', serializer)
       }
     }
   }
@@ -280,7 +290,7 @@ function validateErrorFields(options: BymaxLoggerModuleOptions): void {
   if (!Array.isArray(names)) reject('errorOwnFieldNames', 'must be an array of strings', names)
   names.forEach((entry: unknown, index) => {
     if (!isNonEmptyString(entry)) {
-      reject(`errorOwnFieldNames[${String(index)}]`, 'must be a non-empty string', entry)
+      reject(`errorOwnFieldNames[${String(index)}]`, 'must be a non-empty string', entry, true)
     }
   })
 }
@@ -305,7 +315,7 @@ function readMember(destination: Record<string, unknown>, key: string): unknown 
 function validateDestination(entry: unknown, index: number): void {
   const path = `destinations[${String(index)}]`
   if (!isRecord(entry)) {
-    reject(path, 'must be an object implementing ILogDestination', entry)
+    reject(path, 'must be an object implementing ILogDestination', entry, true)
   }
   const write = readMember(entry, 'write')
   if (write !== UNREADABLE && typeof write !== 'function') {
@@ -345,7 +355,7 @@ function checkRegExpList(path: string, value: unknown): void {
   }
   value.forEach((pattern: unknown, index) => {
     if (!types.isRegExp(pattern)) {
-      reject(`${path}[${String(index)}]`, 'must be a RegExp', pattern)
+      reject(`${path}[${String(index)}]`, 'must be a RegExp', pattern, true)
     }
   })
 }

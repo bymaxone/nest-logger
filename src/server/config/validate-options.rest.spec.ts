@@ -173,13 +173,17 @@ describe('validateOptions: scalars and customization hooks', () => {
   )
 
   /*
-   * A serializer that is not a function would throw on the first entry that carries
-   * its key, inside the logging path. The message names the offending key.
+   * A serializer that is not a function would throw on the first entry that carries its key,
+   * inside the logging path. The message says what the member was and not the key the caller chose.
    */
-  it('rejects a serializer that is not a function and names its key', () => {
+  it('rejects a serializer that is not a function, naming what it was and not its key', () => {
     expect(() =>
       validateOptions(withOption('serializers', { order: (o: unknown) => o, user: 'nope' }))
-    ).toThrow(/options\.serializers\.user must be a function/)
+    ).toThrow(
+      new Error(
+        '[BymaxLoggerModule] options.serializers must map every serializer key to a function. Received a string'
+      )
+    )
   })
 })
 
