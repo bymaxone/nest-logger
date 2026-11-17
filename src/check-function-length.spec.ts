@@ -1,10 +1,10 @@
 /**
- * Pins `scripts/check-function-length.mjs`, the gate for the 50-line limit on a function or a test
+ * @fileoverview Pins `scripts/check-function-length.mjs`, the gate for the 50-line limit on a function or a test
  * body: what it measures, and how test bodies, hooks and containers are told apart. It is plain
  * Node, so each case runs it the way CI does, as a child process against a throwaway git
  * repository, and asserts the exit code and the printed problems.
  *
- * Layer: repository tooling, tests.
+ * @layer tests
  */
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -219,7 +219,7 @@ describe('check-function-length', () => {
     })
 
     // Hooks are functions: a setup or teardown body is measured like an `it` body, with the same limit and the
-    // same baseline. Before this rule a 61-line `beforeEach` passed because hooks were counted as containers.
+    // same baseline.
     describe.each(['beforeEach', 'afterEach', 'beforeAll', 'afterAll'])('the %s hook', (hook) => {
       it('fails over the limit, named as a hook', () => {
         const spec = `describe('Suite', () => {\n${callback(hook, 61)}})\n`

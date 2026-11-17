@@ -29,7 +29,8 @@
  * - a baselined function that shrank fails until its entry is lowered, or removed once it is
  *   within the limit, so a fixed function cannot quietly regress later.
  *
- * A renamed function reads as a stale entry and a new offender; each failure names the other.
+ * A function renamed within its file reads as a stale entry and a new offender, and each failure names the
+ * other. One moved to another file reads as the same two failures with no hint, since the hint matches by file.
  * With `--base <ref>` the baseline is also compared with the one at that revision, because the
  * baseline in a change is the change's own file and could otherwise admit the function it adds.
  *

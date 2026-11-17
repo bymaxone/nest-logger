@@ -1,10 +1,10 @@
 /**
- * Pins `scripts/function-length-key.mjs`, the module that encodes and decodes the keys of the
+ * @fileoverview Pins `scripts/function-length-key.mjs`, the module that encodes and decodes the keys of the
  * function-length baseline: every key reads back as the value it was built from, malformed keys
  * are refused, and a key is shown as `file::outer > inner #2`. The module is plain Node, so each
  * case runs it as a child process.
  *
- * Layer: repository tooling, tests.
+ * @layer tests
  */
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'

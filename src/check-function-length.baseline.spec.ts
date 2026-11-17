@@ -1,11 +1,11 @@
 /**
- * Pins `scripts/check-function-length.mjs`, the gate for the 50-line limit on a function or a test
+ * @fileoverview Pins `scripts/check-function-length.mjs`, the gate for the 50-line limit on a function or a test
  * body: how it compares with the baseline and with a base revision, how nested functions are
  * reported, what `--write-baseline` writes, and that the committed baseline is the generated one.
  * It is plain Node, so each case runs it the way CI does, as a child process against a throwaway
  * git repository, and asserts the exit code and the printed problems.
  *
- * Layer: repository tooling, tests.
+ * @layer tests
  */
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
