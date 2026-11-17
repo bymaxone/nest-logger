@@ -25,6 +25,7 @@ import {
 } from '../constants/injection-tokens.constants'
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
 import { cutText } from '../utils/bounded-text.util'
+import { ENTRY_TEXT_REDACTOR } from '../utils/entry-text-redactor.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { isPlainRecord } from '../utils/is-plain-record.util'
 import type { Redactor } from '../utils/redact-by-name.util'
@@ -177,7 +178,9 @@ interface ObjectMessage {
  * @returns The fields, the text, and the payload that carries them.
  */
 function readObjectMessage(message: unknown): ObjectMessage {
-  const fields = isPlainRecord(message) ? message : undefined
+  // An error-shaped object keeps its error-only path: its fields reach the entry as `err`, which
+  // the error sanitizer has already cleaned, and not a second time at the root.
+  const fields = isPlainRecord(message) && !isErrorLike(message) ? message : undefined
   const text = fields === undefined ? undefined : objectMessageText(fields)
   const omit = text?.key === 'message' ? 'message' : undefined
   const payload = withoutOwnedKeys(fields, omit)
@@ -565,8 +568,31 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     message: unknown
   ): string {
     if (leading !== undefined) return safeErrorMessage(leading)
-    if (fields !== undefined) return toBoundedMessage(text?.text ?? '')
+    if (fields !== undefined) return toBoundedMessage(this.censorText(text))
     return safeLogMessage(message)
+  }
+
+  /**
+   * The entry text of an object message, censored under the names of the field it came from: the
+   * text is a copy of that field, and a copy made after the redaction pipeline would carry a value
+   * the pipeline censors in the field itself.
+   *
+   * @param text - The text and the member it came from.
+   * @returns The censored text, or an empty one when the redactor cannot be applied.
+   */
+  private censorText(text: ObjectMessageText | undefined): string {
+    if (text === undefined) return ''
+    try {
+      const redactText =
+        (Reflect.get(this.pino, ENTRY_TEXT_REDACTOR) as Redactor | undefined) ?? this.redact
+      const censored: unknown = Reflect.get(
+        redactText({ [text.key]: text.text }, true) as object,
+        text.key
+      )
+      return typeof censored === 'string' ? censored : ''
+    } catch {
+      return ''
+    }
   }
 
   private emitNestStyle(level: PinoLevelMethod, message: unknown, optionalParams: unknown[]): void {

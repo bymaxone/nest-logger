@@ -9,8 +9,11 @@
  * limit.
  */
 import { applyDefaults } from '../config/default-options'
+import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
-import { buildPinoInstance } from '../pino-factory'
+import { buildPinoInstance, resolveNameRedactor } from '../pino-factory'
+import { ENTRY_TEXT_REDACTOR } from '../utils/entry-text-redactor.util'
+import type { Redactor } from '../utils/redact-by-name.util'
 import { DestinationHealth } from './destination-health.service'
 import { LogContextService } from './log-context.service'
 import { PinoLoggerService } from './pino-logger.service'
@@ -140,5 +143,98 @@ describe('the text of an object message', () => {
     expect(entries()[0]).toMatchObject({ msg: '[object Object]' })
     expect(entries()[0]).not.toHaveProperty('attempts')
     expect(entries()[1]).toMatchObject({ msg: 'a,b' })
+  })
+})
+
+/** A pipeline over the module options given, with the redactor the module wires into the service. */
+function createRedactingPipeline(extra: Partial<BymaxLoggerModuleOptions>): {
+  service: PinoLoggerService
+  entries(): Record<string, unknown>[]
+  pino: ReturnType<typeof buildPinoInstance>
+} {
+  const lines: string[] = []
+  const destination: ILogDestination = {
+    name: 'capture',
+    write(line: string): void {
+      lines.push(line)
+    }
+  }
+  const options = applyDefaults({ service: { name: 'app', version: '1.0.0' }, ...extra })
+  const pino = buildPinoInstance(
+    options,
+    new LogContextService(),
+    [destination],
+    new DestinationHealth()
+  )
+  return {
+    pino,
+    service: new PinoLoggerService(pino, resolveNameRedactor(options)),
+    entries: () => lines.map((line) => JSON.parse(line) as Record<string, unknown>)
+  }
+}
+
+describe('the censoring of the text of an object message', () => {
+  it.each([
+    ['names', 'event'],
+    ['names', 'message'],
+    ['paths', 'event'],
+    ['paths', 'message']
+  ] as const)(
+    'censors the text taken from a field named in redactPaths (%s, %s)',
+    (strategy, key) => {
+      const { service, entries } = createRedactingPipeline({
+        redactStrategy: strategy,
+        redactPaths: [key]
+      })
+
+      service.warn({ [key]: 'secret-text-value' })
+
+      expect(JSON.stringify(entries()[0])).not.toContain('secret-text-value')
+    }
+  )
+
+  it('leaves the text alone when its field is not named', () => {
+    const { service, entries } = createRedactingPipeline({ redactPaths: ['password'] })
+
+    service.warn({ event: 'LIB_EVENT' })
+
+    expect(entries()[0]).toMatchObject({ msg: 'LIB_EVENT' })
+  })
+
+  it('uses the redactor the service was built with when the instance carries none', () => {
+    const { service, entries, pino } = createRedactingPipeline({})
+    Reflect.deleteProperty(pino, ENTRY_TEXT_REDACTOR)
+
+    service.warn({ event: 'LIB_EVENT' })
+
+    expect(entries()[0]).toMatchObject({ msg: 'LIB_EVENT' })
+  })
+
+  it.each([
+    [
+      'throws',
+      (): never => {
+        throw new Error('redactor exploded')
+      }
+    ],
+    ['returns text that is not a string', (): unknown => ({ event: 1 })]
+  ])('writes an empty text when the redactor %s', (_label, redactor) => {
+    const { entries, pino } = createRedactingPipeline({})
+    Reflect.set(pino, ENTRY_TEXT_REDACTOR, redactor as unknown as Redactor)
+    const service = new PinoLoggerService(pino)
+
+    service.warn({ event: 'LIB_EVENT', attempts: 3 })
+
+    expect(entries()[0]).toMatchObject({ msg: '', attempts: 3 })
+  })
+
+  it('writes an object that is shaped like an error as an error only', () => {
+    const { service, entries } = createRedactingPipeline({ errorOwnFields: 'safe' })
+
+    service.warn({ name: 'DriverError', message: 'failed', stdout: 'private-output' })
+
+    expect(entries()[0]).toHaveProperty('err')
+    expect(entries()[0]).not.toHaveProperty('stdout')
+    expect(JSON.stringify(entries()[0])).not.toContain('private-output')
   })
 })

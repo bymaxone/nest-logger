@@ -322,4 +322,56 @@ describe('Logger E2E — metadata cannot replace the structure of the entry', ()
     expect(raw).toContain('"event.name":"lib.event"')
     expect(raw).not.toContain('forged')
   })
+
+  describe('the redaction of the entry text', () => {
+    /*
+     * The text of an object message is a copy of one of its fields, so it is censored under the
+     * same names as the field: a secret in `event` or `message` must not reach `msg`.
+     */
+    it.each(['event', 'message'])(
+      'censors the text taken from a field named in redactPaths: %s',
+      async (key) => {
+        const entry = await runOne(
+          (logger) => logger.warn({ [key]: 'secret-text-value', attempts: 3 }),
+          {
+            redactPaths: [key]
+          }
+        )
+
+        expect(JSON.stringify(entry)).not.toContain('secret-text-value')
+        expect(entry).toMatchObject({ attempts: 3 })
+      }
+    )
+
+    it('censors the text under redactStrategy paths too', async () => {
+      const entry = await runOne((logger) => logger.warn({ event: 'secret-text-value' }), {
+        redactStrategy: 'paths',
+        redactPaths: ['event']
+      })
+
+      expect(JSON.stringify(entry)).not.toContain('secret-text-value')
+    })
+
+    it('leaves the text alone when its field is not redacted', async () => {
+      const entry = await runOne((logger) => logger.warn({ event: 'LIB_EVENT' }), {
+        redactPaths: ['password']
+      })
+
+      expect(entry).toMatchObject({ msg: 'LIB_EVENT' })
+    })
+  })
+
+  describe('an object that is shaped like an error', () => {
+    it('is written as an error only, without its fields at the root', async () => {
+      const entry = await runOne(
+        (logger) =>
+          logger.warn({ name: 'DriverError', message: 'failed', stdout: 'private-output' }),
+        { errorOwnFields: 'safe' }
+      )
+
+      expect(entry['err']).toBeDefined()
+      expect(entry).not.toHaveProperty('stdout')
+      expect(JSON.stringify(entry)).not.toContain('private-output')
+    })
+  })
 })

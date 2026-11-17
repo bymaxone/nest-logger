@@ -28,6 +28,7 @@ import { cutText } from './utils/bounded-text.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
+import { ENTRY_TEXT_REDACTOR } from './utils/entry-text-redactor.util'
 import { mergeMixinSafely } from './utils/merge-mixin-safely.util'
 import {
   createOwnFieldPolicy,
@@ -45,7 +46,6 @@ import {
 import { assignOwnErrorFields, sanitizeError, scrubStack } from './utils/sanitize-error.util'
 import { withSerializedRequest } from './utils/serialize-request.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
-import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
 /**
  * One path segment: either a `["quoted"]` / `['quoted']` bracket segment, whose
@@ -577,6 +577,23 @@ function buildSerializers(
 }
 
 /**
+ * Leaves on the instance the redactor the entry text of an object message is censored with. It
+ * covers the names whatever the strategy, because the text is a copy of a field that the strategy
+ * may censor by path.
+ *
+ * @param logger - The Pino instance the factory built.
+ * @param options - Fully-defaulted module options.
+ * @returns `logger`.
+ */
+function withEntryTextRedactor(
+  logger: PinoLogger,
+  options: ResolvedBymaxLoggerModuleOptions
+): PinoLogger {
+  Reflect.set(logger, ENTRY_TEXT_REDACTOR, buildNameRedactor(options, true, true))
+  return logger
+}
+
+/**
  * One multistream entry for each destination, each behind its bounded queue.
  *
  * @param options - Fully-defaulted module options.
@@ -743,5 +760,6 @@ export function buildPinoInstance(
     mixinMergeStrategy: mergeMixinSafely
   }
 
-  return pino(pinoOptions, pino.multistream(buildStreams(options, destinations, health)))
+  const streams = pino.multistream(buildStreams(options, destinations, health))
+  return withEntryTextRedactor(pino(pinoOptions, streams), options)
 }
