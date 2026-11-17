@@ -40,7 +40,7 @@ heading here.
   It applies at any depth, and not to a key, a value that is not text, the log message, the
   `logKey`, the bindings of a logger, or anything under a key that has a serializer (`err` and the
   keys of `serializers`). The event name and the `exception.*` and `error.type` fields the library
-  writes are added after the cut, so the limit does not apply to them, and they keep the cap of
+  writes are added after the cut, so the limit does not apply to them, and the exception fields among them keep the cap of
   16384 characters they had in 1.4.21. An `Error` placed in the metadata under any
   other key is data of the record when the cut runs, and its message and stack are cut like any
   other string. The names left whole are matched on the root key, so a key of your own named like a
