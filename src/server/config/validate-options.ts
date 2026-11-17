@@ -144,6 +144,9 @@ function validateCore(options: BymaxLoggerModuleOptions): void {
   if (options.maxEntrySizeBytes !== undefined && options.maxEntrySizeBytes <= 0) {
     throw new Error('[BymaxLoggerModule] options.maxEntrySizeBytes must be > 0')
   }
+  if (size !== undefined && !Number.isInteger(size)) {
+    reject('maxEntrySizeBytes', 'must be an integer', size)
+  }
 }
 
 /**
@@ -361,7 +364,7 @@ function validateOtel(options: BymaxLoggerModuleOptions): void {
  * @throws Error when `service` / `service.name` / `service.version` is missing
  *   or empty (after `trim()`).
  * @throws Error when `level` is set to a value outside the Pino LogLevel set.
- * @throws Error when `maxEntrySizeBytes` is not a finite number greater than zero.
+ * @throws Error when `maxEntrySizeBytes` is not a finite whole number greater than zero.
  * @throws Error when a closed-set option (`redactStrategy`, `resourceFormat`,
  *   `errorFormat`, `eventNameField`, `otel.fieldFormat`) holds an unknown value.
  * @throws Error when a switch is not a boolean, a hook or serializer is not a

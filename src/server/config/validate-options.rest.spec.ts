@@ -59,6 +59,38 @@ describe('validateOptions: scalars and customization hooks', () => {
   })
 
   it.each([
+    ['a fraction', 1.5],
+    ['a fraction below one', 0.5]
+  ])(
+    /*
+     * A byte ceiling is a whole number, as every other size and timer option is: a fraction is
+     * refused even though it is finite.
+     */
+    'rejects a maxEntrySizeBytes that is %s',
+    (_label, value) => {
+      expect(() => validateOptions(withOption('maxEntrySizeBytes', value))).toThrow(
+        /options\.maxEntrySizeBytes must be an integer/
+      )
+    }
+  )
+
+  it.each([
+    ['a negative fraction', -0.5],
+    ['a fraction below zero and above minus one', -0.25]
+  ])(
+    /*
+     * The positive-value check takes precedence over the integer check: a value that is not
+     * positive is reported as "must be > 0" whatever its fraction, so `-0.5` is not "an integer" error.
+     */
+    'reports a non-positive maxEntrySizeBytes that is %s as needing to be > 0',
+    (_label, value) => {
+      expect(() => validateOptions(withOption('maxEntrySizeBytes', value))).toThrow(
+        /options\.maxEntrySizeBytes must be > 0/
+      )
+    }
+  )
+
+  it.each([
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
     ['a numeric string', '1024']

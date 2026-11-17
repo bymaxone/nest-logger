@@ -131,6 +131,30 @@ describe('LogPerformance', () => {
   })
 
   /*
+   * The threshold is compared with `duration > thresholdMs`, which is never true for `NaN` or
+   * `Infinity` and always true for a negative one, so slow-call logging would be silently off or
+   * on for every call. The mistake is refused where the decorator is applied, at class definition.
+   */
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+    ['negative', -1],
+    ['a numeric string', '3'],
+    ['null', null]
+  ])('throws a TypeError for a threshold that is %s', (_label, value) => {
+    expect(() => LogPerformance(value as unknown as number)).toThrow(TypeError)
+    expect(() => LogPerformance(value as unknown as number)).toThrow(/thresholdMs/)
+  })
+
+  it.each([
+    ['zero', 0],
+    ['a fraction', 1.5]
+  ])('accepts a threshold that is %s', (_label, value) => {
+    expect(() => LogPerformance(value)).not.toThrow()
+  })
+
+  /*
    * With no logger on the host the decorator must stay silent and still return
    * the value — covers the `if (this.logger)` false branch (fail-safe design).
    */
