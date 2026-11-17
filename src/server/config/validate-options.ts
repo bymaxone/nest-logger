@@ -19,6 +19,7 @@ import { types } from 'node:util'
 
 import {
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
+  MAX_ENTRY_SIZE_BYTES,
   MAX_QUEUE_MAX_BYTES,
   MIN_QUEUE_MAX_BYTES
 } from '../constants/lifecycle-timeouts.constants'
@@ -146,6 +147,9 @@ function validateCore(options: BymaxLoggerModuleOptions): void {
   }
   if (size !== undefined && !Number.isInteger(size)) {
     reject('maxEntrySizeBytes', 'must be an integer', size)
+  }
+  if (options.maxEntrySizeBytes !== undefined && options.maxEntrySizeBytes > MAX_ENTRY_SIZE_BYTES) {
+    reject('maxEntrySizeBytes', `must be at most ${String(MAX_ENTRY_SIZE_BYTES)}`, size)
   }
 }
 

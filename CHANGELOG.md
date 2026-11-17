@@ -12,6 +12,14 @@ heading here.
 
 ## [Unreleased]
 
+### Breaking
+
+- **`maxEntrySizeBytes` is at most 2147483647.** A value such as `2 ** 53` or `1e300` was accepted
+  and could never be reached by an entry. `forRoot` now rejects it with
+  `options.maxEntrySizeBytes must be at most 2147483647`.
+  **Apply:** pass a ceiling of at most 2147483647 bytes; the default and every value up to that are
+  unaffected.
+
 ### Changed
 
 - **The steps of `PrettyDevDestination.onInit` are module functions, not methods.** 1.4.21 split
