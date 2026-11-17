@@ -26,6 +26,7 @@ import {
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
 import { cutText } from '../utils/bounded-text.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
+import { isPlainRecord } from '../utils/is-plain-record.util'
 import type { Redactor } from '../utils/redact-by-name.util'
 import { isErrorLike } from '../utils/sanitize-error.util'
 
@@ -47,6 +48,17 @@ type PinoLevelMethod = 'info' | 'warn' | 'debug' | 'trace' | 'fatal'
 const OWNED_PAYLOAD_KEYS: readonly string[] = ['logKey', 'userId', 'context']
 
 /**
+ * The keys Pino writes itself, ahead of the payload: the level, the time, the message and the
+ * resource of the service. A payload that repeats one is written as a SECOND key of the same name,
+ * and a reader that keeps the last one of a repeated key sees the caller's value, so a caller could
+ * forge the level or the service of its own entry. The flat resource format writes `service.*`.
+ */
+const ENTRY_STRUCTURE_KEYS: ReadonlySet<string> = new Set(['level', 'time', 'msg', 'service'])
+
+const isEntryStructureKey = (key: string): boolean =>
+  ENTRY_STRUCTURE_KEYS.has(key) || key.startsWith('service.')
+
+/**
  * Copy `metadata` without the keys the structured payload owns.
  *
  * A {@link PROTOTYPE_POLLUTING_KEYS} entry is dropped along with them. `__proto__`
@@ -58,17 +70,27 @@ const OWNED_PAYLOAD_KEYS: readonly string[] = ['logKey', 'userId', 'context']
  * same constant so the two cannot drift.
  *
  * @param metadata - Caller-supplied structured fields, possibly `undefined`.
- * @returns A shallow copy with every {@link OWNED_PAYLOAD_KEYS} and
+ * @param omit - One more key to leave out, used to keep an object message's text from being
+ *   written twice.
+ * @returns A shallow copy with every {@link OWNED_PAYLOAD_KEYS}, {@link ENTRY_STRUCTURE_KEYS} and
  *   {@link PROTOTYPE_POLLUTING_KEYS} entry dropped.
  */
-function withoutOwnedKeys(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
+function withoutOwnedKeys(
+  metadata: Record<string, unknown> | undefined,
+  omit?: string
+): Record<string, unknown> {
   if (metadata === undefined) {
     return {}
   }
   try {
     const safe: Record<string, unknown> = {}
     for (const key of Object.keys(metadata)) {
-      if (!OWNED_PAYLOAD_KEYS.includes(key) && !PROTOTYPE_POLLUTING_KEYS.has(key)) {
+      if (
+        key !== omit &&
+        !OWNED_PAYLOAD_KEYS.includes(key) &&
+        !isEntryStructureKey(key) &&
+        !PROTOTYPE_POLLUTING_KEYS.has(key)
+      ) {
         // `Reflect` keeps the dynamic read/write off the object-injection sink list.
         Reflect.set(safe, key, Reflect.get(metadata, key))
       }
@@ -105,6 +127,31 @@ function safeErrorMessage(error: Error): string {
   } catch {
     return 'Unreadable error message'
   }
+}
+
+/** The entry text of an object message and the member it came from. */
+interface ObjectMessageText {
+  readonly key: 'message' | 'event'
+  readonly text: string
+}
+
+/**
+ * The entry text of an object message: its `message` string, else its `event` string. A member
+ * that cannot be read (a throwing getter) is treated as absent.
+ *
+ * @param fields - The plain object the caller passed as the message.
+ * @returns The text and its member, or `undefined` when neither member is a string.
+ */
+function objectMessageText(fields: Record<string, unknown>): ObjectMessageText | undefined {
+  for (const key of ['message', 'event'] as const) {
+    try {
+      const value = Reflect.get(fields, key) as unknown
+      if (typeof value === 'string') return { key, text: value }
+    } catch {
+      // A member that throws on read is not text; the next candidate, or no text, stands.
+    }
+  }
+  return undefined
 }
 
 /**
@@ -271,7 +318,13 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     // keeps the instance context instead of mistaking the stack for it.
     const stack = typeof optionalParams[0] === 'string' ? optionalParams[0] : undefined
     const context = typeof optionalParams[1] === 'string' ? optionalParams[1] : this.context
-    const payload: Record<string, unknown> = {}
+    // A plain-object message is the entry's fields, as in `emitNestStyle`.
+    const fields = isPlainRecord(message) ? message : undefined
+    const text = fields === undefined ? undefined : objectMessageText(fields)
+    const payload: Record<string, unknown> =
+      fields === undefined
+        ? {}
+        : withoutOwnedKeys(fields, text?.key === 'message' ? 'message' : undefined)
     assignIfDefined(payload, 'context', context)
     assignIfDefined(payload, 'stack', stack === undefined ? stack : cutText(stack))
     // An `Error` in the tail is attached as `err`, the same field the
@@ -280,7 +333,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     // string case: the `err` serializer derives the stack from the Error itself,
     // so writing both would emit the same trace under two names.
     assignIfDefined(payload, 'err', findErrorParam(optionalParams))
-    this.pino.error(payload, safeLogMessage(message))
+    this.pino.error(payload, this.nestStyleMessage(undefined, fields, text, message))
   }
 
   /**
@@ -480,8 +533,27 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   }
 
   /** Emit a NestJS-style variadic log, dispatching by level without computed indexing. */
+  private nestStyleMessage(
+    leading: Error | undefined,
+    fields: Record<string, unknown> | undefined,
+    text: ObjectMessageText | undefined,
+    message: unknown
+  ): string {
+    if (leading !== undefined) return safeErrorMessage(leading)
+    if (fields !== undefined) return toBoundedMessage(text?.text ?? '')
+    return safeLogMessage(message)
+  }
+
   private emitNestStyle(level: PinoLevelMethod, message: unknown, optionalParams: unknown[]): void {
-    const payload: Record<string, unknown> = {}
+    // A plain object is the entry's fields, not text: `String(message)` would reduce it to
+    // "[object Object]" and lose every key. The fields go through the same owned-key guard as
+    // `metadata`, and then through the redaction and string-limit pipeline like any other payload.
+    const fields = isPlainRecord(message) ? message : undefined
+    const text = fields === undefined ? undefined : objectMessageText(fields)
+    const payload: Record<string, unknown> =
+      fields === undefined
+        ? {}
+        : withoutOwnedKeys(fields, text?.key === 'message' ? 'message' : undefined)
     assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
     // Every level except `error` routes through here, so before this all of them
     // lost an `Error` in BOTH positions — measured at eleven of the twelve
@@ -493,7 +565,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     assignIfDefined(payload, 'err', leading ?? findErrorParam(optionalParams))
     // A leading `Error` becomes the message, matching what `error(err)` emits —
     // `String(error)` would have produced the `"Error: …"` prefix instead.
-    const msg = leading === undefined ? safeLogMessage(message) : safeErrorMessage(leading)
+    const msg = this.nestStyleMessage(leading, fields, text, message)
     switch (level) {
       case 'info':
         this.pino.info(payload, msg)

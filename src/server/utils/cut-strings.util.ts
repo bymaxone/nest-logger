@@ -12,13 +12,7 @@
  * the walk.
  */
 import { cutText } from './bounded-text.util'
-
-/** Whether `node` is data the walk built: an object whose prototype is `Object.prototype` or none. */
-function isPlainRecord(node: unknown): node is Record<string, unknown> {
-  if (node === null || typeof node !== 'object') return false
-  const prototype: unknown = Object.getPrototypeOf(node)
-  return prototype === Object.prototype || prototype === null
-}
+import { isPlainRecord } from './is-plain-record.util'
 
 /** `node` with every string in it cut at `limit`; what is not text, an array or plain data is kept. */
 function cutNode(node: unknown, limit: number): unknown {
