@@ -27,12 +27,14 @@ jobs: 7 })` through `app.useLogger(app.get(PinoLoggerService))` wrote `msg: "[ob
   dashboard or an alert that matched `[object Object]` in `msg` matches the `event` or `message`
   text instead.
 - **A key the logger writes itself can no longer be replaced from `meta` or from an object
-  message.** `level`, `time`, `msg`, `service` and, with `resourceFormat: 'flat'`, `service.*` in
-  the metadata of `info`, `warnStructured` and `errorStructured` were written as a second key of
-  the same name, and a reader that keeps the last of a repeated key saw the caller's `level` or
-  `service`. They are dropped from the metadata, as `logKey`, `userId` and `context` already
-  were. **Apply:** nothing is required; a field you named `level`, `time`, `msg` or `service` in
-  `meta` is no longer written, so rename it (`severity`, `elapsedMs`, `detail`, `owner`).
+  message.** `level`, `time`, `msg`, `service` and `deployment` and, with `resourceFormat: 'flat'`,
+  `service.*` and `deployment.environment.name`, in the metadata of `info`, `warnStructured` and
+  `errorStructured`, were written as a second key of the same name, and a reader that keeps the
+  last of a repeated key saw the caller's `level`, `service` or environment. They are dropped from
+  the metadata and from an object message, as `logKey`, `userId` and `context` already were.
+  **Apply:** nothing is required; a field you named `level`, `time`, `msg`, `service` or
+  `deployment` in `meta` is no longer written, so rename it (`severity`, `elapsedMs`, `detail`,
+  `owner`, `rollout`).
 
 ### Fixed
 
