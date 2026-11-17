@@ -991,7 +991,7 @@ Implements NestJS `LoggerService`. All methods are available via `@InjectLogger(
 | `warnStructured`  | `(logKey, msg, userId?, meta?)`   | Structured warn log — takes a **message string**                 |
 | `errorStructured` | `(logKey, error, userId?, meta?)` | Structured error log — takes an **`Error`**, serialized to `err` |
 
-`meta` carries arbitrary fields, except that `logKey`, `userId` and `context` belong to the payload (read from the authenticated ALS scope, so a metadata bag cannot forge them), `level`, `time`, `msg`, `service`, `service.*`, `deployment` and `deployment.*` are written by the logger itself and are dropped from `meta`, and `__proto__`, `constructor` and `prototype` are dropped, since they name a prototype chain rather than a field. A key the logger writes from the request context or from the active span (`requestId`, `tenantId`, the trace fields) keeps the logger's value when the payload carries the same key, for `meta`, an object message and the raw Pino logger alike, except `userId`, which a call names as an argument and which wins over the one of the request context; a key the logger does not write, such as a `requestId` outside a request, keeps the payload's own value.
+`meta` carries arbitrary fields, except that `logKey`, `userId` and `context` belong to the payload (read from the authenticated ALS scope, so a metadata bag cannot forge them), `level`, `time`, `msg`, `service`, `service.*`, `deployment` and `deployment.*` are written by the logger itself and are dropped from `meta`, and `__proto__`, `constructor` and `prototype` are dropped, since they name a prototype chain rather than a field. A key the logger writes from the request context or from the active span (`requestId`, `tenantId`, the trace fields) keeps the logger's value when the payload carries the same key, for `meta`, an object message and the raw Pino logger alike, except `userId`, which a call names as an argument and which wins over the one of the request context; a key the logger does not write, such as a `requestId` outside a request, keeps the payload's own value. The raw Pino logger from `getRawLogger()` bypasses the owned-key guards of `meta` and of an object message, so a payload can still repeat `level`, `service` or `userId` there; the request and trace keys still win, and redaction still applies.
 
 **NestJS `LoggerService` bridge** — the variadic contract NestJS calls, so `app.useLogger()` works. These take a message, not a log key.
 
@@ -1012,7 +1012,7 @@ Implements NestJS `LoggerService`. All methods are available via `@InjectLogger(
 | -------------- | ------------ | ----------------------------------------------------------------- |
 | `child`        | `(bindings)` | New `PinoLoggerService` over a Pino child logger                  |
 | `setContext`   | `(context)`  | Global label — ⚠️ singleton; prefer `@InjectLogger(MyClass.name)` |
-| `getRawLogger` | `()`         | The underlying Pino instance                                      |
+| `getRawLogger` | `()`         | The underlying Pino instance; bypasses the `meta` guards above    |
 
 > [!NOTE]
 > There is no `fatalStructured` / `debugStructured`. Structured `fatal` and `debug` helpers are out of scope until a consumer needs them; use `getRawLogger()` in the meantime.
