@@ -352,6 +352,15 @@ describe('Logger E2E — metadata cannot replace the structure of the entry', ()
       expect(JSON.stringify(entry)).not.toContain('secret-text-value')
     })
 
+    it('cuts the text at maxStringLength as it cuts its field', async () => {
+      const entry = await runOne((logger) => logger.warn({ event: 'x'.repeat(100_000) }), {
+        maxStringLength: LIMIT
+      })
+
+      expect(entry['event']).toBe('x'.repeat(LIMIT) + '…[truncated]')
+      expect(entry['msg']).toBe('x'.repeat(LIMIT) + '…[truncated]')
+    })
+
     it('leaves the text alone when its field is not redacted', async () => {
       const entry = await runOne((logger) => logger.warn({ event: 'LIB_EVENT' }), {
         redactPaths: ['password']

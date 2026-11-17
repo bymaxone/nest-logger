@@ -25,7 +25,8 @@ import {
 } from '../constants/injection-tokens.constants'
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
 import { cutText } from '../utils/bounded-text.util'
-import { ENTRY_TEXT_REDACTOR } from '../utils/entry-text-redactor.util'
+import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-text-finisher.util'
+import type { EntryTextFinisher } from '../utils/entry-text-finisher.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { isPlainRecord } from '../utils/is-plain-record.util'
 import type { Redactor } from '../utils/redact-by-name.util'
@@ -573,26 +574,19 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   }
 
   /**
-   * The entry text of an object message, censored under the names of the field it came from: the
-   * text is a copy of that field, and a copy made after the redaction pipeline would carry a value
-   * the pipeline censors in the field itself.
+   * The entry text of an object message, censored under the names of the field it came from and cut
+   * like that field: the text is a copy of it, and a copy made outside the pipeline would carry a
+   * value the pipeline censors or cuts in the field itself.
    *
    * @param text - The text and the member it came from.
    * @returns The censored text, or an empty one when the redactor cannot be applied.
    */
   private censorText(text: ObjectMessageText | undefined): string {
     if (text === undefined) return ''
-    try {
-      const redactText =
-        (Reflect.get(this.pino, ENTRY_TEXT_REDACTOR) as Redactor | undefined) ?? this.redact
-      const censored: unknown = Reflect.get(
-        redactText({ [text.key]: text.text }, true) as object,
-        text.key
-      )
-      return typeof censored === 'string' ? censored : ''
-    } catch {
-      return ''
-    }
+    const finish =
+      (Reflect.get(this.pino, ENTRY_TEXT_FINISHER) as EntryTextFinisher | undefined) ??
+      createEntryTextFinisher(this.redact, undefined)
+    return finish(text.key, text.text)
   }
 
   private emitNestStyle(level: PinoLevelMethod, message: unknown, optionalParams: unknown[]): void {

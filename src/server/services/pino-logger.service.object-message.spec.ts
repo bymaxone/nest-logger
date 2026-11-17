@@ -12,7 +12,7 @@ import { applyDefaults } from '../config/default-options'
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import { buildPinoInstance, resolveNameRedactor } from '../pino-factory'
-import { ENTRY_TEXT_REDACTOR } from '../utils/entry-text-redactor.util'
+import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-text-finisher.util'
 import type { Redactor } from '../utils/redact-by-name.util'
 import { DestinationHealth } from './destination-health.service'
 import { LogContextService } from './log-context.service'
@@ -193,6 +193,15 @@ describe('the censoring of the text of an object message', () => {
     }
   )
 
+  it('cuts the text at maxStringLength as it cuts its field', () => {
+    const { service, entries } = createRedactingPipeline({ maxStringLength: 64 })
+
+    service.warn({ event: 'x'.repeat(1000) })
+
+    expect(entries()[0]?.['msg']).toBe('x'.repeat(64) + '…[truncated]')
+    expect(entries()[0]?.['event']).toBe('x'.repeat(64) + '…[truncated]')
+  })
+
   it('leaves the text alone when its field is not named', () => {
     const { service, entries } = createRedactingPipeline({ redactPaths: ['password'] })
 
@@ -203,7 +212,7 @@ describe('the censoring of the text of an object message', () => {
 
   it('uses the redactor the service was built with when the instance carries none', () => {
     const { service, entries, pino } = createRedactingPipeline({})
-    Reflect.deleteProperty(pino, ENTRY_TEXT_REDACTOR)
+    Reflect.deleteProperty(pino, ENTRY_TEXT_FINISHER)
 
     service.warn({ event: 'LIB_EVENT' })
 
@@ -220,7 +229,11 @@ describe('the censoring of the text of an object message', () => {
     ['returns text that is not a string', (): unknown => ({ event: 1 })]
   ])('writes an empty text when the redactor %s', (_label, redactor) => {
     const { entries, pino } = createRedactingPipeline({})
-    Reflect.set(pino, ENTRY_TEXT_REDACTOR, redactor as unknown as Redactor)
+    Reflect.set(
+      pino,
+      ENTRY_TEXT_FINISHER,
+      createEntryTextFinisher(redactor as unknown as Redactor, undefined)
+    )
     const service = new PinoLoggerService(pino)
 
     service.warn({ event: 'LIB_EVENT', attempts: 3 })

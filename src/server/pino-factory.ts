@@ -28,7 +28,7 @@ import { cutText } from './utils/bounded-text.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
-import { ENTRY_TEXT_REDACTOR } from './utils/entry-text-redactor.util'
+import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from './utils/entry-text-finisher.util'
 import { mergeMixinSafely } from './utils/merge-mixin-safely.util'
 import {
   createOwnFieldPolicy,
@@ -577,9 +577,8 @@ function buildSerializers(
 }
 
 /**
- * Leaves on the instance the redactor the entry text of an object message is censored with. It
- * covers the names whatever the strategy, because the text is a copy of a field that the strategy
- * may censor by path.
+ * Leaves on the instance the function that finishes the entry text of an object message: censored
+ * under the names of its field, whatever the strategy, and cut at `maxStringLength` like the field.
  *
  * @param logger - The Pino instance the factory built.
  * @param options - Fully-defaulted module options.
@@ -589,7 +588,8 @@ function withEntryTextRedactor(
   logger: PinoLogger,
   options: ResolvedBymaxLoggerModuleOptions
 ): PinoLogger {
-  Reflect.set(logger, ENTRY_TEXT_REDACTOR, buildNameRedactor(options, true, true))
+  const redact = buildNameRedactor(options, true, true)
+  Reflect.set(logger, ENTRY_TEXT_FINISHER, createEntryTextFinisher(redact, options.maxStringLength))
   return logger
 }
 
