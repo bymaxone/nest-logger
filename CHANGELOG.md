@@ -15,8 +15,7 @@ heading here.
 ### Fixed
 
 - **An option that holds `undefined` or `null` is read as not set, in the options and in every
-  group.** An `undefined` in a group (`http`, `otel`, `shutdown`, `destinationQueue`) replaced its
-  default in the spread that merges the two, so `shouldCaptureExceptions: undefined` stayed
+  group.** An `undefined` in a group replaced its default in the spread that merges the two, so `shouldCaptureExceptions: undefined` stayed
   `undefined` and not the default `true`, and a `null` anywhere was refused as a value of the wrong
   kind. Each known key is read by property access, so a group, or the options themselves, written as
   a class instance whose values are getters on its prototype is honored; a spread skipped them and
@@ -26,10 +25,11 @@ heading here.
   that relied on a `null` option being refused, or on an explicit `undefined` in a group replacing
   its default, no longer gets that.
 - **A refusal does not print the key of a serializer, and names the type of an `undefined` list
-  member.** The refusal of a serializer that is not a function is now `options.serializers must map
-every serializer key to a function. Received <type>`, where it printed the key the caller chose,
-  and a member of `redactPaths`, `errorOwnFieldNames`, `destinations`, `http.excludePaths` or
-  `http.secretPathSegments` that is `undefined` is refused as `Received undefined`, where it had no
+  member.** The refusal of a serializer that is not a function now says
+  `options.serializers must map every serializer key to a function`, followed by the type
+  received, where it printed the key the caller chose, and a member of `redactPaths`,
+  `errorOwnFieldNames`, `destinations`, `http.excludePaths` or `http.secretPathSegments`
+  that is `undefined` is refused as `Received undefined`, where it had no
   type. **Apply:** code that matches the text of the serializer refusal matches the new one.
 - **The censor rule holds when the logger is built from resolved options.** A `redactCensor` longer
   than `maxStringLength` was refused only by `validateOptions`, so a derived backend that built
