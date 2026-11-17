@@ -28,13 +28,13 @@ heading here.
 
 ### Changed
 
-- **`PrettyDevDestination.onInit` is split into three private methods.** `refuseInProduction`,
+- **`PrettyDevDestination.onInit` is split into private methods.** `refuseInProduction`,
   `buildTransform` and `initFailure` now appear in the class declaration as `private` members.
   Behavior is unchanged.
 
 #### Apply to a derived backend
 
-Nothing is required. A subclass of `PrettyDevDestination` that declares a member named
+Nothing is required of most consumers. A subclass of `PrettyDevDestination` that declares a member named
 `refuseInProduction`, `buildTransform` or `initFailure` no longer compiles against the new
 declaration; rename it.
 
