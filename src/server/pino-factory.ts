@@ -28,6 +28,7 @@ import { cutText } from './utils/bounded-text.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
+import { mergeMixinSafely } from './utils/merge-mixin-safely.util'
 import {
   createOwnFieldPolicy,
   type OwnFieldPolicy,
@@ -572,62 +573,6 @@ function buildSerializers(
         ([key, serializer]): [string, (input: unknown) => unknown] => [key, bound(serializer)]
       )
     )
-  }
-}
-
-/** The one key a call site sets explicitly that the request context also writes. */
-const EXPLICIT_USER_KEY = 'userId'
-
-/**
- * Pino's `mixinMergeStrategy`: merge the caller's object with the mixin result without letting a
- * throwing getter crash the log call, and without letting the caller's object replace a key the
- * mixin writes.
- *
- * @param mergeObject - The caller's object.
- * @param mixinObject - The mixin result.
- * @returns The merged record, or the mixin result alone marked as a redaction failure.
- */
-function mergeMixinSafely(mergeObject: object, mixinObject: object): object {
-  // `formatters.log` is NOT the first code to touch the caller's object: Pino
-  // merges the mixin result with it first, and the default strategy's
-  // `Object.assign` invokes every own getter. A throwing getter therefore
-  // crashed the log call before the redactor could return its fail-closed
-  // envelope. Owning the merge moves that boundary inside the guarantee.
-  try {
-    // Merged into a FRESH target rather than into `mixinObject`. `Object.assign`
-    // copies key by key, so a getter that throws part-way leaves everything
-    // read before it already written into the target — and the catch below
-    // would then emit that prefix, contradicting the sentence it is written
-    // under. A disposable target keeps the partial writes in the value that
-    // is about to be discarded.
-    const merged = Object.assign({}, mergeObject)
-    // The mixin's keys are the correlation of the entry (the request, the tenant, the trace), so a
-    // payload that carries the same key does not replace them. A key the mixin leaves undefined is
-    // not written, so it does not erase the payload's own value. `userId` is the exception: a
-    // structured call names the acting user as an argument, which must win over the ambient one.
-    for (const [key, value] of Object.entries(mixinObject)) {
-      if (value === undefined) continue
-      // An own value only: a parsed object's `__proto__` key swaps the prototype of `merged`, and
-      // what it carries is not the call's own `userId`.
-      if (
-        key === EXPLICIT_USER_KEY &&
-        Object.hasOwn(merged, key) &&
-        Reflect.get(merged, key) !== undefined
-      ) {
-        continue
-      }
-      Reflect.set(merged, key, value)
-    }
-    return merged
-  } catch {
-    // The caller's object cannot be read, so it cannot be proven safe and is
-    // dropped WHOLE — not up to the property that threw. The mixin's own
-    // ambient context (requestId, trace ids) is library-produced and kept.
-    return {
-      ...mixinObject,
-      _redactionFailed: true,
-      _logKey: RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
-    }
   }
 }
 
