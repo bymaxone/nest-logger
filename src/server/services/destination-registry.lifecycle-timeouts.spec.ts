@@ -7,6 +7,7 @@
 import pino from 'pino'
 
 import { applyDefaults } from '../config/default-options'
+import { DefaultStdoutDestination } from '../destinations/default-stdout.destination'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 
@@ -254,6 +255,83 @@ describe('DestinationRegistry lifecycle deadlines', () => {
       } finally {
         jest.useRealTimers()
       }
+    })
+    /*
+     * Nest raises the signal again when the shutdown hooks return, which ends the process, so what
+     * `process.stdout` still holds then is lost. The drain waits for it, for the default stdout
+     * destination only: another destination's own buffer may flush only in `onShutdown`.
+     */
+    describe('what process.stdout holds', () => {
+      let held: number
+      beforeEach(() => {
+        held = 0
+        Object.defineProperty(process.stdout, 'writableLength', {
+          configurable: true,
+          get: () => held
+        })
+      })
+
+      afterEach(() => {
+        Reflect.deleteProperty(process.stdout, 'writableLength')
+      })
+
+      it('waits for the default stdout destination while stdout holds bytes, and no longer', async () => {
+        const registry = registryOf([new DefaultStdoutDestination()], {
+          shutdown: { timeoutMs: 400, drainTimeoutMs: 300 }
+        })
+        await registry.onModuleInit()
+        held = 9
+        jest.useFakeTimers()
+        try {
+          setTimeout(() => {
+            held = 0
+          }, 30)
+          const started = performance.now()
+          let settledAt: number | undefined
+          const shutdown = registry.onApplicationShutdown().then(() => {
+            settledAt = performance.now()
+          })
+
+          await jest.advanceTimersByTimeAsync(400)
+          await shutdown
+
+          expect((settledAt ?? 0) - started).toBeGreaterThanOrEqual(30)
+          expect((settledAt ?? 0) - started).toBeLessThan(35)
+          expect(stderrText(stderr)).not.toContain('entries still queued')
+        } finally {
+          jest.useRealTimers()
+        }
+      })
+
+      it('names it with the bytes stdout holds when the drain ends', async () => {
+        const registry = registryOf([new DefaultStdoutDestination()], {
+          shutdown: { timeoutMs: 200, drainTimeoutMs: 40 }
+        })
+        await registry.onModuleInit()
+        held = 7
+        jest.useFakeTimers()
+        try {
+          const shutdown = registry.onApplicationShutdown()
+          await jest.advanceTimersByTimeAsync(300)
+          await shutdown
+        } finally {
+          jest.useRealTimers()
+        }
+
+        expect(stderrText(stderr)).toContain('entries still queued, by size: "stdout-json" (7)')
+      })
+
+      it('does not wait for a destination that is not the default one', async () => {
+        const registry = registryOf([{ name: 'other', write: jest.fn() }], {
+          shutdown: { timeoutMs: 200, drainTimeoutMs: 40 }
+        })
+        await registry.onModuleInit()
+        held = 7
+
+        await registry.onApplicationShutdown()
+
+        expect(stderrText(stderr)).not.toContain('entries still queued')
+      })
     })
   })
 
