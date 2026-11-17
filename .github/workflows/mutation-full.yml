@@ -47,8 +47,8 @@ jobs:
       # shards by test executions and not by mutants. Peak memory on the 16 GB runner was 10.7 GiB with two
       # workers and their parent, which points to a worker's own heap filling and not to the runner.
       # `maxTestRunnerReuse` in stryker.config.json restarts a worker after that many runs, which bounds how
-      # many runs one heap serves; it applies to the per-push incremental job and to local runs as well, and
-      # whether it removes the restarts is measured by the first run after it merges. The count and the
-      # concurrency are passed here, not written into stryker.config.json, which those runs share.
+      # many runs one heap serves; it applies to the per-push incremental job and to local runs as well. The
+      # count and the concurrency are passed here, not written into stryker.config.json, which those runs
+      # share.
       shards: 8
       concurrency: 2
