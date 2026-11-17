@@ -141,6 +141,9 @@ function validateCore(options: BymaxLoggerModuleOptions): void {
   if (size !== undefined && !Number.isFinite(size)) {
     reject('maxEntrySizeBytes', 'must be a finite number', size)
   }
+  if (size !== undefined && !Number.isInteger(size)) {
+    reject('maxEntrySizeBytes', 'must be an integer', size)
+  }
   if (options.maxEntrySizeBytes !== undefined && options.maxEntrySizeBytes <= 0) {
     throw new Error('[BymaxLoggerModule] options.maxEntrySizeBytes must be > 0')
   }

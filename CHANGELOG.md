@@ -12,6 +12,18 @@ heading here.
 
 ## [Unreleased]
 
+### Changed
+
+- **`@LogPerformance(thresholdMs)` refuses a threshold that is not a finite number of zero or
+  more.** `NaN` and `Infinity` made the comparison `duration > thresholdMs` never true, so slow-call
+  logging was silently off, and a negative value logged every call as slow. The decorator now throws
+  a `TypeError` where it is applied, at class definition. **Apply:** if a call passes a computed
+  threshold, check that it is a finite number of zero or more; a literal such as `500` or no
+  argument is unaffected.
+- **`maxEntrySizeBytes` must be an integer.** A fraction such as `1.5` was accepted and compared as
+  a byte ceiling. `forRoot` now rejects it with `options.maxEntrySizeBytes must be an integer`, as it
+  does for every other size and timer option. **Apply:** pass a whole number of bytes.
+
 ## [1.4.20] - 2026-11-17
 
 ### Fixed

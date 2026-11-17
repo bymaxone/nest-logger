@@ -59,6 +59,22 @@ describe('validateOptions: scalars and customization hooks', () => {
   })
 
   it.each([
+    ['a fraction', 1.5],
+    ['a fraction below one', 0.5]
+  ])(
+    /*
+     * A byte ceiling is a whole number, as every other size and timer option is: `isFinite` let a
+     * fraction through where `Number.isInteger` does not.
+     */
+    'rejects a maxEntrySizeBytes that is %s',
+    (_label, value) => {
+      expect(() => validateOptions(withOption('maxEntrySizeBytes', value))).toThrow(
+        /options\.maxEntrySizeBytes must be an integer/
+      )
+    }
+  )
+
+  it.each([
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
     ['a numeric string', '1024']

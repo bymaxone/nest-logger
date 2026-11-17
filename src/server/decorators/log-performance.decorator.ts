@@ -59,6 +59,8 @@ function emitTimingLog(
  * @param thresholdMs - Duration (ms) above which the call is logged as slow.
  *   Defaults to {@link DEFAULT_THRESHOLD_MS} (1000).
  * @returns A method decorator that wraps the original implementation.
+ * @throws TypeError When `thresholdMs` is not a finite number of zero or more: `NaN` or `Infinity`
+ *   would switch slow-call logging off, and a negative value would log every call as slow.
  * @remarks The wrapped method always returns a `Promise` (see the file header):
  *   apply only to async methods or callers that can await the result.
  * @example
@@ -70,6 +72,11 @@ function emitTimingLog(
  *   }
  */
 export function LogPerformance(thresholdMs: number = DEFAULT_THRESHOLD_MS): MethodDecorator {
+  if (typeof thresholdMs !== 'number' || !Number.isFinite(thresholdMs) || thresholdMs < 0) {
+    throw new TypeError(
+      '[LogPerformance] thresholdMs must be a finite number of milliseconds, zero or more'
+    )
+  }
   return (target, propertyKey, descriptor: PropertyDescriptor): PropertyDescriptor => {
     const original = descriptor.value as (...args: unknown[]) => unknown
     const method = `${target.constructor.name}.${String(propertyKey)}`
