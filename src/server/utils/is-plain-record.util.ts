@@ -11,7 +11,6 @@
  *   for everything else, and for an object whose prototype cannot be read.
  */
 export function isPlainRecord(node: unknown): node is Record<string, unknown> {
-  if (node === null || typeof node !== 'object') return false
   try {
     const prototype: unknown = Object.getPrototypeOf(node)
     return prototype === Object.prototype || prototype === null

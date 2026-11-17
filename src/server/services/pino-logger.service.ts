@@ -180,7 +180,7 @@ function readObjectMessage(message: unknown): ObjectMessage {
   const fields = isPlainRecord(message) ? message : undefined
   const text = fields === undefined ? undefined : objectMessageText(fields)
   const omit = text?.key === 'message' ? 'message' : undefined
-  const payload = fields === undefined ? {} : withoutOwnedKeys(fields, omit)
+  const payload = withoutOwnedKeys(fields, omit)
   return { fields, text, payload }
 }
 
