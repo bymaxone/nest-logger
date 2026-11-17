@@ -4,11 +4,6 @@
       "count": 1
     }
   },
-  "src/server/destinations/pretty-dev.destination.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "src/server/filters/http-exception.filter.ts": {
     "max-lines-per-function": {
       "count": 1

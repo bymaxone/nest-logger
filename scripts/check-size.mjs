@@ -33,6 +33,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-17 — server: 39,794 B (38.86 KiB) real -> 38.9 KiB budget (39,834 B, +40 B over the
+//     measurement). Splitting `PrettyDevDestination.onInit` into three methods is +68 B over the
+//     39,726 B measured before it: their signatures and the doc comments that ship with them.
 //   - 2026-11-17 — server: 39,726 B (38.80 KiB) real -> 38.82 KiB budget (39,752 B, +26 B over the
 //     measurement). The shutdown drain's wait for what `process.stdout` holds is +158 B over the
 //     39,568 B measured before it: one method, its import and its comment.
@@ -248,7 +251,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 38.82 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 38.9 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 
