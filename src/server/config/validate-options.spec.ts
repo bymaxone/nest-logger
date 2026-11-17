@@ -186,7 +186,7 @@ describe('validateOptions — P1 closed-set options', () => {
     )
   })
 
-  it.each([[true], [42], [null]])('rejects a non-string eventNameField (%p)', (eventNameField) => {
+  it.each([[true], [42]])('rejects a non-string eventNameField (%p)', (eventNameField) => {
     expect(() => validateOptions({ ...base, eventNameField: eventNameField as never })).toThrow(
       /eventNameField must be a non-empty string or false/
     )

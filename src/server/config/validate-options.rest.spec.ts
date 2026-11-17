@@ -140,7 +140,6 @@ describe('validateOptions: scalars and customization hooks', () => {
     ['redactCensor', () => '[X]'],
     ['timestamp', 'now'],
     ['serializers', []],
-    ['serializers', null],
     ['redactPaths', 'user.ssn'],
     ['destinations', goodDestination]
   ])(
@@ -186,7 +185,6 @@ describe('validateOptions: scalars and customization hooks', () => {
 
 describe('validateOptions: the rejection message', () => {
   it.each([
-    ['null', null, 'null'],
     ['an array', ['a'], 'an array'],
     ['an object', { a: 1 }, 'an object'],
     ['a function', () => 1, 'a function'],
@@ -284,13 +282,12 @@ describe('validateOptions: destinations', () => {
 
 describe('validateOptions: http', () => {
   it.each([
-    ['null', null],
     ['an array', []],
     ['a string', 'on']
   ])(
     /*
-     * The group is spread over the defaults, so a non-object either vanishes silently
-     * (null) or contributes index keys (an array or a string).
+     * A group that is not an object is refused: spread over the defaults it would contribute
+     * the index keys of an array or of a string.
      */
     'rejects http given %s',
     (_label, value) => {
@@ -372,7 +369,7 @@ describe('validateOptions: http', () => {
     expect(() => validateOptions(withOption('http', { excludePaths: [foreign] }))).not.toThrow()
   })
 
-  it.each([[''], [42], [null]])(
+  it.each([[''], [42]])(
     /*
      * The header name is passed to a lookup on every request; an empty or non-string
      * name would match nothing, or throw, on each one.
@@ -401,7 +398,7 @@ describe('validateOptions: http.tenantIdHeader and http.tenantIdResolver', () =>
     )
   })
 
-  it.each([['x-tenant-id'], [42], [null], [{}]])(
+  it.each([['x-tenant-id'], [42], [{}]])(
     'rejects http.tenantIdResolver %p as not a function',
     (value) => {
       expect(() => validateOptions(withOption('http', { tenantIdResolver: value }))).toThrow(
@@ -412,12 +409,9 @@ describe('validateOptions: http.tenantIdHeader and http.tenantIdResolver', () =>
 })
 
 describe('validateOptions: otel', () => {
-  it.each([
-    ['null', null],
-    ['an array', []]
-  ])(
+  it.each([['an array', []]])(
     /*
-     * Same reason as `http`: the group is spread over the defaults.
+     * Same reason as `http`: an array spread over the defaults contributes its index keys.
      */
     'rejects otel given %s',
     (_label, value) => {
@@ -572,7 +566,7 @@ describe('validateOptions: the full message of the refusals that use the shared 
       'options.eventNameField must be a non-empty string or false. Received the number 42'
     ],
     ['service', 'checkout', 'options.service must be an object. Received a string'],
-    ['service', null, 'options.service must be an object. Received null']
+    ['service', null, 'options.service is required']
   ])('refuses %s given %p with its whole message', (key, value, message) => {
     expect(() => validateOptions(withOption(key, value))).toThrow(
       new Error(`[BymaxLoggerModule] ${message}`)

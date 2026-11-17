@@ -118,10 +118,19 @@ describe('validateOptions: a refusal never echoes the value', () => {
       ['NaN', Number.NaN, 'a number that is not finite'],
       ['Infinity', Number.POSITIVE_INFINITY, 'a number that is not finite'],
       ['a boolean', true, 'a boolean'],
-      ['a bigint', 10n, 'a bigint'],
-      ['null', null, 'null']
+      ['a bigint', 10n, 'a bigint']
     ])('describes %s as %s', (_label, value, expected) => {
       expect(refusalOf(withValue('level', value))).toContain(`Received ${expected}`)
+    })
+
+    /*
+     * A `null` option is read as not set, so `null` is described where it is still refused: a
+     * member of a list.
+     */
+    it('describes a null member of a list as null', () => {
+      expect(refusalOf(withValue('redactPaths', [null]))).toBe(
+        '[BymaxLoggerModule] options.redactPaths[0] must be a non-empty string. Received null'
+      )
     })
   })
 })

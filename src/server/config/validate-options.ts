@@ -17,6 +17,7 @@
  */
 import { types } from 'node:util'
 
+import { dropUnsetOptions } from './drop-unset-options'
 import {
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
   MAX_ENTRY_SIZE_BYTES,
@@ -392,7 +393,7 @@ function validateOtel(options: BymaxLoggerModuleOptions): void {
  * Throws with actionable English error messages prefixed by
  * `[BymaxLoggerModule]` so consumers can grep for them.
  *
- * @param options — Options passed to `BymaxLoggerModule.forRoot()`.
+ * @param given — Options passed to `BymaxLoggerModule.forRoot()`.
  * @throws Error when `service` / `service.name` / `service.version` is missing
  *   or empty (after `trim()`).
  * @throws Error when `level` is set to a value outside the Pino LogLevel set.
@@ -404,7 +405,8 @@ function validateOtel(options: BymaxLoggerModuleOptions): void {
  *   not an array of `RegExp`, a group (`http`, `otel`) is not an object, or a
  *   `destinations` entry does not satisfy `ILogDestination`.
  */
-export function validateOptions(options: BymaxLoggerModuleOptions): void {
+export function validateOptions(given: BymaxLoggerModuleOptions): void {
+  const options = dropUnsetOptions(given)
   validateCore(options)
   validateClosedSets(options)
   validateCustomization(options)

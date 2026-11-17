@@ -28,7 +28,7 @@ describe('validateOptions: maxStringLength', () => {
   /*
    * Every class of value a config file or an untyped caller can hand over: `NaN` and the infinities
    * pass an ordering comparison, a fraction is not a number of characters, a numeric string
-   * compares by coercion and `null` is not "not given".
+   * compares by coercion.
    */
   it.each([
     ['NaN', Number.NaN],
@@ -41,7 +41,6 @@ describe('validateOptions: maxStringLength', () => {
     ['a fraction', 64.5],
     ['a fraction above the smallest', 100.5],
     ['a numeric string', '4096'],
-    ['null', null],
     ['one over the largest', 2_147_483_648],
     ['a boolean', true]
   ])('rejects a limit that is %s', (_label, value) => {
