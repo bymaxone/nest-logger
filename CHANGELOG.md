@@ -58,7 +58,10 @@ heading here.
   and printed `String(value)` (`level`, `redactStrategy`, `resourceFormat`, `errorFormat` and
   `eventNameField`) go through it too, and a wrong `service` is refused as `service` and not as a
   missing `service.name`. **Apply:** code that matches the text `Got:` of a refusal matches
-  `Received` instead; the option's name and the rule are unchanged.
+  `Received` instead; the option's name and the rule are unchanged. Three refusals had no suffix at
+  all (a `service.name` or `service.version` that is not a non-empty string, and a
+  `maxEntrySizeBytes` of 0 or less) and now end in `Received <type>` too, so an exact match on their
+  whole text changes as well; a missing `service.name` or `service.version` still has no suffix.
 
 #### Apply to a derived backend
 
