@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.21] - 2026-11-17
+
 ### Breaking
 
 - **`@LogPerformance(thresholdMs)` refuses a threshold that is not a finite number of zero or
@@ -2927,7 +2929,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.20...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.21...HEAD
+[1.4.21]: https://github.com/bymaxone/nest-logger/compare/v1.4.20...v1.4.21
 [1.4.20]: https://github.com/bymaxone/nest-logger/compare/v1.4.19...v1.4.20
 [1.4.19]: https://github.com/bymaxone/nest-logger/compare/v1.4.18...v1.4.19
 [1.4.18]: https://github.com/bymaxone/nest-logger/compare/v1.4.17...v1.4.18
