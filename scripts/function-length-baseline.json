@@ -1,6 +1,5 @@
 {
   "functions": {
-    "[\"src/server/config/default-options.ts\",[\"fn\",\"applyDefaults\"]]": 53,
     "[\"src/server/filters/http-exception.filter.ts\",[\"member\",\"HttpExceptionFilter\",\"catch\"]]": 67,
     "[\"src/server/interceptors/http-logging.interceptor.ts\",[\"member\",\"HttpLoggingInterceptor\",\"logError\"]]": 51,
     "[\"src/server/middlewares/http-access-log.middleware.ts\",[\"member\",\"HttpAccessLogMiddleware\",\"logTerminal\"]]": 81,

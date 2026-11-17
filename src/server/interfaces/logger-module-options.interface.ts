@@ -284,6 +284,26 @@ export interface BymaxLoggerModuleOptions {
   /** Maximum size in bytes per log entry: an integer from 1 to 2147483647. Default: 65536. */
   maxEntrySizeBytes?: number
   /**
+   * The most characters a string of a log record is written with. A longer string is cut to this
+   * many characters, without splitting a surrogate pair, and ends with `…[truncated]`, so what is
+   * written is up to 12 characters longer than the limit. An integer from 64 to 2147483647.
+   * Default: not set, and a string is written whole.
+   *
+   * Applies to every string value of the record at any depth, but not to a key, a value that is
+   * not text, the log message (already capped at 16384 characters), the `logKey`, the bindings of a
+   * logger (the service identity and a `context`), a value a redaction rule censors, or anything
+   * under a key that has a serializer (`err` and the keys of `serializers`; see
+   * `maxEntrySizeBytes`), so the stack of an error logged under `err` is never cut by it. The event
+   * name and the `exception.*` and `error.type` fields the library writes are added after the cut,
+   * so the limit does not apply to them, and a key of your own with one of those names is cut like
+   * any other. The names left whole are matched on the root key, so a key of your own named like a
+   * serializer key is left whole too. An `Error` placed in the metadata under any other key is
+   * data of the record when the cut runs, and its message and stack are cut like any other string.
+   * A string the caller supplies, such as a `userId` longer than the limit, is cut like any other.
+   * A `redactCensor` longer than the limit is refused at startup, so a censor is never cut.
+   */
+  maxStringLength?: number
+  /**
    * The longest a destination's `onInit` or `onRegistryReady` may take, in milliseconds. Default:
    * 10000. An integer from 1 to 2147483647 (the largest delay a timer holds).
    *
@@ -334,7 +354,13 @@ export interface BymaxLoggerModuleOptions {
  * `BymaxLoggerModuleOptions` the consumer supplies.
  */
 export type ResolvedBymaxLoggerModuleOptions = Readonly<
-  Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel' | 'shutdown' | 'destinationQueue'>> & {
+  Required<
+    Omit<
+      BymaxLoggerModuleOptions,
+      'http' | 'otel' | 'shutdown' | 'destinationQueue' | 'maxStringLength'
+    >
+  > & {
+    maxStringLength: number | undefined
     http: ResolvedHttpOptions
     otel: Required<OtelOptions>
     shutdown: Required<ShutdownOptions>

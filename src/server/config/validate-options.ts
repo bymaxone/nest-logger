@@ -21,7 +21,9 @@ import {
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
   MAX_ENTRY_SIZE_BYTES,
   MAX_QUEUE_MAX_BYTES,
-  MIN_QUEUE_MAX_BYTES
+  MAX_STRING_LENGTH_LIMIT,
+  MIN_QUEUE_MAX_BYTES,
+  MIN_STRING_LENGTH_LIMIT
 } from '../constants/lifecycle-timeouts.constants'
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
@@ -95,6 +97,35 @@ function validateQueue(options: BymaxLoggerModuleOptions): void {
       'destinationQueue.maxBytes',
       `must be 0 (no bound) or an integer from ${String(MIN_QUEUE_MAX_BYTES)} to ${String(MAX_QUEUE_MAX_BYTES)}`,
       maxBytes
+    )
+  }
+}
+
+/**
+ * `maxStringLength`, when given, must be an integer from {@link MIN_STRING_LENGTH_LIMIT} up, and
+ * the `redactCensor` may not be longer than it: the cut would otherwise truncate the censor, the
+ * text a consumer looks for in place of a secret.
+ */
+function validateStringLimit(options: BymaxLoggerModuleOptions): void {
+  const limit: unknown = options.maxStringLength
+  if (limit === undefined) return
+  if (
+    typeof limit !== 'number' ||
+    !Number.isInteger(limit) ||
+    limit < MIN_STRING_LENGTH_LIMIT ||
+    limit > MAX_STRING_LENGTH_LIMIT
+  ) {
+    reject(
+      'maxStringLength',
+      `must be an integer from ${String(MIN_STRING_LENGTH_LIMIT)} to ${String(MAX_STRING_LENGTH_LIMIT)}`,
+      limit
+    )
+  }
+  const censor: unknown = options.redactCensor
+  if (typeof censor === 'string' && censor.length > limit) {
+    reject(
+      'redactCensor',
+      `must be at most ${String(limit)} characters when maxStringLength is set`
     )
   }
 }
@@ -384,6 +415,7 @@ export function validateOptions(options: BymaxLoggerModuleOptions): void {
   validateDestinations(options)
   validateLifecycle(options)
   validateQueue(options)
+  validateStringLimit(options)
   validateHttp(options)
   validateOtel(options)
 }
