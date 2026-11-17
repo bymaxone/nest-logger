@@ -339,7 +339,6 @@ export class PrettyDevDestination implements ILogDestination {
     })
   }
 
-  /** Refuse to start when `NODE_ENV` is `production`. */
   private refuseInProduction(): void {
     // Refused BEFORE the try in `onInit`, so the failure is not reported as a missing
     // package. The state it leaves is the one every init failure leaves: later
@@ -355,11 +354,7 @@ export class PrettyDevDestination implements ILogDestination {
     }
   }
 
-  /**
-   * Resolve `pino-pretty` and build the colorized transform that renders to `process.stdout`.
-   *
-   * @returns The transform every entry is written to.
-   */
+  /** Resolve `pino-pretty` and build the colorized transform that renders to `process.stdout`. */
   private async buildTransform(): Promise<Transform> {
     // The named `build` export is used instead of the default: `pino-pretty`
     // ships as `export =`, so a dynamic `import(...).default` is not typed,
@@ -391,12 +386,7 @@ export class PrettyDevDestination implements ILogDestination {
     })
   }
 
-  /**
-   * Mark the destination as failed and build the error `onInit` rejects with.
-   *
-   * @param cause - What the import or `build()` threw.
-   * @returns The error to throw.
-   */
+  /** Mark the destination as failed and build the error `onInit` rejects with. */
   private initFailure(cause: unknown): Error {
     // Mark as failed so subsequent writes are dropped rather than falling back
     // to raw stdout here: with a stdout sink also registered, a fallback would
