@@ -8,6 +8,7 @@
  * `serializers`, `http`, `otel`, `excludePaths`, `redactPaths`, `destinations`)
  * so per-request handlers cannot corrupt the shared runtime snapshot.
  */
+import { dropUnsetOptions } from './drop-unset-options'
 import {
   DEFAULT_DRAIN_TIMEOUT_MS,
   DEFAULT_HOOK_TIMEOUT_MS,
@@ -82,10 +83,11 @@ function applyOtelFieldFormat(
  * `destinations` are all frozen so per-request handlers cannot corrupt the
  * shared runtime snapshot.
  *
- * @param options — Raw options as supplied to `BymaxLoggerModule.forRoot()`.
+ * @param given — Raw options as supplied to `BymaxLoggerModule.forRoot()`.
  * @returns Frozen, fully-defaulted options ready for runtime consumption.
  */
-export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxLoggerModuleOptions {
+export function applyDefaults(given: BymaxLoggerModuleOptions): ResolvedBymaxLoggerModuleOptions {
+  const options = dropUnsetOptions(given)
   const isProduction = process.env['NODE_ENV'] === 'production'
 
   const http: ResolvedHttpOptions = { ...DEFAULT_HTTP, ...(options.http ?? {}) }

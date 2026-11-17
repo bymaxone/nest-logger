@@ -250,6 +250,8 @@ Wire the access log in `main.ts` with `applyAccessLog(app)` (see [HTTP Logging](
 
 Full options reference for `BymaxLoggerModule.forRoot(options)`:
 
+A key that holds `undefined` or `null` is read as not set, in the options and in each group, so its default applies; `false`, `0` and `''` are values you set and are judged as such, and `service` is required.
+
 ### Top-level options
 
 | Option                       | Type                                          | Default                                             | Description                                                                                                                                                                                                                                                                                                |

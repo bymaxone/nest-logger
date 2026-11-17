@@ -202,6 +202,41 @@ describe('maxStringLength through the logger: the configured censor', () => {
   })
 })
 
+describe('maxStringLength through the logger: a logger built from resolved options', () => {
+  /*
+   * A derived backend can build the resolved options itself and hand them to the factory, which
+   * skips `validateOptions`. The factory refuses a censor longer than the limit too, with the same
+   * message, so no path builds a logger that would cut its own censor.
+   */
+  it('refuses a censor longer than the limit', () => {
+    const resolved = applyDefaults({
+      service: { name: 'svc', version: '1.0.0' },
+      maxStringLength: LIMIT,
+      redactCensor: 'R'.repeat(LIMIT + 1)
+    })
+
+    expect(() =>
+      buildPinoInstance(resolved, new LogContextService(), [createCapture().destination])
+    ).toThrow(
+      new Error(
+        `[BymaxLoggerModule] options.redactCensor must be at most ${String(LIMIT)} characters when maxStringLength is set`
+      )
+    )
+  })
+
+  it('accepts a censor of exactly the limit', () => {
+    const resolved = applyDefaults({
+      service: { name: 'svc', version: '1.0.0' },
+      maxStringLength: LIMIT,
+      redactCensor: 'R'.repeat(LIMIT)
+    })
+
+    expect(() =>
+      buildPinoInstance(resolved, new LogContextService(), [createCapture().destination])
+    ).not.toThrow()
+  })
+})
+
 describe('maxStringLength through the logger: the exception fields', () => {
   /*
    * The fields the library derives from an error are written after the cut, so no name has to be

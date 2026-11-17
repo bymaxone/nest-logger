@@ -112,7 +112,7 @@ describe('validateOptions: destinationQueue', () => {
     expect(() => validateOptions(base)).not.toThrow()
   })
 
-  it.each([[1], [1023], [-1], [1.5], [2_147_483_648], ['1024'], [Number.NaN], [null]])(
+  it.each([[1], [1023], [-1], [1.5], [2_147_483_648], ['1024'], [Number.NaN]])(
     'rejects maxBytes %j, naming the range',
     (maxBytes) => {
       expect(() => validateOptions(withOption('destinationQueue', { maxBytes }))).toThrow(
