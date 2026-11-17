@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.20] - 2026-11-17
+
 ### Fixed
 
 - **A `SIGTERM` no longer discards what a slow stdout reader had not yet taken.** With
@@ -2913,7 +2915,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.19...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.20...HEAD
+[1.4.20]: https://github.com/bymaxone/nest-logger/compare/v1.4.19...v1.4.20
 [1.4.19]: https://github.com/bymaxone/nest-logger/compare/v1.4.18...v1.4.19
 [1.4.18]: https://github.com/bymaxone/nest-logger/compare/v1.4.17...v1.4.18
 [1.4.17]: https://github.com/bymaxone/nest-logger/compare/v1.4.16...v1.4.17
