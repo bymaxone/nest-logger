@@ -45,7 +45,7 @@ heading here.
 - **The steps of `PrettyDevDestination.onInit` are module functions, not methods.** 1.4.21 split
   `onInit` into the private methods `refuseInProduction`, `buildTransform` and `initFailure`, which
   `onInit` called through `this`. A subclass written without the type check, as JavaScript is, that
-  defined a member with one of those names had it called in the place of the step. They are now
+  defined a member with one of those names had it called in the place of the step. The steps are now
   functions of the module, so no member of any name replaces them, and the three declarations leave
   the `.d.ts`. Behavior is otherwise unchanged.
 
