@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.22] - 2026-11-17
+
 ### Breaking
 
 - **`maxEntrySizeBytes` is at most 2147483647.** A value such as `2 ** 53` or `1e300` was accepted
@@ -2997,7 +2999,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.21...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.22...HEAD
+[1.4.22]: https://github.com/bymaxone/nest-logger/compare/v1.4.21...v1.4.22
 [1.4.21]: https://github.com/bymaxone/nest-logger/compare/v1.4.20...v1.4.21
 [1.4.20]: https://github.com/bymaxone/nest-logger/compare/v1.4.19...v1.4.20
 [1.4.19]: https://github.com/bymaxone/nest-logger/compare/v1.4.18...v1.4.19
