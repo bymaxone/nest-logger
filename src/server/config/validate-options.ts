@@ -37,6 +37,7 @@ function reject(path: string, rule: string, got?: unknown): never {
 /**
  * What a rejected value was: its type, and nothing of its content. A value handed to an option can
  * be a secret read from a config file, so only a finite number, which cannot be one, is printed.
+ * `reject` calls it only for a value that was given, so `undefined` never reaches it.
  */
 function describeValue(value: unknown): string {
   switch (typeof value) {
@@ -52,8 +53,6 @@ function describeValue(value: unknown): string {
       return 'a symbol'
     case 'function':
       return 'a function'
-    case 'undefined':
-      return 'undefined'
     default:
       if (value === null) return 'null'
       return Array.isArray(value) ? 'an array' : 'an object'
