@@ -22,14 +22,21 @@ heading here.
   **Apply:** pass a ceiling of at most 2147483647 bytes; the default and every value up to that are
   unaffected.
 
+- **A `maxStringLength` outside 64 to 2147483647 is refused.** 1.4.21 did not read an option of that
+  name, so a key `maxStringLength` was ignored whatever it held. It is validated at startup now
+  (`options.maxStringLength must be an integer from 64 to 2147483647`), and a value such as `10`,
+  `64.5` or `'100'` stops the application from starting. **Apply:** remove the key, or give a whole
+  number of characters from 64 up.
+
 ### Added
 
 - **`maxStringLength` bounds the length of every string of a log record.** A string under a metadata
   key is the caller's own data and was written as given, so one value of a megabyte made an entry of
   a megabyte. With `maxStringLength` set, a string longer than the limit is cut to that many
   characters (a cut never splits a surrogate pair) and ends with `…[truncated]`. It is an integer
-  from 64 to 2147483647 and it is off until set. The cut is the last step, over the record after
-  every redaction rule has run, so it cannot cut a string before a rule that needs the whole of it.
+  from 64 to 2147483647 and it is off until set. The cut runs after
+  every redaction rule and before the event name and the exception fields are written, so it cannot
+  cut a string before a rule that needs the whole of it.
   It applies at any depth, and not to a key, a value that is not text, the log message, the
   `logKey`, the bindings of a logger, or anything under a key that has a serializer (`err` and the
   keys of `serializers`). The event name and the `exception.*` and `error.type` fields the library
@@ -38,7 +45,11 @@ heading here.
   other string. The names left whole are matched on the root key, so a key of your own named like a
   serializer key is left whole too. A `userId` longer than the
   limit is cut like any other string. A `redactCensor` longer than the limit is refused at startup,
-  so a censor is never cut.
+  so a censor is never cut. Setting the option makes the record walk run even when no field name is
+  covered (`shouldDisableDefaultRedact: true` and no `redactPaths`), and the walk writes a boxed
+  `String` or `Number`, a `Buffer`, a `Uint8Array` and an `Error` in the metadata as the default
+  redaction already does: a two-byte `Buffer` is written as `[Binary 2 bytes]` and not as
+  `{"type":"Buffer","data":[104,105]}`.
 
 ### Changed
 
@@ -56,9 +67,12 @@ heading here.
   `Received a string`, `Received a symbol`, `Received an object` and so on, and prints a value only
   when it is a finite number (`Received the number 63`). The refusals that bypassed the shared path
   and printed `String(value)` (`level`, `redactStrategy`, `resourceFormat`, `errorFormat` and
-  `eventNameField`) go through it too, and a wrong `service` is refused as `service` and not as a
-  missing `service.name`. **Apply:** code that matches the text `Got:` of a refusal matches
-  `Received` instead; the option's name and the rule are unchanged. Three refusals had no suffix at
+  `eventNameField`) go through it too. A `service` that is not an object, including `null`, `0`,
+  `false`, `''` and `NaN`, is now refused as `options.service must be an object. Received …`:
+  1.4.21 said `options.service is required` for a falsy one and blamed `service.name` for any other,
+  and only an undefined `service` keeps `options.service is required`. **Apply:** code that matches
+  the text `Got:` of a refusal matches `Received` instead; apart from that and `service`, the
+  option's name and the rule are unchanged. Three refusals had no suffix at
   all (a `service.name` or `service.version` that is not a non-empty string, and a
   `maxEntrySizeBytes` of 0 or less) and now end in `Received <type>` too, so an exact match on their
   whole text changes as well; a missing `service.name` or `service.version` still has no suffix.
