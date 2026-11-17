@@ -383,4 +383,69 @@ describe('Logger E2E — metadata cannot replace the structure of the entry', ()
       expect(JSON.stringify(entry)).not.toContain('private-output')
     })
   })
+
+  describe('the entry text equals its field after the pipeline', () => {
+    /*
+     * The text is a copy of a field and is built outside the pipeline the field goes through, so a
+     * stage added to the pipeline and not to the copy leaves the two different. This is the
+     * invariant, over every redaction and limit setting that touches a string: the text of an
+     * object message is, character for character, what its `event` field became, and the text of
+     * a `message` is what the same text became as an `event`.
+     */
+    const CONFIGS: ReadonlyArray<readonly [string, Partial<BymaxLoggerModuleOptions>]> = [
+      ['no setting', {}],
+      ['maxStringLength', { maxStringLength: LIMIT }],
+      ['redactPaths event (names)', { redactPaths: ['event'] }],
+      ['redactPaths event (paths)', { redactStrategy: 'paths', redactPaths: ['event'] }],
+      [
+        'redactPaths event and a custom censor',
+        { redactPaths: ['event'], redactCensor: '<hidden>' }
+      ],
+      [
+        'redactPaths event and maxStringLength',
+        { redactPaths: ['event'], maxStringLength: LIMIT, redactCensor: '<hidden>' }
+      ],
+      ['default redaction disabled', { shouldDisableDefaultRedact: true }]
+    ]
+    const TEXTS = ['LIB_EVENT', 'x'.repeat(LIMIT), 'x'.repeat(LIMIT + 1), '']
+
+    describe.each(CONFIGS)('%s', (_label, extra) => {
+      it.each(TEXTS)('is the field, for the text of %#', async (text) => {
+        const entry = await runOne((logger) => logger.warn({ event: text }), extra)
+
+        expect(entry['msg']).toBe(entry['event'])
+      })
+
+      /*
+       * With no maxStringLength a field is not cut, and the text keeps the message cap that bounds
+       * every log message, so a huge text is the one place the two differ, and only in length.
+       */
+      it('is bounded by the message cap, or by maxStringLength when it is set, for a huge text', async () => {
+        const text = 'y'.repeat(100_000)
+
+        const entry = await runOne((logger) => logger.warn({ event: text }), extra)
+
+        if (extra.maxStringLength === undefined) {
+          expect(String(entry['msg']).length).toBeLessThan(text.length)
+        } else {
+          expect(entry['msg']).toBe(entry['event'])
+        }
+      })
+
+      it.each(TEXTS)(
+        'is the same for a message as for an event, for the text of %#',
+        async (text) => {
+          const fromEvent = await runOne((logger) => logger.warn({ event: text }), extra)
+          const fromMessage = await runOne((logger) => logger.warn({ message: text }), {
+            ...extra,
+            redactPaths: (extra.redactPaths ?? []).map((path) =>
+              path === 'event' ? 'message' : path
+            )
+          })
+
+          expect(fromMessage['msg']).toBe(fromEvent['msg'])
+        }
+      )
+    })
+  })
 })
