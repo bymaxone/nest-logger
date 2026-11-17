@@ -27,8 +27,8 @@ jobs: 7 })` through `app.useLogger(app.get(PinoLoggerService))` wrote `msg: "[ob
   dashboard or an alert that matched `[object Object]` in `msg` matches the `event` or `message`
   text instead.
 - **A payload cannot replace the correlation keys the logger writes from the request context and
-  the active span.** Inside a request, a `requestId`, a `tenantId`, another key of the request
-  context, or the trace fields (`traceId`, `spanId`, `traceFlags`, or the names you set in `otel`,
+  the active span.** A `requestId`, a `tenantId` or another key of the request
+  context inside a request, or the trace fields under an active span (`traceId`, `spanId`, `traceFlags`, or the names you set in `otel`,
   or `trace_id`, `span_id` and `trace_flags` with `fieldFormat: 'snake_case'`) carried by an
   object message, by the metadata of a structured call or by the raw Pino logger replaced the
   value the logger had written, so a line could be attributed to another request, tenant or trace.
