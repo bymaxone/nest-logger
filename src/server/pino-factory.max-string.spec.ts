@@ -238,3 +238,33 @@ describe('maxStringLength through the logger: the exception fields', () => {
     expect(entry['exception.message']).toBe('m'.repeat(LIMIT + 40))
   })
 })
+
+describe('maxStringLength through the logger: no field name is covered', () => {
+  /*
+   * With the default redaction off and no `redactPaths`, no walk would run for want of a name to
+   * cover. The cut reads only what the walk wrote, so setting the option makes the walk run
+   * anyway: left to read the caller's own object, the cut would recurse into a cycle without end
+   * and would miss what a `toJSON` returns, which only the walk has resolved.
+   */
+  const uncovered = { maxStringLength: LIMIT, shouldDisableDefaultRedact: true }
+
+  it('writes a value that refers to itself, with its strings cut and the cycle marked', () => {
+    const { logger, capture } = loggerWith(uncovered)
+    const cyclic: Record<string, unknown> = { note: long }
+    cyclic['self'] = cyclic
+
+    logger.info('K', 'message', undefined, { cyclic })
+
+    const entry = capture.entries()[0] as { cyclic: Record<string, unknown> }
+    expect(entry.cyclic).toEqual({ note: cutLong, self: '[Circular]' })
+  })
+
+  it('cuts the string a toJSON returns, which only the walk has resolved', () => {
+    const { logger, capture } = loggerWith(uncovered)
+
+    logger.info('K', 'message', undefined, { held: { toJSON: () => long } })
+
+    const entry = capture.entries()[0] as { held: string }
+    expect(entry.held).toBe(cutLong)
+  })
+})

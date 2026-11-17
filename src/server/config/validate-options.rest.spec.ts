@@ -11,6 +11,7 @@ import { runInNewContext } from 'node:vm'
 
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { validateOptions } from './validate-options'
+import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 
 const base: BymaxLoggerModuleOptions = { service: { name: 'app', version: '1.0.0' } }
 
@@ -537,4 +538,44 @@ describe('validateOptions: the message of each destination, size and format rule
       expect(() => validateOptions(withOption('otel', { fieldFormat: value }))).not.toThrow()
     }
   )
+})
+
+describe('validateOptions: the full message of the refusals that use the shared path', () => {
+  /*
+   * Each rule text is what a consumer reads to fix the entry, so each is pinned whole, with the
+   * type of what was received after it: a rule text that is empty or changed has to fail here.
+   */
+  it.each([
+    [
+      'level',
+      'loud',
+      `options.level must be one of: ${LOG_LEVEL_PRIORITY.join(', ')}. Received a string`
+    ],
+    [
+      'redactStrategy',
+      'both',
+      "options.redactStrategy must be 'names' or 'paths'. Received a string"
+    ],
+    [
+      'resourceFormat',
+      'tree',
+      "options.resourceFormat must be 'nested' or 'flat'. Received a string"
+    ],
+    [
+      'errorFormat',
+      'json',
+      "options.errorFormat must be 'pino', 'semconv' or 'both'. Received a string"
+    ],
+    [
+      'eventNameField',
+      42,
+      'options.eventNameField must be a non-empty string or false. Received the number 42'
+    ],
+    ['service', 'checkout', 'options.service must be an object. Received a string'],
+    ['service', null, 'options.service must be an object. Received null']
+  ])('refuses %s given %p with its whole message', (key, value, message) => {
+    expect(() => validateOptions(withOption(key, value))).toThrow(
+      new Error(`[BymaxLoggerModule] ${message}`)
+    )
+  })
 })
