@@ -74,6 +74,62 @@ describe('the merge of the mixin result with the caller object', () => {
     expect(entry).toMatchObject({ userId: 'u_als', attempts: 3 })
   })
 
+  /*
+   * An own `__proto__` key swaps the prototype of a plain merge target, and the ambient keys are
+   * then written through whatever that prototype carries: a setter runs caller code and a
+   * non-writable property drops the write. The ambient value is an own data property of the entry.
+   */
+  describe('a payload with an own __proto__ key that carries', () => {
+    const withProto = (proto: object): object =>
+      Object.defineProperty({ attempts: 3 }, '__proto__', {
+        value: proto,
+        enumerable: true,
+        configurable: true,
+        writable: true
+      })
+
+    it('a setter for a key of the request context, which does not run', () => {
+      const { logContext, log } = createPipeline()
+      let calls = 0
+      const proto = Object.defineProperty({}, 'requestId', {
+        set: () => {
+          calls += 1
+        },
+        enumerable: true,
+        configurable: true
+      })
+
+      const entry = logContext.run({ requestId: 'r_als' }, () => log(withProto(proto)))
+
+      expect(entry).toMatchObject({ requestId: 'r_als', attempts: 3 })
+      expect(calls).toBe(0)
+    })
+
+    it('a non-writable property for a key of the request context, which does not drop it', () => {
+      const { logContext, log } = createPipeline()
+      const proto = Object.freeze({ requestId: 'frozen' })
+
+      const entry = logContext.run({ requestId: 'r_als' }, () => log(withProto(proto)))
+
+      expect(entry).toMatchObject({ requestId: 'r_als', attempts: 3 })
+    })
+
+    it('a setter for the same key, which does not forge it', () => {
+      const { logContext, log } = createPipeline()
+      const proto = Object.defineProperty({}, 'requestId', {
+        set(this: Record<string, unknown>) {
+          Object.defineProperty(this, 'requestId', { value: 'forged', enumerable: true })
+        },
+        enumerable: true,
+        configurable: true
+      })
+
+      const entry = logContext.run({ requestId: 'r_als' }, () => log(withProto(proto)))
+
+      expect(entry['requestId']).toBe('r_als')
+    })
+  })
+
   it('writes the userId of the request context when the call names none', () => {
     const { logContext, log } = createPipeline()
 

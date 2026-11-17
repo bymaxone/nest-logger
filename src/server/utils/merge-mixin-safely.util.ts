@@ -6,6 +6,9 @@
  */
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
+/** The key that names a prototype, which a payload's own copy of it must not reach. */
+const PROTOTYPE_KEY = '__proto__'
+
 /** The one key a call site sets explicitly that the request context also writes. */
 const EXPLICIT_USER_KEY = 'userId'
 
@@ -31,22 +34,20 @@ export function mergeMixinSafely(mergeObject: object, mixinObject: object): obje
     // would then emit that prefix, contradicting the sentence it is written
     // under. A disposable target keeps the partial writes in the value that
     // is about to be discarded.
-    const merged = Object.assign({}, mergeObject)
+    const merged: Record<string, unknown> = {}
+    // Copied key by key and never through `Object.assign`: an own `__proto__` key of the payload
+    // (a parsed object has one) would swap the prototype of `merged`, and the writes below would
+    // then run a setter the payload carries or be dropped by a non-writable property it carries.
+    for (const key of Object.keys(mergeObject)) {
+      if (key !== PROTOTYPE_KEY) Reflect.set(merged, key, Reflect.get(mergeObject, key))
+    }
     // The mixin's keys are the correlation of the entry (the request, the tenant, the trace), so a
     // payload that carries the same key does not replace them. A key the mixin leaves undefined is
     // not written, so it does not erase the payload's own value. `userId` is the exception: a
     // structured call names the acting user as an argument, which must win over the ambient one.
     for (const [key, value] of Object.entries(mixinObject)) {
       if (value === undefined) continue
-      // An own value only: a parsed object's `__proto__` key swaps the prototype of `merged`, and
-      // what it carries is not the call's own `userId`.
-      if (
-        key === EXPLICIT_USER_KEY &&
-        Object.hasOwn(merged, key) &&
-        Reflect.get(merged, key) !== undefined
-      ) {
-        continue
-      }
+      if (key === EXPLICIT_USER_KEY && Reflect.get(merged, key) !== undefined) continue
       Reflect.set(merged, key, value)
     }
     return merged
