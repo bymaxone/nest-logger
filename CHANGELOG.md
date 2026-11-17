@@ -16,7 +16,7 @@ heading here.
 
 - **`maxEntrySizeBytes` is at most 2147483647.** A value such as `2 ** 53` or `1e300` was accepted
   and could never be reached by an entry. `forRoot` now rejects it with
-  `options.maxEntrySizeBytes must be at most 2147483647`, as it does for the other size options.
+  `options.maxEntrySizeBytes must be at most 2147483647`.
   **Apply:** pass a ceiling of at most 2147483647 bytes; the default and every value up to that are
   unaffected.
 
