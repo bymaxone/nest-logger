@@ -26,7 +26,7 @@ heading here.
   name, so a key `maxStringLength` was ignored whatever it held. It is validated at startup now
   (`options.maxStringLength must be an integer from 64 to 2147483647`), and a value such as `10`,
   `64.5` or `'100'` stops the application from starting. **Apply:** remove the key, or give a whole
-  number of characters from 64 up.
+  number of characters from 64 up to 2147483647.
 
 ### Added
 
@@ -40,7 +40,8 @@ heading here.
   It applies at any depth, and not to a key, a value that is not text, the log message, the
   `logKey`, the bindings of a logger, or anything under a key that has a serializer (`err` and the
   keys of `serializers`). The event name and the `exception.*` and `error.type` fields the library
-  writes are added after the cut, so the limit does not apply to them. An `Error` placed in the metadata under any
+  writes are added after the cut, so the limit does not apply to them, and the exception fields among them keep the cap of
+  16384 characters they had in 1.4.21. An `Error` placed in the metadata under any
   other key is data of the record when the cut runs, and its message and stack are cut like any
   other string. The names left whole are matched on the root key, so a key of your own named like a
   serializer key is left whole too. A `userId` longer than the
@@ -49,7 +50,9 @@ heading here.
   covered (`shouldDisableDefaultRedact: true` and no `redactPaths`), and the walk writes a boxed
   `String` or `Number`, a `Buffer`, a `Uint8Array` and an `Error` in the metadata as the default
   redaction already does: a two-byte `Buffer` is written as `[Binary 2 bytes]` and not as
-  `{"type":"Buffer","data":[104,105]}`.
+  `{"type":"Buffer","data":[104,105]}`, while a boxed `Number` is written as `{}` and a boxed
+  `String` as a map of its indexes (`{"0":"a","1":"b","2":"c"}` for `new String('abc')`), as the
+  default redaction writes them.
 
 ### Changed
 
@@ -69,7 +72,7 @@ heading here.
   and printed `String(value)` (`level`, `redactStrategy`, `resourceFormat`, `errorFormat` and
   `eventNameField`) go through it too. A `service` that is not an object, including `null`, `0`,
   `false`, `''` and `NaN`, is now refused as `options.service must be an object. Received …`:
-  1.4.21 said `options.service is required` for a falsy one and blamed `service.name` for any other,
+  1.4.21 said `options.service is required` for a falsy one and blamed `service.name` or `service.version` for any other,
   and only an undefined `service` keeps `options.service is required`. **Apply:** code that matches
   the text `Got:` of a refusal matches `Received` instead; apart from that and `service`, the
   option's name and the rule are unchanged. Three refusals had no suffix at
@@ -82,8 +85,9 @@ heading here.
 `PrettyDevDestination`: nothing is required. A subclass that defines a member named
 `refuseInProduction`, `buildTransform` or `initFailure` keeps it, and `onInit` no longer calls it.
 
-`maxStringLength`: nothing is required to keep the behavior, since the option is off until set.
-`ResolvedBymaxLoggerModuleOptions` gains the key `maxStringLength: number | undefined`, so a derived
+`maxStringLength`: a configuration that already passes that key with a value outside 64 to
+2147483647 must change it, because it is refused now (see the Breaking entry above); otherwise
+nothing is required, since the option is off until set. `ResolvedBymaxLoggerModuleOptions` gains the key `maxStringLength: number | undefined`, so a derived
 backend that builds that object itself adds `maxStringLength: undefined`; one that spreads the
 result of `applyDefaults` already has it.
 
