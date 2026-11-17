@@ -543,8 +543,7 @@ describe('validateOptions: the message of each destination, size and format rule
 describe('validateOptions: the full message of the refusals that use the shared path', () => {
   /*
    * Each rule text is what a consumer reads to fix the entry, so each is pinned whole, with the
-   * type of what was received after it. These five and `service` were direct throws before they
-   * went through the shared path, and a rule text that is empty or changed has to fail here.
+   * type of what was received after it: a rule text that is empty or changed has to fail here.
    */
   it.each([
     [
