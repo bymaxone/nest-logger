@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.22] - 2026-11-17
+
 ### Breaking
 
 - **`maxEntrySizeBytes` is at most 2147483647.** A value such as `2 ** 53` or `1e300` was accepted
@@ -43,7 +45,7 @@ heading here.
 - **The steps of `PrettyDevDestination.onInit` are module functions, not methods.** 1.4.21 split
   `onInit` into the private methods `refuseInProduction`, `buildTransform` and `initFailure`, which
   `onInit` called through `this`. A subclass written without the type check, as JavaScript is, that
-  defined a member with one of those names had it called in the place of the step. They are now
+  defined a member with one of those names had it called in the place of the step. The steps are now
   functions of the module, so no member of any name replaces them, and the three declarations leave
   the `.d.ts`. Behavior is otherwise unchanged.
 
@@ -56,7 +58,10 @@ heading here.
   and printed `String(value)` (`level`, `redactStrategy`, `resourceFormat`, `errorFormat` and
   `eventNameField`) go through it too, and a wrong `service` is refused as `service` and not as a
   missing `service.name`. **Apply:** code that matches the text `Got:` of a refusal matches
-  `Received` instead; the option's name and the rule are unchanged.
+  `Received` instead; the option's name and the rule are unchanged. Three refusals had no suffix at
+  all (a `service.name` or `service.version` that is not a non-empty string, and a
+  `maxEntrySizeBytes` of 0 or less) and now end in `Received <type>` too, so an exact match on their
+  whole text changes as well; a missing `service.name` or `service.version` still has no suffix.
 
 #### Apply to a derived backend
 
@@ -2997,7 +3002,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.21...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.22...HEAD
+[1.4.22]: https://github.com/bymaxone/nest-logger/compare/v1.4.21...v1.4.22
 [1.4.21]: https://github.com/bymaxone/nest-logger/compare/v1.4.20...v1.4.21
 [1.4.20]: https://github.com/bymaxone/nest-logger/compare/v1.4.19...v1.4.20
 [1.4.19]: https://github.com/bymaxone/nest-logger/compare/v1.4.18...v1.4.19
