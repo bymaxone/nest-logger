@@ -215,4 +215,30 @@ describe('the command', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  /*
+   * A flag with no value, or one followed by another flag, is a mistake in the call. Taking it as
+   * "no value" would switch the base comparison off, and the gate would pass where it must fail.
+   */
+  it('refuses an option that has no value instead of skipping the comparison', () => {
+    const root = scratch({ 'src/old.spec.ts': 'import x from "x"\n' })
+    try {
+      const baseline = join(root, 'baseline.json')
+      writeFileSync(baseline, '{"files":["src/old.spec.ts"]}')
+      const calls = [
+        ['--base', ['--root', root, '--baseline', baseline, '--base']],
+        ['--baseline', ['--root', root, '--baseline']],
+        ['--root', ['--root']],
+        ['--base', ['--root', root, '--base', '--baseline', baseline]]
+      ]
+      for (const [option, args] of calls) {
+        const result = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' })
+
+        assert.equal(result.status, 2, `${option}: ${result.stdout}${result.stderr}`)
+        assert.match(result.stderr, new RegExp(`${option} needs a value\\.`))
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

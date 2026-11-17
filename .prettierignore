@@ -15,3 +15,10 @@ scripts/function-length-key.mjs
 src/check-function-length.spec.ts
 src/check-function-length.baseline.spec.ts
 src/check-function-length.key.spec.ts
+
+# Copied byte-identical from the family templates (bymaxone/.github check-suppressions-baseline and
+# commitlint-no-ai-attribution), which are formatted with trailing commas that this repository's
+# Prettier would remove.
+scripts/check-suppressions-baseline.mjs
+scripts/check-suppressions-baseline.test.mjs
+scripts/commitlint-no-ai-attribution.cjs

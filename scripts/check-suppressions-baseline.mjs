@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
- * Suppression-baseline gate: `eslint-suppressions.json` may shrink and may not grow.
- *
- * Layer: scripts.
+ * @fileoverview Suppression-baseline gate: `eslint-suppressions.json` may shrink and may not grow.
+ * @layer scripts
  *
  * ESLint's bulk suppressions record the violations a rule had when it was introduced, so the rule fails
  * on what a change adds and not on what the repository inherits, and ESLint fails on a suppression that
@@ -33,7 +32,7 @@ const BASELINE = 'eslint-suppressions.json'
  *
  * @param {string} text The baseline file's text.
  * @param {string} where Where it came from, for the message.
- * @returns {Map<string, number>} The count of each suppression, keyed by `JSON.stringify([file, rule])`, which no file or rule name can make collide.
+ * @returns {Map<string, number>} The count of each suppression, keyed by the JSON text of `[file, rule]`, which no pair of names can share.
  */
 export function parseSuppressions(text, where) {
   const counts = new Map()
@@ -67,7 +66,7 @@ export function growthOf(current, base) {
     if (count > before) {
       const [file, rule] = JSON.parse(key)
       problems.push(
-        `${file}: ${String(count)} \`${rule}\` suppression(s), the base revision has ${String(before)}. Fix the violation instead of suppressing it.`
+        `${file}: ${String(count)} \`${rule}\` suppression(s), the base revision has ${String(before)}. Fix the violation instead of suppressing it.`,
       )
     }
   }
@@ -85,7 +84,7 @@ function baselineAt(root, ref) {
   try {
     execFileSync('git', ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
       cwd: root,
-      stdio: 'ignore'
+      stdio: 'ignore',
     })
   } catch {
     throw new Error(`${ref}: not a revision in this repository`)
@@ -108,7 +107,13 @@ function baselineAt(root, ref) {
  */
 function option(name, fallback) {
   const index = process.argv.indexOf(name)
-  return index === -1 ? fallback : (process.argv[index + 1] ?? fallback)
+  if (index === -1) return fallback
+  const value = process.argv[index + 1]
+  if (value === undefined || value.startsWith('--')) {
+    console.error(`${name} needs a value.`)
+    process.exit(2)
+  }
+  return value
 }
 
 /** Runs the gate and exits non-zero when the baseline grew. */

@@ -1,8 +1,7 @@
 /**
- * Tests of the suppression-baseline gate: how counts are read, what counts as growth, and the command's
- * exit status on a real repository, so the gate itself is held by a test and not by a habit.
- *
- * Layer: scripts.
+ * @fileoverview Tests of the suppression-baseline gate: how counts are read, what counts as growth, and the
+ * command's exit status on a real repository, so the gate itself is held by a test and not by a habit.
+ * @layer scripts
  */
 
 import assert from 'node:assert/strict'
@@ -20,8 +19,8 @@ const SCRIPT = fileURLToPath(new URL('./check-suppressions-baseline.mjs', import
 function baseline(counts) {
   return JSON.stringify(
     Object.fromEntries(
-      Object.entries(counts).map(([file, count]) => [file, { 'max-lines-per-function': { count } }])
-    )
+      Object.entries(counts).map(([file, count]) => [file, { 'max-lines-per-function': { count } }]),
+    ),
   )
 }
 
@@ -36,6 +35,7 @@ describe('parseSuppressions', () => {
     assert.throws(() => parseSuppressions('[]', 'x'), /keyed by file/)
     assert.throws(() => parseSuppressions('{"a.ts":{"r":{"count":1.5}}}', 'x'), /no whole count/)
     assert.throws(() => parseSuppressions('{"a.ts":{"r":{}}}', 'x'), /no whole count/)
+    assert.throws(() => parseSuppressions('{"a.ts":{"r":{"count":-1}}}', 'x'), /no whole count/)
   })
 })
 
@@ -53,7 +53,7 @@ describe('growthOf', () => {
     assert.equal(problems.length, 1)
     assert.match(
       problems[0],
-      /a\.ts: 3 `max-lines-per-function` suppression\(s\), the base revision has 2/
+      /a\.ts: 3 `max-lines-per-function` suppression\(s\), the base revision has 2/,
     )
   })
 
@@ -95,7 +95,7 @@ describe('a file or rule name that holds a tab', () => {
       git('commit', '-q', '-m', 'base')
       writeFileSync(join(root, 'eslint-suppressions.json'), newText)
       const result = spawnSync('node', [SCRIPT, '--root', root, '--base', 'HEAD'], {
-        encoding: 'utf8'
+        encoding: 'utf8',
       })
       assert.equal(result.status, 1)
     } finally {
@@ -141,6 +141,17 @@ describe('the command', () => {
     try {
       assert.equal(run(root, '--base', 'HEAD').status, 0)
       assert.equal(run(root).status, 0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses an option that has no value instead of skipping the base comparison', () => {
+    const root = repository(baseline({ 'a.ts': 1 }), baseline({ 'a.ts': 3 }))
+    try {
+      const result = run(root, '--base')
+      assert.equal(result.status, 2)
+      assert.match(result.stderr, /--base needs a value\./)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
