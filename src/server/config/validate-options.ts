@@ -30,18 +30,34 @@ import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-optio
 
 /** Throw the `[BymaxLoggerModule]` error for one option, naming it by its path. */
 function reject(path: string, rule: string, got?: unknown): never {
-  const received = got === undefined ? '' : `. Got: ${describeValue(got)}`
+  const received = got === undefined ? '' : `. Received ${describeValue(got)}`
   throw new Error(`[BymaxLoggerModule] options.${path} ${rule}${received}`)
 }
 
-/** What a rejected value was, in a form that never throws and never prints a secret. */
+/**
+ * What a rejected value was: its type, and nothing of its content. A value handed to an option can
+ * be a secret read from a config file, so only a finite number, which cannot be one, is printed.
+ */
 function describeValue(value: unknown): string {
-  if (value === null) return 'null'
-  if (Array.isArray(value)) return 'an array'
-  if (typeof value === 'object') return 'an object'
-  if (typeof value === 'function') return 'a function'
-  if (typeof value === 'string') return JSON.stringify(value)
-  return String(value)
+  switch (typeof value) {
+    case 'number':
+      return Number.isFinite(value) ? `the number ${String(value)}` : 'a number that is not finite'
+    case 'string':
+      return 'a string'
+    case 'boolean':
+      return 'a boolean'
+    case 'bigint':
+      return 'a bigint'
+    case 'symbol':
+      return 'a symbol'
+    case 'function':
+      return 'a function'
+    case 'undefined':
+      return 'undefined'
+    default:
+      if (value === null) return 'null'
+      return Array.isArray(value) ? 'an array' : 'an object'
+  }
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -153,28 +169,26 @@ function validateLifecycle(options: BymaxLoggerModuleOptions): void {
 
 /** `service`, `level` and `maxEntrySizeBytes`. */
 function validateCore(options: BymaxLoggerModuleOptions): void {
-  if (!options.service) {
+  const service: unknown = options.service
+  if (service === undefined) {
     throw new Error('[BymaxLoggerModule] options.service is required')
   }
-  if (typeof options.service.name !== 'string' || options.service.name.trim() === '') {
-    throw new Error('[BymaxLoggerModule] options.service.name must be a non-empty string')
-  }
-  if (typeof options.service.version !== 'string' || options.service.version.trim() === '') {
-    throw new Error('[BymaxLoggerModule] options.service.version must be a non-empty string')
+  if (!isRecord(service)) reject('service', 'must be an object', service)
+  for (const field of ['name', 'version'] as const) {
+    const given = service[field]
+    if (typeof given !== 'string' || given.trim() === '') {
+      reject(`service.${field}`, 'must be a non-empty string', given)
+    }
   }
   if (options.level !== undefined && !LOG_LEVEL_PRIORITY.includes(options.level)) {
-    throw new Error(
-      `[BymaxLoggerModule] options.level must be one of: ${LOG_LEVEL_PRIORITY.join(
-        ', '
-      )}. Got: ${String(options.level)}`
-    )
+    reject('level', `must be one of: ${LOG_LEVEL_PRIORITY.join(', ')}`, options.level)
   }
   const size: unknown = options.maxEntrySizeBytes
   if (size !== undefined && !Number.isFinite(size)) {
     reject('maxEntrySizeBytes', 'must be a finite number', size)
   }
   if (options.maxEntrySizeBytes !== undefined && options.maxEntrySizeBytes <= 0) {
-    throw new Error('[BymaxLoggerModule] options.maxEntrySizeBytes must be > 0')
+    reject('maxEntrySizeBytes', 'must be > 0', options.maxEntrySizeBytes)
   }
   if (size !== undefined && !Number.isInteger(size)) {
     reject('maxEntrySizeBytes', 'must be an integer', size)
@@ -197,22 +211,14 @@ function validateClosedSets(options: BymaxLoggerModuleOptions): void {
     options.redactStrategy !== 'names' &&
     options.redactStrategy !== 'paths'
   ) {
-    throw new Error(
-      `[BymaxLoggerModule] options.redactStrategy must be 'names' or 'paths'. Got: ${String(
-        options.redactStrategy
-      )}`
-    )
+    reject('redactStrategy', "must be 'names' or 'paths'", options.redactStrategy)
   }
   if (
     options.resourceFormat !== undefined &&
     options.resourceFormat !== 'nested' &&
     options.resourceFormat !== 'flat'
   ) {
-    throw new Error(
-      `[BymaxLoggerModule] options.resourceFormat must be 'nested' or 'flat'. Got: ${String(
-        options.resourceFormat
-      )}`
-    )
+    reject('resourceFormat', "must be 'nested' or 'flat'", options.resourceFormat)
   }
   if (
     options.errorFormat !== undefined &&
@@ -220,11 +226,7 @@ function validateClosedSets(options: BymaxLoggerModuleOptions): void {
     options.errorFormat !== 'semconv' &&
     options.errorFormat !== 'both'
   ) {
-    throw new Error(
-      `[BymaxLoggerModule] options.errorFormat must be 'pino', 'semconv' or 'both'. Got: ${String(
-        options.errorFormat
-      )}`
-    )
+    reject('errorFormat', "must be 'pino', 'semconv' or 'both'", options.errorFormat)
   }
   // `false` is a valid value (emit nothing); a non-empty string names the field.
   // Anything else — including `''` and `true` — is a misconfiguration.
@@ -233,11 +235,7 @@ function validateClosedSets(options: BymaxLoggerModuleOptions): void {
     options.eventNameField !== false &&
     (typeof options.eventNameField !== 'string' || options.eventNameField.length === 0)
   ) {
-    throw new Error(
-      `[BymaxLoggerModule] options.eventNameField must be a non-empty string or false. Got: ${String(
-        options.eventNameField
-      )}`
-    )
+    reject('eventNameField', 'must be a non-empty string or false', options.eventNameField)
   }
 }
 

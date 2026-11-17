@@ -189,24 +189,24 @@ describe('validateOptions: the rejection message', () => {
     ['an array', ['a'], 'an array'],
     ['an object', { a: 1 }, 'an object'],
     ['a function', () => 1, 'a function'],
-    ['a string, quoted', 'secret-value', '"secret-value"'],
-    ['a number', 42, '42'],
-    ['NaN', Number.NaN, 'NaN'],
-    ['Infinity', Number.POSITIVE_INFINITY, 'Infinity'],
-    ['a bigint', 10n, '10'],
-    ['a symbol', Symbol('s'), 'Symbol(s)']
+    ['a string', 'secret-value', 'a string'],
+    ['a finite number', 42, 'the number 42'],
+    ['NaN', Number.NaN, 'a number that is not finite'],
+    ['Infinity', Number.POSITIVE_INFINITY, 'a number that is not finite'],
+    ['a bigint', 10n, 'a bigint'],
+    ['a symbol', Symbol('s'), 'a symbol']
   ])(
     /*
-     * The message says what was received so the typo can be located, in a form that
-     * never throws on an exotic value. An object, array or function is described by
-     * its kind, not printed, so a rejected credential-bearing object does not end up
-     * in a bootstrap log.
+     * The message says what KIND of value was received so the typo can be located, in a form that
+     * never throws on an exotic value, and it prints the value only for a finite number. A string,
+     * a symbol, an object, an array or a function is named by its kind, so a credential typed into
+     * the wrong field does not end up in a bootstrap log.
      */
     'describes a rejected %s',
     (_label, value, expected) => {
       expect(() => validateOptions(withOption('isGlobal', value))).toThrow(
         new RegExp(
-          `options\\.isGlobal must be a boolean\\. Got: ${expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
+          `options\\.isGlobal must be a boolean\\. Received ${expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
         )
       )
     }
@@ -472,7 +472,7 @@ describe('validateOptions: the message of each destination, size and format rule
     [
       'a destination that is not an object',
       [null],
-      'destinations[0] must be an object implementing ILogDestination. Got: null'
+      'destinations[0] must be an object implementing ILogDestination. Received null'
     ],
     [
       'a destination with no write',
@@ -487,18 +487,18 @@ describe('validateOptions: the message of each destination, size and format rule
     [
       'a destination with an empty name',
       [{ write, name: '' }],
-      'destinations[0] must have a non-empty string name. Got: ""'
+      'destinations[0] must have a non-empty string name. Received a string'
     ],
     [
       'a destination with a non-function hook',
       [{ write, name: 'sink', onInit: 5 }],
-      'destinations[0].onInit must be a function. Got: 5'
+      'destinations[0].onInit must be a function. Received the number 5'
     ]
   ])(
     /*
      * A rejection names the option and, when there is a value to show, what was received.
      * The rule text is the part a consumer reads to fix the entry, so each is pinned whole,
-     * including that a missing member carries no `Got:` part (there is nothing to show).
+     * including that a missing member carries no `Received` clause (there is nothing to show).
      */
     'rejects %s with the message that names the rule',
     (_label, destinations, message) => {
@@ -509,19 +509,20 @@ describe('validateOptions: the message of each destination, size and format rule
   )
 
   it.each([
-    ['NaN', Number.NaN, 'NaN'],
-    ['Infinity', Number.POSITIVE_INFINITY, 'Infinity'],
-    ['a numeric string', '1024', '"1024"']
+    ['NaN', Number.NaN, 'a number that is not finite'],
+    ['Infinity', Number.POSITIVE_INFINITY, 'a number that is not finite'],
+    ['a numeric string', '1024', 'a string']
   ])(
     /*
      * The size gate compares against this number, so a value that is not finite never trips it.
-     * The message shows the value as it was, not as JSON would print it (`NaN` is not `null`).
+     * The message names what was received, a number that is not finite or a string, and never
+     * quotes the string.
      */
-    'rejects a maxEntrySizeBytes that is %s with the received value',
+    'rejects a maxEntrySizeBytes that is %s with what it received',
     (_label, value, shown) => {
       expect(() => validateOptions(withOption('maxEntrySizeBytes', value))).toThrow(
         new Error(
-          `[BymaxLoggerModule] options.maxEntrySizeBytes must be a finite number. Got: ${shown}`
+          `[BymaxLoggerModule] options.maxEntrySizeBytes must be a finite number. Received ${shown}`
         )
       )
     }

@@ -47,6 +47,16 @@ heading here.
   functions of the module, so no member of any name replaces them, and the three declarations leave
   the `.d.ts`. Behavior is otherwise unchanged.
 
+- **A refused option names the type of the value it received and never quotes it.** The message
+  used to end in `Got: "3"` for a string and in `String(value)` for anything else, so a token typed
+  into the wrong field, or a Symbol with a description, reached the bootstrap log. It now ends in
+  `Received a string`, `Received a symbol`, `Received an object` and so on, and prints a value only
+  when it is a finite number (`Received the number 63`). Five refusals that bypassed the shared path
+  and printed `String(value)` (`level`, `redactStrategy`, `resourceFormat`, `errorFormat` and
+  `eventNameField`) go through it too, and a wrong `service` is refused as `service` and not as a
+  missing `service.name`. **Apply:** code that matches the text `Got:` of a refusal matches
+  `Received` instead; the option's name and the rule are unchanged.
+
 #### Apply to a derived backend
 
 `PrettyDevDestination`: nothing is required. A subclass that defines a member named
