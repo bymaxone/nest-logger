@@ -50,10 +50,10 @@ describe('validateOptions: maxStringLength', () => {
     )
   })
 
-  it('shows the received value in the message', () => {
+  it('shows a finite number that was received in the message', () => {
     expect(() => validateOptions(withLimit(63))).toThrow(
       new Error(
-        '[BymaxLoggerModule] options.maxStringLength must be an integer from 64 to 2147483647. Got: 63'
+        '[BymaxLoggerModule] options.maxStringLength must be an integer from 64 to 2147483647. Received the number 63'
       )
     )
   })
