@@ -75,6 +75,22 @@ describe('validateOptions: scalars and customization hooks', () => {
   )
 
   it.each([
+    ['a negative fraction', -0.5],
+    ['a fraction below zero and above minus one', -0.25]
+  ])(
+    /*
+     * A value that is not positive keeps the message it always had, whatever its fraction: the
+     * integer rule applies to a positive value only, so `-0.5` is still "must be > 0".
+     */
+    'keeps the positive-value message for a maxEntrySizeBytes that is %s',
+    (_label, value) => {
+      expect(() => validateOptions(withOption('maxEntrySizeBytes', value))).toThrow(
+        /options\.maxEntrySizeBytes must be > 0/
+      )
+    }
+  )
+
+  it.each([
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
     ['a numeric string', '1024']
