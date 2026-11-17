@@ -12,6 +12,16 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `SIGTERM` no longer discards what a slow stdout reader had not yet taken.** With
+  `app.enableShutdownHooks()`, Nest closes the application and then raises the signal again, which
+  ends the process. The shutdown drain waited only for the module's own queue, so the bytes
+  `process.stdout` still held were lost: on Linux with node 24, a reader slower than the writer
+  received 739 of 30000 lines. The drain now also waits while the default stdout destination's
+  `process.stdout` holds bytes, inside `shutdown.drainTimeoutMs`, and names the size in the existing
+  "entries still queued" line when the time runs out. Nothing for a backend to do.
+
 ## [1.4.19] - 2026-11-14
 
 ### Changed

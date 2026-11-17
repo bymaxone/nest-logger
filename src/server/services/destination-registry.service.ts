@@ -33,6 +33,7 @@ import {
   LOGGER_OPTIONS_TOKEN
 } from '../constants/injection-tokens.constants'
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
+import { DefaultStdoutDestination } from '../destinations/default-stdout.destination'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { cutText } from '../utils/bounded-text.util'
@@ -375,6 +376,23 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
   }
 
   /**
+   * What a destination still holds for the drain to wait on: its module queue, and for the default
+   * stdout destination also what `process.stdout` has not yet handed to its reader. Nest raises the
+   * signal again once the shutdown hooks return, which ends the process, so what stdout still held
+   * then was lost. Another destination's own buffer is not counted: it may flush only in
+   * `onShutdown`, which runs after the drain.
+   *
+   * @param destination - An active destination.
+   * @returns The bytes the drain waits on for it.
+   */
+  private heldSize(destination: ILogDestination): number {
+    const queued = this.health.queuedSize(destination)
+    return destination instanceof DefaultStdoutDestination
+      ? queued + process.stdout.writableLength
+      : queued
+  }
+
+  /**
    * Wait until no active destination holds a queued entry, or the drain deadline passes.
    *
    * A destination reads its entries from a `Writable` that buffers what Pino has written, and it
@@ -388,13 +406,13 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    */
   private async drain(drainDeadline: number): Promise<void> {
     for (;;) {
-      const queued = this.active.filter((destination) => this.health.queuedSize(destination) > 0)
+      const queued = this.active.filter((destination) => this.heldSize(destination) > 0)
       if (queued.length === 0) return
       const remaining = drainDeadline - performance.now()
       if (remaining <= 0) {
         const named = queued.map(
           (destination) =>
-            `"${toSingleLineMessage(safeDestinationName(destination))}" (${String(this.health.queuedSize(destination))})`
+            `"${toSingleLineMessage(safeDestinationName(destination))}" (${String(this.heldSize(destination))})`
         )
         writeStderrSafely(
           `[DestinationRegistry] Shutdown drain ended with entries still queued, by size: ${named.join(', ')}\n`
