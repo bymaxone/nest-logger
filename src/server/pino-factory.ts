@@ -440,7 +440,10 @@ function buildNameRedactor(
   // With no name to cover the value is still walked under 'safe', which writes plain data only the
   // walk can produce: an `Error` nested in the record, and what a serializer returns. It is also
   // walked whenever Pino's own path redaction is configured, because that cannot read a `Buffer`.
-  const walks = names.length > 0 || ownFields.safe
+  // The length limit applies to the record, which is the walk `nestedErrorsAsData` builds, and
+  // not to what a serializer returns, so it also makes the walk run when no name is covered.
+  const maxStringLength = nestedErrorsAsData ? options.maxStringLength : undefined
+  const walks = names.length > 0 || ownFields.safe || maxStringLength !== undefined
   if (!walks && resolveRedactOption(options) === undefined) {
     return PASS_THROUGH
   }
@@ -452,7 +455,8 @@ function buildNameRedactor(
         undefined,
         ownFields,
         coversNames ? undefined : namesInsideErrors(options),
-        allNames
+        allNames,
+        maxStringLength
       )
     : createNameRedactor(
         names,
@@ -461,7 +465,8 @@ function buildNameRedactor(
         undefined,
         ownFields,
         undefined,
-        allNames
+        allNames,
+        maxStringLength
       )
 }
 

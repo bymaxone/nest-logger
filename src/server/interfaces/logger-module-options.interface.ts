@@ -284,6 +284,19 @@ export interface BymaxLoggerModuleOptions {
   /** Maximum size in bytes per log entry. Default: 65536. */
   maxEntrySizeBytes?: number
   /**
+   * The most characters a string of a log record is written with. A longer string is cut to this
+   * many characters, without splitting a surrogate pair, and ends with `…[truncated]`, so what is
+   * written is up to 12 characters longer than the limit. An integer from 64 to 2147483647.
+   * Default: not set, and a string is written whole.
+   *
+   * Applies to every string value of the record at any depth, but not to a key, a value that is
+   * not text, the log message (already capped at 16384 characters), a value a redaction rule
+   * censors, or anything inside an `Error` or a serializer's output (see `maxEntrySizeBytes`), so a
+   * stack is never cut by it. A library field longer than the limit, such as a long `userId` or
+   * `context`, is cut like any other string.
+   */
+  maxStringLength?: number
+  /**
    * The longest a destination's `onInit` or `onRegistryReady` may take, in milliseconds. Default:
    * 10000. An integer from 1 to 2147483647 (the largest delay a timer holds).
    *
@@ -334,7 +347,13 @@ export interface BymaxLoggerModuleOptions {
  * `BymaxLoggerModuleOptions` the consumer supplies.
  */
 export type ResolvedBymaxLoggerModuleOptions = Readonly<
-  Required<Omit<BymaxLoggerModuleOptions, 'http' | 'otel' | 'shutdown' | 'destinationQueue'>> & {
+  Required<
+    Omit<
+      BymaxLoggerModuleOptions,
+      'http' | 'otel' | 'shutdown' | 'destinationQueue' | 'maxStringLength'
+    >
+  > & {
+    maxStringLength: number | undefined
     http: ResolvedHttpOptions
     otel: Required<OtelOptions>
     shutdown: Required<ShutdownOptions>

@@ -24,6 +24,17 @@ heading here.
   a byte ceiling. `forRoot` now rejects it with `options.maxEntrySizeBytes must be an integer`, as it
   does for every other size and timer option. **Apply:** pass a whole number of bytes.
 
+### Added
+
+- **`maxStringLength` bounds the length of every string of a log record.** A string under a metadata
+  key is the caller's own data and was written as given, so one value of a megabyte made an entry of a
+  megabyte. With `maxStringLength` set, a string longer than the limit is cut to that many characters
+  (a cut never splits a surrogate pair) and ends with `…[truncated]`. It is an integer from 64 and it is
+  off until set. It applies at any depth, after redaction, and not to a key, a value that is not text,
+  the log message, or anything inside an `Error` or a serializer's output, so no stack is lost to it. A
+  `userId` or `context` longer than the limit is cut like any other string.
+  `ResolvedBymaxLoggerModuleOptions` gains `maxStringLength: number | undefined`.
+
 ## [1.4.20] - 2026-11-17
 
 ### Fixed

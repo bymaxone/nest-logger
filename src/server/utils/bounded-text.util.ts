@@ -27,19 +27,19 @@ export function cutIfText(value: unknown): unknown {
 }
 
 /**
- * Cut `text` at {@link MAX_TEXT_LENGTH} when it is longer, or when `alreadyCut` says it is the
+ * Cut `text` at `limit` characters when it is longer, or when `alreadyCut` says it is the
  * start of something longer, and append {@link TEXT_TRUNCATED}. A cut that falls between the two
  * halves of a surrogate pair drops the first half, so the result is well-formed text.
  *
  * @internal Shared across the logger. NOT re-exported by the package barrel.
  * @param text - The text to bound.
  * @param alreadyCut - `true` when `text` is the part of a longer text that was read.
- * @returns The text, or its first {@link MAX_TEXT_LENGTH} characters followed by
- *   {@link TEXT_TRUNCATED}.
+ * @param limit - The most characters kept; {@link MAX_TEXT_LENGTH} when not given.
+ * @returns The text, or its first `limit` characters followed by {@link TEXT_TRUNCATED}.
  */
-export function cutText(text: string, alreadyCut = false): string {
-  if (!alreadyCut && text.length <= MAX_TEXT_LENGTH) return text
-  const head = text.slice(0, MAX_TEXT_LENGTH)
+export function cutText(text: string, alreadyCut = false, limit = MAX_TEXT_LENGTH): string {
+  if (!alreadyCut && text.length <= limit) return text
+  const head = text.slice(0, limit)
   const last = head.charCodeAt(head.length - 1)
   const whole = last >= 0xd800 && last <= 0xdbff ? head.slice(0, -1) : head
   return whole + TEXT_TRUNCATED

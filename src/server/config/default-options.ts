@@ -95,14 +95,7 @@ export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxL
     options.otel
   )
 
-  const merged: Required<
-    Omit<BymaxLoggerModuleOptions, 'http' | 'otel' | 'shutdown' | 'destinationQueue'>
-  > & {
-    http: ResolvedHttpOptions
-    otel: Required<OtelOptions>
-    shutdown: Required<ShutdownOptions>
-    destinationQueue: Required<DestinationQueueOptions>
-  } = {
+  const merged: ResolvedBymaxLoggerModuleOptions = {
     service: Object.freeze({ ...options.service }),
     level: options.level ?? (isProduction ? 'info' : 'debug'),
     isGlobal: options.isGlobal ?? true,
@@ -127,6 +120,7 @@ export function applyDefaults(options: BymaxLoggerModuleOptions): ResolvedBymaxL
     }),
     otel: Object.freeze(otel),
     maxEntrySizeBytes: options.maxEntrySizeBytes ?? DEFAULT_MAX_ENTRY_SIZE_BYTES,
+    maxStringLength: options.maxStringLength,
     destinationHookTimeoutMs: options.destinationHookTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS,
     shutdown: resolveShutdown(options.shutdown),
     destinationQueue: Object.freeze({

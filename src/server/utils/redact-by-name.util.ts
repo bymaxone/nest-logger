@@ -59,7 +59,7 @@
  */
 import { types } from 'node:util'
 
-import { cutIfText } from './bounded-text.util'
+import { cutIfText, cutText } from './bounded-text.util'
 import { censorRawHeaders } from './censor-raw-headers.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
@@ -228,6 +228,11 @@ interface RedactRules {
   readonly ownFields: OwnFieldPolicy
   /** Containers this call has visited, counted against {@link RedactRules.maxVisits}. */
   readonly visits: { count: number }
+  /**
+   * The most characters a string is written with before the rest is cut. Absent, a string is
+   * written whole. Not set for what is inside an `Error`, which is written whole.
+   */
+  readonly maxStringLength?: number | undefined
 }
 
 /**
@@ -314,7 +319,11 @@ function walk(
   // narrows `value` from `unknown` for the rest of the function.
   if (typeof value !== 'object' && typeof value !== 'function') {
     // Under 'safe' the output is plain data, and `JSON.stringify` omits a symbol.
-    return typeof value === 'symbol' && rules.ownFields.safe ? undefined : value
+    if (typeof value === 'symbol' && rules.ownFields.safe) return undefined
+    // The one place a string of the record is cut, whatever it sits in.
+    return typeof value === 'string' && rules.maxStringLength !== undefined
+      ? cutText(value, false, rules.maxStringLength)
+      : value
   }
   if (depth > REDACT_MAX_TRAVERSAL_DEPTH) {
     return REDACT_DEPTH_EXCEEDED
@@ -671,6 +680,31 @@ function errorPartsHost(
 }
 
 /**
+ * The rules an `Error` is walked under, when they differ from the rest of the walk: the names to
+ * censor inside it, if it has its own, and no limit on the length of a string, because a message,
+ * a stack and an own field are text of the `Error` the logger writes whole.
+ *
+ * @param rules - The rules of the walk, without its per-call state.
+ * @param insideNames - The lower-cased names censored inside an `Error` only, when given.
+ * @param visits - The container count of this call, shared with the rest of the walk.
+ * @returns The rules inside an `Error`, or `undefined` when they are the rules of the walk.
+ */
+function errorRulesOf(
+  rules: Omit<RedactRules, 'visits'>,
+  insideNames: ReadonlySet<string> | undefined,
+  visits: { count: number }
+): RedactRules | undefined {
+  if (insideNames === undefined && rules.maxStringLength === undefined) return undefined
+  return {
+    ...rules,
+    sensitive: insideNames ?? rules.sensitive,
+    maxStringLength: undefined,
+    visits,
+    insideErrors: undefined
+  }
+}
+
+/**
  * Build a redactor that censors every value whose key name is in `fieldNames`,
  * to {@link REDACT_MAX_TRAVERSAL_DEPTH}, in a single snapshotting traversal.
  *
@@ -707,7 +741,8 @@ export function createNameRedactor(
   maxVisits: number = REDACT_MAX_VISITS,
   ownFields: OwnFieldPolicy = ALL_OWN_FIELDS,
   errorOnlyNames?: Iterable<string>,
-  headerNames?: Iterable<string>
+  headerNames?: Iterable<string>,
+  maxStringLength?: number
 ): Redactor {
   // Matched case-INSENSITIVELY. HTTP header names are case-insensitive by spec,
   // and only INBOUND Node headers arrive lower-cased — a hand-built or outbound
@@ -723,7 +758,8 @@ export function createNameRedactor(
     serializedKeys: new Set(serializedKeys),
     errorsAsData: serializedKeys !== undefined,
     maxVisits,
-    ownFields
+    ownFields,
+    maxStringLength
   }
   const insideNames =
     errorOnlyNames === undefined
@@ -735,10 +771,7 @@ export function createNameRedactor(
       const call: RedactRules = {
         ...rules,
         visits,
-        insideErrors:
-          insideNames === undefined
-            ? undefined
-            : { ...rules, sensitive: insideNames, visits, insideErrors: undefined }
+        insideErrors: errorRulesOf(rules, insideNames, visits)
       }
       return walk(value, call, 0, new Set<object>(), !isRecordRoot)
     } catch {

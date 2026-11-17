@@ -20,3 +20,9 @@ export const MIN_QUEUE_MAX_BYTES = 1024
 
 /** Largest queue bound, the largest signed 32-bit integer. */
 export const MAX_QUEUE_MAX_BYTES = 2_147_483_647
+
+/** The smallest `maxStringLength`: the strings the library writes itself are shorter than this. */
+export const MIN_STRING_LENGTH_LIMIT = 64
+
+/** The largest `maxStringLength`, a length a string cannot exceed. */
+export const MAX_STRING_LENGTH_LIMIT = 2_147_483_647
