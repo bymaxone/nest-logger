@@ -1,0 +1,22 @@
+{
+  "functions": {
+    "[\"src/server/config/default-options.ts\",[\"fn\",\"applyDefaults\"]]": 53,
+    "[\"src/server/destinations/pretty-dev.destination.ts\",[\"member\",\"PrettyDevDestination\",\"onInit\"]]": 105,
+    "[\"src/server/filters/http-exception.filter.ts\",[\"member\",\"HttpExceptionFilter\",\"catch\"]]": 67,
+    "[\"src/server/interceptors/http-logging.interceptor.ts\",[\"member\",\"HttpLoggingInterceptor\",\"logError\"]]": 51,
+    "[\"src/server/middlewares/http-access-log.middleware.ts\",[\"member\",\"HttpAccessLogMiddleware\",\"logTerminal\"]]": 81,
+    "[\"src/server/middlewares/http-access-log.middleware.ts\",[\"member\",\"HttpAccessLogMiddleware\",\"use\"]]": 93,
+    "[\"src/server/middlewares/request-id.middleware.ts\",[\"member\",\"RequestIdMiddleware\",\"use\"]]": 60,
+    "[\"src/server/mixins/trace-context.mixin.ts\",[\"fn\",\"createTraceContextMixin\"]]": 60,
+    "[\"src/server/mixins/trace-context.mixin.ts\",[\"fn\",\"createTraceContextMixin\"],[\"anon\"]]": 51,
+    "[\"src/server/pino-factory.ts\",[\"fn\",\"buildPinoInstance\"]]": 151,
+    "[\"src/server/pino-factory.ts\",[\"fn\",\"withSemconvException\"]]": 52,
+    "[\"src/server/readme-quick-start.spec.ts\",[\"container\",\"describe\",\"README Quick Start (sections 2 and 4)\"],[\"test\",\"it\",\"logs the README flow as structured JSON lines on stdout\"]]": 51,
+    "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"]]": 93,
+    "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"],[\"member\",\"<class>\",\"write\"]]": 78,
+    "[\"src/server/utils/redact-by-name.hostile-hook.property.spec.ts\",[\"fn\",\"shapes\"]]": 191,
+    "[\"src/server/utils/redact-by-name.util.ts\",[\"fn\",\"createNameRedactor\"]]": 52,
+    "[\"src/server/utils/redact-by-name.util.ts\",[\"fn\",\"walkProperties\"]]": 54,
+    "[\"src/server/utils/sanitize-error.util.ts\",[\"fn\",\"toSanitizedError\"]]": 59
+  }
+}
