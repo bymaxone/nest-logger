@@ -18,7 +18,8 @@ import { createNameRedactor } from './utils/redact-by-name.util'
 const SEED = 20261118
 const CASES = 1500
 const LIMIT = 64
-const CENSOR = '[REDACTED]'
+// Longer than the limit plus the marker, so a pass that cuts the censor itself loses every censor.
+const CENSOR = '[REDACTED:' + 'c'.repeat(LIMIT + 16) + ']'
 const LONG_NAME = 'x-' + 's'.repeat(LIMIT + 8)
 const SENSITIVE_NAMES = [...REDACT_COMMON_FIELDS, LONG_NAME]
 const HEADER_NAMES = ['authorization', 'Cookie', 'set-cookie', 'X-API-Key', LONG_NAME, 'accept']
@@ -119,7 +120,8 @@ function overlong(output: unknown, exempt: ReadonlySet<string>): string[] {
   const found: string[] = []
   const visit = (node: unknown): void => {
     if (typeof node === 'string') {
-      if (node.length > LIMIT + TEXT_TRUNCATED.length) found.push(node.slice(0, 24))
+      if (node !== CENSOR && node.length > LIMIT + TEXT_TRUNCATED.length)
+        found.push(node.slice(0, 24))
     } else if (node !== null && typeof node === 'object') {
       for (const child of Object.values(node)) visit(child)
     }
@@ -192,7 +194,7 @@ describe(`maxStringLength, as a property of ${String(CASES)} records`, () => {
 
   it('holds (a) to (d) for the cut applied to the output of the redactor', () => {
     const broken = surveyBroken(
-      (_record, without) => cutStrings(without, LIMIT, exempt) as Record<string, unknown>
+      (_record, without) => cutStrings(without, LIMIT, exempt, CENSOR) as Record<string, unknown>
     )
 
     expect(firstCases(broken)).toEqual(NONE)

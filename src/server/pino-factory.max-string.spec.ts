@@ -185,6 +185,24 @@ describe('maxStringLength through the logger: what is written once', () => {
   })
 })
 
+describe('maxStringLength through the logger: the configured censor', () => {
+  /*
+   * The censor is what the operator chose to show in place of a secret, and a consumer recognizes
+   * it by its exact text, so a censor longer than the limit is written whole: cut, it would no
+   * longer match, and the marker would read as part of it.
+   */
+  it('writes a censor longer than the limit whole', () => {
+    const censor = 'R'.repeat(LIMIT + 36)
+    const { logger, capture } = loggerWith({ maxStringLength: LIMIT, redactCensor: censor })
+
+    logger.info('K', 'message', undefined, { password: 'secret-value', note: long })
+
+    const entry = capture.entries()[0] as Record<string, unknown>
+    expect(entry['password']).toBe(censor)
+    expect(entry['note']).toBe(cutLong)
+  })
+})
+
 describe('maxStringLength through the logger: the exception fields', () => {
   /*
    * The fields the library derives from an error are written after the cut, so no name has to be
