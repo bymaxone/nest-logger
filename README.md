@@ -991,7 +991,7 @@ Implements NestJS `LoggerService`. All methods are available via `@InjectLogger(
 | `warnStructured`  | `(logKey, msg, userId?, meta?)`   | Structured warn log — takes a **message string**                 |
 | `errorStructured` | `(logKey, error, userId?, meta?)` | Structured error log — takes an **`Error`**, serialized to `err` |
 
-`meta` carries arbitrary fields, except that `logKey`, `userId` and `context` belong to the payload (read from the authenticated ALS scope, so a metadata bag cannot forge them) and `__proto__`, `constructor` and `prototype` are dropped, since they name a prototype chain rather than a field.
+`meta` carries arbitrary fields, except that `logKey`, `userId` and `context` belong to the payload (read from the authenticated ALS scope, so a metadata bag cannot forge them), `level`, `time`, `msg`, `service` and `service.*` are written by the logger itself and are dropped from `meta`, and `__proto__`, `constructor` and `prototype` are dropped, since they name a prototype chain rather than a field.
 
 **NestJS `LoggerService` bridge** — the variadic contract NestJS calls, so `app.useLogger()` works. These take a message, not a log key.
 
@@ -1003,6 +1003,8 @@ Implements NestJS `LoggerService`. All methods are available via `@InjectLogger(
 | `verbose` | `(message, ...optionalParams)`         | → Pino `trace`                                 |
 | `fatal`   | `(message, ...optionalParams)`         | → Pino `fatal`                                 |
 | `error`   | `(message \| Error, stack?, context?)` | An `Error` routes to the serialized `err` path |
+
+**An object as the message.** A plain object (an object literal or a parsed JSON object) passed as the message of `log`, `warn`, `error`, `debug`, `verbose` or `fatal` is written as the fields of the entry, through the same redaction and `maxStringLength` pipeline as any other field, so `this.logger.warn({ event: 'QUEUE_DRAINED', jobs: 7, password })` gives an entry with `event`, `jobs` and a censored `password`. The entry text (`msg`) is its `message` string, else its `event` string, else empty; a `message` that is the text is not repeated as a field. `logKey`, `userId`, `context`, `level`, `time`, `msg`, `service` and `service.*` in the object are dropped, as they are from `meta`. An `Error` keeps its own path, and a value that is not plain (a class instance, an array) is still written as its string form.
 
 **Helpers**
 

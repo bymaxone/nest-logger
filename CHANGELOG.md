@@ -14,6 +14,28 @@ heading here.
 
 ### Fixed
 
+- **A plain object passed as the message of `log`, `warn`, `error`, `debug`, `verbose` or `fatal`
+  is written as the fields of the entry.** `new Logger('Queue').warn({ event: 'QUEUE_DRAINED',
+jobs: 7 })` through `app.useLogger(app.get(PinoLoggerService))` wrote `msg: "[object Object]"`
+  and every key was lost; the default Nest console logger prints the same call readably. The
+  keys are now fields of the entry, through the same redaction and `maxStringLength` pipeline as
+  any other field (a `password` is censored, a long string is cut), the entry text is the
+  object's `message` string, else its `event` string, else empty, and `logKey`, `userId` and
+  `context` in the object are dropped as they are from `meta`. An `Error` keeps its own path, and a
+  value that is not plain (a class instance, an array) is still written as its string form.
+  **Apply:** code that logged an object and got `[object Object]` now gets its fields; a
+  dashboard or an alert that matched `[object Object]` in `msg` matches the `event` or `message`
+  text instead.
+- **A key the logger writes itself can no longer be replaced from `meta` or from an object
+  message.** `level`, `time`, `msg`, `service` and, with `resourceFormat: 'flat'`, `service.*` in
+  the metadata of `info`, `warnStructured` and `errorStructured` were written as a second key of
+  the same name, and a reader that keeps the last of a repeated key saw the caller's `level` or
+  `service`. They are dropped from the metadata, as `logKey`, `userId` and `context` already
+  were. **Apply:** nothing is required; a field you named `level`, `time`, `msg` or `service` in
+  `meta` is no longer written, so rename it (`severity`, `elapsedMs`, `detail`, `owner`).
+
+### Fixed
+
 - **An option that holds `undefined` or `null` is read as not set, in the options and in every
   group.** An `undefined` in a group replaced its default in the spread that merges the two, so `shouldCaptureExceptions: undefined` stayed
   `undefined` and not the default `true`, and a `null` anywhere was refused as a value of the wrong
