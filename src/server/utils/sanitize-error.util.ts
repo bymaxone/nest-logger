@@ -16,6 +16,7 @@
  */
 
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
+import { censorStackHeader } from './censor-stack-header.util'
 import { escapeControlCharacters } from './escape-log-text.util'
 import { isError } from './is-error.util'
 import {
@@ -99,6 +100,13 @@ export interface SanitizeErrorOptions {
    * @internal Resolved from `errorOwnFields` by the pino factory.
    */
   ownFields?: OwnFieldPolicy
+  /**
+   * Censors the text of a message, at every depth: the stack of a node then opens with the censored
+   * message, where the engine wrote the message. None by default.
+   *
+   * @internal Resolved from the redaction rules of the name `message` by the pino factory.
+   */
+  censorMessage?: ((text: string) => string) | undefined
 }
 
 /**
@@ -130,7 +138,8 @@ export function sanitizeError(err: unknown, options?: SanitizeErrorOptions): San
   const maxCauseDepth = options?.maxCauseDepth ?? DEFAULT_MAX_CAUSE_DEPTH
   return toSanitizedError(err, new WeakSet<object>(), 0, {
     maxDepth: maxCauseDepth,
-    ownFields: options?.ownFields ?? ALL_OWN_FIELDS
+    ownFields: options?.ownFields ?? ALL_OWN_FIELDS,
+    censorMessage: options?.censorMessage
   })
 }
 
@@ -194,6 +203,29 @@ function readsAsError(value: unknown): value is Error {
 interface ErrorWalk {
   readonly maxDepth: number
   readonly ownFields: OwnFieldPolicy
+  readonly censorMessage: ((text: string) => string) | undefined
+}
+
+/**
+ * Read the stack of a node in its own guard and scrub it, with the message censored where it opens
+ * the stack.
+ *
+ * @param value - The error.
+ * @param message - The message as it was read, once, for the node.
+ * @param result - The node, marked incomplete when the stack cannot be read.
+ * @param walk - What every node shares, with the censor of messages.
+ * @returns The scrubbed stack, or `undefined` when there is none or it cannot be read.
+ */
+function readScrubbedStack(
+  value: Error,
+  message: string,
+  result: SanitizedError,
+  walk: ErrorWalk
+): string | undefined {
+  const stack = readOptional(() => value.stack, result)
+  return stack === undefined
+    ? undefined
+    : scrubStack(stack, headerCensor(result.name, message, walk.censorMessage))
 }
 
 /**
@@ -219,15 +251,15 @@ function toSanitizedError(
     }
 
     seen.add(value)
-    const result: SanitizedError = { name: cutText(value.name), message: cutText(value.message) }
+    // Read once: the header censor looks for the text written to the node.
+    const message = value.message
+    const result: SanitizedError = { name: cutText(value.name), message: cutText(message) }
     // `stack` and `cause` are optional, so each is read in its own guard: an unreadable one
     // costs the node that property and marks it incomplete, instead of costing the node its
     // name and message. The name and message identify the error; if THEY cannot be read the
     // outer catch still degrades the node to the visible `SanitizeFailed` shape.
-    const stack = readOptional(() => value.stack, result)
-    if (stack !== undefined) {
-      result.stack = scrubStack(stack)
-    }
+    const stack = readScrubbedStack(value, message, result, walk)
+    if (stack !== undefined) result.stack = stack
 
     const isAtDepthLimit = depth >= walk.maxDepth
     const cause = readOptional(() => value.cause as unknown, result)
@@ -521,6 +553,37 @@ function readAggregatedErrors(value: Error): unknown[] | undefined {
  */
 export const MAX_STACK_SCAN = 8 * MAX_TEXT_LENGTH
 
+/** The name and the message of an error and what the message became when it was censored. */
+export interface HeaderCensor {
+  readonly name: string
+  readonly message: string
+  readonly censored: string
+}
+
+/**
+ * The pair that censors the header of the stack of an error, or `undefined` when nothing censors
+ * messages or the message is not text.
+ *
+ * @param message - The message as the error carries it.
+ * @param censorMessage - Censors the text of a message, when something does.
+ * @returns The message and its censored form.
+ */
+export function headerCensor(
+  name: unknown,
+  message: unknown,
+  censorMessage: ((text: string) => string) | undefined
+): HeaderCensor | undefined {
+  if (typeof message !== 'string' || censorMessage === undefined) return undefined
+  const named = typeof name === 'string' ? name : ''
+  try {
+    return { name: named, message, censored: censorMessage(message) }
+  } catch {
+    // A censor that cannot answer leaves nothing to show: the message is removed from the header,
+    // never kept, because keeping it would leave the text the censor was asked to hide.
+    return { name: named, message, censored: '' }
+  }
+}
+
 /**
  * Remove `node_modules/` frames from a stack trace so logs surface app code, and cut it at
  * {@link MAX_TEXT_LENGTH}.
@@ -530,21 +593,29 @@ export const MAX_STACK_SCAN = 8 * MAX_TEXT_LENGTH
  *   raw would mean a consumer switching to `errorFormat: 'semconv'` silently
  *   lost the scrubbing they had. NOT re-exported by the package barrel.
  * @param stack - The raw stack trace.
+ * @param header - The message of the error and its censored form: the stack opens with the message,
+ *   which is replaced there before the lines are filtered and escaped, so the text that is looked for
+ *   is the one the engine wrote. None by default.
  * @returns The stack with dependency frames stripped, at most {@link MAX_TEXT_LENGTH} characters
  *   followed by the truncation suffix when it was longer.
  * @example
  *   scrubStack('Error: boom\n at app (/srv/src/a.ts:1:1)\n at dep (/srv/node_modules/p/i.js:2)')
  *   // → 'Error: boom\n at app (/srv/src/a.ts:1:1)'
  */
-export function scrubStack(stack: string): string {
+export function scrubStack(stack: string, header?: HeaderCensor): string {
   // Control characters are escaped here, not only in the message: `pino-pretty`
   // prints the stack RAW rather than as a JSON string, and a stack's first line
   // repeats the error message. Without this, attacker-supplied text reaches the
   // terminal through `err.stack` even when `msg` is already pinned. Newlines are
   // preserved — a stack is legitimately multi-line.
+  // The scan is the same bound for every stack and every message: how much is read never depends on
+  // how long the message is, which a caller controls.
+  const head = stack.slice(0, MAX_STACK_SCAN)
   const scrubbed = escapeControlCharacters(
-    stack
-      .slice(0, MAX_STACK_SCAN)
+    (header === undefined
+      ? head
+      : censorStackHeader(head, header.name, header.message, header.censored)
+    )
       .split('\n')
       .filter((line) => !line.includes('node_modules'))
       .join('\n')

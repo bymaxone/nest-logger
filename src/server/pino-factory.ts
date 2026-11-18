@@ -28,7 +28,11 @@ import type { LogContextService } from './services/log-context.service'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
-import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from './utils/entry-text-finisher.util'
+import {
+  createEntryTextFinisher,
+  createTextCensor,
+  ENTRY_TEXT_FINISHER
+} from './utils/entry-text-finisher.util'
 import { mergeMixinSafely } from './utils/merge-mixin-safely.util'
 import {
   createOwnFieldPolicy,
@@ -147,9 +151,10 @@ export function leafNameOf(path: string): string | undefined {
  */
 export function serializeErrorValue(
   value_: unknown,
-  ownFields: OwnFieldPolicy = ALL_OWN_FIELDS
+  ownFields: OwnFieldPolicy = ALL_OWN_FIELDS,
+  censorMessage?: (text: string) => string
 ): Record<string, unknown> {
-  const sanitized = sanitizeError(value_, { ownFields })
+  const sanitized = sanitizeError(value_, { ownFields, censorMessage })
   const serialized: Record<string, unknown> = {
     // `type` rather than `name`: the field consumers already query.
     type: sanitized.name,
@@ -460,6 +465,7 @@ function buildSerializers(
   onTruncate: TruncationSink
 ): Record<string, (input: unknown) => unknown> {
   const maxBytes = options.maxEntrySizeBytes
+  const censorMessage = buildMessageCensor(options)
   // Every serializer (default `err` + any consumer-supplied) is composed as
   // size-bound(redact(serialize)). Two orderings matter here:
   //   0. The redactor here is `buildNameRedactor`, applied ungated: it ignores
@@ -486,13 +492,26 @@ function buildSerializers(
       () => onTruncate('max_entry_size')
     )
   return {
-    err: bound((error) => serializeErrorValue(error, ownFields)),
+    err: bound((error) => serializeErrorValue(error, ownFields, censorMessage)),
     ...Object.fromEntries(
       Object.entries(options.serializers).map(
         ([key, serializer]): [string, (input: unknown) => unknown] => [key, bound(serializer)]
       )
     )
   }
+}
+
+/**
+ * The function that censors the text of a message as the name `message` is: the stack of an error
+ * opens with its message and the `exception.*` fields are copies of it, so they carry the censored
+ * text, whatever the strategy.
+ *
+ * @param options - Fully-defaulted module options.
+ * @returns The censor of a message text.
+ */
+function buildMessageCensor(options: ResolvedBymaxLoggerModuleOptions): (text: string) => string {
+  const censor = createTextCensor(buildNameRedactor(options))
+  return (text) => censor('message', text)
 }
 
 /**
@@ -567,6 +586,7 @@ function buildRecordFormatter(
   const hostSerializesRequest = Object.hasOwn(options.serializers, 'req')
   const maxStringLength = options.maxStringLength
   const wholeRoots = wholeRootKeys(options)
+  const censorMessage = buildMessageCensor(options)
   return (record) => {
     const redacted = redactRecord(
       hostSerializesRequest
@@ -584,7 +604,8 @@ function buildRecordFormatter(
       withEventName(bounded, options.eventNameField),
       options.errorFormat,
       options.maxEntrySizeBytes,
-      () => onTruncate('max_entry_size')
+      () => onTruncate('max_entry_size'),
+      censorMessage
     )
   }
 }

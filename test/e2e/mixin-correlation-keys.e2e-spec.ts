@@ -164,10 +164,126 @@ describe('Logger E2E — the trace keys', () => {
     expect(JSON.stringify(entry)).not.toContain(FORGED)
   })
 
-  it('keeps a key that only resembles the span ids as a field', async () => {
-    const entry = await inRequest((s) => s.warn({ event: 'LIB_EVENT', trace_id: 'kept' }))
+  it('keeps a key that is not a spelling of a span key as a field', async () => {
+    const entry = await inRequest((s) =>
+      s.warn({ event: 'LIB_EVENT', trace_ids: 'kept', my_trace: 'kept', traceIdx: 'kept' })
+    )
 
-    expect(entry).toMatchObject({ traceId: TRACE_ID, trace_id: 'kept' })
+    expect(entry).toMatchObject({
+      traceId: TRACE_ID,
+      trace_ids: 'kept',
+      my_trace: 'kept',
+      traceIdx: 'kept'
+    })
+  })
+})
+
+/*
+ * A key that only SPELLS a key the logger writes differently (`trace_id` for `traceId`, `request.id`
+ * for `requestId`, `TraceId`) is read as the same field by a backend that normalises names, so it is
+ * dropped like the key itself: one rule, folding the case and the separators `_`, `.` and `-`.
+ * Each row is [the spelling a payload carries, the key the logger writes].
+ */
+const REQUEST_ALIASES: ReadonlyArray<[string, string]> = [
+  ['request_id', 'requestId'],
+  ['REQUESTID', 'requestId'],
+  ['Request-Id', 'requestId'],
+  ['request.id', 'requestId'],
+  ['tenant_id', 'tenantId'],
+  ['TENANT.ID', 'tenantId'],
+  ['Custom', 'custom'],
+  ['CUSTOM', 'custom']
+]
+
+const TRACE_ALIASES: ReadonlyArray<[string, string]> = [
+  ['trace_id', 'traceId'],
+  ['trace.id', 'traceId'],
+  ['TraceId', 'traceId'],
+  ['TRACE-ID', 'traceId'],
+  ['span_id', 'spanId'],
+  ['span.id', 'spanId'],
+  ['SPAN_ID', 'spanId'],
+  ['trace_flags', 'traceFlags'],
+  ['TraceFlags', 'traceFlags']
+]
+
+const SNAKE_TRACE_ALIASES: ReadonlyArray<[string, string]> = [
+  ['traceId', 'trace_id'],
+  ['trace.id', 'trace_id'],
+  ['TraceID', 'trace_id'],
+  ['spanId', 'span_id'],
+  ['SPAN.ID', 'span_id'],
+  ['traceFlags', 'trace_flags']
+]
+
+const PAYLOAD_PATHS: ReadonlyArray<[string, (fields: Entry) => (s: PinoLoggerService) => void]> = [
+  ['an object message', (f) => (s) => s.warn({ event: 'LIB_EVENT', ...f })],
+  [
+    'the metadata of a structured call',
+    (f) => (s) => s.info('LIB_EVENT', 'text', undefined, { ...f })
+  ],
+  ['the raw Pino logger', (f) => (s) => s.getRawLogger().info({ ...f }, 'text')]
+]
+
+describe('Logger E2E — a spelling of a context key', () => {
+  beforeEach(() => {
+    mockActiveSpan = undefined
+  })
+
+  describe.each(PAYLOAD_PATHS)('in %s', (_path, makeAct) => {
+    it.each(REQUEST_ALIASES)('drops %s, a spelling of %s', async (alias, key) => {
+      const entry = await inRequest(makeAct({ [alias]: FORGED }))
+
+      expect(entry).not.toHaveProperty(alias)
+      expect(entry).toHaveProperty(key)
+      expect(JSON.stringify(entry)).not.toContain(FORGED)
+    })
+  })
+
+  it('keeps the spelling when the logger writes no such key, outside any request', async () => {
+    const entry = await inRequest((s) => s.warn({ event: 'LIB_EVENT', other_key: 'kept' }))
+
+    expect(entry).toMatchObject({ other_key: 'kept' })
+  })
+})
+
+describe('Logger E2E — a spelling of a trace key', () => {
+  beforeEach(() => {
+    mockActiveSpan = {
+      spanContext: () => ({ traceId: TRACE_ID, spanId: SPAN_ID, traceFlags: 1 })
+    }
+  })
+
+  describe.each(PAYLOAD_PATHS)('in %s', (_path, makeAct) => {
+    it.each(TRACE_ALIASES)('drops %s, a spelling of %s', async (alias, key) => {
+      const entry = await inRequest(makeAct({ [alias]: FORGED }))
+
+      expect(entry).not.toHaveProperty(alias)
+      expect(entry).toHaveProperty(key)
+      expect(JSON.stringify(entry)).not.toContain(FORGED)
+    })
+
+    it.each(SNAKE_TRACE_ALIASES)(
+      'drops %s, a spelling of %s, with fieldFormat snake_case',
+      async (alias, key) => {
+        const entry = await inRequest(makeAct({ [alias]: FORGED }), {
+          otel: { fieldFormat: 'snake_case' }
+        })
+
+        expect(entry).not.toHaveProperty(alias)
+        expect(entry).toHaveProperty(key)
+        expect(JSON.stringify(entry)).not.toContain(FORGED)
+      }
+    )
+  })
+
+  it('drops a spelling of a name set in the options', async () => {
+    const entry = await inRequest((s) => s.warn({ event: 'LIB_EVENT', My_Trace: FORGED }), {
+      otel: { traceIdField: 'my.trace' }
+    })
+
+    expect(entry).not.toHaveProperty('My_Trace')
+    expect(entry).toMatchObject({ 'my.trace': TRACE_ID })
   })
 })
 

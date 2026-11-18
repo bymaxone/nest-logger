@@ -12,6 +12,22 @@ heading here.
 
 ## [Unreleased]
 
+### Breaking
+
+- **A key that only spells a key the logger writes is dropped, like the key itself.** 1.4.23 dropped
+  the owned keys and let the logger's value win over a payload key of the same name, but a payload key
+  that spelled one differently was written beside it: `trace_id`, `trace.id` or `TraceId` next to
+  `traceId`, `request_id` or `request.id` next to `requestId`, `Level` or `log_key` next to `level`
+  or `logKey`. A backend that normalises field names reads those as the same field, so a line could
+  still be attributed to another request or trace. The case and the separators `_`, `.` and `-` are
+  now folded when names are compared, and a spelling of an owned key is dropped from `meta` and from
+  an object message, and a spelling of a key the request context or the active span writes on that
+  call is dropped from the payload of `meta`, of an object message and of the raw Pino logger. A key
+  that is not a spelling of one (`trace_ids`, `levels`, `my_trace`) is kept, and outside a request or
+  a span, where the logger writes no such key, a `request_id` is the payload's own field. **Apply:**
+  nothing is required; a field you named like one of these (`Level`, `time_`, `request_id` inside a
+  request) is no longer written, so rename it (`severity`, `elapsedMs`, `legacyRequestId`).
+
 ### Added
 
 - **The logger counts what it cuts and what its destinations refuse.** `LOGGER_OBSERVABILITY_TOKEN`
@@ -38,8 +54,45 @@ Nothing is required. A derived backend that builds the Pino instance itself thro
 `buildPinoInstance` passes its `DestinationHealth`, which now counts; one that provides its own
 `LOGGER_OBSERVABILITY_TOKEN` must return the three methods of `ILoggerObservability`.
 
+`PinoLoggerService` gains one private member, `errorText`, in its declaration. A subclass that
+defines a member of that name no longer compiles against it: rename yours. Nothing else about its
+constructor or its public methods changes. A service you build by hand over a Pino instance you built
+yourself censors the text of an `Error` with its own redactor, as it does the text of an object
+message; over a Pino instance from `buildPinoInstance` it uses the function the factory leaves on
+that instance, which also covers `redactStrategy: 'paths'`. The merge of the request and trace keys
+that `buildPinoInstance` installs, and the owned-key guard of the service, now compare names with
+their case and the separators `_`, `.` and `-` folded, and the `err` serializer and the derived
+`exception.*` fields it builds censor the message where it opens a stack; nothing is required beyond
+what the Breaking entry above says.
+
 ### Fixed
 
+- **The text of an entry that comes from an `Error` is censored like `err.message`.** The text of
+  `error(err)`, `errorStructured(key, err)` and `warn(err)` (and `log`, `fatal`, `debug`, `verbose`
+  with an `Error`) is the error's `message`, and it was written as it was while the field
+  `err.message` was censored, so `redactPaths: ['message']` left the secret in `msg`. It is now
+  censored under the name `message`, also with `redactStrategy: 'paths'`. It is still capped at
+  16 KiB like every log message and not cut at `maxStringLength`, which does not apply to the log
+  message. The same text is censored where it opens the stack: in `err.stack`, in the stack of each
+  `cause` and of each of the `errors` of an `AggregateError`, and in `exception.message` and
+  `exception.stacktrace` with `errorFormat: 'semconv'` or `'both'`. It is replaced where the engine
+  writes it, right after the first `: ` of the first line (or at the start, for an error with no
+  name), by an exact comparison there, never by a search and never by a pattern built from your
+  text, so an error whose name repeats or contains its message is censored in the message and not
+  in the name, and so is a message that wraps another error with its frames. It holds for an `Error`,
+  a subclass and an `Error` of another realm, and for a message with a control character, which the
+  stack escapes. A stack whose header is not in the default form loses its frames when its message
+  is censored: it becomes its name, if any, and the censored message, as what it holds may be the
+  secret too. A stack of a message that nothing censored is not touched. **What this covers,
+  precisely:** redaction works on field names, so it covers a field and the text copied from a named
+  field (the `message` or `event` of an object message, and the `message` of an `Error` where it
+  appears as the text of the entry, in its stack and in the derived `exception.*` fields); it never
+  reads the content of a string, so a text a caller passes as a string, such as
+  ``logger.warn(`card ${number}`)``, is written as it is, and a secret that an error carries in
+  another field (a `code`, an own property) is covered only by the name of that field. 1.4.23 said a
+  secret in `event` or `message` does not reach `msg`; that holds for the text of an object message
+  and, from this release, for the message of an `Error`, and for no other source of the text. **Apply:** nothing is required; a log search that relied on finding a
+  censored value in the `msg` of an `Error` no longer finds it.
 - **The derived exception fields are bounded by `maxEntrySizeBytes`.** With `errorFormat: 'semconv'`
   or `'both'`, `exception.type`, `exception.message`, `exception.stacktrace` and `error.type` were
   cut only by the fixed 16 KiB text cap, so with `maxEntrySizeBytes` set below the 64 KiB default
@@ -63,6 +116,9 @@ Nothing is required. A derived backend that builds the Pino instance itself thro
 
 ### Documentation
 
+- **The README says what a call costs.** A string line, a structured call and an object message
+  are timed in its Performance section, with the cost of comparing the names of a payload with the
+  keys the logger writes.
 - **The README names every export of a public subpath.** Some exports of the root entry and one of
   `/shared` (the option and context types, the metadata key of the deprecated `@LogContext` and the
   `ReservedLogKey` union) were never named in it; an "Option and context types" table describes
