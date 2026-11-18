@@ -28,5 +28,15 @@ export const LOGGER_DESTINATIONS_TOKEN: unique symbol = Symbol('BYMAX_LOGGER_DES
  */
 export const LOGGER_REDACTOR_TOKEN: unique symbol = Symbol('BYMAX_LOGGER_REDACTOR')
 
+/**
+ * Injection token for the {@link ILoggerObservability} view of the logger: the counters and the
+ * delivery state that the `/observability` subpath publishes.
+ *
+ * Registered in the global symbol registry (`Symbol.for`) and not as a unique symbol: the package
+ * ships an ES module and a CommonJS build, and a host that loads the main entry through one and the
+ * subpath through the other would otherwise hold two different tokens for the same provider.
+ */
+export const LOGGER_OBSERVABILITY_TOKEN: unique symbol = Symbol.for('BYMAX_LOGGER_OBSERVABILITY')
+
 /** Injection token for the per-request AsyncLocalStorage-backed log context. */
 export const LOG_CONTEXT_TOKEN: unique symbol = Symbol('BYMAX_LOGGER_LOG_CONTEXT')

@@ -24,6 +24,7 @@ import {
   LOGGER_DESTINATIONS_TOKEN,
   LOGGER_OPTIONS_TOKEN,
   LOGGER_PINO_INSTANCE_TOKEN,
+  LOGGER_OBSERVABILITY_TOKEN,
   LOGGER_REDACTOR_TOKEN
 } from './constants/injection-tokens.constants'
 import {
@@ -86,6 +87,8 @@ function buildCommonProviders(): Provider[] {
     // and by DestinationRegistry (which writes to it during onModuleInit). Both
     // depend on this provider and it depends on nothing, so there is no cycle.
     DestinationHealth,
+    // The counters and the delivery state of the logger, for the `/observability` subpath.
+    { provide: LOGGER_OBSERVABILITY_TOKEN, useExisting: DestinationHealth },
     {
       // The DEFAULT-coverage redactor, shared by the Pino factory's hooks and by
       // `PinoLoggerService.child()`. The latter needs it as a provider because
@@ -174,6 +177,7 @@ export function augmentLoggerModule(base: DynamicModule, providers: Provider[]):
       LOGGER_PINO_INSTANCE_TOKEN,
       LOGGER_DESTINATIONS_TOKEN,
       LOGGER_REDACTOR_TOKEN,
+      LOGGER_OBSERVABILITY_TOKEN,
       LOG_CONTEXT_TOKEN,
       LogContextService,
       PinoLoggerService,

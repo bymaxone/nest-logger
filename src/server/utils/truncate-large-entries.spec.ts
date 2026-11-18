@@ -203,4 +203,38 @@ describe('createSizeBoundedSerializer', () => {
     const serialize = createSizeBoundedSerializer(identity, exactBytes)
     expect(serialize(value)).toBe(value)
   })
+
+  describe('the count of what it replaces', () => {
+    const calls = (serializer: () => unknown, ceiling: number): number => {
+      let count = 0
+      createSizeBoundedSerializer(serializer, ceiling, () => {
+        count += 1
+      })('ignored')
+      return count
+    }
+
+    it('calls back once for an output over the ceiling', () => {
+      expect(calls(() => ({ blob: 'x'.repeat(500) }), 10)).toBe(1)
+    })
+
+    it('calls back once for an output that cannot be read', () => {
+      expect(
+        calls(
+          () => ({
+            toJSON(): never {
+              throw new Error('unreadable')
+            }
+          }),
+          1000
+        )
+      ).toBe(1)
+    })
+
+    it.each([
+      ['an output under the ceiling', (): unknown => ({ a: 1 })],
+      ['an output with nothing to measure', (): unknown => undefined]
+    ])('does not call back for %s', (_label, make) => {
+      expect(calls(make, 1000)).toBe(0)
+    })
+  })
 })

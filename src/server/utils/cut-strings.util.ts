@@ -14,13 +14,20 @@
 import { cutText } from './bounded-text.util'
 import { isPlainRecord } from './is-plain-record.util'
 
-/** `node` with every string in it cut at `limit`; what is not text, an array or plain data is kept. */
-function cutNode(node: unknown, limit: number): unknown {
-  if (typeof node === 'string') return cutText(node, false, limit)
-  if (Array.isArray(node)) return node.map((child: unknown) => cutNode(child, limit))
+/**
+ * `node` with every string in it cut at `limit`; what is not text, an array or plain data is kept.
+ * `onCut` is called once for each string that was cut.
+ */
+function cutNode(node: unknown, limit: number, onCut: (() => void) | undefined): unknown {
+  if (typeof node === 'string') {
+    const cut = cutText(node, false, limit)
+    if (cut !== node) onCut?.()
+    return cut
+  }
+  if (Array.isArray(node)) return node.map((child: unknown) => cutNode(child, limit, onCut))
   if (isPlainRecord(node)) {
     return Object.fromEntries(
-      Object.entries(node).map(([key, child]) => [key, cutNode(child, limit)])
+      Object.entries(node).map(([key, child]) => [key, cutNode(child, limit, onCut)])
     )
   }
   return node
@@ -37,17 +44,19 @@ function cutNode(node: unknown, limit: number): unknown {
  * @param record - The record the redaction walk wrote.
  * @param limit - The most characters a string keeps.
  * @param exempt - Root keys whose value is left whole.
+ * @param onCut - Called once for each string that was cut, so the cuts can be counted.
  * @returns A new record; `record` is not changed.
  */
 export function cutStrings(
   record: Readonly<Record<string, unknown>>,
   limit: number,
-  exempt: ReadonlySet<string>
+  exempt: ReadonlySet<string>,
+  onCut?: () => void
 ): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(record).map(([key, child]) => [
       key,
-      exempt.has(key) ? child : cutNode(child, limit)
+      exempt.has(key) ? child : cutNode(child, limit, onCut)
     ])
   )
 }

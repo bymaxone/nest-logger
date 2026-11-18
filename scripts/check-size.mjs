@@ -33,6 +33,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-18 — server: 42,100 B (41.11 KiB) real -> 41.14 KiB budget (42,127 B, +27 B over the
+//     measurement). The logger counts the fields it cuts or replaces by reason and the writes a
+//     destination refused, and exposes them with the delivery state through
+//     `LOGGER_OBSERVABILITY_TOKEN`; the three counting sites take a callback. It is +446 B over the
+//     41,654 B measured at 1.4.23.
 //   - 2026-11-17 — server: 41,654 B (40.68 KiB) real -> 40.70 KiB budget (41,677 B, +23 B over the
 //     measurement). The derived exception fields are cut to maxEntrySizeBytes in UTF-8 bytes
 //     (`cutBytes`), and the size ceiling measures a value with a cycle or a BigInt as it is written
@@ -281,7 +286,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 40.7 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 41.14 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 
