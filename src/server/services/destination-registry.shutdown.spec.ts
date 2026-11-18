@@ -131,8 +131,8 @@ describe('DestinationRegistry', () => {
     })
 
     /*
-     * The detail of a failed shutdown without a stack is the thrown value's message, and that
-     * text is cut at the same limit as every message the logger writes.
+     * The message of the error of a failed shutdown is written in `err`, and it is cut at the same
+     * limit as every message the logger writes.
      */
     it('cuts the message of a destination that failed to shut down without a stack', async () => {
       const failing = makeDestination('failing', {
@@ -380,11 +380,9 @@ describe('DestinationRegistry', () => {
     })
 
     /*
-     * REGRESSION — a newline-bearing cause WITHOUT a stack must not forge a second
-     * stderr record. `escapeControlCharacters` preserves newlines on purpose, since
-     * a stack is legitimately multi-line; routing a `message` or a non-Error value
-     * through it let `failed\n[forged entry]` become a line an operator reads as a
-     * genuine one. Single-line fields go through `toSingleLineMessage` instead.
+     * REGRESSION — a newline in the message of a cause must not forge a second stderr record: a
+     * message written with its newline let `failed\n[forged entry]` become a line an operator reads
+     * as a genuine one. The message is written as a single-line field, with the newline escaped.
      *
      * Asserted on the emitted text being ONE line, not merely on the escape being
      * present.
@@ -417,7 +415,7 @@ describe('DestinationRegistry', () => {
      * `readonly name: string` does not stop a consumer implementing it as a
      * getter, and reading it at the call site would put it back inside the
      * `catch`, where a throw aborts the remaining teardown exactly as a hostile
-     * cause would. Guarded separately from the detail, so one unreadable value
+     * cause would. Guarded separately from the error, so one unreadable value
      * does not cost the other.
      */
     it('keeps tearing down when the destination name itself cannot be read', async () => {
@@ -438,7 +436,7 @@ describe('DestinationRegistry', () => {
       await expect(registry.onApplicationShutdown()).resolves.toBeUndefined()
 
       expect(survivor.onShutdown).toHaveBeenCalled()
-      // The name is lost, the detail is not — that is the point of guarding them
+      // The name is lost, the error is not — that is the point of guarding them
       // separately rather than together.
       expect(shutdownLine(stderrSpy, 'unknown')?.parsed['err']).toEqual({
         type: 'Error',

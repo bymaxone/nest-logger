@@ -66,7 +66,7 @@ describe('censorMessageText, the censor of the lines the library writes about a 
     expect(service.censorMessageText('nothing to hide')).toBe('nothing to hide')
   })
 
-  it('does not cut a long text and does not count it as a cut', () => {
+  it('returns a long text as it is on an instance that has no limit', () => {
     const service = new PinoLoggerService(pino({ enabled: false }))
     const long = 'x'.repeat(100_000)
 
