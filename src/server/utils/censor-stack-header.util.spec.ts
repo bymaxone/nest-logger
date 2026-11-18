@@ -100,6 +100,12 @@ describe('censorStackHeader', () => {
       '[REDACTED]'
     ],
     [
+      'a message that starts exactly where the first frame line starts',
+      `Error: \n    at b${FRAMES}`,
+      '\n    at b',
+      `Error: [REDACTED]${FRAMES}`
+    ],
+    [
       'a message that a later frame repeats at the end of the stack',
       'Error: x\n    at a\n    at x',
       'x',
@@ -112,6 +118,12 @@ describe('censorStackHeader', () => {
   it.each([
     ['a message that is empty', `Error${FRAMES}`, '', '[REDACTED]'],
     ['a message that was not censored', `Error: kept${FRAMES}`, 'kept', 'kept'],
+    [
+      'a message that was not censored, in a header that holds it more often than is examined',
+      `Error: ${'a'.repeat(65)}${FRAMES}`,
+      'a',
+      'a'
+    ],
     ['a message that only a frame repeats', `Error: other${FRAMES}x`, 'at run', '[REDACTED]'],
     ['a message the stack does not hold', `Error: built with this${FRAMES}`, 'changed later', 'x']
   ])('leaves the stack alone for %s', (_label, stack, message, censored) => {
