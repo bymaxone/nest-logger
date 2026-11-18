@@ -85,7 +85,7 @@ describe('the factory and the lines the library writes about a failure', () => {
    * a line about a failure does not cut at it either, and a text that is not cut is not counted as
    * a cut. Read on an instance the factory built, which carries the finisher that has the limit.
    */
-  it('censors a text without cutting it at maxStringLength, and without counting a cut', () => {
+  it('does not cut a text at maxStringLength, and does not count a cut', () => {
     const health = new DestinationHealth()
     const options = applyDefaults({
       service: { name: 'app', version: '1.0.0' },

@@ -190,10 +190,10 @@ describe('DestinationRegistry', () => {
     })
 
     /*
-     * If a destination's onShutdown throws an Error, the failure must fall back
-     * to process.stderr.write using the error's stack (or message when no stack).
+     * If a destination's onShutdown throws an Error, the failure is written to stderr as a
+     * structured line with the type and the message of the error.
      */
-    it('falls back to process.stderr.write when onShutdown throws an Error', async () => {
+    it('reports an Error thrown by onShutdown as a structured line on stderr', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const boom = makeDestination('boom', {
         onInit: jest.fn(),
@@ -448,10 +448,10 @@ describe('DestinationRegistry', () => {
     })
 
     /*
-     * When the thrown cause is a non-Error value (e.g. a string), String(cause)
-     * must be used as the detail — covers the instanceof-false branch.
+     * When the thrown cause is a non-Error value (e.g. a string), its text is the message of the
+     * line, under the type `UnknownError`.
      */
-    it('falls back to process.stderr.write when onShutdown throws a non-Error', async () => {
+    it('reports a non-Error thrown by onShutdown as an UnknownError with its text', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const boom = makeDestination('boom', {
         onInit: jest.fn(),
@@ -462,15 +462,18 @@ describe('DestinationRegistry', () => {
 
       await registry.onApplicationShutdown()
 
-      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('non-error-string'))
+      expect(shutdownLine(stderrSpy, 'boom')?.parsed['err']).toEqual({
+        type: 'UnknownError',
+        message: 'non-error-string'
+      })
       stderrSpy.mockRestore()
     })
 
     /*
-     * When the Error has no stack (e.g. stripped by a transpiler), the message
-     * must be used as the detail — covers the stack ?? message branch.
+     * An Error with no stack (e.g. stripped by a transpiler) is reported like any other: the line
+     * carries its type and message, and never a stack.
      */
-    it('uses error.message when stack is absent', async () => {
+    it('reports the message of an Error that has no stack', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
       const stacklessError = new Error('no-stack')
       Reflect.deleteProperty(stacklessError, 'stack')
@@ -483,7 +486,10 @@ describe('DestinationRegistry', () => {
 
       await registry.onApplicationShutdown()
 
-      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('no-stack'))
+      expect(shutdownLine(stderrSpy, 'boom')?.parsed['err']).toEqual({
+        type: 'Error',
+        message: 'no-stack'
+      })
       stderrSpy.mockRestore()
     })
   })
