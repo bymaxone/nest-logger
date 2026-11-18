@@ -12,6 +12,29 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The derived exception fields are bounded by `maxEntrySizeBytes`.** With `errorFormat: 'semconv'`
+  or `'both'`, `exception.type`, `exception.message`, `exception.stacktrace` and `error.type` were
+  cut only by the fixed 16 KiB text cap, so with `maxEntrySizeBytes` set below the 64 KiB default
+  each could be larger than the ceiling that bounds a serializer's output. Each
+  is now cut to `maxEntrySizeBytes` UTF-8 bytes, ending in `…[truncated]` (omitted under a 14-byte ceiling), at a character boundary.
+  **Apply:** nothing is required; a query that reads the full message or stack of a very long error
+  through these fields gets the cut text when the ceiling is lower than the error, so raise
+  `maxEntrySizeBytes` if you need more of it.
+- **A serializer output that `JSON.stringify` cannot measure is bounded.** A value with a reference
+  back to an ancestor, or a `BigInt`, passed the size ceiling unmeasured, so a huge one reached the
+  line. It is now measured as it is written (a cycle as `"[Circular]"`, a `BigInt` by its digits) and
+  truncated when over the ceiling; a repeated reference without a cycle is counted every time it is
+  written. A value that cannot be read at all (a `toJSON` or a getter that throws) is replaced by the
+  truncation envelope with an `_originalSize` of `-1`, where it used to pass through. **Apply:**
+  nothing is required; an alert on `LOGGER_ENTRY_TRUNCATED` now also fires for these values, and
+  `_originalSize: -1` means the size is unknown.
+- **A serializer that is itself `undefined` is refused with its type.** `serializers: { a: undefined }`
+  said `options.serializers must map every serializer key to a function` and no more; it now ends in
+  `Received undefined`, as the other refused members do. **Apply:** code that matches the text of
+  that refusal exactly matches the new one.
+
 ## [1.4.23] - 2026-11-17
 
 ### Breaking

@@ -281,7 +281,11 @@ export interface BymaxLoggerModuleOptions {
   http?: HttpOptions
   /** OpenTelemetry integration tuning. */
   otel?: OtelOptions
-  /** Maximum size in bytes per log entry: an integer from 1 to 2147483647. Default: 65536. */
+  /**
+   * Maximum size in UTF-8 bytes of each serialized field (`err` and any custom serializer), over
+   * which the value becomes a truncation envelope, and of each derived `exception.*` and
+   * `error.type` field, which is cut to it: an integer from 1 to 2147483647. Default: 65536.
+   */
   maxEntrySizeBytes?: number
   /**
    * The most characters a string of a log record is written with. A longer string is cut to this
@@ -295,7 +299,7 @@ export interface BymaxLoggerModuleOptions {
    * under a key that has a serializer (`err` and the keys of `serializers`; see
    * `maxEntrySizeBytes`), so the stack of an error logged under `err` is never cut by it. The event
    * name and the `exception.*` and `error.type` fields the library writes are added after the cut,
-   * so the limit does not apply to them, and a key of your own with one of those names is cut like
+   * so the limit does not apply to them (`maxEntrySizeBytes` cuts the exception fields), and a key of your own with one of those names is cut like
    * any other. The names left whole are matched on the root key, so a key of your own named like a
    * serializer key is left whole too. An `Error` placed in the metadata under any other key is
    * data of the record when the cut runs, and its message and stack are cut like any other string.

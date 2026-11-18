@@ -44,3 +44,26 @@ export function cutText(text: string, alreadyCut = false, limit = MAX_TEXT_LENGT
   const whole = last >= 0xd800 && last <= 0xdbff ? head.slice(0, -1) : head
   return whole + TEXT_TRUNCATED
 }
+
+/**
+ * A text cut so that its UTF-8 form is at most `maxBytes`, marker included, at a character boundary.
+ *
+ * @internal Shared across the logger. NOT re-exported by the package barrel.
+ * @param text - The text.
+ * @param maxBytes - The most UTF-8 bytes the result may have.
+ * @returns `text` when it fits, else its longest whole-character prefix that leaves room for
+ *   {@link TEXT_TRUNCATED}, followed by it; when the ceiling cannot hold the marker, the longest
+ *   whole-character prefix that fits, with no marker.
+ */
+export function cutBytes(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, 'utf-8') <= maxBytes) return text
+  const markerBytes = Buffer.byteLength(TEXT_TRUNCATED, 'utf-8')
+  const marked = maxBytes >= markerBytes
+  const bytes = Buffer.from(text, 'utf-8')
+  let end = Math.min(marked ? maxBytes - markerBytes : maxBytes, bytes.length)
+  // A continuation byte (10xxxxxx) starts nothing: step back to the byte that starts the character.
+  // The first byte of a text is never one, so the step stops before it.
+  // `end` is below `bytes.length`: the text is over the ceiling, so the byte at `end` exists.
+  while ((bytes.readUInt8(end) & 0xc0) === 0x80) end -= 1
+  return bytes.subarray(0, end).toString('utf-8') + (marked ? TEXT_TRUNCATED : '')
+}

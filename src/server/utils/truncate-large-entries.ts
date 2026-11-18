@@ -26,15 +26,44 @@ export interface TruncatedEntry {
   _truncated: true
   /** Reserved log key so aggregators can detect/alert on truncated entries. */
   _logKey: typeof RESERVED_LOG_KEYS.LOGGER_ENTRY_TRUNCATED
-  /** Byte size (UTF-8) of the original serialized value. */
+  /** Byte size (UTF-8) of the original serialized value, or `-1` when it could not be measured. */
   _originalSize: number
   /** First {@link PREVIEW_LENGTH} characters of the original serialized JSON. */
   _preview: string
 }
 
 /**
+ * The JSON text of `value` as Pino would write it, with the two things `JSON.stringify` throws on
+ * written the way the logger writes them: a reference back to an ancestor becomes `"[Circular]"`
+ * and a `BigInt` its decimal digits. A value that is referenced twice without a cycle is written
+ * twice, because only a reference to an ANCESTOR is a cycle.
+ *
+ * @param value - The serializer output.
+ * @returns The JSON text, or `undefined` when JSON has nothing to write for the value (a
+ *   function, a symbol, `undefined`).
+ * @throws Error When the value cannot be read at all (a `toJSON` or a getter that throws).
+ */
+function measurableJson(value: unknown): string | undefined {
+  // The holder each object was last visited from. Walking up from the holder of the value being
+  // visited gives the path that leads to it, so a value that is on that path is a cycle, and one
+  // that is not (a shared sub-object) is written again, as Pino writes it.
+  const parents = new WeakMap<object, unknown>()
+  return JSON.stringify(value, function (this: unknown, _key: string, inner: unknown): unknown {
+    if (typeof inner === 'bigint') return inner.toString()
+    if (typeof inner !== 'object' || inner === null) return inner
+    for (let holder: unknown = this; holder !== undefined; holder = parents.get(holder as object)) {
+      if (holder === inner) return '[Circular]'
+    }
+    parents.set(inner, this)
+    return inner
+  })
+}
+
+/**
  * Wrap a serializer so its output is replaced by a {@link TruncatedEntry} when
- * the serialized JSON exceeds `maxBytes`.
+ * the serialized JSON exceeds `maxBytes`. An output that cannot be measured at all is replaced too,
+ * with `_originalSize` of `-1`, because a size that cannot be shown to be under the ceiling is not
+ * known to be bounded.
  *
  * @typeParam T - The serializer's input type (inferred from `baseSerializer`).
  * @param baseSerializer - The serializer whose output is size-bounded.
@@ -48,16 +77,13 @@ export function createSizeBoundedSerializer<T>(
   return (input: T): unknown => {
     const serialized = baseSerializer(input)
     let json: string | undefined
-    // Stryker disable BlockStatement: equivalent — emptying this catch falls through to the `json === undefined` guard immediately below, which returns the same `serialized` value. Same observable output for every input. The block form is required because Stryker does not honour `next-line` on a catch-clause body.
     try {
-      json = JSON.stringify(serialized)
+      json = measurableJson(serialized)
     } catch {
-      // A circular reference or a hostile `toJSON()` makes the value
-      // un-measurable. Fail soft — the logging path must never throw — and pass
-      // the value through; Pino's own serializer handles circular refs downstream.
-      return serialized
+      // The value cannot be read (a `toJSON` or a getter that throws). The logging path must never
+      // throw, and a value that cannot be measured cannot be shown to be bounded, so it is replaced.
+      return unmeasurableEnvelope()
     }
-    // Stryker restore BlockStatement
     // A serializer may legitimately produce `undefined` (JSON.stringify → undefined
     // for undefined / functions / symbols). There is nothing to measure, so pass it
     // through untouched rather than crash `Buffer.byteLength`.
@@ -74,5 +100,15 @@ export function createSizeBoundedSerializer<T>(
       } satisfies TruncatedEntry
     }
     return serialized
+  }
+}
+
+/** The envelope for a value whose size could not be measured: `-1` is "unknown", not a size. */
+function unmeasurableEnvelope(): TruncatedEntry {
+  return {
+    _truncated: true,
+    _logKey: RESERVED_LOG_KEYS.LOGGER_ENTRY_TRUNCATED,
+    _originalSize: -1,
+    _preview: ''
   }
 }

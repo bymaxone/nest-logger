@@ -24,7 +24,7 @@ import type { ResolvedBymaxLoggerModuleOptions } from './interfaces/logger-modul
 import { createTraceContextMixin } from './mixins/trace-context.mixin'
 import type { DestinationHealth } from './services/destination-health.service'
 import type { LogContextService } from './services/log-context.service'
-import { cutText } from './utils/bounded-text.util'
+import { cutBytes, cutText } from './utils/bounded-text.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
@@ -181,6 +181,35 @@ export function serializeErrorValue(
 }
 
 /**
+ * Writes the SemConv `exception.*` and `error.type` fields from the `err` of `record`, each cut to
+ * `maxBytes` UTF-8 bytes on top of the fixed text cap: the fields are the library's own, written
+ * after the `err` serializer, so the ceiling that bounds a serializer's output does not reach them.
+ *
+ * @param record - The record, changed in place.
+ * @param maxBytes - The ceiling of each field, in UTF-8 bytes.
+ */
+function deriveExceptionFields(record: Record<string, unknown>, maxBytes: number): void {
+  // Optional chaining rather than a type guard: a `null` or primitive `err` yields `undefined` for
+  // every field and adds nothing, which is exactly what a guard would have produced. A guard whose
+  // presence no input can distinguish is not a check, it is untested code.
+  const candidate = record['err'] as
+    { name?: unknown; message?: unknown; stack?: unknown } | undefined
+  if (typeof candidate?.name === 'string') {
+    record['exception.type'] = cutBytes(cutText(candidate.name), maxBytes)
+    record['error.type'] = cutBytes(cutText(candidate.name), maxBytes)
+  }
+  if (typeof candidate?.message === 'string') {
+    record['exception.message'] = cutBytes(cutText(candidate.message), maxBytes)
+  }
+  if (typeof candidate?.stack === 'string') {
+    // Same scrubbing the legacy `err.stack` gets. Without it, a consumer moving to
+    // `errorFormat: 'semconv'` would silently start seeing dependency frames that the shape they
+    // migrated FROM had filtered out.
+    record['exception.stacktrace'] = cutBytes(scrubStack(candidate.stack), maxBytes)
+  }
+}
+
+/**
  * Add the Stable OpenTelemetry exception attributes alongside (or instead of)
  * the legacy `err` object.
  *
@@ -219,7 +248,8 @@ export function serializeErrorValue(
  */
 export function withSemconvException(
   record: Record<string, unknown>,
-  format: 'pino' | 'semconv' | 'both'
+  format: 'pino' | 'semconv' | 'both',
+  maxBytes = Number.POSITIVE_INFINITY
 ): Record<string, unknown> {
   if (format === 'pino') {
     return record
@@ -229,21 +259,7 @@ export function withSemconvException(
     // yields `undefined` for every field and adds nothing, which is exactly what
     // a guard would have produced. A guard whose presence no input can
     // distinguish is not a check, it is untested code.
-    const candidate = record['err'] as
-      { name?: unknown; message?: unknown; stack?: unknown } | undefined
-    if (typeof candidate?.name === 'string') {
-      record['exception.type'] = cutText(candidate.name)
-      record['error.type'] = cutText(candidate.name)
-    }
-    if (typeof candidate?.message === 'string') {
-      record['exception.message'] = cutText(candidate.message)
-    }
-    if (typeof candidate?.stack === 'string') {
-      // Same scrubbing the legacy `err.stack` gets. Without it, a consumer moving
-      // to `errorFormat: 'semconv'` would silently start seeing dependency frames
-      // that the shape they migrated FROM had filtered out.
-      record['exception.stacktrace'] = scrubStack(candidate.stack)
-    }
+    deriveExceptionFields(record, maxBytes)
     if (format === 'semconv') {
       // Explicitly opted out of the legacy shape. Kept as a deliberate choice
       // rather than a default: `err.*` is what every existing query reads, and
@@ -653,7 +669,11 @@ function buildRecordFormatter(
     // and it precedes the fields the library derives, which are written whole after it.
     const bounded =
       maxStringLength === undefined ? redacted : cutStrings(redacted, maxStringLength, wholeRoots)
-    return withSemconvException(withEventName(bounded, options.eventNameField), options.errorFormat)
+    return withSemconvException(
+      withEventName(bounded, options.eventNameField),
+      options.errorFormat,
+      options.maxEntrySizeBytes
+    )
   }
 }
 
