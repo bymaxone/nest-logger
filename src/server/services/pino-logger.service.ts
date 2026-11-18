@@ -591,10 +591,12 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * @returns The text of the entry.
    */
   private errorText(level: PinoLevelMethod | 'error', error: Error): string {
-    return this.censorText(
-      { key: 'message', text: safeErrorMessage(error) },
-      this.pino.isLevelEnabled(level),
-      false
+    return toBoundedMessage(
+      this.censorText(
+        { key: 'message', text: safeErrorMessage(error) },
+        this.pino.isLevelEnabled(level),
+        false
+      )
     )
   }
 

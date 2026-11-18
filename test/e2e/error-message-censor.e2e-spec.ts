@@ -260,3 +260,29 @@ describe('Logger E2E — where the message sits in the stack', () => {
     }
   )
 })
+
+describe('Logger E2E — the censor of a message is pinned to one bounded line', () => {
+  it.each(SHAPES)(
+    'writes a censor with a line break and an escape as text on one line: %s',
+    async (_label, call) => {
+      const entry = await runOne((l, s) => call(l, s, new Error(SECRET)), {
+        redactPaths: ['message'],
+        redactCensor: 'MASK\nFORGED\u001bE'
+      })
+
+      expect(String(entry['msg'])).toBe('MASK\\nFORGED\\u001bE')
+    }
+  )
+
+  it.each(SHAPES)(
+    'keeps the text within the cap of a log message when the censor is longer: %s',
+    async (_label, call) => {
+      const entry = await runOne((l, s) => call(l, s, new Error(SECRET)), {
+        redactPaths: ['message'],
+        redactCensor: 'c'.repeat(20_000)
+      })
+
+      expect(String(entry['msg']).length).toBeLessThanOrEqual(16_384 + '…[truncated]'.length)
+    }
+  )
+})

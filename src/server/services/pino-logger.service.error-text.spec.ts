@@ -28,4 +28,25 @@ describe('the text of an entry that comes from an Error', () => {
 
     expect(reads).toBe(2)
   })
+
+  it('writes the censored text as one line, with a control character as its escape', () => {
+    const logger = pino({ enabled: false })
+    const error = jest.spyOn(logger, 'error')
+    const service = new PinoLoggerService(logger, () => ({ message: 'MASK\nFORGED\u001bE' }))
+
+    service.error(new Error('secret'))
+
+    expect(error).toHaveBeenCalledWith(expect.anything(), 'MASK\\nFORGED\\u001bE')
+  })
+
+  it('keeps the censored text within the cap of a log message', () => {
+    const logger = pino({ enabled: false })
+    const error = jest.spyOn(logger, 'error')
+    const service = new PinoLoggerService(logger, () => ({ message: 'c'.repeat(20_000) }))
+
+    service.error(new Error('secret'))
+
+    const text = String(error.mock.calls[0]?.[1])
+    expect(text).toBe(`${'c'.repeat(16_384)}…[truncated]`)
+  })
 })

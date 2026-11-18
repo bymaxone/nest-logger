@@ -33,7 +33,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-18 — server: 43,023 B (42.01 KiB) real -> 42.04 KiB budget (43,048 B, +25 B over the
+//   - 2026-11-18 — server: 42,966 B (41.96 KiB) real -> 41.99 KiB budget (42,997 B, +31 B over the
 //     measurement). A key that only spells a key the logger writes (`trace_id` for `traceId`,
 //     `Level` for `level`) is dropped like the key itself, by one comparison that folds the case and
 //     the separators (`foldKey`), in the owned-key guard and in the merge of the mixin; the text of
@@ -299,7 +299,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 42.04 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 41.99 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',
