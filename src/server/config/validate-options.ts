@@ -285,7 +285,7 @@ function validateCustomization(options: BymaxLoggerModuleOptions): void {
     if (!isRecord(serializers)) reject('serializers', 'must be an object', serializers)
     for (const serializer of Object.values(serializers)) {
       if (typeof serializer !== 'function') {
-        reject('serializers', 'must map every serializer key to a function', serializer)
+        reject('serializers', 'must map every serializer key to a function', serializer, true)
       }
     }
   }

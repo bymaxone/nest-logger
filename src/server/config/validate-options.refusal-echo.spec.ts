@@ -188,6 +188,23 @@ describe('validateOptions: the type of a list member that is undefined', () => {
   })
 })
 
+describe('validateOptions: a serializer member that is undefined', () => {
+  /*
+   * A member of the serializers is always present, so one that is `undefined` is a value that was
+   * refused, and the refusal names its type like the member of a list does.
+   */
+  it('is refused with Received undefined', () => {
+    const options = {
+      ...VALID,
+      serializers: { user: undefined }
+    } as unknown as BymaxLoggerModuleOptions
+
+    expect(refusalOf(options)).toBe(
+      '[BymaxLoggerModule] options.serializers must map every serializer key to a function. Received undefined'
+    )
+  })
+})
+
 describe('validateOptions: a serializer key is named, not printed', () => {
   /*
    * A refusal names the type of what was refused and never prints text the caller wrote. The key of
