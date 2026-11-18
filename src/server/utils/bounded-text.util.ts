@@ -52,14 +52,16 @@ export function cutText(text: string, alreadyCut = false, limit = MAX_TEXT_LENGT
  * @param text - The text.
  * @param maxBytes - The most UTF-8 bytes the result may have.
  * @returns `text` when it fits, else its longest whole-character prefix that leaves room for
- *   {@link TEXT_TRUNCATED}, followed by it; only the marker when the ceiling cannot hold more.
+ *   {@link TEXT_TRUNCATED}, followed by it; when the ceiling cannot hold the marker, the longest
+ *   whole-character prefix that fits, with no marker.
  */
 export function cutBytes(text: string, maxBytes: number): string {
   if (Buffer.byteLength(text, 'utf-8') <= maxBytes) return text
-  const room = Math.max(0, maxBytes - Buffer.byteLength(TEXT_TRUNCATED, 'utf-8'))
+  const markerBytes = Buffer.byteLength(TEXT_TRUNCATED, 'utf-8')
+  const marked = maxBytes >= markerBytes
   const bytes = Buffer.from(text, 'utf-8')
-  let end = Math.min(room, bytes.length)
+  let end = Math.min(marked ? maxBytes - markerBytes : maxBytes, bytes.length)
   // A continuation byte (10xxxxxx) starts nothing: step back to the byte that starts the character.
   while (end > 0 && ((bytes.at(end) ?? 0) & 0xc0) === 0x80) end -= 1
-  return bytes.subarray(0, end).toString('utf-8') + TEXT_TRUNCATED
+  return bytes.subarray(0, end).toString('utf-8') + (marked ? TEXT_TRUNCATED : '')
 }
