@@ -1,13 +1,22 @@
 /**
- * Pins how the message of an error is censored where it opens the stack: replaced once, by an exact
- * match, and only where it ends the header, which is where the first frame begins or where a stack
- * with no frame ends, so a name that repeats the message or contains it is never the match.
+ * Pins how the message of an error is censored in the header of its stack: it is replaced where the
+ * engine writes it, right after the first `: ` of the first line or at the start for an error with no
+ * name, even when it holds lines that look like frames; a header that is not in that form is
+ * replaced by the name and the censored message and loses its frames; a message that was not
+ * censored changes nothing.
  *
  * Layer: server/utils, tests. Pure.
  */
 import { censorStackHeader } from './censor-stack-header.util'
 
 const FRAMES = '\n    at run (/srv/app.js:1:1)\n    at main (/srv/main.js:2:2)'
+
+const WRAPPED = [
+  'request failed: Error: inner',
+  '    at db.query (/srv/db.js:10:5)',
+  '    at run (/srv/app.js:2:2)',
+  'token=SECRET123'
+].join('\n')
 
 describe('censorStackHeader', () => {
   it.each([
@@ -29,9 +38,21 @@ describe('censorStackHeader', () => {
       'a\n    at b',
       `Error: [REDACTED]${FRAMES}`
     ],
+    [
+      'a message that wraps another error, with its frames and a secret after them',
+      `Error: ${WRAPPED}${FRAMES}`,
+      WRAPPED,
+      `Error: [REDACTED]${FRAMES}`
+    ],
     ['a stack with no frame', 'Error: secret', 'secret', 'Error: [REDACTED]'],
     ['a message with a regular expression in it', 'Error: a.*(b', 'a.*(b', 'Error: [REDACTED]'],
     ['an error with no name', `secret${FRAMES}`, 'secret', `[REDACTED]${FRAMES}`],
+    [
+      'an error with no name whose message holds the separator',
+      `foo: bar${FRAMES}`,
+      'foo: bar',
+      `[REDACTED]${FRAMES}`
+    ],
     ['a name equal to the message', `LEAK: LEAK${FRAMES}`, 'LEAK', `LEAK: [REDACTED]${FRAMES}`],
     [
       'a message that is a part of the name',
@@ -40,99 +61,105 @@ describe('censorStackHeader', () => {
       `TypeError: [REDACTED]${FRAMES}`
     ],
     [
-      'the message twice, the second one ending the header',
-      'Error: x x',
-      'x',
-      'Error: x [REDACTED]'
+      'a name that holds a separator of its own',
+      `App (code 7): secret${FRAMES}`,
+      'secret',
+      `App (code 7): [REDACTED]${FRAMES}`
     ],
     [
-      'a header the engine did not write, with frames of two spaces',
-      'Error: SEC\n  at foo (/a.ts:1:1)',
-      'SEC',
-      'Error: [REDACTED]\n  at foo (/a.ts:1:1)'
-    ],
-    [
-      'a header with a line after the message',
+      'a line after the message',
       `Error: SEC\nextra detail${FRAMES}`,
       'SEC',
       `Error: [REDACTED]\nextra detail${FRAMES}`
     ],
     [
-      'a name equal to the message and a line after it',
-      `LEAK: LEAK\nextra${FRAMES}`,
-      'LEAK',
-      `LEAK: [REDACTED]\nextra${FRAMES}`
+      'frames of two spaces',
+      'Error: SEC\n  at foo (/a.ts:1:1)',
+      'SEC',
+      'Error: [REDACTED]\n  at foo (/a.ts:1:1)'
     ],
     [
-      'a message that is the start of a longer header text',
-      `Error: secret and more${FRAMES}`,
-      'secret',
-      `Error: [REDACTED] and more${FRAMES}`
-    ],
-    [
-      'a header whose frames are indented with a tab',
+      'frames indented with a tab',
       'Error: SEC\n\tat foo (/a.ts:1:1)',
       'SEC',
       'Error: [REDACTED]\n\tat foo (/a.ts:1:1)'
-    ],
-    [
-      'a message that is a part of an older header text, as the stack kept it',
-      `Error: old secret${FRAMES}`,
-      'secret',
-      `Error: old [REDACTED]${FRAMES}`
-    ],
-    [
-      'a header that holds the message as often as is examined',
-      `Error: ${'a'.repeat(64)}`,
-      'a',
-      `Error: ${'a'.repeat(63)}[REDACTED]`
-    ],
-    [
-      'a header that holds more occurrences than are examined, and frames after it',
-      `Error: ${'a'.repeat(65)}${FRAMES}`,
-      'a',
-      `[REDACTED]${FRAMES}`
-    ],
-    [
-      'a stack with no frame that holds more occurrences than are examined',
-      `Error: ${'a'.repeat(65)}`,
-      'a',
-      '[REDACTED]'
     ],
     [
       'a message that starts exactly where the first frame line starts',
       `Error: \n    at b${FRAMES}`,
       '\n    at b',
       `Error: [REDACTED]${FRAMES}`
-    ],
-    [
-      'a message that a later frame repeats at the end of the stack',
-      'Error: x\n    at a\n    at x',
-      'x',
-      'Error: [REDACTED]\n    at a\n    at x'
     ]
-  ])('censors %s', (_label, stack, message, expected) => {
+  ])('replaces the message in %s', (_label, stack, message, expected) => {
     expect(censorStackHeader(stack, message, '[REDACTED]')).toBe(expected)
   })
+
+  /*
+   * A header that is not the default form is not read: it becomes the name and the censored message,
+   * and the frames go, because no search for the secret in it can be shown to find all of it.
+   */
+  it.each([
+    [
+      'text between the colon and the message',
+      `Error: build 12 failed - secret${FRAMES}`,
+      'secret',
+      'Error: [REDACTED]'
+    ],
+    [
+      'the same wrapped message under a header with text before it',
+      `Error: attempt 3 ${WRAPPED}${FRAMES}`,
+      WRAPPED,
+      'Error: [REDACTED]'
+    ],
+    [
+      'a message that is the start of a longer one',
+      `Error: secret and more${FRAMES}`,
+      'secret',
+      'Error: [REDACTED]'
+    ],
+    [
+      'a message that was changed after the stack was written',
+      `Error: old secret${FRAMES}`,
+      'secret',
+      'Error: [REDACTED]'
+    ],
+    [
+      'a stack that does not hold the message',
+      `Error: built with this${FRAMES}`,
+      'changed',
+      'Error: [REDACTED]'
+    ],
+    ['a message that a line after it repeats', `Error: x y\nx${FRAMES}`, 'x', 'Error: [REDACTED]'],
+    ['a first line with no name', `Error${FRAMES}`, 'secret', '[REDACTED]'],
+    [
+      'a header that holds the message many times',
+      `Error: ${'a'.repeat(65)}${FRAMES}`,
+      'a',
+      'Error: [REDACTED]'
+    ]
+  ])(
+    'drops the frames of a stack whose header is not the default form: %s',
+    (_l, stack, message, expected) => {
+      expect(censorStackHeader(stack, message, '[REDACTED]')).toBe(expected)
+    }
+  )
 
   it.each([
     ['a message that is empty', `Error${FRAMES}`, '', '[REDACTED]'],
     ['a message that was not censored', `Error: kept${FRAMES}`, 'kept', 'kept'],
     [
-      'a message that was not censored, in a header that holds it more often than is examined',
+      'a message that was not censored, whatever the header',
       `Error: ${'a'.repeat(65)}${FRAMES}`,
       'a',
       'a'
-    ],
-    ['a message that only a frame repeats', `Error: other${FRAMES}x`, 'at run', '[REDACTED]'],
-    ['a message the stack does not hold', `Error: built with this${FRAMES}`, 'changed later', 'x']
+    ]
   ])('leaves the stack alone for %s', (_label, stack, message, censored) => {
     expect(censorStackHeader(stack, message, censored)).toBe(stack)
   })
 
-  it('censors a message of 100,000 characters that overlaps itself in under a second', () => {
+  it('does the same work for a message of 100,000 characters that is not the header', () => {
     const message = 'a'.repeat(100_000)
-    const stack = 'a'.repeat(131_072 + 100_000)
+    const stack = 'a'.repeat(231_072)
     const started = Date.now()
 
     const out = censorStackHeader(stack, message, '[REDACTED]')

@@ -53,14 +53,14 @@ describe('sanitizeError with a censor of messages', () => {
     expect(sanitizeError(error, { censorMessage: undefined }).stack).toMatch(/^Error: secret\n/)
   })
 
-  it('leaves a stack that opens with another text than the message the error carries', () => {
+  it('rebuilds the header of a stack that opens with another text than the message', () => {
     const error = {
       name: 'Error',
       message: 'secret changed later',
       stack: 'Error: built with this\n    at run (/srv/app.js:1:1)'
     }
 
-    expect(sanitizeError(error, { censorMessage: censor }).stack).toMatch(/^Error: built with this/)
+    expect(sanitizeError(error, { censorMessage: censor }).stack).toBe('Error: [REDACTED]')
   })
 })
 
@@ -88,16 +88,16 @@ describe('the reads of the message and the size of what is searched', () => {
    * The stack is read up to MAX_STACK_SCAN characters. The header is 'Error: ' and the message, so
    * it fits while the message is at most MAX_STACK_SCAN - 7 characters, ends the part read exactly
    * at that length, and runs past it for every longer message, which leaves the start of it in the
-   * part read and never the whole of it.
+   * part read and never the whole of it. The header is rebuilt in every case, and keeps its name.
    */
   describe.each([
     ['a message that fits in the part read', 100_000, 'Error: [REDACTED]\n'],
     ['a message that ends the part read exactly', 131_065, 'Error: [REDACTED]'],
-    ['a message one character past it', 131_066, '[REDACTED]'],
-    ['a message that overruns it by a little', 131_071, '[REDACTED]'],
-    ['a message as long as the part read', 131_072, '[REDACTED]'],
-    ['a message longer than the part read', 131_073, '[REDACTED]'],
-    ['a message far longer than the part read', 200_000, '[REDACTED]']
+    ['a message one character past it', 131_066, 'Error: [REDACTED]'],
+    ['a message that overruns it by a little', 131_071, 'Error: [REDACTED]'],
+    ['a message as long as the part read', 131_072, 'Error: [REDACTED]'],
+    ['a message longer than the part read', 131_073, 'Error: [REDACTED]'],
+    ['a message far longer than the part read', 200_000, 'Error: [REDACTED]']
   ])('%s', (_label, length, opening) => {
     const message = `SECRET${'x'.repeat(length - 6)}`
     const stack = `Error: ${message}\n    at run (/srv/app.js:1:1)`
@@ -114,11 +114,13 @@ describe('the reads of the message and the size of what is searched', () => {
     })
   })
 
-  it('leaves a cut stack alone when its header holds other text than the message', () => {
+  it('rebuilds the header of a cut stack that holds other text than the message', () => {
     const stack = `Error: original\n    at run (/srv/app.js:1:1)${'x'.repeat(131_072)}`
     const message = `secret${'x'.repeat(131_072)}`
 
-    expect(scrubStack(stack, { message, censored: '[REDACTED]' })).toBe(scrubStack(stack))
+    expect(scrubStack(stack, { message, censored: '[REDACTED]' })).toBe(
+      'Error: [REDACTED]…[truncated]'
+    )
   })
 
   it('leaves a cut stack alone when the message is empty, whatever it is censored to', () => {
@@ -127,12 +129,10 @@ describe('the reads of the message and the size of what is searched', () => {
     expect(scrubStack(stack, { message: '', censored: '[REDACTED]' })).toBe(scrubStack(stack))
   })
 
-  it('searches a message that is longer than the stack, which was not cut, and does not find it', () => {
+  it('rebuilds the header when the message is longer than a stack that does not hold it', () => {
     const stack = 'Error: short\n    at run (/srv/app.js:1:1)'
 
-    expect(scrubStack(stack, { message: 'x'.repeat(200_000), censored: '[R]' })).toBe(
-      scrubStack(stack)
-    )
+    expect(scrubStack(stack, { message: 'x'.repeat(200_000), censored: '[R]' })).toBe('Error: [R]')
   })
 
   it('censors a header written with frames of two spaces', () => {

@@ -582,33 +582,6 @@ export function headerCensor(
 }
 
 /**
- * How much of the opening of a message is looked for in a stack that was cut: enough to tell that
- * the stack opens with it, and the same for every message, so the cost does not depend on its length.
- */
-const OPENING_LENGTH = 1024
-
-/**
- * The part of a stack that is read, with the message censored where it opens the stack.
- *
- * A stack that was cut can hold only the start of the message, because the header ran past the part
- * that is read; the message is then not found whole, and what is read is the header when it holds
- * the opening of the message. It is censored whole when the message was censored, and a stack that
- * does not hold the opening is left as it is, like any other stack that does not hold the message.
- *
- * @param head - The part of the stack that is read.
- * @param cut - Whether the stack was cut to make `head`.
- * @param header - The message of the error and its censored form.
- * @returns `head`, with the header censored.
- */
-function censorHead(head: string, cut: boolean, header: HeaderCensor): string {
-  const { message, censored } = header
-  if (message === '' || censored === message) return head
-  const found = censorStackHeader(head, message, censored)
-  if (found !== head || !cut) return found
-  return head.includes(message.slice(0, OPENING_LENGTH)) ? censored : head
-}
-
-/**
  * Remove `node_modules/` frames from a stack trace so logs surface app code, and cut it at
  * {@link MAX_TEXT_LENGTH}.
  *
@@ -636,7 +609,7 @@ export function scrubStack(stack: string, header?: HeaderCensor): string {
   // how long the message is, which a caller controls.
   const head = stack.slice(0, MAX_STACK_SCAN)
   const scrubbed = escapeControlCharacters(
-    (header === undefined ? head : censorHead(head, stack.length > head.length, header))
+    (header === undefined ? head : censorStackHeader(head, header.message, header.censored))
       .split('\n')
       .filter((line) => !line.includes('node_modules'))
       .join('\n')
