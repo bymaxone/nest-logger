@@ -1056,7 +1056,7 @@ Every token is a `Symbol`, never a string, so it cannot collide with one of your
 
 | Type                            | What it is                                                                                                   |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `BymaxLoggerModuleOptions`      | the options of `forRoot` (the [Configuration](#️-configuration) tables)                                       |
+| `BymaxLoggerModuleOptions`      | the options of `forRoot` (the Configuration tables above)                                                    |
 | `BymaxLoggerModuleAsyncOptions` | the options of `forRootAsync`: a factory, a class or an existing provider that returns them                  |
 | `HttpOptions`, `OtelOptions`    | the `http` and `otel` groups of the options                                                                  |
 | `ErrorOwnFieldsMode`            | `'all' \| 'safe'`, the values of `errorOwnFields`                                                            |

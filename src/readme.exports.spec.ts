@@ -1,7 +1,7 @@
 /**
  * Pins the README to the public surface: every export of every public subpath is named in it.
  *
- * Layer: root, tests. The README is published to npm and is where a consumer learns what the
+ * Layer: repository, tests. The README is published to npm and is where a consumer learns what the
  * package offers, so an export the README never names is an export nobody can find. The barrels
  * are read through the TypeScript compiler, not by pattern, so a re-export, a type and a
  * renamed export are all seen.
