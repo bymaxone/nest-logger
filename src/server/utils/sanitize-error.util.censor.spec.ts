@@ -46,7 +46,7 @@ describe('sanitizeError with a censor of messages', () => {
     expect(out.stack).not.toContain('secret')
   })
 
-  it('writes the stack as it did when no censor is given', () => {
+  it('writes the stack as scrubStack does when no censor is given', () => {
     const error = new Error('secret')
 
     expect(sanitizeError(error).stack).toBe(scrubStack(stackOf(error)))
@@ -64,11 +64,12 @@ describe('sanitizeError with a censor of messages', () => {
   })
 })
 
-describe('the reads of the message and the size of what is searched', () => {
-  it('reads the message no more often than it did without a censor', () => {
+describe('the reads of the message and the part of a stack that is read', () => {
+  /** An error whose message is a getter that counts its reads and fails on a third one. */
+  function countedError(): { error: object; reads: () => number } {
     let reads = 0
-    const hostile = { name: 'Error', stack: 'Error: secret\n    at run (/srv/app.js:1:1)' }
-    Object.defineProperty(hostile, 'message', {
+    const error = { name: 'Error', stack: 'Error: secret\n    at run (/srv/app.js:1:1)' }
+    Object.defineProperty(error, 'message', {
       enumerable: false,
       get(): string {
         reads += 1
@@ -76,12 +77,20 @@ describe('the reads of the message and the size of what is searched', () => {
         return 'secret'
       }
     })
+    return { error, reads: () => reads }
+  }
 
-    const out = sanitizeError(hostile, { censorMessage: censor })
+  it('reads the message no more often than it did without a censor', () => {
+    const without = countedError()
+    const withCensor = countedError()
+
+    sanitizeError(without.error)
+    const out = sanitizeError(withCensor.error, { censorMessage: censor })
 
     expect(out.name).toBe('Error')
     expect(out.stack).toMatch(/^Error: \[REDACTED\]\n/)
-    expect(reads).toBe(2)
+    expect(withCensor.reads()).toBe(without.reads())
+    expect(withCensor.reads()).toBe(2)
   })
 
   /*
@@ -102,14 +111,14 @@ describe('the reads of the message and the size of what is searched', () => {
     const message = `SECRET${'x'.repeat(length - 6)}`
     const stack = `Error: ${message}\n    at run (/srv/app.js:1:1)`
 
-    it('is censored, whatever part of the header the stack reads', () => {
+    it('is censored, and the header is rebuilt, for a message of this length', () => {
       const out = scrubStack(stack, { name: 'Error', message, censored: '[REDACTED]' })
 
       expect(out).not.toContain('SECRET')
       expect(out.startsWith(opening)).toBe(true)
     })
 
-    it('is left as it is when nothing censored it, at the same cost', () => {
+    it('leaves the stack as scrubStack writes it when nothing censored the message', () => {
       expect(scrubStack(stack, { name: 'Error', message, censored: message })).toBe(
         scrubStack(stack)
       )
@@ -125,7 +134,7 @@ describe('the reads of the message and the size of what is searched', () => {
     )
   })
 
-  it('leaves a cut stack alone when the message is empty, whatever it is censored to', () => {
+  it('leaves a cut stack alone when the message is empty', () => {
     const stack = `Error: \n    at run (/srv/app.js:1:1)${'x'.repeat(131_072)}`
 
     expect(scrubStack(stack, { name: 'Error', message: '', censored: '[REDACTED]' })).toBe(

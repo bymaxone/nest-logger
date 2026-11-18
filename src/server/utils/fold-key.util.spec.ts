@@ -32,7 +32,7 @@ describe('foldKey', () => {
     expect(foldKey(key)).not.toBe(foldKey(other))
   })
 
-  it('keeps every other character, so a digit or a space still tells names apart', () => {
+  it('keeps a digit and a space, so they still tell names apart', () => {
     expect(foldKey('a1b')).toBe('a1b')
     expect(foldKey('a b')).toBe('a b')
   })
