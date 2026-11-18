@@ -449,3 +449,65 @@ describe('Logger E2E — metadata cannot replace the structure of the entry', ()
     })
   })
 })
+
+/*
+ * A key that only SPELLS a key the entry owns (`Level` for `level`, `log_key` for `logKey`,
+ * `Service.Name` for `service.name`) is read as the same field by a backend that normalises names, so
+ * it is dropped like the key itself: the case and the separators `_`, `.` and `-` are folded.
+ */
+describe('Logger E2E — a spelling of a key the entry owns', () => {
+  const SPELLINGS = [
+    'Level',
+    'LEVEL',
+    'Time',
+    'TIME',
+    'Msg',
+    'MSG',
+    'Service',
+    'SERVICE',
+    'Deployment',
+    'Service.Name',
+    'DEPLOYMENT.environment.name',
+    'log_key',
+    'LogKey',
+    'LOG.KEY',
+    'user_id',
+    'USERID',
+    'Context',
+    'CONTEXT'
+  ]
+
+  it.each(SPELLINGS)('drops %s from an object message', async (spelling) => {
+    const entry = await runOne((logger) =>
+      logger.warn({ event: 'LIB_EVENT', [spelling]: 'forged', kept: 'yes' })
+    )
+
+    expect(entry).not.toHaveProperty(spelling)
+    expect(entry).toMatchObject({ kept: 'yes' })
+    expect(JSON.stringify(entry)).not.toContain('forged')
+  })
+
+  it.each(SPELLINGS)('drops %s from the metadata of a structured call', async (spelling) => {
+    const entry = await runOne((_logger, service) =>
+      service.info('LIB_EVENT', 'text', undefined, { [spelling]: 'forged', kept: 'yes' })
+    )
+
+    expect(entry).not.toHaveProperty(spelling)
+    expect(entry).toMatchObject({ kept: 'yes' })
+    expect(JSON.stringify(entry)).not.toContain('forged')
+  })
+
+  it('keeps a key that is not a spelling of an owned key', async () => {
+    const entry = await runOne((logger) =>
+      logger.warn({
+        event: 'LIB_EVENT',
+        levels: 'a',
+        timestamp_ms: 'b',
+        services: 'c',
+        contexts: 'd'
+      })
+    )
+
+    expect(entry).toMatchObject({ levels: 'a', timestamp_ms: 'b', services: 'c', contexts: 'd' })
+  })
+})

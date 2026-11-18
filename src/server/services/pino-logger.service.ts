@@ -28,6 +28,7 @@ import { cutText } from '../utils/bounded-text.util'
 import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-text-finisher.util'
 import type { EntryTextFinisher } from '../utils/entry-text-finisher.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
+import { foldKey } from '../utils/fold-key.util'
 import { isPlainRecord } from '../utils/is-plain-record.util'
 import type { Redactor } from '../utils/redact-by-name.util'
 import { isErrorLike } from '../utils/sanitize-error.util'
@@ -56,16 +57,25 @@ const OWNED_PAYLOAD_KEYS: readonly string[] = ['logKey', 'userId', 'context']
  * forge the level or the service of its own entry. The flat resource format writes `service.*` and
  * `deployment.environment.name`.
  */
-const ENTRY_STRUCTURE_KEYS: ReadonlySet<string> = new Set([
-  'level',
-  'time',
-  'msg',
-  'service',
-  'deployment'
-])
+const ENTRY_STRUCTURE_KEYS: readonly string[] = ['level', 'time', 'msg', 'service', 'deployment']
 
-const isEntryStructureKey = (key: string): boolean =>
-  ENTRY_STRUCTURE_KEYS.has(key) || key.startsWith('service.') || key.startsWith('deployment.')
+/**
+ * The owned keys by their folded form (see {@link foldKey}), so a spelling of one (`Level`,
+ * `log_key`, `USERID`) is dropped like the key itself.
+ */
+const OWNED_KEY_SPELLINGS: ReadonlySet<string> = new Set(
+  [...OWNED_PAYLOAD_KEYS, ...ENTRY_STRUCTURE_KEYS].map(foldKey)
+)
+
+/** Whether `key` is an owned key or a spelling of one, or one of the dotted resource keys. */
+const isOwnedKey = (key: string): boolean => {
+  const lower = key.toLowerCase()
+  return (
+    OWNED_KEY_SPELLINGS.has(foldKey(key)) ||
+    lower.startsWith('service.') ||
+    lower.startsWith('deployment.')
+  )
+}
 
 /**
  * Copy `metadata` without the keys the structured payload owns.
@@ -94,12 +104,7 @@ function withoutOwnedKeys(
   try {
     const safe: Record<string, unknown> = {}
     for (const key of Object.keys(metadata)) {
-      if (
-        key !== omit &&
-        !OWNED_PAYLOAD_KEYS.includes(key) &&
-        !isEntryStructureKey(key) &&
-        !PROTOTYPE_POLLUTING_KEYS.has(key)
-      ) {
+      if (key !== omit && !isOwnedKey(key) && !PROTOTYPE_POLLUTING_KEYS.has(key)) {
         // `Reflect` keeps the dynamic read/write off the object-injection sink list.
         Reflect.set(safe, key, Reflect.get(metadata, key))
       }
@@ -343,7 +348,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     if (isErrorLike(message)) {
       const payload: Record<string, unknown> = { err: message }
       assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
-      this.pino.error(payload, safeErrorMessage(message))
+      this.pino.error(payload, this.errorText('error', message))
       return
     }
     // NestJS variadic contract is `error(message, stack?, context?)`: the stack
@@ -469,7 +474,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     }
     assignIfDefined(payload, 'userId', userId)
     assignIfDefined(payload, 'context', this.context)
-    this.pino.error(payload, safeErrorMessage(error))
+    this.pino.error(payload, this.errorText('error', error))
   }
 
   // ─── Helpers / escape hatches ─────────────────────────────────────────────
@@ -569,11 +574,28 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     text: ObjectMessageText | undefined,
     message: unknown
   ): string {
-    if (leading !== undefined) return safeErrorMessage(leading)
+    if (leading !== undefined) return this.errorText(level, leading)
     if (fields !== undefined) {
-      return toBoundedMessage(this.censorText(text, this.pino.isLevelEnabled(level)))
+      return toBoundedMessage(this.censorText(text, this.pino.isLevelEnabled(level), true))
     }
     return safeLogMessage(message)
+  }
+
+  /**
+   * The entry text of an `Error`: its `message`, read without letting a hostile getter escape, then
+   * censored under the name `message`, as the field `err.message` it is a copy of. It is not cut at
+   * `maxStringLength`: the option does not apply to the log message, which is capped at 16384.
+   *
+   * @param level - The level of the call, which says whether the entry is written.
+   * @param error - The error being logged.
+   * @returns The text of the entry.
+   */
+  private errorText(level: PinoLevelMethod | 'error', error: Error): string {
+    return this.censorText(
+      { key: 'message', text: safeErrorMessage(error) },
+      this.pino.isLevelEnabled(level),
+      false
+    )
   }
 
   /**
@@ -583,14 +605,19 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    *
    * @param text - The text and the member it came from.
    * @param emitted - Whether the entry is written, so that a cut of it is counted.
+   * @param cutAtLimit - Whether the text is cut at `maxStringLength`.
    * @returns The censored text, or an empty one when the redactor cannot be applied.
    */
-  private censorText(text: ObjectMessageText | undefined, emitted: boolean): string {
+  private censorText(
+    text: ObjectMessageText | undefined,
+    emitted: boolean,
+    cutAtLimit: boolean
+  ): string {
     if (text === undefined) return ''
     const finish =
       (Reflect.get(this.pino, ENTRY_TEXT_FINISHER) as EntryTextFinisher | undefined) ??
       createEntryTextFinisher(this.redact, undefined)
-    return finish(text.key, text.text, emitted)
+    return finish(text.key, text.text, emitted, cutAtLimit)
   }
 
   private emitNestStyle(level: PinoLevelMethod, message: unknown, optionalParams: unknown[]): void {

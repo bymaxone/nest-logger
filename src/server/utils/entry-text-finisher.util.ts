@@ -12,10 +12,17 @@ import { cutText } from './bounded-text.util'
 import type { Redactor } from './redact-by-name.util'
 
 /**
- * Finishes the text that came from the member `key` of an object message. `emitted` says whether
- * the entry is written: a cut of an entry that is not written is not counted.
+ * Finishes the text that came from the member `key` of an object message, or the `message` of an
+ * `Error`. `emitted` says whether the entry is written: a cut of an entry that is not written is
+ * not counted. `cutAtLimit` says whether the text is cut at `maxStringLength`: the text of an
+ * object message is, as its field is; the log message of an `Error` is not, as the option says.
  */
-export type EntryTextFinisher = (key: string, text: string, emitted: boolean) => string
+export type EntryTextFinisher = (
+  key: string,
+  text: string,
+  emitted: boolean,
+  cutAtLimit: boolean
+) => string
 
 /**
  * The key of the property on the Pino instance that holds the {@link EntryTextFinisher}: the
@@ -37,11 +44,11 @@ export function createEntryTextFinisher(
   limit: number | undefined,
   onCut?: () => void
 ): EntryTextFinisher {
-  return (key, text, emitted) => {
+  return (key, text, emitted, cutAtLimit) => {
     try {
       const censored: unknown = Reflect.get(redact({ [key]: text }, true) as object, key)
       if (typeof censored !== 'string') return ''
-      if (limit === undefined) return censored
+      if (limit === undefined || !cutAtLimit) return censored
       const cut = cutText(censored, false, limit)
       if (emitted && cut !== censored) onCut?.()
       return cut
