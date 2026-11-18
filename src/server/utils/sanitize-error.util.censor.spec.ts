@@ -64,9 +64,57 @@ describe('sanitizeError with a censor of messages', () => {
   })
 })
 
+describe('the reads of the message and the size of what is searched', () => {
+  it('reads the message no more often than it did without a censor', () => {
+    let reads = 0
+    const hostile = { name: 'Error', stack: 'Error: secret\n    at run (/srv/app.js:1:1)' }
+    Object.defineProperty(hostile, 'message', {
+      enumerable: false,
+      get(): string {
+        reads += 1
+        if (reads > 2) throw new Error('third read')
+        return 'secret'
+      }
+    })
+
+    const out = sanitizeError(hostile, { censorMessage: censor })
+
+    expect(out.name).toBe('Error')
+    expect(out.stack).toMatch(/^Error: \[REDACTED\]\n/)
+    expect(reads).toBe(2)
+  })
+
+  it('censors a message longer than the scan that bounds the stack', () => {
+    const message = 'S'.repeat(200_000) + ' secret'
+    const stack = `Error: ${message}\n    at run (/srv/app.js:1:1)`
+
+    const out = scrubStack(stack, { message, censored: '[REDACTED]' })
+
+    expect(out).toMatch(/^Error: \[REDACTED\]\n/)
+    expect(out).not.toContain('SSSS')
+  })
+
+  it('censors a header written with frames of two spaces', () => {
+    const out = scrubStack('Error: SEC\n  at foo (/a.ts:1:1)', { message: 'SEC', censored: '[R]' })
+
+    expect(out).toBe('Error: [R]\n  at foo (/a.ts:1:1)')
+  })
+})
+
 describe('headerCensor', () => {
   it('pairs a text message with its censored form', () => {
     expect(headerCensor('secret', censor)).toEqual({ message: 'secret', censored: '[REDACTED]' })
+  })
+
+  it('removes the message from the header when the censor cannot answer', () => {
+    const failing = (): string => {
+      throw new Error('cannot censor')
+    }
+
+    expect(headerCensor('secret', failing)).toEqual({ message: 'secret', censored: '' })
+    expect(sanitizeError(new Error('secret'), { censorMessage: failing }).stack).toMatch(
+      /^Error: \n/
+    )
   })
 
   it.each([

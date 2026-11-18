@@ -46,6 +46,36 @@ describe('censorStackHeader', () => {
       'Error: x [REDACTED]'
     ],
     [
+      'a header the engine did not write, with frames of two spaces',
+      'Error: SEC\n  at foo (/a.ts:1:1)',
+      'SEC',
+      'Error: [REDACTED]\n  at foo (/a.ts:1:1)'
+    ],
+    [
+      'a header with a line after the message',
+      `Error: SEC\nextra detail${FRAMES}`,
+      'SEC',
+      `Error: [REDACTED]\nextra detail${FRAMES}`
+    ],
+    [
+      'a name equal to the message and a line after it',
+      `LEAK: LEAK\nextra${FRAMES}`,
+      'LEAK',
+      `LEAK: [REDACTED]\nextra${FRAMES}`
+    ],
+    [
+      'a message that is the start of a longer header text',
+      `Error: secret and more${FRAMES}`,
+      'secret',
+      `Error: [REDACTED] and more${FRAMES}`
+    ],
+    [
+      'a header whose frames are indented with a tab',
+      'Error: SEC\n\tat foo (/a.ts:1:1)',
+      'SEC',
+      'Error: [REDACTED]\n\tat foo (/a.ts:1:1)'
+    ],
+    [
       'a message that a later frame repeats at the end of the stack',
       'Error: x\n    at a\n    at x',
       'x',
@@ -59,8 +89,7 @@ describe('censorStackHeader', () => {
     ['a message that is empty', `Error${FRAMES}`, '', '[REDACTED]'],
     ['a message that was not censored', `Error: kept${FRAMES}`, 'kept', 'kept'],
     ['a message that only a frame repeats', `Error: other${FRAMES}x`, 'at run', '[REDACTED]'],
-    ['a message the stack does not hold', `Error: built with this${FRAMES}`, 'changed later', 'x'],
-    ['a message that does not end the header', `Error: secret and more${FRAMES}`, 'secret', 'x']
+    ['a message the stack does not hold', `Error: built with this${FRAMES}`, 'changed later', 'x']
   ])('leaves the stack alone for %s', (_label, stack, message, censored) => {
     expect(censorStackHeader(stack, message, censored)).toBe(stack)
   })

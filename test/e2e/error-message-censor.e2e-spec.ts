@@ -216,6 +216,19 @@ describe('Logger E2E — where the message sits in the stack', () => {
   )
 
   it.each(SHAPES)(
+    'censors a message longer than the scan that bounds the stack: %s',
+    async (_label, call) => {
+      const entry = await runOne(
+        (l, s) => call(l, s, new Error(`${SECRET}${'x'.repeat(200_000)}`)),
+        { redactPaths: ['message'], errorFormat: 'both' }
+      )
+
+      expect(leaks(entry)).toEqual([])
+      expect(String((entry['err'] as Entry)['stack'])).toMatch(/^[^\n]*\[REDACTED\]/)
+    }
+  )
+
+  it.each(SHAPES)(
     'censors the message, and not the name, when the name is the same text: %s',
     async (_label, call) => {
       class Named extends Error {}

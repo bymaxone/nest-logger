@@ -207,6 +207,28 @@ interface ErrorWalk {
 }
 
 /**
+ * Read the stack of a node in its own guard and scrub it, with the message censored where it opens
+ * the stack.
+ *
+ * @param value - The error.
+ * @param message - The message as it was read, once, for the node.
+ * @param result - The node, marked incomplete when the stack cannot be read.
+ * @param walk - What every node shares, with the censor of messages.
+ * @returns The scrubbed stack, or `undefined` when there is none or it cannot be read.
+ */
+function readScrubbedStack(
+  value: Error,
+  message: string,
+  result: SanitizedError,
+  walk: ErrorWalk
+): string | undefined {
+  const stack = readOptional(() => value.stack, result)
+  return stack === undefined
+    ? undefined
+    : scrubStack(stack, headerCensor(message, walk.censorMessage))
+}
+
+/**
  * Build a full {@link SanitizedError} for one node of the error graph. Wrapped in
  * a try/catch at every level so a hostile getter degrades only its own node
  * (to `SanitizeFailed`) instead of crashing the whole serialization.
@@ -229,15 +251,15 @@ function toSanitizedError(
     }
 
     seen.add(value)
-    const result: SanitizedError = { name: cutText(value.name), message: cutText(value.message) }
+    // Read once: the header censor looks for the text written to the node.
+    const message = value.message
+    const result: SanitizedError = { name: cutText(value.name), message: cutText(message) }
     // `stack` and `cause` are optional, so each is read in its own guard: an unreadable one
     // costs the node that property and marks it incomplete, instead of costing the node its
     // name and message. The name and message identify the error; if THEY cannot be read the
     // outer catch still degrades the node to the visible `SanitizeFailed` shape.
-    const stack = readOptional(() => value.stack, result)
-    if (stack !== undefined) {
-      result.stack = scrubStack(stack, headerCensor(value.message, walk.censorMessage))
-    }
+    const stack = readScrubbedStack(value, message, result, walk)
+    if (stack !== undefined) result.stack = stack
 
     const isAtDepthLimit = depth >= walk.maxDepth
     const cause = readOptional(() => value.cause as unknown, result)
@@ -549,9 +571,14 @@ export function headerCensor(
   message: unknown,
   censorMessage: ((text: string) => string) | undefined
 ): HeaderCensor | undefined {
-  return typeof message === 'string' && censorMessage !== undefined
-    ? { message, censored: censorMessage(message) }
-    : undefined
+  if (typeof message !== 'string' || censorMessage === undefined) return undefined
+  try {
+    return { message, censored: censorMessage(message) }
+  } catch {
+    // A censor that cannot answer leaves nothing to show: the message is removed from the header,
+    // never kept, because keeping it would leave the text the censor was asked to hide.
+    return { message, censored: '' }
+  }
 }
 
 /**
@@ -578,7 +605,11 @@ export function scrubStack(stack: string, header?: HeaderCensor): string {
   // repeats the error message. Without this, attacker-supplied text reaches the
   // terminal through `err.stack` even when `msg` is already pinned. Newlines are
   // preserved — a stack is legitimately multi-line.
-  const head = stack.slice(0, MAX_STACK_SCAN)
+  // The scan is the same bound for every stack, and the message is added to it when it is censored:
+  // the message is already in memory and the header holds all of it, so a message longer than the
+  // bound is found and censored instead of being cut inside the header.
+  const scan = header === undefined ? MAX_STACK_SCAN : MAX_STACK_SCAN + header.message.length
+  const head = stack.slice(0, scan)
   const scrubbed = escapeControlCharacters(
     (header === undefined ? head : censorStackHeader(head, header.message, header.censored))
       .split('\n')
