@@ -115,4 +115,42 @@ describe('destinationToStream, the write-failure report', () => {
       expect(JSON.stringify(line)).not.toContain('SECRET-ENTRY')
     }
   })
+
+  /*
+   * `msg` is library text. The destination is host configuration and has a field of its own, and the
+   * error of the host is in `err`, where its message passes the censor of an entry's `err.message`.
+   */
+  it('names the destination in its own field and never in msg', () => {
+    const stream = destinationToStream(refusing('NAME-SENTINEL'), health)
+
+    stream.write('x\n')
+
+    const [line] = reports()
+    expect(line?.['destination']).toBe('NAME-SENTINEL')
+    expect(line?.['msg']).toBe('A log destination failed to write; the entry was dropped')
+  })
+
+  it('hides in err.message what the censor it is given hides', () => {
+    const leaking: ILogDestination = {
+      name: 'leaking',
+      write(): void {
+        throw new Error('connect to https://user:SECRET@host failed')
+      }
+    }
+    const censor = (text: string): string => (text.includes('SECRET') ? '[REDACTED]' : text)
+    const stream = destinationToStream(leaking, health, 0, censor)
+
+    stream.write('x\n')
+
+    expect(stderr.mock.calls.map((c) => String(c[0])).join('')).not.toContain('SECRET')
+    expect(reports()[0]?.['err']).toEqual({ type: 'Error', message: '[REDACTED]' })
+  })
+
+  it('writes the message of the error as it is when no censor is given', () => {
+    const stream = destinationToStream(refusing('plain'), health)
+
+    stream.write('x\n')
+
+    expect(reports()[0]?.['err']).toEqual({ type: 'Error', message: 'refused' })
+  })
 })

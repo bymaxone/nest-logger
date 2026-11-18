@@ -382,6 +382,31 @@ describe('detectOtelTraceApi — a failure that is not a missing module', () => 
       err: { type: 'UnknownError', message: 'unreadable value' }
     })
   })
+
+  /*
+   * The message of the failure is a copy of the field `err.message` of an entry, so it passes the
+   * censor of an entry when the detector is given one. The warning is written once, so the censor of
+   * the first caller is the one that counts.
+   */
+  it('hides in the warning what the censor it is given hides', () => {
+    const failure = new SyntaxError('Unexpected token in https://user:SECRET@host/otel.js')
+    mockedCreateRequire.mockImplementation(requireThrows(failure))
+    const censor = (text: string): string => (text.includes('SECRET') ? '[REDACTED]' : text)
+
+    expect(detectOtelTraceApi(undefined, censor)).toBeUndefined()
+
+    expect(JSON.stringify(lines())).not.toContain('SECRET')
+    expect(lines()[0]).toMatchObject({ err: { type: 'SyntaxError', message: '[REDACTED]' } })
+  })
+
+  it('writes the message of the failure as it is when no censor is given', () => {
+    const failure = new SyntaxError('Unexpected token in https://user:SECRET@host/otel.js')
+    mockedCreateRequire.mockImplementation(requireThrows(failure))
+
+    expect(detectOtelTraceApi()).toBeUndefined()
+
+    expect(lines()[0]).toMatchObject({ err: { message: failure.message } })
+  })
 })
 
 describe('isValidTraceId', () => {

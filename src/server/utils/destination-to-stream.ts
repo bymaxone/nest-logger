@@ -27,6 +27,7 @@ import type { WritableOptions } from 'node:stream'
 
 import { toSingleLineMessage } from './escape-log-text.util'
 import { reportDestinationFailure, safeDestinationName } from './report-destination-failure.util'
+import type { MessageCensor } from './report-destination-failure.util'
 import { writeStderrSafely, writeStdoutSafely } from './safe-stdio.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
@@ -46,8 +47,14 @@ import type { DestinationHealth } from '../services/destination-health.service'
  *   inside the catch and the rejection handler.
  * @param cause - The thrown or rejected value.
  * @param due - The failures since the last report, this one included.
+ * @param censorMessage - The censor of the `message` of an entry, for the message of the cause.
  */
-function reportWriteFailure(destination: ILogDestination, cause: unknown, due: number): void {
+function reportWriteFailure(
+  destination: ILogDestination,
+  cause: unknown,
+  due: number,
+  censorMessage?: MessageCensor
+): void {
   // The name is read HERE, under `safeDestinationName`, not at the call site: the
   // call site is inside the catch and the rejection handler, where a throwing
   // getter would skip `callback()` and become the very unhandled rejection this
@@ -57,9 +64,35 @@ function reportWriteFailure(destination: ILogDestination, cause: unknown, due: n
     RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
     name,
     cause,
-    `Log destination "${name}" failed to write; the entry was dropped`,
-    due - 1
+    'A log destination failed to write; the entry was dropped',
+    due - 1,
+    censorMessage
   )
+}
+
+/**
+ * Record a write that a destination refused, and report it when a report is due.
+ *
+ * Recorded, not only reported. A destination that threw on a write did NOT receive that entry, and
+ * the readiness hook would otherwise infer delivery from init health and level alone, telling a
+ * buffering sink its held copies are safe elsewhere when the sink it is trusting has been dropping
+ * them.
+ *
+ * @param destination - The destination that refused the write.
+ * @param health - The record of the failure, shared with the registry.
+ * @param cause - The thrown or rejected value.
+ * @param censorMessage - The censor of the `message` of an entry, for the message of the cause.
+ */
+function recordWriteFailure(
+  destination: ILogDestination,
+  health: DestinationHealth,
+  cause: unknown,
+  censorMessage?: MessageCensor
+): void {
+  const due = health.recordWriteFailure(destination, performance.now())
+  if (due !== undefined) {
+    reportWriteFailure(destination, cause, due, censorMessage)
+  }
 }
 
 /**
@@ -199,6 +232,8 @@ export class BoundedWritable extends Writable {
  *   failed `onInit` is skipped and a total failure is rescued to stdout.
  * @param maxQueueBytes - The most bytes the queue may hold before an entry is dropped; `0` for
  *   no bound.
+ * @param censorMessage - The censor of the `message` of an entry, applied to the message of the
+ *   error in the line that reports a failed write.
  * @returns A `Writable` that forwards every chunk to `destination.write`,
  *   awaiting async writes and containing per-destination failures fail-soft
  *   (reported to stderr, never propagated as a crashing stream error).
@@ -206,7 +241,8 @@ export class BoundedWritable extends Writable {
 export function destinationToStream(
   destination: ILogDestination,
   health: DestinationHealth,
-  maxQueueBytes = 0
+  maxQueueBytes = 0,
+  censorMessage?: MessageCensor
 ): Writable & { readonly queuedBytes: number } {
   const queue = { bytes: 0 }
   const stream = new BoundedWritable(destination, health, maxQueueBytes, queue, {
@@ -232,15 +268,7 @@ export function destinationToStream(
       // host. Report to stderr (one line per window, see `recordWriteFailure`), then signal success so the
       // fan-out continues.
       const onFailure = (cause: unknown): void => {
-        // Recorded, not only reported. A destination that threw on a write did
-        // NOT receive that entry, and the readiness hook would otherwise infer
-        // delivery from init health and level alone — telling a buffering sink
-        // its held copies are safe elsewhere when the sink it is trusting has
-        // been dropping them.
-        const due = health.recordWriteFailure(destination, performance.now())
-        if (due !== undefined) {
-          reportWriteFailure(destination, cause, due)
-        }
+        recordWriteFailure(destination, health, cause, censorMessage)
         callback()
       }
       try {

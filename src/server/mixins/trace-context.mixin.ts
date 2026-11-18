@@ -18,6 +18,7 @@ import {
   warnBrokenInstallOnce
 } from '../utils/otel-detector'
 import type { OtelTraceApi } from '../utils/otel-detector'
+import type { MessageCensor } from '../utils/report-destination-failure.util'
 
 /** Field-name targets and the auto-inject toggle for {@link createTraceContextMixin}. */
 export interface TraceContextMixinOptions {
@@ -29,6 +30,8 @@ export interface TraceContextMixinOptions {
   traceFlagsField: string
   /** When `false`, OTel detection is skipped entirely. */
   shouldAutoInjectTraceContext: boolean
+  /** The censor of the `message` of an entry, for the warning of a broken OTel install. */
+  censorMessage?: MessageCensor | undefined
 }
 
 /**
@@ -45,7 +48,7 @@ type PinoMixin = (mergeObject: object, level: number, logger: PinoLogger) => Rec
  * always calls the mixin with `(mergeObject, level, logger)`.
  *
  * @param logContext - The request-scoped context service.
- * @param opts - Field names and the auto-inject toggle.
+ * @param opts - Field names, the auto-inject toggle and the censor of the warning.
  * @returns A Pino mixin merging context + trace fields into each entry.
  */
 export function createTraceContextMixin(
@@ -53,7 +56,7 @@ export function createTraceContextMixin(
   opts: TraceContextMixinOptions
 ): PinoMixin {
   const traceApi: OtelTraceApi | undefined = opts.shouldAutoInjectTraceContext
-    ? detectOtelTraceApi()
+    ? detectOtelTraceApi(undefined, opts.censorMessage)
     : undefined
 
   return function mixin(
@@ -101,7 +104,7 @@ export function createTraceContextMixin(
           }
         }
       } catch (cause) {
-        warnBrokenInstallOnce(cause)
+        warnBrokenInstallOnce(cause, opts.censorMessage)
       }
     }
 

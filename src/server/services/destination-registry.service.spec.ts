@@ -103,9 +103,10 @@ describe('DestinationRegistry', () => {
 
     /*
      * The human-readable message is the operator-facing half of the report: it
-     * has to name the destination, say that it will receive nothing, AND state
-     * the stdout fallback — that last sentence is what tells a developer staring
-     * at raw NDJSON where it is coming from. Asserted because mutation testing
+     * has to say that the destination will receive nothing, AND state the stdout
+     * fallback — that last sentence is what tells a developer staring at raw NDJSON
+     * where it is coming from. It is library text, so the destination is named in
+     * the `destination` field and not in it. Asserted because mutation testing
      * showed the message could be emptied entirely without a test noticing.
      */
     it('explains the consequence and the fallback in the report message', async () => {
@@ -117,9 +118,48 @@ describe('DestinationRegistry', () => {
       await registry.onModuleInit()
 
       const msg = reportedInitFailure()['msg']
-      expect(msg).toContain('"boom" failed to initialize')
+      expect(msg).not.toContain('boom')
+      expect(reportedInitFailure()['destination']).toBe('boom')
+      expect(msg).toContain('failed to initialize')
       expect(msg).toContain('will receive no entries')
       expect(msg).toContain('fall back to raw NDJSON on stdout')
+    })
+
+    /*
+     * The message of the error that failed `onInit` is a copy of the field `err.message` of an
+     * entry, so the registry passes it through the censor of the module options: a credential in
+     * the address a destination could not reach must not reach stderr because the library wrote
+     * the line. Without a name in `redactPaths` the message is written as it is.
+     */
+    it.each([
+      ['a name in redactPaths hides it', { redactPaths: ['message'] }, '[REDACTED]'],
+      ['no name in redactPaths leaves it', {}, 'connect to https://user:SECRET@host']
+    ])('writes err.message as the options censor it: %s', async (_label, extra, expected) => {
+      const censoring = applyDefaults({ service: { name: 'app', version: '1.0.0' }, ...extra })
+      const boom = makeDestination('boom', {
+        onInit: jest.fn().mockRejectedValue(new Error('connect to https://user:SECRET@host'))
+      })
+
+      await new DestinationRegistry([boom], logger, censoring, health).onModuleInit()
+
+      expect(reportedInitFailure()['err']).toEqual({ type: 'Error', message: expected })
+    })
+
+    it('hides in the line of a failed onRegistryReady what the options censor', async () => {
+      const censoring = applyDefaults({
+        service: { name: 'app', version: '1.0.0' },
+        redactPaths: ['message']
+      })
+      const hostile = {
+        ...makeDestination('hostile'),
+        onRegistryReady: jest.fn(() => {
+          throw new Error('connect to https://user:SECRET@host')
+        })
+      }
+
+      await new DestinationRegistry([hostile], logger, censoring, health).onModuleInit()
+
+      expect(reportedInitFailure()['err']).toEqual({ type: 'Error', message: '[REDACTED]' })
     })
 
     /*

@@ -508,8 +508,12 @@ function buildSerializers(
  *
  * @param options - Fully-defaulted module options.
  * @returns The censor of a message text.
+ * @internal Shared with the registry and the streams, for the message of the error in a failure
+ *   line. NOT re-exported by the package barrel.
  */
-function buildMessageCensor(options: ResolvedBymaxLoggerModuleOptions): (text: string) => string {
+export function buildMessageCensor(
+  options: ResolvedBymaxLoggerModuleOptions
+): (text: string) => string {
   const censor = createTextCensor(buildNameRedactor(options))
   return (text) => censor('message', text)
 }
@@ -538,6 +542,24 @@ function withEntryTextFinisher(
 }
 
 /**
+ * The mixin that merges the request context and the trace context into each entry, given the censor
+ * of the `message` of an entry for the warning it writes when the OTel install is broken.
+ *
+ * @param logContext - The request-scoped context service.
+ * @param options - Fully-defaulted module options.
+ * @returns The Pino mixin.
+ */
+function buildTraceMixin(
+  logContext: LogContextService,
+  options: ResolvedBymaxLoggerModuleOptions
+): ReturnType<typeof createTraceContextMixin> {
+  return createTraceContextMixin(logContext, {
+    ...options.otel,
+    censorMessage: buildMessageCensor(options)
+  })
+}
+
+/**
  * One multistream entry for each destination, each behind its bounded queue.
  *
  * @param options - Fully-defaulted module options.
@@ -550,8 +572,14 @@ function buildStreams(
   destinations: readonly ILogDestination[],
   health: DestinationHealth
 ): pino.StreamEntry[] {
+  const censorMessage = buildMessageCensor(options)
   return destinations.map((destination) => {
-    const stream = destinationToStream(destination, health, options.destinationQueue.maxBytes)
+    const stream = destinationToStream(
+      destination,
+      health,
+      options.destinationQueue.maxBytes,
+      censorMessage
+    )
     // The registry drains this buffer before it tells the destination to shut down.
     health.registerStream(destination, stream)
     return {
@@ -712,7 +740,7 @@ export function buildPinoInstance(
     timestamp: () => `,"time":${JSON.stringify(String(options.timestamp()))}`,
     formatters: buildFormatters(options, redactRecord, resolveNameRedactor(options), onTruncate),
     serializers: buildSerializers(options, redactSerialized, ownFields, onTruncate),
-    mixin: createTraceContextMixin(logContext, options.otel),
+    mixin: buildTraceMixin(logContext, options),
     mixinMergeStrategy: mergeMixinSafely
   }
 

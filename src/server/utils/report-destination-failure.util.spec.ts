@@ -99,6 +99,91 @@ describe('reportDestinationFailure', () => {
       msg: 'entry dropped'
     })
   })
+
+  /*
+   * The message of the cause is a copy of the field `err.message` of an entry, so it passes the same
+   * censor before it is bounded: a credential in the address a driver could not reach must not reach
+   * stderr because the line was written by the library and not by the logger. The type is not a
+   * message and is written as it is.
+   */
+  describe('the censor of the message of the cause', () => {
+    const censor = (text: string): string => (text.includes('SECRET') ? '[REDACTED]' : text)
+
+    it.each([
+      ['an Error', new Error('connect to https://u:SECRET@host')],
+      ['a string', 'connect to https://u:SECRET@host'],
+      ['a value with a toString', { toString: (): string => 'connect to https://u:SECRET@host' }]
+    ])('hides what it censors in the message of %s', (_label, cause) => {
+      reportDestinationFailure(
+        RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+        'audit-sink',
+        cause,
+        'entry dropped',
+        0,
+        censor
+      )
+
+      expect(stderrSpy.mock.calls.map((c) => String(c[0])).join('')).not.toContain('SECRET')
+      expect((reported()['err'] as { message: string }).message).toBe('[REDACTED]')
+    })
+
+    it('keeps the type of the error and a message that the censor leaves', () => {
+      reportDestinationFailure(
+        RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+        'audit-sink',
+        new TypeError('disk full'),
+        'entry dropped',
+        0,
+        censor
+      )
+
+      expect(reported()['err']).toEqual({ type: 'TypeError', message: 'disk full' })
+    })
+
+    it('censors the whole message before it is bounded, so a secret the cut would split is hidden', () => {
+      // The message is cut at 16,384 characters: this secret starts inside the cut and ends past it.
+      const split = `${'x'.repeat(16_382)}SECRET${'y'.repeat(100)}`
+
+      reportDestinationFailure(
+        RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+        'audit-sink',
+        new Error(split),
+        'entry dropped',
+        0,
+        censor
+      )
+
+      expect(stderrSpy.mock.calls.map((c) => String(c[0])).join('')).not.toContain('SEC')
+      expect(reported()['err']).toEqual({ type: 'Error', message: '[REDACTED]' })
+    })
+
+    it('writes the stand-in and never the message when the censor throws', () => {
+      reportDestinationFailure(
+        RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+        'audit-sink',
+        new Error('SECRET'),
+        'entry dropped',
+        0,
+        () => {
+          throw new Error('censor failed')
+        }
+      )
+
+      expect(stderrSpy.mock.calls.map((c) => String(c[0])).join('')).not.toContain('SECRET')
+      expect(reported()['err']).toEqual({ type: 'UnknownError', message: 'unreadable value' })
+    })
+
+    it('leaves the message as it is when no censor is given', () => {
+      reportDestinationFailure(
+        RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
+        'audit-sink',
+        new Error('SECRET'),
+        'entry dropped'
+      )
+
+      expect(reported()['err']).toEqual({ type: 'Error', message: 'SECRET' })
+    })
+  })
 })
 
 describe('safeMinLevel', () => {

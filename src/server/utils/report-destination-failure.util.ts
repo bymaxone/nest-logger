@@ -22,6 +22,9 @@ import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.co
 import type { LogLevel } from '../../shared/types/log-level.type'
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 
+/** Hides what a text holds under the rule of the `message` of an entry, and answers the text to write. */
+export type MessageCensor = (text: string) => string
+
 /**
  * Write one structured destination-failure line to `process.stderr`.
  *
@@ -32,16 +35,21 @@ import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
  * @param logKey - The reserved key classifying the stage that failed.
  * @param name - The failing destination's name.
  * @param cause - The thrown or rejected value, in whatever shape it arrived.
- * @param msg - Human-readable explanation, including what happens to the entry.
+ * @param msg - Library text explaining what happens to the entry. It never holds the name of the
+ *   destination or the error: those are host values, and they have fields of their own.
  * @param suppressed - How many failures since the last line were not reported, when a report is
  *   throttled. `suppressed` is omitted from the line when it is 0.
+ * @param censorMessage - The censor of the `message` of an entry, applied to the message of the
+ *   cause so a secret in it is hidden as it is in `err.message`. Without one the message is only
+ *   bounded and escaped.
  */
 export function reportDestinationFailure(
   logKey: ReservedLogKey,
   name: string,
   cause: unknown,
   msg: string,
-  suppressed = 0
+  suppressed = 0,
+  censorMessage?: MessageCensor
 ): void {
   // Escaped per sink, like every other path that can reach a terminal.
   // `JSON.stringify` escapes C0 and nothing else, so DEL, the C1 range
@@ -53,7 +61,7 @@ export function reportDestinationFailure(
       level: 'error',
       logKey,
       destination: toSingleLineMessage(name),
-      err: describeCause(cause),
+      err: describeCause(cause, censorMessage),
       msg: toSingleLineMessage(msg),
       ...(suppressed > 0 ? { suppressed } : {})
     }) + '\n'
@@ -77,18 +85,27 @@ const UNREADABLE_CAUSE = { type: 'UnknownError', message: 'unreadable value' } a
  * would leave a sink that stopped receiving entries with no trace anywhere, since the
  * destination and the stage do not depend on the cause being readable.
  *
+ * The message passes `censorMessage` before it is bounded, so a secret in it is hidden as it is in
+ * `err.message` of an entry. A censor that throws is read like a cause that cannot be read: the
+ * detail degrades to {@link UNREADABLE_CAUSE} and the message is never written whole.
+ *
  * @internal Shared with the OpenTelemetry detector's broken-install warning. NOT
  * re-exported by the package barrel.
  * @param cause - The thrown or rejected value, in whatever shape it arrived.
+ * @param censorMessage - The censor of the `message` of an entry, when there is one.
  */
-export function describeCause(cause: unknown): { type: string; message: string } {
+export function describeCause(
+  cause: unknown,
+  censorMessage?: MessageCensor
+): { type: string; message: string } {
+  const censor = censorMessage ?? ((text: string): string => text)
   try {
     return isError(cause)
       ? {
           type: toBoundedMessage(String(cause.name)),
-          message: toBoundedMessage(String(cause.message))
+          message: toBoundedMessage(censor(String(cause.message)))
         }
-      : { type: 'UnknownError', message: toBoundedMessage(String(cause)) }
+      : { type: 'UnknownError', message: toBoundedMessage(censor(String(cause))) }
   } catch {
     return UNREADABLE_CAUSE
   }

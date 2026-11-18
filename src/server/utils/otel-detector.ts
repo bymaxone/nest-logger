@@ -9,7 +9,7 @@
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
-import { describeCause } from './report-destination-failure.util'
+import { describeCause, type MessageCensor } from './report-destination-failure.util'
 import { writeStderrSafely } from './safe-stdio.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
@@ -125,8 +125,10 @@ function loadTraceApiFrom(anchor: () => string): Attempt {
  *
  * @internal Shared with `trace-context.mixin`. NOT re-exported by the package barrel.
  * @param cause - The failure that made the install unusable.
+ * @param censorMessage - The censor of the `message` of an entry, applied to the message of the
+ *   cause. The first caller's censor is the one used, because the warning is written once.
  */
-export function warnBrokenInstallOnce(cause: unknown): void {
+export function warnBrokenInstallOnce(cause: unknown, censorMessage?: MessageCensor): void {
   if (brokenInstallWarned) {
     return
   }
@@ -138,7 +140,7 @@ export function warnBrokenInstallOnce(cause: unknown): void {
       msg:
         '@opentelemetry/api is installed but could not be loaded, so traceId and spanId are ' +
         'absent from every entry. Reinstall it, or set otel.shouldAutoInjectTraceContext to false.',
-      err: describeCause(cause)
+      err: describeCause(cause, censorMessage)
     }) + '\n'
   )
 }
@@ -183,11 +185,13 @@ const DEFAULT_ANCHORS: readonly (() => string)[] = [
  *
  * @param anchors - Where resolution starts, tried in order; the default is this module's
  *   location and then the working directory. Injectable so a spec can make an anchor fail.
+ * @param censorMessage - The censor of the `message` of an entry, for the warning of a broken install.
  * @returns The OTel `trace` API when installed and usable, otherwise `undefined`. A broken
  *   install also warns once on stderr, which a missing one deliberately does not.
  */
 export function detectOtelTraceApi(
-  anchors: readonly (() => string)[] = DEFAULT_ANCHORS
+  anchors: readonly (() => string)[] = DEFAULT_ANCHORS,
+  censorMessage?: MessageCensor
 ): OtelTraceApi | undefined {
   let broken: Attempt['broken']
   for (const anchor of anchors) {
@@ -198,7 +202,7 @@ export function detectOtelTraceApi(
     broken ??= attempt.broken
   }
   if (broken !== undefined) {
-    warnBrokenInstallOnce(broken.cause)
+    warnBrokenInstallOnce(broken.cause, censorMessage)
   }
   return undefined
 }
