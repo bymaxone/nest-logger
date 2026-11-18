@@ -35,6 +35,18 @@ heading here.
   `Received undefined`, as the other refused members do. **Apply:** code that matches the text of
   that refusal exactly matches the new one.
 
+### Documentation
+
+- **The README names every export of a public subpath.** Some exports of the root entry and one of
+  `/shared` (the option and context types, the metadata key of the deprecated `@LogContext` and the
+  `ReservedLogKey` union) were never named in it; an "Option and context types" table describes
+  each, and a spec reads the barrels through the TypeScript compiler and fails when an export is
+  missing, so a new one cannot ship unnamed.
+- **The size measurement is said to count a shared sub-object once per reference.** A sub-object that
+  several parents share is measured, and written by Pino, once for each reference, so a graph in
+  which large sub-objects are shared widely costs time and size in proportion; keep such graphs out
+  of the log.
+
 ## [1.4.23] - 2026-11-17
 
 ### Breaking

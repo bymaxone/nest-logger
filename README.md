@@ -908,7 +908,7 @@ An interpolated value has no name, so no configuration can redact it. **A value 
 
 ### Bounded field size
 
-Every serializer, the default `err` one and any you supply, is wrapped so a field whose serialized JSON exceeds `maxEntrySizeBytes` (64 KB by default) is replaced by an envelope with `_truncated`, `_logKey: 'LOGGER_ENTRY_TRUNCATED'`, `_originalSize` and a 200-character `_preview`. A reference back to an ancestor and a `BigInt` are measured as they are written; an output that cannot be read at all (a `toJSON` or a getter that throws) is replaced too, with an `_originalSize` of `-1`. With `errorFormat: 'semconv'` or `'both'`, each derived `exception.type`, `exception.message`, `exception.stacktrace` and `error.type` is cut to `maxEntrySizeBytes` UTF-8 bytes as well, ending in `…[truncated]` (omitted under a 14-byte ceiling), on top of the 16 KiB text cap.
+Every serializer, the default `err` one and any you supply, is wrapped so a field whose serialized JSON exceeds `maxEntrySizeBytes` (64 KB by default) is replaced by an envelope with `_truncated`, `_logKey: 'LOGGER_ENTRY_TRUNCATED'`, `_originalSize` and a 200-character `_preview`. A reference back to an ancestor and a `BigInt` are measured as they are written, and a sub-object that is shared by several parents is measured once for each reference, as Pino writes it, so do not log a graph in which large sub-objects are shared widely; an output that cannot be read at all (a `toJSON` or a getter that throws) is replaced too, with an `_originalSize` of `-1`. With `errorFormat: 'semconv'` or `'both'`, each derived `exception.type`, `exception.message`, `exception.stacktrace` and `error.type` is cut to `maxEntrySizeBytes` UTF-8 bytes as well, ending in `…[truncated]` (omitted under a 14-byte ceiling), on top of the 16 KiB text cap.
 
 ### Bounded string length
 
@@ -1052,6 +1052,18 @@ Every token is a `Symbol`, never a string, so it cannot collide with one of your
 | `DEFAULT_REDACT_PATHS`       | the legacy path expansion of those names                                                                                                                                                           | only with `redactStrategy: 'paths'`                                                                                                                           |
 | `isValidTraceId(id)`         | `true` for 32 lowercase hex characters that are not all zeros                                                                                                                                      | apply the rule the trace mixin applies before it injects an id                                                                                                |
 
+### Option and context types (from `@bymax-one/nest-logger`)
+
+| Type                            | What it is                                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `BymaxLoggerModuleOptions`      | the options of `forRoot` (the Configuration tables above)                                                    |
+| `BymaxLoggerModuleAsyncOptions` | the options of `forRootAsync`: a factory, a class or an existing provider that returns them                  |
+| `HttpOptions`, `OtelOptions`    | the `http` and `otel` groups of the options                                                                  |
+| `ErrorOwnFieldsMode`            | `'all' \| 'safe'`, the values of `errorOwnFields`                                                            |
+| `LogContextBag`                 | the store of a request scope: `requestId`, `tenantId`, `userId`, `traceId`, `spanId` and any key of your own |
+| `IncomingHeaders`               | the raw inbound headers an HTTP layer delivers: `Record<string, string \| string[] \| undefined>`            |
+| `LOG_CONTEXT_METADATA_KEY`      | the reflect-metadata key under which the deprecated `@LogContext` stores its label                           |
+
 ### Level maps (from `@bymax-one/nest-logger`)
 
 `LogEntry.level` is the Pino string label, not the numeric code. A destination writing a numeric column converts with the exported maps:
@@ -1110,6 +1122,8 @@ type LogEntry = {
   [key: string]: unknown
 }
 ```
+
+`ReservedLogKey` (also from `/shared`) is the union of every value of `RESERVED_LOG_KEYS`, for constraining a log-key argument.
 
 Under `resourceFormat: 'flat'` there is no `service` object: the values arrive as dotted top-level keys (`"service.instance.id"`), which the index signature admits.
 
