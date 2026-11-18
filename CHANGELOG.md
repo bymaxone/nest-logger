@@ -18,7 +18,7 @@ heading here.
   or `'both'`, `exception.type`, `exception.message`, `exception.stacktrace` and `error.type` were
   cut only by the fixed 16 KiB text cap, so with `maxEntrySizeBytes` set below the 64 KiB default
   each could be larger than the ceiling that bounds a serializer's output. Each
-  is now cut to `maxEntrySizeBytes` UTF-8 bytes, ending in `…[truncated]`, at a character boundary.
+  is now cut to `maxEntrySizeBytes` UTF-8 bytes, ending in `…[truncated]` (omitted under a 14-byte ceiling), at a character boundary.
   **Apply:** nothing is required; a query that reads the full message or stack of a very long error
   through these fields gets the cut text when the ceiling is lower than the error, so raise
   `maxEntrySizeBytes` if you need more of it.

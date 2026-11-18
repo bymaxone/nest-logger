@@ -908,7 +908,7 @@ An interpolated value has no name, so no configuration can redact it. **A value 
 
 ### Bounded field size
 
-Every serializer, the default `err` one and any you supply, is wrapped so a field whose serialized JSON exceeds `maxEntrySizeBytes` (64 KB by default) is replaced by an envelope with `_truncated`, `_logKey: 'LOGGER_ENTRY_TRUNCATED'`, `_originalSize` and a 200-character `_preview`. A reference back to an ancestor and a `BigInt` are measured as they are written; an output that cannot be read at all (a `toJSON` or a getter that throws) is replaced too, with an `_originalSize` of `-1`. With `errorFormat: 'semconv'` or `'both'`, each derived `exception.type`, `exception.message`, `exception.stacktrace` and `error.type` is cut to `maxEntrySizeBytes` UTF-8 bytes as well, ending in `…[truncated]`, on top of the 16 KiB text cap.
+Every serializer, the default `err` one and any you supply, is wrapped so a field whose serialized JSON exceeds `maxEntrySizeBytes` (64 KB by default) is replaced by an envelope with `_truncated`, `_logKey: 'LOGGER_ENTRY_TRUNCATED'`, `_originalSize` and a 200-character `_preview`. A reference back to an ancestor and a `BigInt` are measured as they are written; an output that cannot be read at all (a `toJSON` or a getter that throws) is replaced too, with an `_originalSize` of `-1`. With `errorFormat: 'semconv'` or `'both'`, each derived `exception.type`, `exception.message`, `exception.stacktrace` and `error.type` is cut to `maxEntrySizeBytes` UTF-8 bytes as well, ending in `…[truncated]` (omitted under a 14-byte ceiling), on top of the 16 KiB text cap.
 
 ### Bounded string length
 
