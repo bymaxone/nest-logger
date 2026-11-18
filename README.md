@@ -1052,6 +1052,18 @@ Every token is a `Symbol`, never a string, so it cannot collide with one of your
 | `DEFAULT_REDACT_PATHS`       | the legacy path expansion of those names                                                                                                                                                           | only with `redactStrategy: 'paths'`                                                                                                                           |
 | `isValidTraceId(id)`         | `true` for 32 lowercase hex characters that are not all zeros                                                                                                                                      | apply the rule the trace mixin applies before it injects an id                                                                                                |
 
+### Option and context types (from `@bymax-one/nest-logger`)
+
+| Type                            | What it is                                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `BymaxLoggerModuleOptions`      | the options of `forRoot` (the [Configuration](#️-configuration) tables)                                       |
+| `BymaxLoggerModuleAsyncOptions` | the options of `forRootAsync`: a factory, a class or an existing provider that returns them                  |
+| `HttpOptions`, `OtelOptions`    | the `http` and `otel` groups of the options                                                                  |
+| `ErrorOwnFieldsMode`            | `'all' \| 'safe'`, the values of `errorOwnFields`                                                            |
+| `LogContextBag`                 | the store of a request scope: `requestId`, `tenantId`, `userId`, `traceId`, `spanId` and any key of your own |
+| `IncomingHeaders`               | the raw inbound headers an HTTP layer delivers: `Record<string, string \| string[] \| undefined>`            |
+| `LOG_CONTEXT_METADATA_KEY`      | the reflect-metadata key under which the deprecated `@LogContext` stores its label                           |
+
 ### Level maps (from `@bymax-one/nest-logger`)
 
 `LogEntry.level` is the Pino string label, not the numeric code. A destination writing a numeric column converts with the exported maps:
@@ -1110,6 +1122,8 @@ type LogEntry = {
   [key: string]: unknown
 }
 ```
+
+`ReservedLogKey` (also from `/shared`) is the union of every value of `RESERVED_LOG_KEYS`, for constraining a log-key argument.
 
 Under `resourceFormat: 'flat'` there is no `service` object: the values arrive as dotted top-level keys (`"service.instance.id"`), which the index signature admits.
 
