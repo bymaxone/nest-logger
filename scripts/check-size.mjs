@@ -33,7 +33,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-18 — server: 42,867 B (41.86 KiB) real -> 41.89 KiB budget (42,895 B, +28 B over the
+//   - 2026-11-18 — server: 42,902 B (41.90 KiB) real -> 41.93 KiB budget (42,936 B, +34 B over the
 //     measurement). A key that only spells a key the logger writes (`trace_id` for `traceId`,
 //     `Level` for `level`) is dropped like the key itself, by one comparison that folds the case and
 //     the separators (`foldKey`), in the owned-key guard and in the merge of the mixin; the text of
@@ -41,7 +41,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     and bounded to one line; and that message is censored where it opens the stack of each error of
 //     a chain and in the derived `exception.*` fields, on the raw stack before it is scrubbed, by
 //     one comparison at the place the engine writes it (`censorStackHeader`, `headerCensor`). It is
-//     +679 B over the 42,188 B measured at the previous budget.
+//     +714 B over the 42,188 B measured at the previous budget.
+//   - 2026-11-18 — server: 42,163 B (41.18 KiB) real -> 41.20 KiB budget (42,189 B, +26 B over the
+//     measurement). The entry-text finisher takes a callback and whether the entry is written, and
+//     calls back only for an entry that is, so the cut of the text of an object message is counted
+//     under `max_string_length` like the cut of a field and only for an entry that is written. It
+//     is +63 B over the 42,100 B measured before.
 //   - 2026-11-18 — observability: 1,169 B (1.14 KiB) real -> 1.21 KiB budget (1,239 B, +70 B over
 //     the measurement). The new subpath: the two Prometheus counters and the readiness check, which
 //     import the logger by its package name (external) and the optional peers `@bymax-one/nest-core`
@@ -299,7 +304,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 41.89 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 41.93 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',
