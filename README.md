@@ -63,17 +63,20 @@ The library has **zero direct dependencies**: every package arrives as a peer de
 
 ## 📦 Subpath Exports
 
-One package, two entry points — import only what your app needs:
+One package, three entry points — import only what your app needs:
 
-| Subpath    | Import                          | Purpose                                                                                                                                                           |              Dependencies               |
-| ---------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------: |
-| **Server** | `@bymax-one/nest-logger`        | NestJS module, logger service, interceptor, filter, decorators, destinations                                                                                      | NestJS 11, pino, rxjs, reflect-metadata |
-| **Shared** | `@bymax-one/nest-logger/shared` | Types, constants, the log-key regex — `LogLevel`, `LogEntry`, `ServiceMetadata`, `ResolvedServiceMetadata`, `EmittedServiceResource`, `EmittedDeploymentResource` |                  None                   |
+| Subpath           | Import                                 | Purpose                                                                                                                                                           |                         Dependencies                          |
+| ----------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-----------------------------------------------------------: |
+| **Server**        | `@bymax-one/nest-logger`               | NestJS module, logger service, interceptor, filter, decorators, destinations                                                                                      |            NestJS 11, pino, rxjs, reflect-metadata            |
+| **Shared**        | `@bymax-one/nest-logger/shared`        | Types, constants, the log-key regex — `LogLevel`, `LogEntry`, `ServiceMetadata`, `ResolvedServiceMetadata`, `EmittedServiceResource`, `EmittedDeploymentResource` |                             None                              |
+| **Observability** | `@bymax-one/nest-logger/observability` | The Prometheus counters and the readiness check of the logger, for `@bymax-one/nest-core` (see [Metrics and health](#-metrics-and-health))                        | `@bymax-one/nest-core` and `prom-client`, both optional peers |
 
 ```
 shared (zero deps)
      ↑
   server
+     ↑
+observability (optional peers)
 ```
 
 The `/shared` subpath is safe to import in isomorphic code, test helpers, CLI scripts, or shared packages that must not pull in NestJS.
@@ -102,6 +105,9 @@ pnpm add -D pino-pretty
 
 # Optional — OpenTelemetry trace correlation
 pnpm add @opentelemetry/api @opentelemetry/sdk-node
+
+# Optional — the /observability subpath (Prometheus counters and the readiness check)
+pnpm add @bymax-one/nest-core prom-client
 ```
 
 > [!WARNING]
@@ -796,6 +802,41 @@ Providers are singletons: `AsyncLocalStorage` delivers per-request context witho
 
 ---
 
+## 📊 Metrics and health
+
+The `@bymax-one/nest-logger/observability` subpath publishes what the logger counts as Prometheus counters and as a readiness check, for an application that runs `@bymax-one/nest-core`. It needs the optional peers `@bymax-one/nest-core` and `prom-client`; the main entry imports neither, and nothing is created unless you import the subpath.
+
+```typescript
+import { Module } from '@nestjs/common'
+import { BymaxLoggerModule } from '@bymax-one/nest-logger'
+import { BymaxLoggerObservabilityModule } from '@bymax-one/nest-logger/observability'
+
+@Module({
+  imports: [
+    BymaxLoggerModule.forRoot({ service: { name: 'api', version: '1.0.0' } }),
+    BymaxLoggerObservabilityModule
+  ]
+})
+export class AppModule {}
+```
+
+`BymaxLoggerObservabilityModule` provides `LoggerMetricsContributor` and `LoggerHealthIndicator`, which `@bymax-one/nest-core` finds by their markers: the contributor is called once at bootstrap with the registry the scrape endpoint serves, and the indicator is listed in the readiness response under the name `logger` (`LOGGER_HEALTH_INDICATOR_NAME`). With `isGlobal: false` on `BymaxLoggerModule`, import that module in the same place.
+
+### Metrics
+
+| Name                                    | Type    | Labels                                          | Meaning                                                                                                |
+| --------------------------------------- | ------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `bymax_logger_entries_truncated_total`  | counter | `reason`: `max_entry_size`, `max_string_length` | Fields of a log entry cut or replaced for a size bound; one field counts once (see `truncatedTotal`)   |
+| `bymax_logger_destination_errors_total` | counter | none                                            | Writes to a log destination that threw or rejected; an entry dropped for want of queue room is not one |
+
+The counters read the logger's own counts at scrape time, so a log call costs no more than before and each scrape adds the growth since the previous one. Both `reason` series exist from the first scrape, at zero. The label values are a closed set; no destination name, field name or message is ever a label.
+
+### Health
+
+`LoggerHealthIndicator` is `up` when at least one log destination finished its `onInit` healthy, so an entry can still be delivered, and `down` when none did, which is also the state before the first has finished. Its details carry counts only: `destinations`, `failedInit` and `writeFailing`. The check reads the state the logger already keeps; it sends nothing to a destination and cannot wait on one.
+
+---
+
 ## 🔐 Security Model
 
 A logger sees every payload the application handles, so the security posture is about what **never** reaches the sink, and about a sink failure never reaching the application.
@@ -1039,7 +1080,7 @@ Implements NestJS `LoggerService`. All methods are available via `@InjectLogger(
 
 ### Injection tokens and helpers
 
-Every token is a `Symbol`, never a string, so it cannot collide with one of yours. Inject with an explicit `@Inject(TOKEN)`: the package is built without decorator metadata, and so is any consumer built the same way.
+Every token is a `Symbol`, never a string, so it cannot collide with one of yours; `LOGGER_OBSERVABILITY_TOKEN` is registered in the global symbol registry (`Symbol.for`), so a host that loads the package through ESM and CommonJS at once holds one token, and it collides only with a symbol registered under the identical description. Inject with an explicit `@Inject(TOKEN)`: the package is built without decorator metadata, and so is any consumer built the same way.
 
 | Export                       | Provides                                                                                                                                                                                           | Use it to                                                                                                                                                     |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
