@@ -56,7 +56,11 @@ const EXPECTED_DIST_FILES = [
   'dist/shared/index.mjs',
   'dist/shared/index.cjs',
   'dist/shared/index.d.ts',
-  'dist/shared/index.d.cts'
+  'dist/shared/index.d.cts',
+  'dist/observability/index.mjs',
+  'dist/observability/index.cjs',
+  'dist/observability/index.d.ts',
+  'dist/observability/index.d.cts'
 ]
 
 const EXPECTED_SERVER_EXPORTS = [
@@ -79,12 +83,20 @@ const EXPECTED_SERVER_EXPORTS = [
   'LOGGER_PINO_INSTANCE_TOKEN',
   'LOGGER_DESTINATIONS_TOKEN',
   'LOG_CONTEXT_TOKEN',
+  'LOGGER_OBSERVABILITY_TOKEN',
   'DEFAULT_REDACT_PATHS',
   'LOG_KEYS_CONVENTION_REGEX',
   'RESERVED_LOG_KEYS'
 ]
 
 const EXPECTED_SHARED_EXPORTS = ['LOG_KEYS_CONVENTION_REGEX', 'RESERVED_LOG_KEYS']
+
+const EXPECTED_OBSERVABILITY_EXPORTS = [
+  'BymaxLoggerObservabilityModule',
+  'LoggerMetricsContributor',
+  'LoggerHealthIndicator',
+  'LOGGER_HEALTH_INDICATOR_NAME'
+]
 
 const ALLOWED_TARBALL_PATHS = ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE', 'dist/']
 
@@ -173,6 +185,20 @@ for (const name of EXPECTED_SHARED_EXPORTS) {
   }
 }
 
+// ── 3c. ESM named exports — observability subpath ──────────────────────────
+// The subpath reads the logger through the package name and needs the optional peers
+// `@bymax-one/nest-core` and `prom-client`, which the repository installs as dev dependencies.
+
+section('3c. ESM named exports — observability')
+const observabilityEsm = await import(resolve(PKG, 'dist/observability/index.mjs'))
+for (const name of EXPECTED_OBSERVABILITY_EXPORTS) {
+  if (name in observabilityEsm) {
+    pass(`export ${name}`)
+  } else {
+    fail(`Missing export: ${name}`)
+  }
+}
+
 // ── 4. CJS exports ──────────────────────────────────────────────────────────
 
 section('4. CJS exports — server')
@@ -197,6 +223,29 @@ for (const name of EXPECTED_SHARED_EXPORTS) {
   } else {
     fail(`Missing CJS export (shared): ${name}`)
   }
+}
+
+// ── 4c. CJS exports — observability subpath ────────────────────────────────
+
+section('4c. CJS exports — observability')
+const observabilityCjs = req(resolve(PKG, 'dist/observability/index.cjs'))
+for (const name of EXPECTED_OBSERVABILITY_EXPORTS) {
+  if (name in observabilityCjs) {
+    pass(`cjs export ${name}`)
+  } else {
+    fail(`Missing CJS export (observability): ${name}`)
+  }
+}
+
+// ── 4d. One observability token across the two builds ───────────────────────
+// A host may load the main entry through ESM and through CommonJS at once; the token is in the global
+// symbol registry so both builds hold the same one.
+
+section('4d. LOGGER_OBSERVABILITY_TOKEN is the same symbol in the ESM and the CJS build')
+if (serverEsm.LOGGER_OBSERVABILITY_TOKEN === serverCjs.LOGGER_OBSERVABILITY_TOKEN) {
+  pass('the token is one symbol across both builds')
+} else {
+  fail('the token differs between the ESM and the CJS build')
 }
 
 // ── 5. Tarball contents ──────────────────────────────────────────────────────
@@ -238,7 +287,10 @@ try {
     version: '0.0.1',
     type: 'module',
     dependencies: {
-      '@bymax-one/nest-logger': `file:${TARBALL}`
+      '@bymax-one/nest-logger': `file:${TARBALL}`,
+      // The optional peers of the observability subpath, which the probe below imports.
+      '@bymax-one/nest-core': '1.6.10',
+      'prom-client': '15.1.3'
     }
   }
   writeFileSync(resolve(consumerDir, 'package.json'), JSON.stringify(consumerPkgJson, null, 2))
@@ -284,6 +336,8 @@ try {
       ".then((m) => { if (!('BymaxLoggerModule' in m)) process.exit(3) })",
       ".then(() => import('@bymax-one/nest-logger/shared'))",
       ".then((s) => { if (!('RESERVED_LOG_KEYS' in s)) process.exit(4) })",
+      ".then(() => import('@bymax-one/nest-logger/observability'))",
+      ".then((o) => { if (!('LoggerMetricsContributor' in o)) process.exit(6) })",
       '.catch((e) => { console.error(e); process.exit(5) })'
     ].join('')
     const importResult = spawnSync('node', ['--input-type=module', '-e', specifierProbe], {

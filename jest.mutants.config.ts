@@ -20,7 +20,8 @@ const config: Config = {
   setupFilesAfterEnv: ['<rootDir>/../scripts/jest-no-sockets.setup.cjs'],
   moduleNameMapper: {
     '^@bymax-one/nest-logger$': '<rootDir>/server/index.ts',
-    '^@bymax-one/nest-logger/shared$': '<rootDir>/shared/index.ts'
+    '^@bymax-one/nest-logger/shared$': '<rootDir>/shared/index.ts',
+    '^@bymax-one/nest-logger/observability$': '<rootDir>/observability/index.ts'
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/../tsconfig.jest.json', diagnostics: false }]

@@ -20,7 +20,8 @@ const PACKAGE = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as 
 /** The source barrel that builds each public subpath. */
 const BARRELS: Readonly<Record<string, string>> = {
   '.': 'src/server/index.ts',
-  './shared': 'src/shared/index.ts'
+  './shared': 'src/shared/index.ts',
+  './observability': 'src/observability/index.ts'
 }
 
 /** The public subpaths named by `package.json`, apart from the manifest itself. */
