@@ -820,7 +820,7 @@ import { BymaxLoggerObservabilityModule } from '@bymax-one/nest-logger/observabi
 export class AppModule {}
 ```
 
-`BymaxLoggerObservabilityModule` provides `LoggerMetricsContributor` and `LoggerHealthIndicator`, which `@bymax-one/nest-core` finds by their markers: the contributor is called once at bootstrap with the registry the scrape endpoint serves, and the indicator is listed in the readiness response under the name `logger` (`LOGGER_HEALTH_INDICATOR_NAME`). With `isGlobal: false` on `BymaxLoggerModule`, import that module in the same place.
+`BymaxLoggerObservabilityModule` provides `LoggerMetricsContributor` and `LoggerHealthIndicator`, which `@bymax-one/nest-core` finds by their markers: the contributor is called once at bootstrap with the registry the scrape endpoint serves, and the indicator is listed in the readiness response under the name `logger` (`LOGGER_HEALTH_INDICATOR_NAME`). With `isGlobal: false` on `BymaxLoggerModule` the token is visible only to the modules that import it, so do not import `BymaxLoggerObservabilityModule`: list `LoggerMetricsContributor` and `LoggerHealthIndicator` in the `providers` of a module of yours that imports the same `forRoot` result.
 
 ### Metrics
 
