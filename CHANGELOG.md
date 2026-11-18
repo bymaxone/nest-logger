@@ -39,9 +39,11 @@ heading here.
 - **The lines the library writes about its destinations are library text, with the error of the host
   in `err`, and that error's message is censored.** The lines of `LOGGER_DESTINATION_WRITE_FAILED`
   and `LOGGER_DESTINATION_INIT_FAILED` (a failed `onInit`, a failed `onRegistryReady`) put the name
-  of the destination in their `msg` (`Log destination "audit" failed to write; the entry was
-dropped`). `msg` is now constant (`A log destination failed to write; the entry was dropped`) and
-  the name is in `destination` alone. A failed `onShutdown` was written as a text line,
+  of the destination in their `msg`, for example
+  `Log destination "audit" failed to write; the entry was dropped`. `msg` is now library text with
+  no name in it (for a write, `A log destination failed to write; the entry was dropped`) and the
+  name is in `destination` alone. A failed `onShutdown` was
+  written as a text line,
   `[DestinationRegistry] Shutdown failed for "audit": <the stack of the error>`, which put the whole
   stack of a host error on stderr outside any censor. It is now a JSON line like the others, under a
   new reserved key, `LOGGER_DESTINATION_SHUTDOWN_FAILED`, with `destination`, `err` and a constant
@@ -55,7 +57,9 @@ dropped`). `msg` is now constant (`A log destination failed to write; the entry 
   **Apply:** an alert or a search that matches the old text must match the `logKey` and the
   `destination` field instead: `LOGGER_DESTINATION_WRITE_FAILED` and `LOGGER_DESTINATION_INIT_FAILED`
   as before, and `LOGGER_DESTINATION_SHUTDOWN_FAILED` for a failed shutdown, which a match on
-  `Shutdown failed for` no longer finds. If you list the reserved keys (a dashboard filter, an
+  `Shutdown failed for` no longer finds, and a log shipper that read that line as text now receives
+  a JSON entry with `level: "error"`. The stack of the error is no longer written there: if you need
+  it, log it in your own `onShutdown`. If you list the reserved keys (a dashboard filter, an
   allow-list), add the new one. A `message` in `redactPaths` now also hides the message of the error
   in these lines.
 
