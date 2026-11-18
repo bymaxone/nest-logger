@@ -24,11 +24,6 @@
       "count": 2
     }
   },
-  "src/server/pino-factory.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "src/server/utils/destination-to-stream.ts": {
     "max-lines-per-function": {
       "count": 2

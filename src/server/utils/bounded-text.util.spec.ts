@@ -4,7 +4,7 @@
  *
  * Layer: server/utils, tests.
  */
-import { cutIfText, cutText, MAX_TEXT_LENGTH, TEXT_TRUNCATED } from './bounded-text.util'
+import { cutBytes, cutIfText, cutText, MAX_TEXT_LENGTH, TEXT_TRUNCATED } from './bounded-text.util'
 
 describe('cutText — the length of a text written as given', () => {
   it('cuts at the limit and leaves every frame and character before it as given', () => {
@@ -73,5 +73,44 @@ describe('cutIfText', () => {
     expect(cutIfText(42)).toBe(42)
     expect(cutIfText(undefined)).toBeUndefined()
     expect(cutIfText(null)).toBeNull()
+  })
+})
+
+describe('cutBytes — a text cut to a byte ceiling', () => {
+  const MARKER_BYTES = Buffer.byteLength(TEXT_TRUNCATED, 'utf-8')
+
+  it.each([
+    ['one byte under', 1023, false],
+    ['exactly the ceiling', 1024, false],
+    ['one byte over', 1025, true]
+  ])('handles an ASCII text that is %s', (_label, bytes, isCut) => {
+    const text = 'x'.repeat(bytes)
+
+    const out = cutBytes(text, 1024)
+
+    expect(out).toBe(isCut ? 'x'.repeat(1024 - MARKER_BYTES) + TEXT_TRUNCATED : text)
+    expect(Buffer.byteLength(out, 'utf-8')).toBeLessThanOrEqual(1024)
+  })
+
+  it.each([
+    ['two-byte characters', 'é'],
+    ['three-byte characters', '€'],
+    ['four-byte characters', '😀']
+  ])('never exceeds the ceiling and never splits a character: %s', (_label, character) => {
+    const out = cutBytes(character.repeat(5000), 1024)
+
+    expect(Buffer.byteLength(out, 'utf-8')).toBeLessThanOrEqual(1024)
+    expect(out.endsWith(TEXT_TRUNCATED)).toBe(true)
+    expect(out.slice(0, -TEXT_TRUNCATED.length)).toBe(
+      character.repeat((out.length - TEXT_TRUNCATED.length) / character.length)
+    )
+  })
+
+  it('does not cut when the ceiling is infinite', () => {
+    expect(cutBytes('x'.repeat(100_000), Number.POSITIVE_INFINITY)).toHaveLength(100_000)
+  })
+
+  it('gives only the marker when the ceiling cannot hold it', () => {
+    expect(cutBytes('x'.repeat(100), 5)).toBe(TEXT_TRUNCATED)
   })
 })

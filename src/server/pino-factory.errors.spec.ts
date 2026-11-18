@@ -496,6 +496,50 @@ describe('withSemconvException (direct)', () => {
   /** A record shaped like one reaching `formatters.log`. */
   const recordWith = (err: unknown): Record<string, unknown> => ({ logKey: 'K_A_B', err })
 
+  /*
+   * The derived fields are written by the library, after the err serializer, so the ceiling of
+   * `maxEntrySizeBytes` that bounds what a serializer returns does not reach them: each is cut to it
+   * here, in UTF-8 bytes, over and above the fixed text cap.
+   */
+  describe('with a byte ceiling', () => {
+    const CEILING = 1024
+    const bytes = (value: unknown): number => Buffer.byteLength(String(value), 'utf-8')
+
+    it.each(['exception.message', 'exception.stacktrace', 'exception.type', 'error.type'])(
+      'bounds %s',
+      (key) => {
+        const huge = 'x'.repeat(50_000)
+        const err = Object.assign(new Error(huge), {
+          name: huge,
+          stack: `Error: ${huge}\n    at a (f.js:1:1)`
+        })
+
+        const out = withSemconvException(recordWith(err), 'both', CEILING)
+
+        expect(bytes(out[key])).toBeLessThanOrEqual(CEILING)
+        expect(String(out[key]).endsWith('…[truncated]')).toBe(true)
+      }
+    )
+
+    it('counts bytes, not characters, for a message of multi-byte characters', () => {
+      const out = withSemconvException(recordWith(new Error('€'.repeat(2000))), 'both', CEILING)
+
+      expect(bytes(out['exception.message'])).toBeLessThanOrEqual(CEILING)
+    })
+
+    it('leaves a field that is under the ceiling as it is', () => {
+      const out = withSemconvException(recordWith(new Error('short')), 'both', CEILING)
+
+      expect(out['exception.message']).toBe('short')
+    })
+
+    it('does not cut when no ceiling is given', () => {
+      const out = withSemconvException(recordWith(new Error('x'.repeat(10_000))), 'both')
+
+      expect(bytes(out['exception.message'])).toBe(10_000)
+    })
+  })
+
   it('adds nothing under the pino format', () => {
     const out = withSemconvException(recordWith(new Error('boom')), 'pino')
 

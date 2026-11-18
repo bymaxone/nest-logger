@@ -7,7 +7,6 @@
     "[\"src/server/middlewares/request-id.middleware.ts\",[\"member\",\"RequestIdMiddleware\",\"use\"]]": 60,
     "[\"src/server/mixins/trace-context.mixin.ts\",[\"fn\",\"createTraceContextMixin\"]]": 60,
     "[\"src/server/mixins/trace-context.mixin.ts\",[\"fn\",\"createTraceContextMixin\"],[\"anon\"]]": 51,
-    "[\"src/server/pino-factory.ts\",[\"fn\",\"withSemconvException\"]]": 52,
     "[\"src/server/readme-quick-start.spec.ts\",[\"container\",\"describe\",\"README Quick Start (sections 2 and 4)\"],[\"test\",\"it\",\"logs the README flow as structured JSON lines on stdout\"]]": 51,
     "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"]]": 93,
     "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"],[\"member\",\"<class>\",\"write\"]]": 78,
