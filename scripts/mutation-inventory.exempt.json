@@ -30,5 +30,9 @@
   {
     "file": "src/check-function-length.key.spec.ts",
     "reason": "Runs scripts/check-function-length.mjs as a child process on fixture directories and imports nothing from src/, so it judges no mutant."
+  },
+  {
+    "file": "src/readme.exports.spec.ts",
+    "reason": "Reads the text of README.md and package.json and the barrels through the TypeScript compiler, and imports nothing from src/, so it covers no published code and judges no mutant."
   }
 ]
