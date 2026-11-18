@@ -81,8 +81,8 @@ what the Breaking entry above says.
   message and not in the name. It holds for an `Error`, a subclass and an `Error` of another realm,
   for a header another writer wrote (a custom stack formatter, a line after the message), for a
   message with a control character, which the stack escapes. How much of a stack is read does not
-  depend on its message: for a cut stack whose message is longer than the part read, that part is
-  the header, censored whole when the message was and left as it is when it was not.
+  depend on its message: a cut stack that holds only the start of a censored message is censored
+  whole in the part read.
   A stack that does not
   hold the message, because it was changed after the engine wrote the stack, is left as it is, and
   one whose older header text holds the new message as a part of it is censored there; a header that
