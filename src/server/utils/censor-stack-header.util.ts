@@ -51,11 +51,12 @@ export function censorStackHeader(
 ): string {
   if (message === '' || censored === message) return stack
   const separator = stack.indexOf(NAME_SEPARATOR)
-  const lineBreak = stack.indexOf('\n')
-  const named = separator !== -1 && (lineBreak === -1 || separator < lineBreak)
-  const opening = named ? stack.slice(0, separator + NAME_SEPARATOR.length) : ''
-  if (named && endsHeader(stack, message, opening.length)) {
-    return opening + censored + stack.slice(opening.length + message.length)
+  // The separator of the first line: no line break comes before it.
+  if (separator !== -1 && stack.lastIndexOf('\n', separator) === -1) {
+    const from = separator + NAME_SEPARATOR.length
+    if (endsHeader(stack, message, from)) {
+      return stack.slice(0, from) + censored + stack.slice(from + message.length)
+    }
   }
   if (endsHeader(stack, message, 0)) return censored + stack.slice(message.length)
   return name === '' ? censored : name + NAME_SEPARATOR + censored

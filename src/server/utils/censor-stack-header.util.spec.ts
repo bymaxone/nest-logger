@@ -45,6 +45,8 @@ describe('censorStackHeader', () => {
       `Error: [REDACTED]${FRAMES}`
     ],
     ['a stack with no frame', 'Error: secret', 'secret', 'Error: [REDACTED]'],
+    ['a name of one character', `E: secret${FRAMES}`, 'secret', `E: [REDACTED]${FRAMES}`],
+    ['a stack that has no line break at all', 'App: secret', 'secret', 'App: [REDACTED]'],
     ['a message with a regular expression in it', 'Error: a.*(b', 'a.*(b', 'Error: [REDACTED]'],
     ['an error with no name', `secret${FRAMES}`, 'secret', `[REDACTED]${FRAMES}`],
     [
@@ -91,7 +93,7 @@ describe('censorStackHeader', () => {
       `Error: [REDACTED]${FRAMES}`
     ]
   ])('replaces the message in %s', (_label, stack, message, expected) => {
-    expect(censorStackHeader(stack, 'Error', message, '[REDACTED]')).toBe(expected)
+    expect(censorStackHeader(stack, 'Named', message, '[REDACTED]')).toBe(expected)
   })
 
   /*
@@ -103,44 +105,74 @@ describe('censorStackHeader', () => {
       'text between the colon and the message',
       `Error: build 12 failed - secret${FRAMES}`,
       'secret',
-      'Error: [REDACTED]'
+      'Named: [REDACTED]'
     ],
     [
       'the same wrapped message under a header with text before it',
       `Error: attempt 3 ${WRAPPED}${FRAMES}`,
       WRAPPED,
-      'Error: [REDACTED]'
+      'Named: [REDACTED]'
     ],
     [
       'a message that is the start of a longer one',
       `Error: secret and more${FRAMES}`,
       'secret',
-      'Error: [REDACTED]'
+      'Named: [REDACTED]'
     ],
     [
       'a message that was changed after the stack was written',
       `Error: old secret${FRAMES}`,
       'secret',
-      'Error: [REDACTED]'
+      'Named: [REDACTED]'
     ],
     [
       'a stack that does not hold the message',
       `Error: built with this${FRAMES}`,
       'changed',
-      'Error: [REDACTED]'
+      'Named: [REDACTED]'
     ],
-    ['a message that a line after it repeats', `Error: x y\nx${FRAMES}`, 'x', 'Error: [REDACTED]'],
-    ['a first line with no separator', `Error${FRAMES}`, 'secret', 'Error: [REDACTED]'],
+    ['a message that a line after it repeats', `Error: x y\nx${FRAMES}`, 'x', 'Named: [REDACTED]'],
+    ['a first line with no separator', `Error${FRAMES}`, 'secret', 'Named: [REDACTED]'],
+    [
+      'a separator only on a later line',
+      `Error\nOther: secret${FRAMES}`,
+      'secret',
+      'Named: [REDACTED]'
+    ],
+    [
+      'a separator on a later line, after a first line of one character',
+      `E\nOther: secret${FRAMES}`,
+      'secret',
+      'Named: [REDACTED]'
+    ],
+    [
+      'a message that starts at the second character of a header with no separator',
+      `Esecret${FRAMES}`,
+      'secret',
+      'Named: [REDACTED]'
+    ],
+    [
+      'a message that starts at the second character of a stack with no line break',
+      'Esecret',
+      'secret',
+      'Named: [REDACTED]'
+    ],
+    [
+      'a separator that ends the first line',
+      `Error: \nsecret${FRAMES}`,
+      'secret',
+      'Named: [REDACTED]'
+    ],
     [
       'a header that holds the message many times',
       `Error: ${'a'.repeat(65)}${FRAMES}`,
       'a',
-      'Error: [REDACTED]'
+      'Named: [REDACTED]'
     ]
   ])(
     'drops the frames of a stack whose header is not the default form: %s',
     (_l, stack, message, expected) => {
-      expect(censorStackHeader(stack, 'Error', message, '[REDACTED]')).toBe(expected)
+      expect(censorStackHeader(stack, 'Named', message, '[REDACTED]')).toBe(expected)
     }
   )
 
@@ -187,17 +219,17 @@ describe('censorStackHeader', () => {
       'a'
     ]
   ])('leaves the stack alone for %s', (_label, stack, message, censored) => {
-    expect(censorStackHeader(stack, 'Error', message, censored)).toBe(stack)
+    expect(censorStackHeader(stack, 'Named', message, censored)).toBe(stack)
   })
 
-  it('does the same work for a message of 100,000 characters that is not the header', () => {
+  it('rebuilds a header that does not hold a message of 100,000 characters, in under a second', () => {
     const message = 'a'.repeat(100_000)
     const stack = 'a'.repeat(231_072)
     const started = Date.now()
 
-    const out = censorStackHeader(stack, 'Error', message, '[REDACTED]')
+    const out = censorStackHeader(stack, 'Named', message, '[REDACTED]')
 
-    expect(out).toBe('Error: [REDACTED]')
+    expect(out).toBe('Named: [REDACTED]')
     expect(Date.now() - started).toBeLessThan(1_000)
   })
 })
