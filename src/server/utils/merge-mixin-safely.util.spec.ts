@@ -53,6 +53,16 @@ describe('mergeMixinSafely', () => {
     expect(out).toEqual({ requestId: 'own' })
   })
 
+  it.each(['toString', 'valueOf', 'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable'])(
+    'writes a key of the mixin named like a member every object inherits: %s',
+    (key) => {
+      const out = merge({ a: 1 }, { [key]: 'ambient' })
+
+      expect(Object.keys(out)).toEqual(['a', key])
+      expect(Object.getOwnPropertyDescriptor(out, key)?.value).toBe('ambient')
+    }
+  )
+
   describe('the acting user', () => {
     it('keeps the one the payload names over the ambient one', () => {
       expect(merge({ userId: 'explicit' }, { userId: 'ambient' })).toEqual({ userId: 'explicit' })

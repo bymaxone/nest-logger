@@ -53,11 +53,11 @@ export function mergeMixinSafely(mergeObject: object, mixinObject: object): obje
     }
     // The mixin's keys are the correlation of the entry (the request, the tenant, the trace), so a
     // payload that carries the same key does not replace them. A key the mixin leaves undefined is
-    // not written, so it does not erase the payload's own value. `userId` is the exception, the one
-    // key of the mixin the payload still holds: a call names the acting user, who wins over the ambient.
+    // not written, so it does not erase the payload's own value. `userId` is the exception: a
+    // structured call names the acting user as an argument, which must win over the ambient one.
     for (const [key, value] of Object.entries(mixinObject)) {
       if (value === undefined) continue
-      if (Reflect.get(merged, key) !== undefined) continue
+      if (key === EXPLICIT_USER_KEY && Reflect.get(merged, key) !== undefined) continue
       Reflect.set(merged, key, value)
     }
     return merged
