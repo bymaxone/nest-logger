@@ -225,7 +225,7 @@ function readScrubbedStack(
   const stack = readOptional(() => value.stack, result)
   return stack === undefined
     ? undefined
-    : scrubStack(stack, headerCensor(message, walk.censorMessage))
+    : scrubStack(stack, headerCensor(result.name, message, walk.censorMessage))
 }
 
 /**
@@ -553,8 +553,9 @@ function readAggregatedErrors(value: Error): unknown[] | undefined {
  */
 export const MAX_STACK_SCAN = 8 * MAX_TEXT_LENGTH
 
-/** The message of an error and what it became when it was censored, for the header of its stack. */
+/** The name and the message of an error and what the message became when it was censored. */
 export interface HeaderCensor {
+  readonly name: string
   readonly message: string
   readonly censored: string
 }
@@ -568,16 +569,18 @@ export interface HeaderCensor {
  * @returns The message and its censored form.
  */
 export function headerCensor(
+  name: unknown,
   message: unknown,
   censorMessage: ((text: string) => string) | undefined
 ): HeaderCensor | undefined {
   if (typeof message !== 'string' || censorMessage === undefined) return undefined
+  const named = typeof name === 'string' ? name : ''
   try {
-    return { message, censored: censorMessage(message) }
+    return { name: named, message, censored: censorMessage(message) }
   } catch {
     // A censor that cannot answer leaves nothing to show: the message is removed from the header,
     // never kept, because keeping it would leave the text the censor was asked to hide.
-    return { message, censored: '' }
+    return { name: named, message, censored: '' }
   }
 }
 
@@ -609,7 +612,10 @@ export function scrubStack(stack: string, header?: HeaderCensor): string {
   // how long the message is, which a caller controls.
   const head = stack.slice(0, MAX_STACK_SCAN)
   const scrubbed = escapeControlCharacters(
-    (header === undefined ? head : censorStackHeader(head, header.message, header.censored))
+    (header === undefined
+      ? head
+      : censorStackHeader(head, header.name, header.message, header.censored)
+    )
       .split('\n')
       .filter((line) => !line.includes('node_modules'))
       .join('\n')

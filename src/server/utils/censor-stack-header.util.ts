@@ -30,18 +30,25 @@ function endsHeader(stack: string, message: string, from: number): boolean {
  * The engine writes the name, `: `, the message, and then the first frame line, so the message sits
  * right after the first `: ` of the first line, or at the start when the error has no name. One
  * comparison at each of those places decides, and only the message is replaced. A header that is not
- * in that form is not read: it is replaced by the name that the stack opens with, `: ` and the
- * censored message, and the frames of that stack are dropped, because what it holds may be the
- * secret too and no search for it can be shown to find it. A message that was not censored changes
- * nothing, and an empty one has nothing to hide.
+ * in that form is not read at all: the result is the name of the error, `: ` and the censored
+ * message, built from the values at hand with nothing of the text of the stack in it, and the frames
+ * are dropped, because what such a header holds may be the secret too and no search for it can be
+ * shown to find it. A message that was not censored changes nothing, and an empty one has nothing to
+ * hide.
  *
  * @internal Shared across the logger. NOT re-exported by the package barrel.
  * @param stack - The text of the stack, as the engine wrote it.
+ * @param name - The name of the error, empty when it has none.
  * @param message - The message as the error carries it.
  * @param censored - What the message became when it was censored.
  * @returns The stack with the message replaced, or `stack` when the message was not censored.
  */
-export function censorStackHeader(stack: string, message: string, censored: string): string {
+export function censorStackHeader(
+  stack: string,
+  name: string,
+  message: string,
+  censored: string
+): string {
   if (message === '' || censored === message) return stack
   const separator = stack.indexOf(NAME_SEPARATOR)
   const lineBreak = stack.indexOf('\n')
@@ -51,5 +58,5 @@ export function censorStackHeader(stack: string, message: string, censored: stri
     return opening + censored + stack.slice(opening.length + message.length)
   }
   if (endsHeader(stack, message, 0)) return censored + stack.slice(message.length)
-  return opening + censored
+  return name === '' ? censored : name + NAME_SEPARATOR + censored
 }

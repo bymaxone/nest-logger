@@ -91,7 +91,7 @@ describe('censorStackHeader', () => {
       `Error: [REDACTED]${FRAMES}`
     ]
   ])('replaces the message in %s', (_label, stack, message, expected) => {
-    expect(censorStackHeader(stack, message, '[REDACTED]')).toBe(expected)
+    expect(censorStackHeader(stack, 'Error', message, '[REDACTED]')).toBe(expected)
   })
 
   /*
@@ -130,7 +130,7 @@ describe('censorStackHeader', () => {
       'Error: [REDACTED]'
     ],
     ['a message that a line after it repeats', `Error: x y\nx${FRAMES}`, 'x', 'Error: [REDACTED]'],
-    ['a first line with no name', `Error${FRAMES}`, 'secret', '[REDACTED]'],
+    ['a first line with no separator', `Error${FRAMES}`, 'secret', 'Error: [REDACTED]'],
     [
       'a header that holds the message many times',
       `Error: ${'a'.repeat(65)}${FRAMES}`,
@@ -140,7 +140,40 @@ describe('censorStackHeader', () => {
   ])(
     'drops the frames of a stack whose header is not the default form: %s',
     (_l, stack, message, expected) => {
-      expect(censorStackHeader(stack, message, '[REDACTED]')).toBe(expected)
+      expect(censorStackHeader(stack, 'Error', message, '[REDACTED]')).toBe(expected)
+    }
+  )
+
+  /*
+   * The fallback is built from the name the error carries and from nothing in the stack, so the text
+   * before the first `: ` of a header that is not the default form is never kept as if it were a name.
+   */
+  it.each([
+    [
+      'a nameless error whose changed message holds the separator',
+      'secret-key: abc\n    at f (/a.js:1:1)',
+      '',
+      'secret-key: abc!',
+      '[REDACTED]'
+    ],
+    [
+      'a named error under a header with the name of another error',
+      `Other: secret and more${FRAMES}`,
+      'Error',
+      'secret',
+      'Error: [REDACTED]'
+    ],
+    [
+      'an error with no name and a header that is not its message',
+      `Error: build 12 - secret${FRAMES}`,
+      '',
+      'secret',
+      '[REDACTED]'
+    ]
+  ])(
+    'builds the header from the name of the error, not from the stack: %s',
+    (_l, stack, name, message, expected) => {
+      expect(censorStackHeader(stack, name, message, '[REDACTED]')).toBe(expected)
     }
   )
 
@@ -154,7 +187,7 @@ describe('censorStackHeader', () => {
       'a'
     ]
   ])('leaves the stack alone for %s', (_label, stack, message, censored) => {
-    expect(censorStackHeader(stack, message, censored)).toBe(stack)
+    expect(censorStackHeader(stack, 'Error', message, censored)).toBe(stack)
   })
 
   it('does the same work for a message of 100,000 characters that is not the header', () => {
@@ -162,9 +195,9 @@ describe('censorStackHeader', () => {
     const stack = 'a'.repeat(231_072)
     const started = Date.now()
 
-    const out = censorStackHeader(stack, message, '[REDACTED]')
+    const out = censorStackHeader(stack, 'Error', message, '[REDACTED]')
 
-    expect(out).toBe('[REDACTED]')
+    expect(out).toBe('Error: [REDACTED]')
     expect(Date.now() - started).toBeLessThan(1_000)
   })
 })

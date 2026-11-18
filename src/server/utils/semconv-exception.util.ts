@@ -39,7 +39,7 @@ function deriveExceptionFields(
     record['exception.type'] = bounded(cutText(candidate.name))
     record['error.type'] = bounded(cutText(candidate.name))
   }
-  const header = headerCensor(candidate?.message, censorMessage)
+  const header = headerCensor(candidate?.name, candidate?.message, censorMessage)
   if (header !== undefined) {
     record['exception.message'] = bounded(cutText(header.censored))
   }

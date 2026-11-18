@@ -103,14 +103,16 @@ describe('the reads of the message and the size of what is searched', () => {
     const stack = `Error: ${message}\n    at run (/srv/app.js:1:1)`
 
     it('is censored, whatever part of the header the stack reads', () => {
-      const out = scrubStack(stack, { message, censored: '[REDACTED]' })
+      const out = scrubStack(stack, { name: 'Error', message, censored: '[REDACTED]' })
 
       expect(out).not.toContain('SECRET')
       expect(out.startsWith(opening)).toBe(true)
     })
 
     it('is left as it is when nothing censored it, at the same cost', () => {
-      expect(scrubStack(stack, { message, censored: message })).toBe(scrubStack(stack))
+      expect(scrubStack(stack, { name: 'Error', message, censored: message })).toBe(
+        scrubStack(stack)
+      )
     })
   })
 
@@ -118,7 +120,7 @@ describe('the reads of the message and the size of what is searched', () => {
     const stack = `Error: original\n    at run (/srv/app.js:1:1)${'x'.repeat(131_072)}`
     const message = `secret${'x'.repeat(131_072)}`
 
-    expect(scrubStack(stack, { message, censored: '[REDACTED]' })).toBe(
+    expect(scrubStack(stack, { name: 'Error', message, censored: '[REDACTED]' })).toBe(
       'Error: [REDACTED]…[truncated]'
     )
   })
@@ -126,17 +128,25 @@ describe('the reads of the message and the size of what is searched', () => {
   it('leaves a cut stack alone when the message is empty, whatever it is censored to', () => {
     const stack = `Error: \n    at run (/srv/app.js:1:1)${'x'.repeat(131_072)}`
 
-    expect(scrubStack(stack, { message: '', censored: '[REDACTED]' })).toBe(scrubStack(stack))
+    expect(scrubStack(stack, { name: 'Error', message: '', censored: '[REDACTED]' })).toBe(
+      scrubStack(stack)
+    )
   })
 
   it('rebuilds the header when the message is longer than a stack that does not hold it', () => {
     const stack = 'Error: short\n    at run (/srv/app.js:1:1)'
 
-    expect(scrubStack(stack, { message: 'x'.repeat(200_000), censored: '[R]' })).toBe('Error: [R]')
+    expect(
+      scrubStack(stack, { name: 'Error', message: 'x'.repeat(200_000), censored: '[R]' })
+    ).toBe('Error: [R]')
   })
 
   it('censors a header written with frames of two spaces', () => {
-    const out = scrubStack('Error: SEC\n  at foo (/a.ts:1:1)', { message: 'SEC', censored: '[R]' })
+    const out = scrubStack('Error: SEC\n  at foo (/a.ts:1:1)', {
+      name: 'Error',
+      message: 'SEC',
+      censored: '[R]'
+    })
 
     expect(out).toBe('Error: [R]\n  at foo (/a.ts:1:1)')
   })
@@ -144,7 +154,11 @@ describe('the reads of the message and the size of what is searched', () => {
 
 describe('headerCensor', () => {
   it('pairs a text message with its censored form', () => {
-    expect(headerCensor('secret', censor)).toEqual({ message: 'secret', censored: '[REDACTED]' })
+    expect(headerCensor('Error', 'secret', censor)).toEqual({
+      name: 'Error',
+      message: 'secret',
+      censored: '[REDACTED]'
+    })
   })
 
   it('removes the message from the header when the censor cannot answer', () => {
@@ -152,7 +166,11 @@ describe('headerCensor', () => {
       throw new Error('cannot censor')
     }
 
-    expect(headerCensor('secret', failing)).toEqual({ message: 'secret', censored: '' })
+    expect(headerCensor('Error', 'secret', failing)).toEqual({
+      name: 'Error',
+      message: 'secret',
+      censored: ''
+    })
     expect(sanitizeError(new Error('secret'), { censorMessage: failing }).stack).toMatch(
       /^Error: \n/
     )
@@ -162,6 +180,14 @@ describe('headerCensor', () => {
     ['a message that is not text', 42, censor],
     ['no censor', 'secret', undefined]
   ])('gives nothing for %s', (_label, message, censorMessage) => {
-    expect(headerCensor(message, censorMessage)).toBeUndefined()
+    expect(headerCensor('Error', message, censorMessage)).toBeUndefined()
+  })
+
+  it('takes an empty name for a name that is not text', () => {
+    expect(headerCensor(undefined, 'secret', censor)).toEqual({
+      name: '',
+      message: 'secret',
+      censored: '[REDACTED]'
+    })
   })
 })
