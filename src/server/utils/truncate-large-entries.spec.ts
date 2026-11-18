@@ -88,6 +88,53 @@ describe('createSizeBoundedSerializer', () => {
       })
     })
 
+    /*
+     * The size in the envelope is the size of the text Pino would write: every value is counted
+     * as written, a primitive that appears twice is two primitives, and only a reference back to an
+     * ancestor is a cycle. An exact size shows that the stack of ancestors is neither short nor long.
+     */
+    it('measures a mixed structure exactly, repeating primitives and nulls as they are written', () => {
+      const value = {
+        a: 'xy',
+        b: 'xy',
+        c: 1,
+        d: 1,
+        e: null,
+        f: null,
+        g: [1, 1, 'xy'],
+        h: { i: 'xy' }
+      }
+      const serialize = createSizeBoundedSerializer(() => value, 1)
+
+      const result = serialize('ignored') as Record<string, unknown>
+
+      expect(result['_originalSize']).toBe(Buffer.byteLength(JSON.stringify(value), 'utf-8'))
+    })
+
+    it('measures a cycle as the text "[Circular]", with an exact size', () => {
+      const value: Record<string, unknown> = { n: 1, payload: 'x'.repeat(40) }
+      value['self'] = value
+      const expected = JSON.stringify({ n: 1, payload: 'x'.repeat(40), self: '[Circular]' })
+      const serialize = createSizeBoundedSerializer(() => value, 1)
+
+      const result = serialize('ignored') as Record<string, unknown>
+
+      expect(result['_originalSize']).toBe(Buffer.byteLength(expected, 'utf-8'))
+      expect(result['_preview']).toBe(expected)
+    })
+
+    it('measures a cycle that closes after several levels, with an exact size', () => {
+      const inner: Record<string, unknown> = { depth: 2 }
+      const outer: Record<string, unknown> = { depth: 1, inner }
+      inner['back'] = outer
+      const expected = JSON.stringify({ depth: 1, inner: { depth: 2, back: '[Circular]' } })
+      const serialize = createSizeBoundedSerializer(() => outer, 1)
+
+      const result = serialize('ignored') as Record<string, unknown>
+
+      expect(result['_preview']).toBe(expected)
+    })
+
     it('is returned as it is when its measured size is under the ceiling', () => {
       const value = cyclic('small')
       const serialize = createSizeBoundedSerializer(() => value, 1000)

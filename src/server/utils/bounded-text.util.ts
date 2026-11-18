@@ -62,7 +62,8 @@ export function cutBytes(text: string, maxBytes: number): string {
   const bytes = Buffer.from(text, 'utf-8')
   let end = Math.min(marked ? maxBytes - markerBytes : maxBytes, bytes.length)
   // A continuation byte (10xxxxxx) starts nothing: step back to the byte that starts the character.
+  // The first byte of a text is never one, so the step stops before it.
   // `end` is below `bytes.length`: the text is over the ceiling, so the byte at `end` exists.
-  while (end > 0 && (bytes.readUInt8(end) & 0xc0) === 0x80) end -= 1
+  while ((bytes.readUInt8(end) & 0xc0) === 0x80) end -= 1
   return bytes.subarray(0, end).toString('utf-8') + (marked ? TEXT_TRUNCATED : '')
 }

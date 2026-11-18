@@ -44,12 +44,13 @@ export interface TruncatedEntry {
  * @throws Error When the value cannot be read at all (a `toJSON` or a getter that throws).
  */
 function measurableJson(value: unknown): string | undefined {
+  // Stryker disable next-line ArrayDeclaration: equivalent: the first visit pops every entry above the holder of the root, so an entry present at the start is gone before it is read.
   const ancestors: unknown[] = []
   return JSON.stringify(value, function (this: unknown, _key: string, inner: unknown): unknown {
     if (typeof inner === 'bigint') return inner.toString()
-    if (typeof inner !== 'object' || inner === null) return inner
     // `this` is the object that holds `inner`: whatever sits above it on the stack is no longer an
-    // ancestor of what is being visited.
+    // ancestor of what is being visited. A primitive is pushed too and popped by the next visit, so it
+    // is never taken for an ancestor.
     while (ancestors.length > 0 && ancestors[ancestors.length - 1] !== this) ancestors.pop()
     if (ancestors.includes(inner)) return '[Circular]'
     ancestors.push(inner)

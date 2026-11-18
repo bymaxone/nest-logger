@@ -110,6 +110,10 @@ describe('cutBytes — a text cut to a byte ceiling', () => {
     expect(cutBytes('x'.repeat(100_000), Number.POSITIVE_INFINITY)).toHaveLength(100_000)
   })
 
+  it('writes only the marker when the ceiling is exactly the marker', () => {
+    expect(cutBytes('x'.repeat(100), MARKER_BYTES)).toBe(TEXT_TRUNCATED)
+  })
+
   it('cuts without the marker when the ceiling cannot hold it, so the ceiling still holds', () => {
     expect(cutBytes('x'.repeat(100), 5)).toBe('xxxxx')
     expect(cutBytes('€'.repeat(100), 5)).toBe('€')
