@@ -362,7 +362,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     // string case: the `err` serializer derives the stack from the Error itself,
     // so writing both would emit the same trace under two names.
     assignIfDefined(payload, 'err', findErrorParam(optionalParams))
-    this.pino.error(payload, this.nestStyleMessage(undefined, fields, text, message))
+    this.pino.error(payload, this.nestStyleMessage('error', undefined, fields, text, message))
   }
 
   /**
@@ -563,13 +563,16 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
 
   /** Emit a NestJS-style variadic log, dispatching by level without computed indexing. */
   private nestStyleMessage(
+    level: PinoLevelMethod | 'error',
     leading: Error | undefined,
     fields: Record<string, unknown> | undefined,
     text: ObjectMessageText | undefined,
     message: unknown
   ): string {
     if (leading !== undefined) return safeErrorMessage(leading)
-    if (fields !== undefined) return toBoundedMessage(this.censorText(text))
+    if (fields !== undefined) {
+      return toBoundedMessage(this.censorText(text, this.pino.isLevelEnabled(level)))
+    }
     return safeLogMessage(message)
   }
 
@@ -579,14 +582,15 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * value the pipeline censors or cuts in the field itself.
    *
    * @param text - The text and the member it came from.
+   * @param emitted - Whether the entry is written, so that a cut of it is counted.
    * @returns The censored text, or an empty one when the redactor cannot be applied.
    */
-  private censorText(text: ObjectMessageText | undefined): string {
+  private censorText(text: ObjectMessageText | undefined, emitted: boolean): string {
     if (text === undefined) return ''
     const finish =
       (Reflect.get(this.pino, ENTRY_TEXT_FINISHER) as EntryTextFinisher | undefined) ??
       createEntryTextFinisher(this.redact, undefined)
-    return finish(text.key, text.text)
+    return finish(text.key, text.text, emitted)
   }
 
   private emitNestStyle(level: PinoLevelMethod, message: unknown, optionalParams: unknown[]): void {
@@ -605,7 +609,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     assignIfDefined(payload, 'err', leading ?? findErrorParam(optionalParams))
     // A leading `Error` becomes the message, matching what `error(err)` emits —
     // `String(error)` would have produced the `"Error: …"` prefix instead.
-    const msg = this.nestStyleMessage(leading, fields, text, message)
+    const msg = this.nestStyleMessage(level, leading, fields, text, message)
     switch (level) {
       case 'info':
         this.pino.info(payload, msg)

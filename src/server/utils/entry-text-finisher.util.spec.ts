@@ -21,11 +21,13 @@ const identity: Redactor = (value) => value
 
 describe('createEntryTextFinisher', () => {
   it('gives the text of a member the redactor censors as the redactor wrote it', () => {
-    expect(createEntryTextFinisher(censoring, undefined)('event', 'secret')).toBe('[REDACTED]')
+    expect(createEntryTextFinisher(censoring, undefined)('event', 'secret', true)).toBe(
+      '[REDACTED]'
+    )
   })
 
   it('leaves the text of a member the redactor does not censor', () => {
-    expect(createEntryTextFinisher(censoring, undefined)('message', 'plain')).toBe('plain')
+    expect(createEntryTextFinisher(censoring, undefined)('message', 'plain', true)).toBe('plain')
   })
 
   it.each([
@@ -35,14 +37,14 @@ describe('createEntryTextFinisher', () => {
   ])('cuts at the limit: %s', (_label, length, isCut) => {
     const text = 'x'.repeat(length)
 
-    const out = createEntryTextFinisher(identity, LIMIT)('message', text)
+    const out = createEntryTextFinisher(identity, LIMIT)('message', text, true)
 
     expect(out).toBe(isCut ? 'x'.repeat(LIMIT) + TEXT_TRUNCATED : text)
   })
 
   it('does not cut when there is no limit', () => {
     expect(
-      createEntryTextFinisher(identity, undefined)('message', 'x'.repeat(100_000))
+      createEntryTextFinisher(identity, undefined)('message', 'x'.repeat(100_000), true)
     ).toHaveLength(100_000)
   })
 
@@ -56,17 +58,17 @@ describe('createEntryTextFinisher', () => {
     ['returns text that is not a string', (): unknown => ({ message: 1 })],
     ['returns a value that is not an object', (): unknown => null]
   ])('gives the empty string when the redactor %s', (_label, redactor) => {
-    expect(createEntryTextFinisher(redactor as unknown as Redactor, LIMIT)('message', 'text')).toBe(
-      ''
-    )
+    expect(
+      createEntryTextFinisher(redactor as unknown as Redactor, LIMIT)('message', 'text', true)
+    ).toBe('')
   })
 
   describe('the count of the texts it cuts', () => {
-    const cuts = (text: string, limit: number | undefined): number => {
+    const cuts = (text: string, limit: number | undefined, emitted = true): number => {
       let count = 0
       createEntryTextFinisher(identity, limit, () => {
         count += 1
-      })('message', text)
+      })('message', text, emitted)
       return count
     }
 
@@ -75,10 +77,17 @@ describe('createEntryTextFinisher', () => {
     })
 
     it.each([
-      ['a text at the limit', 'x'.repeat(LIMIT), LIMIT],
-      ['a text with no limit', 'x'.repeat(100_000), undefined]
-    ])('does not call back for %s', (_label, text, limit) => {
-      expect(cuts(text, limit)).toBe(0)
+      ['a text at the limit', 'x'.repeat(LIMIT), LIMIT, true],
+      ['a text with no limit', 'x'.repeat(100_000), undefined, true],
+      ['an entry that is not written', 'x'.repeat(LIMIT + 1), LIMIT, false]
+    ])('does not call back for %s', (_label, text, limit, emitted) => {
+      expect(cuts(text, limit, emitted)).toBe(0)
+    })
+
+    it('still cuts the text of an entry that is not written', () => {
+      const out = createEntryTextFinisher(identity, LIMIT)('message', 'x'.repeat(LIMIT + 1), false)
+
+      expect(out).toBe(`${'x'.repeat(LIMIT)}${TEXT_TRUNCATED}`)
     })
   })
 })

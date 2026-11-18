@@ -68,6 +68,22 @@ describe('the size bounds count what they cut', () => {
     expect(totals(health)).toEqual([0, expected])
   })
 
+  /*
+   * Nothing is written for a level the logger does not emit, so nothing is cut and nothing is
+   * counted: the count is of the entries that carry a cut, like the fields that are cut in the
+   * formatter, which Pino does not run for a level below the configured one.
+   */
+  it.each([
+    ['a message that is the text', { message: 'x'.repeat(500) }],
+    ['an event, which is a field and the text', { event: 'y'.repeat(500) }]
+  ])('counts no cut for a level below the configured one: %s', (_label, message) => {
+    const { service, health } = create({ level: 'info', maxStringLength: 64 })
+
+    service.debug(message)
+
+    expect(totals(health)).toEqual([0, 0])
+  })
+
   it('counts a serializer output over the ceiling, under max_entry_size', () => {
     const { service, health } = create({
       maxEntrySizeBytes: 1024,
