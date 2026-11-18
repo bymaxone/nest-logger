@@ -46,6 +46,23 @@ describe('the message in the derived exception fields', () => {
     expect(out['exception.stacktrace']).toMatch(/^Error: secret\n/)
   })
 
+  it('reads the message of the error once, as a getter of the caller is its code', () => {
+    let reads = 0
+    const err = { name: 'Error', stack: STACK }
+    Object.defineProperty(err, 'message', {
+      enumerable: false,
+      get(): string {
+        reads += 1
+        return 'secret'
+      }
+    })
+
+    const out = derive(err, censor)
+
+    expect(reads).toBe(1)
+    expect(out['exception.message']).toBe('[REDACTED]')
+  })
+
   it('writes no stacktrace for an error that has none', () => {
     const out = derive({ name: 'Error', message: 'secret' }, censor)
 
