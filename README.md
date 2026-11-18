@@ -991,7 +991,7 @@ Implements NestJS `LoggerService`. All methods are available via `@InjectLogger(
 | `warnStructured`  | `(logKey, msg, userId?, meta?)`   | Structured warn log — takes a **message string**                 |
 | `errorStructured` | `(logKey, error, userId?, meta?)` | Structured error log — takes an **`Error`**, serialized to `err` |
 
-`meta` carries arbitrary fields, except that `logKey`, `userId` and `context` belong to the payload (read from the authenticated ALS scope, so a metadata bag cannot forge them) and `__proto__`, `constructor` and `prototype` are dropped, since they name a prototype chain rather than a field.
+`meta` carries arbitrary fields, except that `logKey`, `userId` and `context` belong to the payload (read from the authenticated ALS scope, so a metadata bag cannot forge them), `level`, `time`, `msg`, `service`, `service.*`, `deployment` and `deployment.*` are written by the logger itself and are dropped from `meta`, and `__proto__`, `constructor` and `prototype` are dropped, since they name a prototype chain rather than a field. A key the logger writes from the request context or from the active span (`requestId`, `tenantId`, the trace fields) keeps the logger's value when the payload carries the same key, for `meta`, an object message and the raw Pino logger alike, except `userId`, which a call names as an argument and which wins over the one of the request context; a key the logger does not write, such as a `requestId` outside a request, keeps the payload's own value. The raw Pino logger from `getRawLogger()` bypasses the owned-key guards of `meta` and of an object message, so a payload can still repeat `level`, `service` or `userId` there; the request and trace keys still win, and redaction still applies.
 
 **NestJS `LoggerService` bridge** — the variadic contract NestJS calls, so `app.useLogger()` works. These take a message, not a log key.
 
@@ -1004,13 +1004,15 @@ Implements NestJS `LoggerService`. All methods are available via `@InjectLogger(
 | `fatal`   | `(message, ...optionalParams)`         | → Pino `fatal`                                 |
 | `error`   | `(message \| Error, stack?, context?)` | An `Error` routes to the serialized `err` path |
 
+**An object as the message.** A plain object (an object literal or a parsed JSON object) passed as the message of `log`, `warn`, `error`, `debug`, `verbose` or `fatal` is written as the fields of the entry, through the same redaction and `maxStringLength` pipeline as any other field, so `this.logger.warn({ event: 'QUEUE_DRAINED', jobs: 7, password })` gives an entry with `event`, `jobs` and a censored `password`. The entry text (`msg`) is its `message` string, else its `event` string, else empty; a `message` that is the text is not repeated as a field. `logKey`, `userId`, `context`, `level`, `time`, `msg`, `service`, `service.*`, `deployment` and `deployment.*` in the object are dropped, as they are from `meta`. The text is censored under the names of the field it came from (`event` or `message`), also with `redactStrategy: 'paths'`, and cut at `maxStringLength` like that field. An `Error`, and an object shaped like one (a string `name` and a string `message`), keep their own error-only path, and a value that is not plain (a class instance, an array) is still written as its string form.
+
 **Helpers**
 
 | Method         | Signature    | Notes                                                             |
 | -------------- | ------------ | ----------------------------------------------------------------- |
 | `child`        | `(bindings)` | New `PinoLoggerService` over a Pino child logger                  |
 | `setContext`   | `(context)`  | Global label — ⚠️ singleton; prefer `@InjectLogger(MyClass.name)` |
-| `getRawLogger` | `()`         | The underlying Pino instance                                      |
+| `getRawLogger` | `()`         | The underlying Pino instance; bypasses the `meta` guards above    |
 
 > [!NOTE]
 > There is no `fatalStructured` / `debugStructured`. Structured `fatal` and `debug` helpers are out of scope until a consumer needs them; use `getRawLogger()` in the meantime.

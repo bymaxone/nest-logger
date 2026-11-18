@@ -28,6 +28,8 @@ import { cutText } from './utils/bounded-text.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
+import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from './utils/entry-text-finisher.util'
+import { mergeMixinSafely } from './utils/merge-mixin-safely.util'
 import {
   createOwnFieldPolicy,
   type OwnFieldPolicy,
@@ -44,7 +46,6 @@ import {
 import { assignOwnErrorFields, sanitizeError, scrubStack } from './utils/sanitize-error.util'
 import { withSerializedRequest } from './utils/serialize-request.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
-import { RESERVED_LOG_KEYS } from '../shared/constants/reserved-log-keys.constants'
 
 /**
  * One path segment: either a `["quoted"]` / `['quoted']` bracket segment, whose
@@ -576,37 +577,21 @@ function buildSerializers(
 }
 
 /**
- * Pino's `mixinMergeStrategy`: merge the caller's object with the mixin result without letting a
- * throwing getter crash the log call.
+ * Leaves on the instance the function that finishes the entry text of an object message: censored
+ * under the names of its field, whatever the strategy, and cut at `maxStringLength` like the field.
  *
- * @param mergeObject - The caller's object.
- * @param mixinObject - The mixin result.
- * @returns The merged record, or the mixin result alone marked as a redaction failure.
+ * @param logger - The Pino instance the factory built.
+ * @param options - Fully-defaulted module options.
+ * @returns `logger`.
  */
-function mergeMixinSafely(mergeObject: object, mixinObject: object): object {
-  // `formatters.log` is NOT the first code to touch the caller's object: Pino
-  // merges the mixin result with it first, and the default strategy's
-  // `Object.assign` invokes every own getter. A throwing getter therefore
-  // crashed the log call before the redactor could return its fail-closed
-  // envelope. Owning the merge moves that boundary inside the guarantee.
-  try {
-    // Merged into a FRESH target rather than into `mixinObject`. `Object.assign`
-    // copies key by key, so a getter that throws part-way leaves everything
-    // read before it already written into the target — and the catch below
-    // would then emit that prefix, contradicting the sentence it is written
-    // under. A disposable target keeps the partial writes in the value that
-    // is about to be discarded.
-    return Object.assign({}, mixinObject, mergeObject)
-  } catch {
-    // The caller's object cannot be read, so it cannot be proven safe and is
-    // dropped WHOLE — not up to the property that threw. The mixin's own
-    // ambient context (requestId, trace ids) is library-produced and kept.
-    return {
-      ...mixinObject,
-      _redactionFailed: true,
-      _logKey: RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
-    }
-  }
+function withEntryTextFinisher(
+  logger: PinoLogger,
+  options: ResolvedBymaxLoggerModuleOptions
+): PinoLogger {
+  // The defaults of the name redactor cover the names whatever the strategy.
+  const redact = buildNameRedactor(options)
+  Reflect.set(logger, ENTRY_TEXT_FINISHER, createEntryTextFinisher(redact, options.maxStringLength))
+  return logger
 }
 
 /**
@@ -776,5 +761,6 @@ export function buildPinoInstance(
     mixinMergeStrategy: mergeMixinSafely
   }
 
-  return pino(pinoOptions, pino.multistream(buildStreams(options, destinations, health)))
+  const streams = pino.multistream(buildStreams(options, destinations, health))
+  return withEntryTextFinisher(pino(pinoOptions, streams), options)
 }

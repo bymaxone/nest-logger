@@ -1,0 +1,169 @@
+/**
+ * Verifies the merge of the mixin result with the caller's object: a key the mixin writes (the
+ * request context, the trace fields) is the mixin's value whatever the caller's object carries, a
+ * key the mixin leaves undefined does not erase the caller's own value, a key only the caller has is
+ * kept, and an object that cannot be read is dropped whole while the mixin's keys stay.
+ *
+ * Layer: server, tests. Driven through the real factory, so the assertions are on the line a
+ * destination receives.
+ */
+import { applyDefaults } from './config/default-options'
+import type { ILogDestination } from './interfaces/log-destination.interface'
+import { buildPinoInstance } from './pino-factory'
+import { DestinationHealth } from './services/destination-health.service'
+import { LogContextService } from './services/log-context.service'
+
+function createPipeline(): {
+  logContext: LogContextService
+  log(payload: object): Record<string, unknown>
+} {
+  const lines: string[] = []
+  const destination: ILogDestination = {
+    name: 'capture',
+    write(line: string): void {
+      lines.push(line)
+    }
+  }
+  const logContext = new LogContextService()
+  const pino = buildPinoInstance(
+    applyDefaults({ service: { name: 'app', version: '1.0.0' } }),
+    logContext,
+    [destination],
+    new DestinationHealth()
+  )
+  return {
+    logContext,
+    log: (payload) => {
+      pino.info(payload, 'text')
+      return JSON.parse(lines[lines.length - 1] ?? '{}') as Record<string, unknown>
+    }
+  }
+}
+
+describe('the merge of the mixin result with the caller object', () => {
+  it('keeps the request context values over the same keys in the object', () => {
+    const { logContext, log } = createPipeline()
+
+    const entry = logContext.run({ requestId: 'req-real', tenantId: 'tenant-real' }, () =>
+      log({ requestId: 'forged', tenantId: 'forged', attempts: 3 })
+    )
+
+    expect(entry).toMatchObject({ requestId: 'req-real', tenantId: 'tenant-real', attempts: 3 })
+  })
+
+  it('keeps the userId a call names over the one of the request context', () => {
+    const { logContext, log } = createPipeline()
+
+    const entry = logContext.run({ requestId: 'req-real', userId: 'u_als' }, () =>
+      log({ userId: 'u_explicit' })
+    )
+
+    expect(entry).toMatchObject({ requestId: 'req-real', userId: 'u_explicit' })
+  })
+
+  /*
+   * An own `__proto__` key of a parsed object swaps the prototype of the merge target, and a
+   * `userId` on that prototype is not the call's own value: the context's userId stays.
+   */
+  it('keeps the userId of the request context when the object carries a __proto__ key', () => {
+    const { logContext, log } = createPipeline()
+    const parsed = JSON.parse('{"__proto__":{"userId":"forged"},"attempts":3}') as object
+
+    const entry = logContext.run({ userId: 'u_als' }, () => log(parsed))
+
+    expect(entry).toMatchObject({ userId: 'u_als', attempts: 3 })
+  })
+
+  /*
+   * An own `__proto__` key swaps the prototype of a plain merge target, and the ambient keys are
+   * then written through whatever that prototype carries: a setter runs caller code and a
+   * non-writable property drops the write. The ambient value is an own data property of the entry.
+   */
+  describe('a payload with an own __proto__ key that carries', () => {
+    const withProto = (proto: object): object =>
+      Object.defineProperty({ attempts: 3 }, '__proto__', {
+        value: proto,
+        enumerable: true,
+        configurable: true,
+        writable: true
+      })
+
+    it('a setter for a key of the request context, which does not run', () => {
+      const { logContext, log } = createPipeline()
+      let calls = 0
+      const proto = Object.defineProperty({}, 'requestId', {
+        set: () => {
+          calls += 1
+        },
+        enumerable: true,
+        configurable: true
+      })
+
+      const entry = logContext.run({ requestId: 'r_als' }, () => log(withProto(proto)))
+
+      expect(entry).toMatchObject({ requestId: 'r_als', attempts: 3 })
+      expect(calls).toBe(0)
+    })
+
+    it('a non-writable property for a key of the request context, which does not drop it', () => {
+      const { logContext, log } = createPipeline()
+      const proto = Object.freeze({ requestId: 'frozen' })
+
+      const entry = logContext.run({ requestId: 'r_als' }, () => log(withProto(proto)))
+
+      expect(entry).toMatchObject({ requestId: 'r_als', attempts: 3 })
+    })
+
+    it('a setter for the same key, which does not forge it', () => {
+      const { logContext, log } = createPipeline()
+      const proto = Object.defineProperty({}, 'requestId', {
+        set(this: Record<string, unknown>) {
+          Object.defineProperty(this, 'requestId', { value: 'forged', enumerable: true })
+        },
+        enumerable: true,
+        configurable: true
+      })
+
+      const entry = logContext.run({ requestId: 'r_als' }, () => log(withProto(proto)))
+
+      expect(entry['requestId']).toBe('r_als')
+    })
+  })
+
+  it('writes the userId of the request context when the call names none', () => {
+    const { logContext, log } = createPipeline()
+
+    const entry = logContext.run({ userId: 'u_als' }, () => log({ attempts: 3 }))
+
+    expect(entry).toMatchObject({ userId: 'u_als' })
+  })
+
+  it('keeps the object value for a key the context holds as undefined', () => {
+    const { logContext, log } = createPipeline()
+
+    const entry = logContext.run({ requestId: 'req-real', tenantId: undefined } as never, () =>
+      log({ tenantId: 'from-object' })
+    )
+
+    expect(entry).toMatchObject({ requestId: 'req-real', tenantId: 'from-object' })
+  })
+
+  it('keeps the object value for a key the context does not hold', () => {
+    const { log } = createPipeline()
+
+    expect(log({ requestId: 'job-7' })).toMatchObject({ requestId: 'job-7' })
+  })
+
+  it('drops an object that cannot be read and keeps the context keys', () => {
+    const { logContext, log } = createPipeline()
+    const hostile = {
+      get boom(): string {
+        throw new Error('getter')
+      }
+    }
+
+    const entry = logContext.run({ requestId: 'req-real' }, () => log(hostile))
+
+    expect(entry).toMatchObject({ requestId: 'req-real', _redactionFailed: true })
+  })
+})

@@ -80,15 +80,24 @@ describe('the variadic methods with an Error that cannot be read', () => {
 })
 
 describe('the variadic methods with a message that has no text form', () => {
+  /*
+   * A plain object is the fields of the entry and has no text to read, so it is not a shape here.
+   * What has no text form is a value that is not plain: an instance whose toString throws, and an
+   * object whose prototype chain ends in a null prototype.
+   */
   const shapes: [string, () => unknown][] = [
-    ['a null-prototype object', () => Object.create(null) as unknown],
     [
-      'an object whose toString throws',
-      () => ({
-        toString(): string {
-          return throwing('toString exploded')
-        }
-      })
+      'an object whose prototype has no toString',
+      () => Object.create(Object.create(null)) as unknown
+    ],
+    [
+      'an instance whose toString throws',
+      () =>
+        new (class {
+          toString(): string {
+            return throwing('toString exploded')
+          }
+        })()
     ]
   ]
   const methods: [string, (s: PinoLoggerService, v: unknown) => void][] = [
@@ -111,6 +120,27 @@ describe('the variadic methods with a message that has no text form', () => {
       expect(entries()[0]).toMatchObject({ msg: 'Unreadable log message' })
     })
   })
+
+  describe.each([
+    ['a null-prototype object', () => Object.create(null) as unknown],
+    [
+      'an object whose toString throws',
+      () => ({
+        toString(): string {
+          return throwing('toString exploded')
+        }
+      })
+    ]
+  ] as [string, () => unknown][])('with %s, which is plain', (_shape, make) => {
+    it.each(methods)('%s emits an entry with no text and does not throw', (_m, call) => {
+      const { service, entries } = createPipeline()
+
+      expect(() => call(service, make())).not.toThrow()
+
+      expect(entries()).toHaveLength(1)
+      expect(entries()[0]).toMatchObject({ msg: '' })
+    })
+  })
 })
 
 describe('the variadic methods with a readable error (control)', () => {
@@ -120,5 +150,54 @@ describe('the variadic methods with a readable error (control)', () => {
     call(service, new TypeError('boom'))
 
     expect(entries()[0]?.['err']).toMatchObject({ type: 'TypeError', message: 'boom' })
+  })
+})
+
+describe('the variadic methods with an object message whose members throw', () => {
+  /*
+   * The entry text is read from `message`, then from `event`; a member that throws on read is
+   * absent, so the next candidate stands and the call is not taken down.
+   */
+  it.each([
+    ['error', (s: PinoLoggerService, v: unknown) => s.error(v)],
+    ['warn', (s: PinoLoggerService, v: unknown) => s.warn(v)]
+  ])('%s reads the event when the message throws', (_method, call) => {
+    const { service, entries } = createPipeline()
+    const hostile = {
+      get message(): string {
+        return throwing('message exploded')
+      },
+      event: 'LIB_EVENT'
+    }
+
+    expect(() => call(service, hostile)).not.toThrow()
+
+    expect(entries()).toHaveLength(1)
+    expect(entries()[0]).toMatchObject({ msg: 'LIB_EVENT' })
+  })
+
+  it('uses no text when both members throw', () => {
+    const { service, entries } = createPipeline()
+    const hostile = {
+      get message(): string {
+        return throwing('message exploded')
+      },
+      get event(): string {
+        return throwing('event exploded')
+      }
+    }
+
+    expect(() => service.warn(hostile)).not.toThrow()
+
+    expect(entries()[0]).toMatchObject({ msg: '' })
+  })
+
+  it('keeps a message that is a string as the text and drops it from the fields', () => {
+    const { service, entries } = createPipeline()
+
+    service.warn({ message: 'text', event: 'LIB_EVENT', attempts: 3 })
+
+    expect(entries()[0]).toMatchObject({ msg: 'text', event: 'LIB_EVENT', attempts: 3 })
+    expect(entries()[0]).not.toHaveProperty('message')
   })
 })

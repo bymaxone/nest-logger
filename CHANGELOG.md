@@ -12,8 +12,44 @@ heading here.
 
 ## [Unreleased]
 
+### Breaking
+
+- **A payload cannot replace the correlation keys the logger writes from the request context and
+  the active span.** A `requestId`, a `tenantId` or another key of the request
+  context inside a request, or the trace fields under an active span (`traceId`, `spanId`, `traceFlags`, or the names you set in `otel`,
+  or `trace_id`, `span_id` and `trace_flags` with `fieldFormat: 'snake_case'`) carried by an
+  object message, by the metadata of a structured call or by the raw Pino logger replaced the
+  value the logger had written, so a line could be attributed to another request, tenant or trace.
+  The logger's value now wins, except `userId`, which a structured call names as an argument and which keeps winning over the one of the request context; a key the logger does not write, including a `requestId` outside any
+  request, is kept as the payload has it. **Apply:** nothing is required; code that set one of
+  these keys on purpose inside a request to override the context no longer gets that, so set it in
+  the request context instead (`LogContextService.run`).
+- **A key the logger writes itself can no longer be replaced from `meta` or from an object
+  message.** `level`, `time`, `msg`, `service` and `deployment` and, with `resourceFormat: 'flat'`,
+  `service.*` and `deployment.environment.name`, in the metadata of `info`, `warnStructured` and
+  `errorStructured`, were written as a second key of the same name, and a reader that keeps the
+  last of a repeated key saw the caller's `level`, `service` or environment. They are dropped from
+  the metadata and from an object message, as `logKey`, `userId` and `context` already were.
+  **Apply:** nothing is required; a field you named `level`, `time`, `msg`, `service` or
+  `deployment` in `meta` is no longer written, so rename it (`severity`, `elapsedMs`, `detail`,
+  `owner`, `rollout`).
+
 ### Fixed
 
+- **A plain object passed as the message of `log`, `warn`, `error`, `debug`, `verbose` or `fatal`
+  is written as the fields of the entry.** `new Logger('Queue').warn({ event: 'QUEUE_DRAINED',
+jobs: 7 })` through `app.useLogger(app.get(PinoLoggerService))` wrote `msg: "[object Object]"`
+  and every key was lost. The
+  keys are now fields of the entry, through the same redaction and `maxStringLength` pipeline as
+  any other field (a `password` is censored, a long string is cut), the entry text is the
+  object's `message` string, else its `event` string, else empty, and the keys the logger
+  owns are dropped from the object as they are from `meta`. The text is censored under the names of
+  the field it came from, also with `redactStrategy: 'paths'`, so a secret in `event` or `message`
+  does not reach `msg`, and it is cut at `maxStringLength` like the field. An `Error`, and an object shaped like one, keep their own error-only path,
+  and a value that is not plain (a class instance, an array) is still written as its string form.
+  **Apply:** code that logged an object and got `[object Object]` now gets its fields; a
+  dashboard or an alert that matched `[object Object]` in `msg` matches the `event` or `message`
+  text instead.
 - **An option that holds `undefined` or `null` is read as not set, in the options and in every
   group.** An `undefined` in a group replaced its default in the spread that merges the two, so `shouldCaptureExceptions: undefined` stayed
   `undefined` and not the default `true`, and a `null` anywhere was refused as a value of the wrong
