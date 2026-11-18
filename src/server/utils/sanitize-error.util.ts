@@ -582,6 +582,25 @@ export function headerCensor(
 }
 
 /**
+ * The part of a stack that is read, with the message censored where it opens the stack.
+ *
+ * A message longer than the part that is read cannot be found in it, and when the stack was cut
+ * there, all of that part is the header: it is censored whole when the message was censored, and
+ * left as it is when it was not.
+ *
+ * @param head - The part of the stack that is read.
+ * @param cut - Whether the stack was cut to make `head`.
+ * @param header - The message of the error and its censored form.
+ * @returns `head`, with the header censored.
+ */
+function censorHead(head: string, cut: boolean, header: HeaderCensor): string {
+  if (cut && header.message.length > head.length) {
+    return header.censored === header.message ? head : header.censored
+  }
+  return censorStackHeader(head, header.message, header.censored)
+}
+
+/**
  * Remove `node_modules/` frames from a stack trace so logs surface app code, and cut it at
  * {@link MAX_TEXT_LENGTH}.
  *
@@ -605,13 +624,11 @@ export function scrubStack(stack: string, header?: HeaderCensor): string {
   // repeats the error message. Without this, attacker-supplied text reaches the
   // terminal through `err.stack` even when `msg` is already pinned. Newlines are
   // preserved — a stack is legitimately multi-line.
-  // The scan is the same bound for every stack, and the message is added to it when it is censored:
-  // the message is already in memory and the header holds all of it, so a message longer than the
-  // bound is found and censored instead of being cut inside the header.
-  const scan = header === undefined ? MAX_STACK_SCAN : MAX_STACK_SCAN + header.message.length
-  const head = stack.slice(0, scan)
+  // The scan is the same bound for every stack and every message: how much is read never depends on
+  // how long the message is, which a caller controls.
+  const head = stack.slice(0, MAX_STACK_SCAN)
   const scrubbed = escapeControlCharacters(
-    (header === undefined ? head : censorStackHeader(head, header.message, header.censored))
+    (header === undefined ? head : censorHead(head, stack.length > head.length, header))
       .split('\n')
       .filter((line) => !line.includes('node_modules'))
       .join('\n')

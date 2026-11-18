@@ -84,14 +84,28 @@ describe('the reads of the message and the size of what is searched', () => {
     expect(reads).toBe(2)
   })
 
-  it('censors a message longer than the scan that bounds the stack', () => {
+  it('censors the whole part that is read when the message is longer than it', () => {
     const message = 'S'.repeat(200_000) + ' secret'
     const stack = `Error: ${message}\n    at run (/srv/app.js:1:1)`
 
     const out = scrubStack(stack, { message, censored: '[REDACTED]' })
 
-    expect(out).toMatch(/^Error: \[REDACTED\]\n/)
-    expect(out).not.toContain('SSSS')
+    expect(out).toBe('[REDACTED]…[truncated]')
+  })
+
+  it('leaves the part that is read as it is when a message longer than it was not censored', () => {
+    const message = 'S'.repeat(200_000)
+    const stack = `Error: ${message}\n    at run (/srv/app.js:1:1)`
+
+    expect(scrubStack(stack, { message, censored: message })).toBe(scrubStack(stack))
+  })
+
+  it('searches a message that is longer than the stack, which was not cut, and does not find it', () => {
+    const stack = 'Error: short\n    at run (/srv/app.js:1:1)'
+
+    expect(scrubStack(stack, { message: 'x'.repeat(200_000), censored: '[R]' })).toBe(
+      scrubStack(stack)
+    )
   })
 
   it('censors a header written with frames of two spaces', () => {

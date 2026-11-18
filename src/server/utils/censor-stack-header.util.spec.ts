@@ -130,7 +130,7 @@ describe('censorStackHeader', () => {
     expect(censorStackHeader(stack, message, censored)).toBe(stack)
   })
 
-  it('censors a message that overlaps itself in time that does not depend on its length', () => {
+  it('censors a message of 100,000 characters that overlaps itself in under a second', () => {
     const message = 'a'.repeat(100_000)
     const stack = 'a'.repeat(131_072 + 100_000)
     const started = Date.now()
