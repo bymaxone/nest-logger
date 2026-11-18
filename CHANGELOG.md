@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.24] - 2026-11-18
+
 ### Breaking
 
 - **A key that only spells a key the logger writes is dropped, like the key itself.** 1.4.23 dropped
@@ -25,15 +27,23 @@ heading here.
   call is dropped from the payload of `meta`, of an object message and of the raw Pino logger. A key
   that is not a spelling of one (`trace_ids`, `levels`, `my_trace`) is kept, and outside a request or
   a span, where the logger writes no such key, a `request_id` is the payload's own field. **Apply:**
-  nothing is required; a field you named like one of these (`Level`, `time_`, `request_id` inside a
-  request) is no longer written, so rename it (`severity`, `elapsedMs`, `legacyRequestId`).
+  nothing is required; search the `meta` of your calls and your object messages for a field whose
+  name, with the case and the `_`, `.` and `-` removed, is `level`, `time`, `msg`, `service`,
+  `deployment`, `logkey`, `userid` or `context`, or that starts with `service.` or `deployment.` in
+  any case (`Level`, `time_`, `log_key`, `Context`, `user_id`, `user.id`, `Service.x`): it is no
+  longer written on any call. Inside a request or a span the same holds, in `meta`, in an object
+  message and in the payload of the raw Pino logger, for the spellings of the keys the logger writes
+  there (`request_id`, `tenant_id`). Rename those fields (`severity`, `elapsedMs`,
+  `legacyRequestId`, `legacyUserId`).
 
 - **The lines the library writes about its destinations are library text, with the error of the host
   in `err`, and that error's message is censored.** The lines of `LOGGER_DESTINATION_WRITE_FAILED`
   and `LOGGER_DESTINATION_INIT_FAILED` (a failed `onInit`, a failed `onRegistryReady`) put the name
-  of the destination in their `msg` (`Log destination "audit" failed to write; the entry was
-dropped`). `msg` is now constant (`A log destination failed to write; the entry was dropped`) and
-  the name is in `destination` alone. A failed `onShutdown` was written as a text line,
+  of the destination in their `msg`, for example
+  `Log destination "audit" failed to write; the entry was dropped`. `msg` is now library text with
+  no name in it (for a write, `A log destination failed to write; the entry was dropped`) and the
+  name is in `destination` alone. A failed `onShutdown` was
+  written as a text line,
   `[DestinationRegistry] Shutdown failed for "audit": <the stack of the error>`, which put the whole
   stack of a host error on stderr outside any censor. It is now a JSON line like the others, under a
   new reserved key, `LOGGER_DESTINATION_SHUTDOWN_FAILED`, with `destination`, `err` and a constant
@@ -47,7 +57,9 @@ dropped`). `msg` is now constant (`A log destination failed to write; the entry 
   **Apply:** an alert or a search that matches the old text must match the `logKey` and the
   `destination` field instead: `LOGGER_DESTINATION_WRITE_FAILED` and `LOGGER_DESTINATION_INIT_FAILED`
   as before, and `LOGGER_DESTINATION_SHUTDOWN_FAILED` for a failed shutdown, which a match on
-  `Shutdown failed for` no longer finds. If you list the reserved keys (a dashboard filter, an
+  `Shutdown failed for` no longer finds, and a log shipper that read that line as text now receives
+  a JSON entry with `level: "error"`. The stack of the error is no longer written there: if you need
+  it, log it in your own `onShutdown`. If you list the reserved keys (a dashboard filter, an
   allow-list), add the new one. A `message` in `redactPaths` now also hides the message of the error
   in these lines.
 
@@ -56,8 +68,9 @@ dropped`). `msg` is now constant (`A log destination failed to write; the entry 
 - **The logger counts what it cuts and what its destinations refuse.** `LOGGER_OBSERVABILITY_TOKEN`
   provides an `ILoggerObservability`: `truncatedTotal(reason)` (the fields cut or replaced for a size
   bound, with `reason` of `'max_entry_size'` or `'max_string_length'`), `destinationErrorTotal()` (the
-  writes the destinations refused) and `deliveryState()` (how many destinations are up, how many
-  failed their init or refused a write, and whether one is healthy). The types `ILoggerObservability`,
+  writes the destinations refused) and `deliveryState()` (how many destinations finished their
+  `onInit`, how many of them failed it, how many refused a write or had an entry dropped, and whether
+  one is healthy). The types `ILoggerObservability`,
   `DeliveryState` and `TruncationReason` are exported with it. Nothing changes for a host that does
   not read them.
 
@@ -66,8 +79,8 @@ dropped`). `msg` is now constant (`A log destination failed to write; the entry 
   `LoggerMetricsContributor`, which registers `bymax_logger_entries_truncated_total{reason}` (with
   `reason` of `max_entry_size` or `max_string_length`) and `bymax_logger_destination_errors_total` on
   the registry `@bymax-one/nest-core` serves, and `LoggerHealthIndicator`, named `logger`, which is
-  `up` while at least one destination is healthy. `@bymax-one/nest-core` and `prom-client` are
-  optional peer dependencies, imported only by this subpath; the main entry needs neither. **Apply:**
+  `up` while at least one destination is healthy. `@bymax-one/nest-core` (`^1.6.10`) and `prom-client`
+  (`^15`) are optional peer dependencies, imported only by this subpath; the main entry needs neither. **Apply:**
   nothing is required; to publish the metrics, install the two peers and import
   `BymaxLoggerObservabilityModule` next to `BymaxLoggerModule`.
 
@@ -129,10 +142,8 @@ what the Breaking entry above says.
   back to an ancestor, or a `BigInt`, passed the size ceiling unmeasured, so a huge one reached the
   line. It is now measured as it is written (a cycle as `"[Circular]"`, a `BigInt` by its digits) and
   truncated when over the ceiling; a repeated reference without a cycle is counted every time it is
-  written. A value that cannot be read at all (a `toJSON` or a getter that throws) is replaced by the
-  truncation envelope with an `_originalSize` of `-1`, where it used to pass through. **Apply:**
-  nothing is required; an alert on `LOGGER_ENTRY_TRUNCATED` now also fires for these values, and
-  `_originalSize: -1` means the size is unknown.
+  written. **Apply:** nothing is required; an alert on `LOGGER_ENTRY_TRUNCATED` now also fires for
+  these values.
 - **A serializer that is itself `undefined` is refused with its type.** `serializers: { a: undefined }`
   said `options.serializers must map every serializer key to a function` and no more; it now ends in
   `Received undefined`, as the other refused members do. **Apply:** code that matches the text of
@@ -3236,7 +3247,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.23...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.24...HEAD
+[1.4.24]: https://github.com/bymaxone/nest-logger/compare/v1.4.23...v1.4.24
 [1.4.23]: https://github.com/bymaxone/nest-logger/compare/v1.4.22...v1.4.23
 [1.4.22]: https://github.com/bymaxone/nest-logger/compare/v1.4.21...v1.4.22
 [1.4.21]: https://github.com/bymaxone/nest-logger/compare/v1.4.20...v1.4.21
