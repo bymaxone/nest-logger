@@ -37,7 +37,7 @@ heading here.
 
 ### Documentation
 
-- **The README names every export of a public subpath.** Nine exports of the root entry and one of
+- **The README names every export of a public subpath.** Some exports of the root entry and one of
   `/shared` (the option and context types, the metadata key of the deprecated `@LogContext` and the
   `ReservedLogKey` union) were never named in it; an "Option and context types" table describes
   each, and a spec reads the barrels through the TypeScript compiler and fails when an export is
