@@ -588,7 +588,8 @@ function withEntryTextFinisher(
   logger: PinoLogger,
   options: ResolvedBymaxLoggerModuleOptions
 ): PinoLogger {
-  const redact = buildNameRedactor(options, true, true)
+  // The defaults of the name redactor cover the names whatever the strategy.
+  const redact = buildNameRedactor(options)
   Reflect.set(logger, ENTRY_TEXT_FINISHER, createEntryTextFinisher(redact, options.maxStringLength))
   return logger
 }

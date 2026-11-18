@@ -14,6 +14,11 @@ import type { Redactor } from './redact-by-name.util'
 /** Finishes the text that came from the member `key` of an object message. */
 export type EntryTextFinisher = (key: string, text: string) => string
 
+/**
+ * The key of the property on the Pino instance that holds the {@link EntryTextFinisher}: the
+ * protocol between the factory that sets it and the logger service that reads it. Internal; it is
+ * not exported from the package barrel.
+ */
 export const ENTRY_TEXT_FINISHER: unique symbol = Symbol('bymax.entryTextFinisher')
 
 /**
