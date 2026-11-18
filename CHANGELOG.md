@@ -28,6 +28,29 @@ heading here.
   nothing is required; a field you named like one of these (`Level`, `time_`, `request_id` inside a
   request) is no longer written, so rename it (`severity`, `elapsedMs`, `legacyRequestId`).
 
+- **The lines the library writes about its destinations are library text, with the error of the host
+  in `err`, and that error's message is censored.** The lines of `LOGGER_DESTINATION_WRITE_FAILED`
+  and `LOGGER_DESTINATION_INIT_FAILED` (a failed `onInit`, a failed `onRegistryReady`) put the name
+  of the destination in their `msg` (`Log destination "audit" failed to write; the entry was
+dropped`). `msg` is now constant (`A log destination failed to write; the entry was dropped`) and
+  the name is in `destination` alone. A failed `onShutdown` was written as a text line,
+  `[DestinationRegistry] Shutdown failed for "audit": <the stack of the error>`, which put the whole
+  stack of a host error on stderr outside any censor. It is now a JSON line like the others, under a
+  new reserved key, `LOGGER_DESTINATION_SHUTDOWN_FAILED`, with `destination`, `err` and a constant
+  `msg`, and its stack is not written. The message of the error in `err` of these lines, of
+  `HTTP_UNEXPECTED_ERROR_DROPPED` and of `LOGGER_OTEL_API_BROKEN` was bounded and escaped only; it
+  now also passes the censor of the message of an entry (`redactPaths` and `redactCensor`, under the
+  name `message`, whatever the strategy), so a credential in an address a driver could not reach is
+  no longer written. A censor that cannot answer leaves the line with an empty message. The other
+  text lines on stderr (the entries dropped for a full queue, the totals at shutdown, the spent
+  shutdown budget) carry counters and the escaped name of a destination, and are unchanged.
+  **Apply:** an alert or a search that matches the old text must match the `logKey` and the
+  `destination` field instead: `LOGGER_DESTINATION_WRITE_FAILED` and `LOGGER_DESTINATION_INIT_FAILED`
+  as before, and `LOGGER_DESTINATION_SHUTDOWN_FAILED` for a failed shutdown, which a match on
+  `Shutdown failed for` no longer finds. If you list the reserved keys (a dashboard filter, an
+  allow-list), add the new one. A `message` in `redactPaths` now also hides the message of the error
+  in these lines.
+
 ### Added
 
 - **The logger counts what it cuts and what its destinations refuse.** `LOGGER_OBSERVABILITY_TOKEN`
@@ -54,8 +77,9 @@ Nothing is required. A derived backend that builds the Pino instance itself thro
 `buildPinoInstance` passes its `DestinationHealth`, which now counts; one that provides its own
 `LOGGER_OBSERVABILITY_TOKEN` must return the three methods of `ILoggerObservability`.
 
-`PinoLoggerService` gains one private member, `errorText`, in its declaration. A subclass that
-defines a member of that name no longer compiles against it: rename yours. Nothing else about its
+`PinoLoggerService` gains one private member, `errorText`, and one public method,
+`censorMessageText(text)`, in its declaration. A subclass that defines a member of either name no
+longer compiles against it: rename yours. Nothing else about its
 constructor or its public methods changes. A service you build by hand over a Pino instance you built
 yourself censors the text of an `Error` with its own redactor, as it does the text of an object
 message; over a Pino instance from `buildPinoInstance` it uses the function the factory leaves on

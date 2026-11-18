@@ -95,7 +95,9 @@ export class PinoUnexpectedErrorSink implements IUnexpectedErrorSink {
         RESERVED_LOG_KEYS.HTTP_UNEXPECTED_ERROR_DROPPED,
         'PinoUnexpectedErrorSink',
         cause,
-        'An unexpected-error report could not be logged and was dropped.'
+        'An unexpected-error report could not be logged and was dropped.',
+        0,
+        (text) => this.logger.censorMessageText(text)
       )
     }
   }

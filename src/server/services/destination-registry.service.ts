@@ -36,20 +36,16 @@ import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import { DefaultStdoutDestination } from '../destinations/default-stdout.destination'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
-import { cutText } from '../utils/bounded-text.util'
-import {
-  escapeControlCharacters,
-  toBoundedMessage,
-  toSingleLineMessage
-} from '../utils/escape-log-text.util'
+import { buildMessageCensor } from '../pino-factory'
+import { toSingleLineMessage } from '../utils/escape-log-text.util'
 import { detectOtelTraceApi } from '../utils/otel-detector'
+import type { MessageCensor } from '../utils/report-destination-failure.util'
 import {
   reportDestinationFailure,
   safeDestinationName,
   safeMinLevel
 } from '../utils/report-destination-failure.util'
 import { writeStderrSafely } from '../utils/safe-stdio.util'
-import { isErrorLike } from '../utils/sanitize-error.util'
 import { withTimeout } from '../utils/with-timeout.util'
 
 /** How often the shutdown drain looks at the destinations' queues, in milliseconds. */
@@ -85,12 +81,17 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    *   for each destination's effective level.
    * @param health - Init-health record shared with the write fan-out.
    */
+  /** The censor of the `message` of an entry, for the message of the error in a failure line. */
+  private readonly censorMessage: MessageCensor
+
   constructor(
     @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly registered: readonly ILogDestination[],
     @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
     @Inject(LOGGER_OPTIONS_TOKEN) private readonly options: ResolvedBymaxLoggerModuleOptions,
     @Inject(DestinationHealth) private readonly health: DestinationHealth
-  ) {}
+  ) {
+    this.censorMessage = buildMessageCensor(options)
+  }
 
   /**
    * Initialize every registered destination. A destination whose `onInit`
@@ -211,13 +212,14 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    * @param cause - The thrown or rejected value.
    */
   private reportInitFailure(destination: ILogDestination, cause: unknown): void {
-    const name = safeDestinationName(destination)
     reportDestinationFailure(
       RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-      name,
+      safeDestinationName(destination),
       cause,
-      `Log destination "${name}" failed to initialize and will receive no entries. ` +
-        'If no destination initializes, entries fall back to raw NDJSON on stdout.'
+      'A log destination failed to initialize and will receive no entries. ' +
+        'If no destination initializes, entries fall back to raw NDJSON on stdout.',
+      0,
+      this.censorMessage
     )
   }
 
@@ -237,15 +239,16 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    */
   private reportHookFailure(destination: ILogDestination, cause: unknown): void {
     const stillActive = !this.health.isFailed(destination)
-    const name = safeDestinationName(destination)
     reportDestinationFailure(
       RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-      name,
+      safeDestinationName(destination),
       cause,
-      `Log destination "${name}" threw from onRegistryReady. ` +
+      'A log destination threw from onRegistryReady. ' +
         (stillActive
           ? 'It initialized successfully and keeps receiving entries; only anything it was holding from before init may be affected.'
-          : 'It had already failed to initialize and receives no entries; anything it was still holding is lost.')
+          : 'It had already failed to initialize and receives no entries; anything it was still holding is lost.'),
+      0,
+      this.censorMessage
     )
   }
 
@@ -284,7 +287,10 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
     // whenever the working directory was not the app root. Only warned when the
     // consumer opted in — a logger with auto-injection off is not missing
     // anything.
-    if (this.options.otel.shouldAutoInjectTraceContext && detectOtelTraceApi() === undefined) {
+    if (
+      this.options.otel.shouldAutoInjectTraceContext &&
+      detectOtelTraceApi(undefined, this.censorMessage) === undefined
+    ) {
       this.logger.warnStructured(
         RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_WARNING,
         'Trace-context auto-injection is enabled but @opentelemetry/api could not be ' +
@@ -426,54 +432,32 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
   }
 
   /**
-   * Report a failing `onShutdown` on stderr without letting the report itself
-   * abort the teardown of the destinations still queued behind it.
+   * Report a failing `onShutdown` on stderr, as a structured line like the other stages, without
+   * letting the report itself abort the teardown of the destinations still queued behind it.
    *
-   * The coercion is INSIDE the guard, not above it. Reading `stack`/`message` on
-   * an `Error` with hostile getters, and `String(cause)` on a value with a
-   * throwing `toString`/`Symbol.toPrimitive`, both throw — and this runs inside
-   * the `catch` that exists to keep one bad sink from mattering, so an escape
-   * here would propagate out of `onApplicationShutdown` and skip every remaining
-   * destination's flush. The never-throw contract has to cover READING the value,
-   * not just writing it, which is the same correction `reportDestinationFailure`
-   * already carries.
+   * The line is written by {@link reportDestinationFailure}, which holds every guard the report
+   * needs: the cause is read inside a guard (a hostile getter or `toPrimitive` degrades the detail
+   * and never the line), the text is escaped for a terminal, and the message of the error passes
+   * the censor of the `message` of an entry. The error is a field (`err`) and never part of `msg`,
+   * which is library text, and its stack is not written: a stack is text a host error carries
+   * whole, and the type and the censored message identify the failure.
    *
-   * The text is escaped for the same reason every other terminal-bound path is:
-   * a stack is legitimately multi-line, so `escapeControlCharacters` keeps its
-   * newlines and neutralizes everything else that can drive a terminal.
-   *
-   * The DESTINATION is passed rather than its name, so that read happens in here
-   * too. `name` is declared `readonly name: string` but nothing stops a consumer
-   * implementing it as a getter, and reading it at the call site would put it back
-   * outside the guard — inside the `catch`, where a throw has the same cost.
-   *
-   * Two separate guards, not one: a name that cannot be read must not also cost
-   * the failure detail, and a detail that cannot be read must not cost the name.
-   * Either alone still identifies which sink failed.
+   * The DESTINATION is passed rather than its name, so that read happens inside the guard too:
+   * `name` is declared `readonly name: string` but nothing stops a consumer implementing it as a
+   * getter, and reading it at the call site would put it back outside the guard.
    *
    * @param destination - The destination whose `onShutdown` threw.
    * @param cause - The thrown value, of any shape.
    */
   private reportShutdownFailure(destination: ILogDestination, cause: unknown): void {
-    const name = toSingleLineMessage(safeDestinationName(destination))
-    let detail = 'UnknownError'
-    try {
-      // The two escapers are NOT interchangeable. `escapeControlCharacters` keeps
-      // newlines because a stack is legitimately multi-line — so it may only be
-      // used ON a stack. A `message`, or an arbitrary non-Error value, is a
-      // single-line field: passing it through the multi-line escaper lets
-      // `'failed\n[forged entry]'` write a second raw line that an operator reads
-      // as a genuine record.
-      const stack = isErrorLike(cause) ? cause.stack : undefined
-      detail =
-        stack === undefined
-          ? toBoundedMessage(isErrorLike(cause) ? String(cause.message) : String(cause))
-          : escapeControlCharacters(cutText(String(stack)))
-    } catch {
-      // Left as `UnknownError`: a value that cannot be read is still worth a line
-      // naming the destination, and this path must never throw.
-    }
-    writeStderrSafely(`[DestinationRegistry] Shutdown failed for "${name}": ${detail}\n`)
+    reportDestinationFailure(
+      RESERVED_LOG_KEYS.LOGGER_DESTINATION_SHUTDOWN_FAILED,
+      safeDestinationName(destination),
+      cause,
+      'A log destination failed to shut down; anything it was still holding is lost.',
+      0,
+      this.censorMessage
+    )
   }
 
   /**

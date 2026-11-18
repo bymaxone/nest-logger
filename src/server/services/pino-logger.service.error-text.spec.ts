@@ -50,3 +50,34 @@ describe('the text of an entry that comes from an Error', () => {
     expect(text).toBe(`${'c'.repeat(16_384)}…[truncated]`)
   })
 })
+
+describe('censorMessageText, the censor of the lines the library writes about a failure', () => {
+  it('censors a text under the name message, as the message of an entry is', () => {
+    const service = new PinoLoggerService(pino({ enabled: false }), () => ({
+      message: '[REDACTED]'
+    }))
+
+    expect(service.censorMessageText('has a secret in it')).toBe('[REDACTED]')
+  })
+
+  it('leaves a text as it is when nothing redacts the name message', () => {
+    const service = new PinoLoggerService(pino({ enabled: false }))
+
+    expect(service.censorMessageText('nothing to hide')).toBe('nothing to hide')
+  })
+
+  it('does not cut a long text and does not count it as a cut', () => {
+    const service = new PinoLoggerService(pino({ enabled: false }))
+    const long = 'x'.repeat(100_000)
+
+    expect(service.censorMessageText(long)).toBe(long)
+  })
+
+  it('answers an empty text when the redaction cannot answer, never the text', () => {
+    const service = new PinoLoggerService(pino({ enabled: false }), () => {
+      throw new Error('redaction exploded')
+    })
+
+    expect(service.censorMessageText('a secret')).toBe('')
+  })
+})

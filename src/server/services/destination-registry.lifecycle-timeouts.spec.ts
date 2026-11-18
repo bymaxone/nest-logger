@@ -183,7 +183,12 @@ describe('DestinationRegistry lifecycle deadlines', () => {
       await registry.onApplicationShutdown()
 
       expect(order).toEqual(['first', 'slow'])
-      expect(stderrText(stderr)).toContain('Shutdown failed for "slow"')
+      const reported = stderrText(stderr)
+        .split('\n')
+        .filter((line) => line.includes('LOGGER_DESTINATION_SHUTDOWN_FAILED'))
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+      expect(reported).toHaveLength(1)
+      expect(reported[0]).toMatchObject({ destination: 'slow', err: { type: 'HookTimeoutError' } })
     })
   })
 

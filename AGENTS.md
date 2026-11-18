@@ -40,9 +40,16 @@ sink must not create a write → log → write loop, and `destinations` REPLACES
 so the logger's own sinks may be the broken ones. The stream callback is then invoked WITHOUT an
 error, since propagating it would emit an unhandled `'error'` event and crash the host.
 
-`onInit` failures use the same path (`LOGGER_DESTINATION_INIT_FAILED`), so both stages share one
-wire shape. If **no** destination initializes, entries fall back to raw NDJSON on stdout rather than
-disappearing — see `DestinationHealth`.
+`onInit` failures use the same path (`LOGGER_DESTINATION_INIT_FAILED`), and so does a failed
+`onShutdown` (`LOGGER_DESTINATION_SHUTDOWN_FAILED`), so every stage shares one wire shape. If **no**
+destination initializes, entries fall back to raw NDJSON on stdout rather than disappearing — see
+`DestinationHealth`.
+
+A line the library writes about a failure holds library text in `msg` and the host's values in
+fields: the destination in `destination`, the error in `err` (type and message, never the stack).
+Never interpolate a destination name or an error into `msg` or into a text line. The message in `err`
+passes the censor of the `message` of an entry (`buildMessageCensor`, `PinoLoggerService.censorMessageText`
+for the unexpected-error sink), so `redactPaths` covers these lines as it does an entry.
 
 ---
 

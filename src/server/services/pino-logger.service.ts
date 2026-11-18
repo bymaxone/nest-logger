@@ -582,6 +582,19 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   }
 
   /**
+   * Censor a text as the `message` of an entry is: under the name `message`, by the rules of
+   * `redactPaths` and `redactCensor`, and neither cut nor counted. The lines the library writes to
+   * `stderr` about a failure use it for the message of the error they carry.
+   *
+   * @internal Used by `PinoUnexpectedErrorSink`. NOT part of the supported API.
+   * @param text - The text to censor.
+   * @returns The text, or what hides it, and an empty text when the censor itself fails.
+   */
+  censorMessageText(text: string): string {
+    return this.censorText({ key: 'message', text }, true, false)
+  }
+
+  /**
    * The entry text of an `Error`: its `message`, read without letting a hostile getter escape, then
    * censored under the name `message`, as the field `err.message` it is a copy of. It is not cut at
    * `maxStringLength`: the option does not apply to the log message, which is capped at 16384.

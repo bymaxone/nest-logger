@@ -254,11 +254,15 @@ describe('createTraceContextMixin — a trace API that misbehaves on a call', ()
   })
 
   /** A mixin over `api`, as the factory builds it with auto-injection on. */
-  const mixinOver = (api: unknown): ReturnType<typeof createTraceContextMixin> => {
+  const mixinOver = (
+    api: unknown,
+    censorMessage?: (text: string) => string
+  ): ReturnType<typeof createTraceContextMixin> => {
     mockedDetect.mockReturnValue(api as OtelTraceApi)
     return createTraceContextMixin(new LogContextService(), {
       ...defaultFields,
-      shouldAutoInjectTraceContext: true
+      shouldAutoInjectTraceContext: true,
+      censorMessage
     })
   }
 
@@ -327,6 +331,29 @@ describe('createTraceContextMixin — a trace API that misbehaves on a call', ()
 
     expect(lines()).toHaveLength(1)
     expect(lines()[0]).toMatchObject({ level: 'warn', logKey: 'LOGGER_OTEL_API_BROKEN' })
+  })
+
+  /*
+   * The warning is a line the library writes about a failure of the host's own install, and its
+   * message is a copy of the field `err.message` of an entry, so it passes the censor the factory
+   * gives the mixin, and the same censor reaches the detector that warns first.
+   */
+  it('hides in the warning what the censor it is given hides', () => {
+    const censor = (text: string): string => (text.includes('SECRET') ? '[REDACTED]' : text)
+    const mixin = mixinOver(
+      {
+        getActiveSpan: () => {
+          throw new Error('trace API refused https://user:SECRET@host')
+        }
+      },
+      censor
+    )
+
+    expect(mixin({}, 30, logger)).toStrictEqual({})
+
+    expect(JSON.stringify(lines())).not.toContain('SECRET')
+    expect(lines()[0]).toMatchObject({ err: { type: 'Error', message: '[REDACTED]' } })
+    expect(mockedDetect).toHaveBeenCalledWith(undefined, censor)
   })
 
   it.each(misbehaving)(

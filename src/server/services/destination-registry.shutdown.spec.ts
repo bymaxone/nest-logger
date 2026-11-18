@@ -32,6 +32,21 @@ function makeDestination(
   return { name, write: jest.fn(), ...hooks }
 }
 
+/** The structured line a failed shutdown wrote to stderr, parsed, for the destination named. */
+function shutdownLine(
+  spy: jest.SpyInstance,
+  destination: string
+): { raw: string; parsed: Record<string, unknown> } | undefined {
+  const raw = spy.mock.calls
+    .map((call) => String(call[0]))
+    .find(
+      (line) =>
+        line.includes('LOGGER_DESTINATION_SHUTDOWN_FAILED') &&
+        line.includes(`"destination":"${destination}"`)
+    )
+  return raw === undefined ? undefined : { raw, parsed: JSON.parse(raw) as Record<string, unknown> }
+}
+
 describe('DestinationRegistry', () => {
   const options = applyDefaults({ service: { name: 'app', version: '1.0.0' } })
   let logger: PinoLoggerService
@@ -138,11 +153,11 @@ describe('DestinationRegistry', () => {
     })
 
     /*
-     * The detail of a failed shutdown carries the thrown error's stack to stderr as given, and a
-     * stack can be megabytes long when the error's name and message are themselves errors, so it
-     * is cut at the same limit as every stack the logger writes.
+     * The line of a failed shutdown carries the type and the message of the thrown error and never
+     * its stack: a stack can be megabytes long when the name and the message of the error are
+     * themselves errors, and it is host text written whole.
      */
-    it('cuts the stack of a destination that failed to shut down', async () => {
+    it('does not write the stack of a destination that failed to shut down', async () => {
       const failing = makeDestination('failing', {
         onInit: jest.fn(),
         onShutdown: jest.fn(() => {
@@ -157,9 +172,10 @@ describe('DestinationRegistry', () => {
 
       await registry.onApplicationShutdown()
 
-      const line = stderrSpy.mock.calls[0]?.[0] as string
-      expect(line.length).toBeLessThan(100_000)
-      expect(line).toContain('…[truncated]')
+      const line = shutdownLine(stderrSpy, 'failing')
+      expect(line?.raw.length).toBeLessThan(1_000)
+      expect(line?.raw).not.toContain('aaaaaaaaaa')
+      expect(line?.parsed['err']).toEqual({ type: 'Error', message: 'close failed' })
     })
 
     /*
@@ -188,8 +204,38 @@ describe('DestinationRegistry', () => {
 
       await registry.onApplicationShutdown()
 
-      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Shutdown failed for "boom"'))
+      expect(shutdownLine(stderrSpy, 'boom')?.parsed).toMatchObject({
+        level: 'error',
+        logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_SHUTDOWN_FAILED,
+        destination: 'boom',
+        err: { type: 'Error', message: 'shutdown-fail' }
+      })
       stderrSpy.mockRestore()
+    })
+
+    /*
+     * The message of the error that failed `onShutdown` passes the censor of the module options, as
+     * the message of an entry does, so a credential in it is not written to stderr.
+     */
+    it('writes the message of a shutdown failure as the options censor it', async () => {
+      const censoring = applyDefaults({
+        service: { name: 'app', version: '1.0.0' },
+        redactPaths: ['message']
+      })
+      const leaking = makeDestination('leaking', {
+        onInit: jest.fn(),
+        onShutdown: jest.fn().mockRejectedValue(new Error('connect to https://user:SECRET@host'))
+      })
+      const registry = new DestinationRegistry([leaking], logger, censoring, health)
+      await registry.onModuleInit()
+
+      await registry.onApplicationShutdown()
+
+      expect(stderrSpy.mock.calls.map((c) => String(c[0])).join('')).not.toContain('SECRET')
+      expect(shutdownLine(stderrSpy, 'leaking')?.parsed['err']).toEqual({
+        type: 'Error',
+        message: '[REDACTED]'
+      })
     })
 
     /*
@@ -229,24 +275,22 @@ describe('DestinationRegistry', () => {
       await expect(registry.onApplicationShutdown()).resolves.toBeUndefined()
 
       expect(survivor.onShutdown).toHaveBeenCalled()
-      expect(stderrSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Shutdown failed for "poison": UnknownError')
-      )
+      expect(shutdownLine(stderrSpy, 'poison')?.parsed['err']).toEqual({
+        type: 'UnknownError',
+        message: 'unreadable value'
+      })
       stderrSpy.mockRestore()
     })
 
     /*
      * REGRESSION — the SHUTDOWN report escapes control characters, and that is
      * asserted rather than assumed. Every other shutdown test uses plain ASCII, so
-     * replacing `escapeControlCharacters` with an identity function would leave
-     * them all green while an attacker-supplied stack drove the operator's
-     * terminal. A stack is legitimately multi-line, so its newlines must SURVIVE
-     * while the escape sequence does not — both halves are checked.
+     * a report that wrote the message verbatim would leave them all green while an
+     * attacker-supplied message drove the operator's terminal.
      */
-    it('escapes control characters in the shutdown report but keeps stack newlines', async () => {
+    it('escapes control characters in the message of the shutdown report', async () => {
       const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
-      const hostile = new Error('boom')
-      hostile.stack = 'Error: boom\n    at \u001b[31mevil\u0085 (a.ts:1:1)'
+      const hostile = new Error('boom \u001b[31mevil\u0085 text')
       const dest = makeDestination('ansi', {
         onInit: jest.fn(),
         onShutdown: jest.fn().mockRejectedValue(hostile)
@@ -256,15 +300,15 @@ describe('DestinationRegistry', () => {
 
       await registry.onApplicationShutdown()
 
-      const line = stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('ansi'))
+      const line = shutdownLine(stderrSpy, 'ansi')?.raw
       // Asserted POSITIVELY on the escaped form, not only on the absence of the raw
       // one: `not.toContain` alone is satisfied by an empty line, so it cannot tell
       // "escaped correctly" from "nothing was emitted".
-      expect(line).toContain('\\u001b')
-      expect(line).toContain('\\u0085')
+      // The escape character is written as the text `\u001b` and the NEL as the line terminator
+      // `\n`, and JSON then escapes the backslash of each: two backslashes in the raw line.
+      expect(line).toContain('boom \\\\u001b[31mevil\\\\n text')
       expect(line).not.toContain('\u001b')
       expect(line).not.toContain('\u0085')
-      expect(line).toContain('Error: boom\n    at ')
       stderrSpy.mockRestore()
     })
 
@@ -356,13 +400,13 @@ describe('DestinationRegistry', () => {
 
       await registry.onApplicationShutdown()
 
-      const line = stderrSpy.mock.calls.map((c) => String(c[0])).find((c) => c.includes('forge'))
-      // `toSingleLineMessage` renders a line terminator as the two-character escape
-      // `\n`, not as `\u000a` — checked against the util rather than assumed.
-      expect(line).toContain('failed\\n[forged entry]')
+      const line = shutdownLine(stderrSpy, 'forge')
+      // The message holds the two-character text `\n`, which JSON writes with a second backslash.
+      expect(line?.raw).toContain('failed\\\\n[forged entry]')
       // Exactly one terminating newline, and none inside: the record cannot be split.
-      expect(line?.endsWith('\n')).toBe(true)
-      expect(line?.slice(0, -1)).not.toContain('\n')
+      expect(line?.raw.endsWith('\n')).toBe(true)
+      expect(line?.raw.slice(0, -1)).not.toContain('\n')
+      expect((line?.parsed['err'] as { message: string }).message).toBe('failed\\n[forged entry]')
       stderrSpy.mockRestore()
     })
 
@@ -394,9 +438,10 @@ describe('DestinationRegistry', () => {
       expect(survivor.onShutdown).toHaveBeenCalled()
       // The name is lost, the detail is not — that is the point of guarding them
       // separately rather than together.
-      expect(stderrSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Shutdown failed for "unknown": Error: shutdown-fail')
-      )
+      expect(shutdownLine(stderrSpy, 'unknown')?.parsed['err']).toEqual({
+        type: 'Error',
+        message: 'shutdown-fail'
+      })
       stderrSpy.mockRestore()
     })
 

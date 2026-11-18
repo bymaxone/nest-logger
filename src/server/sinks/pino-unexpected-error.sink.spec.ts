@@ -47,15 +47,16 @@ interface Harness {
  * silent instance exists to give the remaining methods the `Logger` type
  * without a cast.
  *
+ * @param redact - The redactor of the logger, when the case needs one that censors.
  * @returns The sink, the `error` mock and a reader for its single payload.
  */
-function createHarness(): Harness {
+function createHarness(redact?: ConstructorParameters<typeof PinoLoggerService>[1]): Harness {
   const rawLogger: Logger = pino({ enabled: false })
   const errorSpy: jest.SpyInstance = jest
     .spyOn(rawLogger, 'error')
     .mockImplementation(() => undefined)
   return {
-    sink: new PinoUnexpectedErrorSink(new PinoLoggerService(rawLogger)),
+    sink: new PinoUnexpectedErrorSink(new PinoLoggerService(rawLogger, redact)),
     errorSpy,
     emittedPayload: () => {
       expect(errorSpy).toHaveBeenCalledTimes(1)
@@ -269,6 +270,38 @@ describe('PinoUnexpectedErrorSink — failure containment', () => {
       err: { type: 'Error', message: 'serializer exploded' },
       msg: 'An unexpected-error report could not be logged and was dropped.'
     })
+  })
+
+  /*
+   * The message of the error that made the report drop is a copy of the field `err.message`, so it
+   * passes the censor of an entry: a credential in the address a destination could not reach must
+   * not reach stderr because the line was written by the library. Written for a logger whose
+   * redaction names `message`, and for one whose censor cannot answer.
+   */
+  it('hides in the dropped-report line what the logger censors as a message', () => {
+    const censoring = createHarness(() => ({ message: '[REDACTED]' }))
+    censoring.errorSpy.mockImplementation(() => {
+      throw new Error('connect to https://user:SECRET@host failed')
+    })
+
+    censoring.sink.record({ error: new Error('boom'), method: 'GET', route: '/x' })
+
+    expect(droppedLine()).toMatchObject({ err: { type: 'Error', message: '[REDACTED]' } })
+    expect(JSON.stringify(droppedLine())).not.toContain('SECRET')
+  })
+
+  it('writes the line, with the message dropped, when the logger cannot censor it', () => {
+    const failing = createHarness(() => {
+      throw new Error('redaction exploded')
+    })
+    failing.errorSpy.mockImplementation(() => {
+      throw new Error('connect to https://user:SECRET@host failed')
+    })
+
+    failing.sink.record({ error: new Error('boom'), method: 'GET', route: '/x' })
+
+    expect(droppedLine()).toMatchObject({ err: { type: 'Error', message: '' } })
+    expect(JSON.stringify(droppedLine())).not.toContain('SECRET')
   })
 
   /*
