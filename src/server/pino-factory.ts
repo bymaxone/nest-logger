@@ -28,7 +28,11 @@ import type { LogContextService } from './services/log-context.service'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
-import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from './utils/entry-text-finisher.util'
+import {
+  createEntryTextFinisher,
+  createTextCensor,
+  ENTRY_TEXT_FINISHER
+} from './utils/entry-text-finisher.util'
 import { mergeMixinSafely } from './utils/merge-mixin-safely.util'
 import {
   createOwnFieldPolicy,
@@ -506,8 +510,8 @@ function buildSerializers(
  * @returns The censor of a message text.
  */
 function buildMessageCensor(options: ResolvedBymaxLoggerModuleOptions): (text: string) => string {
-  const finish = createEntryTextFinisher(buildNameRedactor(options), undefined)
-  return (text) => finish('message', text, false, false)
+  const censor = createTextCensor(buildNameRedactor(options))
+  return (text) => censor('message', text)
 }
 
 /**

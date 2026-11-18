@@ -84,6 +84,22 @@ describe('the size bounds count what they cut', () => {
     expect(totals(health)).toEqual([0, 0])
   })
 
+  /*
+   * The log message is not cut by maxStringLength, which says so, so the text that comes from an
+   * Error is neither cut nor counted, at a level that is written and at one that is not.
+   */
+  it.each([
+    ['error', (s: PinoLoggerService, e: Error) => s.error(e)],
+    ['warn', (s: PinoLoggerService, e: Error) => s.warn(e)],
+    ['debug under an info level', (s: PinoLoggerService, e: Error) => s.debug(e)]
+  ])('does not cut or count the text of an Error: %s', (_label, call) => {
+    const { service, health } = create({ level: 'info', maxStringLength: 64 })
+
+    call(service, new Error('x'.repeat(500)))
+
+    expect(totals(health)).toEqual([0, 0])
+  })
+
   it('counts a serializer output over the ceiling, under max_entry_size', () => {
     const { service, health } = create({
       maxEntrySizeBytes: 1024,

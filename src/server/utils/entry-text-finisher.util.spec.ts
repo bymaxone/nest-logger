@@ -6,7 +6,7 @@
  * Layer: server/utils, tests.
  */
 import { TEXT_TRUNCATED } from './bounded-text.util'
-import { createEntryTextFinisher } from './entry-text-finisher.util'
+import { createEntryTextFinisher, createTextCensor } from './entry-text-finisher.util'
 import type { Redactor } from './redact-by-name.util'
 
 const LIMIT = 64
@@ -108,5 +108,28 @@ describe('createEntryTextFinisher', () => {
 
       expect(out).toBe(`${'x'.repeat(LIMIT)}${TEXT_TRUNCATED}`)
     })
+  })
+})
+
+describe('createTextCensor', () => {
+  const censoring: Redactor = (value) => ({ ...(value as object), event: '[REDACTED]' })
+
+  it('censors the text under the name of its member, and does not cut it', () => {
+    const censor = createTextCensor(censoring)
+
+    expect(censor('event', 'secret')).toBe('[REDACTED]')
+    expect(censor('message', 'x'.repeat(100_000))).toBe('x'.repeat(100_000))
+  })
+
+  it.each([
+    [
+      'a redactor that throws',
+      () => {
+        throw new Error('boom')
+      }
+    ],
+    ['a redactor that turns the text into a value that is not text', () => ({ message: 42 })]
+  ])('gives the empty string for %s', (_label, redactor) => {
+    expect(createTextCensor(redactor as unknown as Redactor)('message', 'text')).toBe('')
   })
 })

@@ -32,6 +32,25 @@ export type EntryTextFinisher = (
 export const ENTRY_TEXT_FINISHER: unique symbol = Symbol('bymax.entryTextFinisher')
 
 /**
+ * The censor of a text under the name of the field it is a copy of, and nothing else: no cut and
+ * no count.
+ *
+ * @param redact - A redactor that covers the names a consumer asked to censor.
+ * @returns A function that never throws: text the redactor cannot censor, or turns into a value
+ *   that is not text, becomes the empty string.
+ */
+export function createTextCensor(redact: Redactor): (key: string, text: string) => string {
+  return (key, text) => {
+    try {
+      const censored: unknown = Reflect.get(redact({ [key]: text }, true) as object, key)
+      return typeof censored === 'string' ? censored : ''
+    } catch {
+      return ''
+    }
+  }
+}
+
+/**
  * @param redact - A redactor that covers the names a consumer asked to censor.
  * @param limit - The configured `maxStringLength`, when there is one.
  * @param onCut - Called each time the text of an entry that is written is cut at `limit`, so the
@@ -44,16 +63,12 @@ export function createEntryTextFinisher(
   limit: number | undefined,
   onCut?: () => void
 ): EntryTextFinisher {
+  const censor = createTextCensor(redact)
   return (key, text, emitted, cutAtLimit) => {
-    try {
-      const censored: unknown = Reflect.get(redact({ [key]: text }, true) as object, key)
-      if (typeof censored !== 'string') return ''
-      if (limit === undefined || !cutAtLimit) return censored
-      const cut = cutText(censored, false, limit)
-      if (emitted && cut !== censored) onCut?.()
-      return cut
-    } catch {
-      return ''
-    }
+    const censored = censor(key, text)
+    if (limit === undefined || !cutAtLimit) return censored
+    const cut = cutText(censored, false, limit)
+    if (emitted && cut !== censored) onCut?.()
+    return cut
   }
 }
