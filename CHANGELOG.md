@@ -82,7 +82,9 @@ what the Breaking entry above says.
   or contains its message is censored in the message. It holds for an `Error`, a subclass and an
   `Error` of another realm, for a message with a control character, which the stack escapes, and for
   a message longer than the bound on how much of a stack is read. A stack that does not
-  hold the message, because it was changed after the engine wrote the stack, is left as it is. **What this covers,
+  hold the message, because it was changed after the engine wrote the stack, is left as it is, and
+  one whose older header text holds the new message as a part of it is censored there; a header that
+  holds the message more than 64 times, which no engine writes, is censored whole. **What this covers,
   precisely:** redaction works on field names, so it covers a field and the text copied from a named
   field (the `message` or `event` of an object message, and the `message` of an `Error` where it
   appears as the text of the entry, in its stack and in the derived `exception.*` fields); it never

@@ -76,6 +76,30 @@ describe('censorStackHeader', () => {
       'Error: [REDACTED]\n\tat foo (/a.ts:1:1)'
     ],
     [
+      'a message that is a part of an older header text, as the stack kept it',
+      `Error: old secret${FRAMES}`,
+      'secret',
+      `Error: old [REDACTED]${FRAMES}`
+    ],
+    [
+      'a header that holds the message as often as is examined',
+      `Error: ${'a'.repeat(64)}`,
+      'a',
+      `Error: ${'a'.repeat(63)}[REDACTED]`
+    ],
+    [
+      'a header that holds more occurrences than are examined, and frames after it',
+      `Error: ${'a'.repeat(65)}${FRAMES}`,
+      'a',
+      `[REDACTED]${FRAMES}`
+    ],
+    [
+      'a stack with no frame that holds more occurrences than are examined',
+      `Error: ${'a'.repeat(65)}`,
+      'a',
+      '[REDACTED]'
+    ],
+    [
       'a message that a later frame repeats at the end of the stack',
       'Error: x\n    at a\n    at x',
       'x',
@@ -92,5 +116,16 @@ describe('censorStackHeader', () => {
     ['a message the stack does not hold', `Error: built with this${FRAMES}`, 'changed later', 'x']
   ])('leaves the stack alone for %s', (_label, stack, message, censored) => {
     expect(censorStackHeader(stack, message, censored)).toBe(stack)
+  })
+
+  it('censors a message that overlaps itself in time that does not depend on its length', () => {
+    const message = 'a'.repeat(100_000)
+    const stack = 'a'.repeat(131_072 + 100_000)
+    const started = Date.now()
+
+    const out = censorStackHeader(stack, message, '[REDACTED]')
+
+    expect(out).toBe('[REDACTED]')
+    expect(Date.now() - started).toBeLessThan(1_000)
   })
 })
