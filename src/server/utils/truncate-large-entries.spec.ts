@@ -67,16 +67,80 @@ describe('createSizeBoundedSerializer', () => {
   })
 
   /*
-   * A serializer output that JSON.stringify CANNOT measure (a circular reference,
-   * or a hostile toJSON) must pass through without throwing — the logging path is
-   * fail-soft and must never crash the caller. Covers the JSON.stringify try/catch.
+   * A serializer output with a reference to itself, or a BigInt, cannot be measured by a plain
+   * JSON.stringify. It is measured with a replacer that stands in for the part JSON cannot write,
+   * so a value that is over the ceiling is truncated like any other, and one that is under it is
+   * returned as it is. Only a value that cannot be measured at all is replaced, with a size of -1.
    */
-  it('passes an unstringifiable (circular) value through without throwing', () => {
-    const circular: Record<string, unknown> = {}
-    circular['self'] = circular
-    const serialize = createSizeBoundedSerializer(() => circular, 10)
-    expect(() => serialize('ignored')).not.toThrow()
-    expect(serialize('ignored')).toBe(circular)
+  describe('a value JSON.stringify cannot measure', () => {
+    const cyclic = (payload: string): Record<string, unknown> => {
+      const value: Record<string, unknown> = { payload }
+      value['self'] = value
+      return value
+    }
+
+    it('is truncated when its measured size is over the ceiling', () => {
+      const serialize = createSizeBoundedSerializer(() => cyclic('x'.repeat(500)), 100)
+
+      expect(serialize('ignored')).toMatchObject({
+        _truncated: true,
+        _logKey: RESERVED_LOG_KEYS.LOGGER_ENTRY_TRUNCATED
+      })
+    })
+
+    it('is returned as it is when its measured size is under the ceiling', () => {
+      const value = cyclic('small')
+      const serialize = createSizeBoundedSerializer(() => value, 1000)
+
+      expect(serialize('ignored')).toBe(value)
+    })
+
+    it('counts a repeated reference every time it is written, not once', () => {
+      const shared = { payload: 'x'.repeat(300) }
+      const serialize = createSizeBoundedSerializer(() => ({ a: shared, b: shared }), 400)
+
+      expect(serialize('ignored')).toMatchObject({ _truncated: true })
+    })
+
+    it('measures a BigInt by its decimal digits', () => {
+      const small = { n: 1n }
+      const big = { text: 'x'.repeat(500), n: 12345678901234567890n }
+
+      expect(createSizeBoundedSerializer(() => small, 100)('ignored')).toBe(small)
+      expect(createSizeBoundedSerializer(() => big, 100)('ignored')).toMatchObject({
+        _truncated: true
+      })
+    })
+
+    it.each([
+      [
+        'a toJSON that throws',
+        (): unknown => ({
+          toJSON(): never {
+            throw new Error('toJSON exploded')
+          }
+        })
+      ],
+      [
+        'a getter that throws',
+        (): unknown =>
+          Object.defineProperty({}, 'boom', {
+            enumerable: true,
+            get(): never {
+              throw new Error('getter exploded')
+            }
+          })
+      ]
+    ])('is replaced with a size of -1 when it has %s', (_label, make) => {
+      const serialize = createSizeBoundedSerializer(make, 1000)
+
+      expect(serialize('ignored')).toEqual({
+        _truncated: true,
+        _logKey: RESERVED_LOG_KEYS.LOGGER_ENTRY_TRUNCATED,
+        _originalSize: -1,
+        _preview: ''
+      })
+    })
   })
 
   /*
