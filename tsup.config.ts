@@ -47,5 +47,31 @@ export default defineConfig([
     splitting: false,
     treeshake: true,
     sourcemap: false
+  },
+  // Observability entry — the Prometheus counters and the health indicator. It reads the logger
+  // through the package name, which stays EXTERNAL: bundling the main entry here would give the host
+  // a second copy of the module, with its own providers. `@bymax-one/nest-core` and `prom-client` are
+  // optional peers, imported only when a host imports this subpath.
+  {
+    entry: { 'observability/index': 'src/observability/index.ts' },
+    format: ['esm', 'cjs'],
+    dts: true,
+    tsconfig: 'tsconfig.build.json',
+    outDir: 'dist',
+    outExtension: ({ format }) => ({
+      js: format === 'esm' ? '.mjs' : '.cjs'
+    }),
+    external: [
+      /^@nestjs\//,
+      'reflect-metadata',
+      '@bymax-one/nest-logger',
+      /^@bymax-one\/nest-core(\/.*)?$/,
+      'prom-client'
+    ],
+    target: 'node24',
+    clean: false,
+    splitting: false,
+    treeshake: true,
+    sourcemap: false
   }
 ])

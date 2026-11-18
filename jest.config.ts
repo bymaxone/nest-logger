@@ -16,7 +16,8 @@ const config: Config = {
   // uses package specifiers — an easy source of drift.
   moduleNameMapper: {
     '^@bymax-one/nest-logger$': '<rootDir>/server/index.ts',
-    '^@bymax-one/nest-logger/shared$': '<rootDir>/shared/index.ts'
+    '^@bymax-one/nest-logger/shared$': '<rootDir>/shared/index.ts',
+    '^@bymax-one/nest-logger/observability$': '<rootDir>/observability/index.ts'
   },
   transform: {
     '^.+\\.ts$': [

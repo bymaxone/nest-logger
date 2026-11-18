@@ -20,7 +20,8 @@ const config: Config = {
   // and production code resolve the same module instance.
   moduleNameMapper: {
     '^@bymax-one/nest-logger$': '<rootDir>/../../src/server/index.ts',
-    '^@bymax-one/nest-logger/shared$': '<rootDir>/../../src/shared/index.ts'
+    '^@bymax-one/nest-logger/shared$': '<rootDir>/../../src/shared/index.ts',
+    '^@bymax-one/nest-logger/observability$': '<rootDir>/../../src/observability/index.ts'
   },
   transform: {
     '^.+\\.ts$': [

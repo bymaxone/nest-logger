@@ -461,7 +461,7 @@ function checkSnippets() {
  * emits at the end of each subpath's `.d.ts`. */
 function exportedNames() {
   const names = new Set()
-  for (const sub of ['server', 'shared']) {
+  for (const sub of ['server', 'shared', 'observability']) {
     const dts = join(ROOT, 'dist', sub, 'index.d.ts')
     if (!existsSync(dts)) continue
     for (const clause of readFileSync(dts, 'utf8').matchAll(/^export (?:type )?\{([^}]*)\};/gm)) {

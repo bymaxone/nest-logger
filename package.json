@@ -41,6 +41,16 @@
         "default": "./dist/shared/index.cjs"
       }
     },
+    "./observability": {
+      "import": {
+        "types": "./dist/observability/index.d.ts",
+        "default": "./dist/observability/index.mjs"
+      },
+      "require": {
+        "types": "./dist/observability/index.d.cts",
+        "default": "./dist/observability/index.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "main": "./dist/server/index.cjs",
@@ -50,6 +60,9 @@
     "*": {
       "shared": [
         "./dist/shared/index.d.cts"
+      ],
+      "observability": [
+        "./dist/observability/index.d.cts"
       ]
     }
   },
@@ -94,24 +107,33 @@
     ]
   },
   "peerDependencies": {
+    "@bymax-one/nest-core": "^1.6.10",
     "@nestjs/common": "^11.0.16",
     "@nestjs/core": "^11.1.18",
     "@opentelemetry/api": "^1.9.0",
     "pino": "^10.0.0",
     "pino-pretty": "^13.0.0",
+    "prom-client": "^15.0.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0"
   },
   "peerDependenciesMeta": {
+    "@bymax-one/nest-core": {
+      "optional": true
+    },
     "@opentelemetry/api": {
       "optional": true
     },
     "pino-pretty": {
       "optional": true
+    },
+    "prom-client": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
+    "@bymax-one/nest-core": "1.6.10",
     "@commitlint/cli": "^21.0.2",
     "@commitlint/config-conventional": "^21.0.2",
     "@eslint/js": "^9.39.4",
@@ -142,6 +164,7 @@
     "pino": "^10.0.0",
     "pino-pretty": "^13.0.0",
     "prettier": "^3.8.3",
+    "prom-client": "15.1.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.0",
     "supertest": "^7.3.1",

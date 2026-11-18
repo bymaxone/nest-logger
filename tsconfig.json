@@ -24,7 +24,8 @@
     "skipLibCheck": true,
     "paths": {
       "@bymax-one/nest-logger": ["./src/server/index.ts"],
-      "@bymax-one/nest-logger/shared": ["./src/shared/index.ts"]
+      "@bymax-one/nest-logger/shared": ["./src/shared/index.ts"],
+      "@bymax-one/nest-logger/observability": ["./src/observability/index.ts"]
     }
   },
   "include": ["src/**/*"],

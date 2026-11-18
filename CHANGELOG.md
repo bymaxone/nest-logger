@@ -22,6 +22,16 @@ heading here.
   `DeliveryState` and `TruncationReason` are exported with it. Nothing changes for a host that does
   not read them.
 
+- **A new `@bymax-one/nest-logger/observability` subpath publishes the counters as Prometheus
+  metrics and the delivery state as a readiness check.** `BymaxLoggerObservabilityModule` provides
+  `LoggerMetricsContributor`, which registers `bymax_logger_entries_truncated_total{reason}` (with
+  `reason` of `max_entry_size` or `max_string_length`) and `bymax_logger_destination_errors_total` on
+  the registry `@bymax-one/nest-core` serves, and `LoggerHealthIndicator`, named `logger`, which is
+  `up` while at least one destination is healthy. `@bymax-one/nest-core` and `prom-client` are
+  optional peer dependencies, imported only by this subpath; the main entry needs neither. **Apply:**
+  nothing is required; to publish the metrics, install the two peers and import
+  `BymaxLoggerObservabilityModule` next to `BymaxLoggerModule`.
+
 #### Apply to a derived backend
 
 Nothing is required. A derived backend that builds the Pino instance itself through

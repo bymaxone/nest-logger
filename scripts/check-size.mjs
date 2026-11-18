@@ -38,6 +38,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     calls back only for an entry that is, so the cut of the text of an object message is counted
 //     under `max_string_length` like the cut of a field and only for an entry that is written. It
 //     is +63 B over the 42,100 B measured before.
+//   - 2026-11-18 — observability: 1,169 B (1.14 KiB) real -> 1.21 KiB budget (1,239 B, +70 B over
+//     the measurement). The new subpath: the two Prometheus counters and the readiness check, which
+//     import the logger by its package name (external) and the optional peers `@bymax-one/nest-core`
+//     and `prom-client`. A subpath of its own, so a host that never imports it pays nothing.
 //   - 2026-11-18 — server: 42,100 B (41.11 KiB) real -> 41.14 KiB budget (42,127 B, +27 B over the
 //     measurement). The logger counts the fields it cuts or replaces by reason and the writes a
 //     destination refused, and exposes them with the delivery state through
@@ -292,7 +296,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
   { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 41.2 * 1024 },
-  { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
+  { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
+  {
+    name: 'observability (metrics + health)',
+    path: 'dist/observability/index.mjs',
+    brotli: 1.21 * 1024
+  }
 ]
 
 const fmt = (n) => `${(n / 1024).toFixed(2)} kB`

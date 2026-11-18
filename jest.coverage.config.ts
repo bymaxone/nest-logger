@@ -36,7 +36,8 @@ const config: Config = {
   // would make `instanceof` checks return false across subpath boundaries.
   moduleNameMapper: {
     '^@bymax-one/nest-logger$': '<rootDir>/src/server/index.ts',
-    '^@bymax-one/nest-logger/shared$': '<rootDir>/src/shared/index.ts'
+    '^@bymax-one/nest-logger/shared$': '<rootDir>/src/shared/index.ts',
+    '^@bymax-one/nest-logger/observability$': '<rootDir>/src/observability/index.ts'
   },
   transform: {
     '^.+\\.ts$': [
