@@ -70,6 +70,9 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    */
   private readonly active: ILogDestination[] = []
 
+  /** The censor of the `message` of an entry, for the message of the error in a failure line. */
+  private readonly censorMessage: MessageCensor
+
   /**
    * @param registered - Every destination declared under
    *   `LOGGER_DESTINATIONS_TOKEN`. Injected by token explicitly because the
@@ -81,9 +84,6 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
    *   for each destination's effective level.
    * @param health - Init-health record shared with the write fan-out.
    */
-  /** The censor of the `message` of an entry, for the message of the error in a failure line. */
-  private readonly censorMessage: MessageCensor
-
   constructor(
     @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly registered: readonly ILogDestination[],
     @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,

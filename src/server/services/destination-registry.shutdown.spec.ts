@@ -208,8 +208,10 @@ describe('DestinationRegistry', () => {
         level: 'error',
         logKey: RESERVED_LOG_KEYS.LOGGER_DESTINATION_SHUTDOWN_FAILED,
         destination: 'boom',
-        err: { type: 'Error', message: 'shutdown-fail' }
+        err: { type: 'Error', message: 'shutdown-fail' },
+        msg: expect.stringContaining('failed to shut down')
       })
+      expect(shutdownLine(stderrSpy, 'boom')?.parsed['msg']).not.toContain('boom')
       stderrSpy.mockRestore()
     })
 

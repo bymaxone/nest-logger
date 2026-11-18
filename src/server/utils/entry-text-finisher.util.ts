@@ -12,17 +12,19 @@ import { cutText } from './bounded-text.util'
 import type { Redactor } from './redact-by-name.util'
 
 /**
- * Finishes the text that came from the member `key` of an object message, or the `message` of an
- * `Error`. `emitted` says whether the entry is written: a cut of an entry that is not written is
- * not counted. `cutAtLimit` says whether the text is cut at `maxStringLength`: the text of an
- * object message is, as its field is; the log message of an `Error` is not, as the option says.
+ * That a text is cut at `maxStringLength`, as the text of an object message is, as its field is.
+ * `emitted` says whether the entry is written: a cut of an entry that is not written is not counted.
  */
-export type EntryTextFinisher = (
-  key: string,
-  text: string,
-  emitted: boolean,
-  cutAtLimit: boolean
-) => string
+export interface EntryTextCut {
+  readonly emitted: boolean
+}
+
+/**
+ * Finishes the text that came from the member `key` of an object message, or the `message` of an
+ * `Error`. Without a `cut` the text is censored and not cut, as the log message of an `Error` is,
+ * because the option does not apply to it.
+ */
+export type EntryTextFinisher = (key: string, text: string, cut?: EntryTextCut) => string
 
 /**
  * The key of the property on the Pino instance that holds the {@link EntryTextFinisher}: the
@@ -64,11 +66,11 @@ export function createEntryTextFinisher(
   onCut?: () => void
 ): EntryTextFinisher {
   const censor = createTextCensor(redact)
-  return (key, text, emitted, cutAtLimit) => {
+  return (key, text, cut) => {
     const censored = censor(key, text)
-    if (limit === undefined || !cutAtLimit) return censored
-    const cut = cutText(censored, false, limit)
-    if (emitted && cut !== censored) onCut?.()
-    return cut
+    if (limit === undefined || cut === undefined) return censored
+    const cutOff = cutText(censored, false, limit)
+    if (cut.emitted && cutOff !== censored) onCut?.()
+    return cutOff
   }
 }

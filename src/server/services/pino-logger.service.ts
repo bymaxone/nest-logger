@@ -26,7 +26,7 @@ import {
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
 import { cutText } from '../utils/bounded-text.util'
 import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-text-finisher.util'
-import type { EntryTextFinisher } from '../utils/entry-text-finisher.util'
+import type { EntryTextCut, EntryTextFinisher } from '../utils/entry-text-finisher.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { foldKey } from '../utils/fold-key.util'
 import { isPlainRecord } from '../utils/is-plain-record.util'
@@ -348,7 +348,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     if (isErrorLike(message)) {
       const payload: Record<string, unknown> = { err: message }
       assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
-      this.pino.error(payload, this.errorText('error', message))
+      this.pino.error(payload, this.errorText(message))
       return
     }
     // NestJS variadic contract is `error(message, stack?, context?)`: the stack
@@ -474,7 +474,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     }
     assignIfDefined(payload, 'userId', userId)
     assignIfDefined(payload, 'context', this.context)
-    this.pino.error(payload, this.errorText('error', error))
+    this.pino.error(payload, this.errorText(error))
   }
 
   // ─── Helpers / escape hatches ─────────────────────────────────────────────
@@ -574,9 +574,9 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     text: ObjectMessageText | undefined,
     message: unknown
   ): string {
-    if (leading !== undefined) return this.errorText(level, leading)
+    if (leading !== undefined) return this.errorText(leading)
     if (fields !== undefined) {
-      return toBoundedMessage(this.censorText(text, this.pino.isLevelEnabled(level), true))
+      return toBoundedMessage(this.censorText(text, { emitted: this.pino.isLevelEnabled(level) }))
     }
     return safeLogMessage(message)
   }
@@ -591,7 +591,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * @returns The text, or what hides it, and an empty text when the censor itself fails.
    */
   censorMessageText(text: string): string {
-    return this.censorText({ key: 'message', text }, true, false)
+    return this.censorText({ key: 'message', text })
   }
 
   /**
@@ -599,18 +599,11 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * censored under the name `message`, as the field `err.message` it is a copy of. It is not cut at
    * `maxStringLength`: the option does not apply to the log message, which is capped at 16384.
    *
-   * @param level - The level of the call, which says whether the entry is written.
    * @param error - The error being logged.
    * @returns The text of the entry.
    */
-  private errorText(level: PinoLevelMethod | 'error', error: Error): string {
-    return toBoundedMessage(
-      this.censorText(
-        { key: 'message', text: safeErrorMessage(error) },
-        this.pino.isLevelEnabled(level),
-        false
-      )
-    )
+  private errorText(error: Error): string {
+    return toBoundedMessage(this.censorText({ key: 'message', text: safeErrorMessage(error) }))
   }
 
   /**
@@ -619,20 +612,16 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * value the pipeline censors or cuts in the field itself.
    *
    * @param text - The text and the member it came from.
-   * @param emitted - Whether the entry is written, so that a cut of it is counted.
-   * @param cutAtLimit - Whether the text is cut at `maxStringLength`.
+   * @param cut - Present when the text is cut at `maxStringLength`; says whether the entry is
+   *   written, so that a cut of it is counted.
    * @returns The censored text, or an empty one when the redactor cannot be applied.
    */
-  private censorText(
-    text: ObjectMessageText | undefined,
-    emitted: boolean,
-    cutAtLimit: boolean
-  ): string {
+  private censorText(text: ObjectMessageText | undefined, cut?: EntryTextCut): string {
     if (text === undefined) return ''
     const finish =
       (Reflect.get(this.pino, ENTRY_TEXT_FINISHER) as EntryTextFinisher | undefined) ??
       createEntryTextFinisher(this.redact, undefined)
-    return finish(text.key, text.text, emitted, cutAtLimit)
+    return finish(text.key, text.text, cut)
   }
 
   private emitNestStyle(level: PinoLevelMethod, message: unknown, optionalParams: unknown[]): void {
