@@ -185,3 +185,18 @@ describe.each(KINDS)('Logger E2E — the stack of %s', (_kind, make) => {
     }
   )
 })
+
+describe('Logger E2E — the stack of each error an AggregateError holds', () => {
+  it.each(SHAPES)('carries no secret in any member: %s', async (_label, call) => {
+    const entry = await runOne(
+      (l, s) =>
+        call(l, s, new AggregateError([new Error(SECRET), new Error(SECRET_CAUSE)], SECRET)),
+      { redactPaths: ['message'], errorFormat: 'both' }
+    )
+
+    expect(leaks(entry)).toEqual([])
+    const members = (entry['err'] as Entry)['errors'] as Entry[]
+    expect(members).toHaveLength(2)
+    expect(String(members[0]?.['stack'])).toMatch(/^[^\n]*\[REDACTED\]/)
+  })
+})
