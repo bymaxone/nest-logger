@@ -17,12 +17,19 @@ import { PinoLoggerService } from './services/pino-logger.service'
 function create(extra: Partial<BymaxLoggerModuleOptions>): {
   service: PinoLoggerService
   health: DestinationHealth
+  written: Array<Record<string, unknown>>
 } {
-  const destination: ILogDestination = { name: 'capture', write: () => undefined }
+  const written: Array<Record<string, unknown>> = []
+  const destination: ILogDestination = {
+    name: 'capture',
+    write: (line) => {
+      written.push(JSON.parse(String(line)) as Record<string, unknown>)
+    }
+  }
   const options = applyDefaults({ service: { name: 'app', version: '1.0.0' }, ...extra })
   const health = new DestinationHealth()
   const pino = buildPinoInstance(options, new LogContextService(), [destination], health)
-  return { service: new PinoLoggerService(pino), health }
+  return { service: new PinoLoggerService(pino), health, written }
 }
 
 const totals = (health: DestinationHealth): [number, number] => [
@@ -86,17 +93,27 @@ describe('the size bounds count what they cut', () => {
 
   /*
    * The log message is not cut by maxStringLength, which says so, so the text that comes from an
-   * Error is neither cut nor counted, at a level that is written and at one that is not.
+   * Error is written whole and is not counted, at the levels that are written.
    */
   it.each([
     ['error', (s: PinoLoggerService, e: Error) => s.error(e)],
-    ['warn', (s: PinoLoggerService, e: Error) => s.warn(e)],
-    ['debug under an info level', (s: PinoLoggerService, e: Error) => s.debug(e)]
-  ])('does not cut or count the text of an Error: %s', (_label, call) => {
-    const { service, health } = create({ level: 'info', maxStringLength: 64 })
+    ['warn', (s: PinoLoggerService, e: Error) => s.warn(e)]
+  ])('writes the text of an Error whole and counts no cut: %s', (_label, call) => {
+    const { service, health, written } = create({ level: 'info', maxStringLength: 64 })
 
     call(service, new Error('x'.repeat(500)))
 
+    expect(written).toHaveLength(1)
+    expect(written[0]?.['msg']).toBe('x'.repeat(500))
+    expect(totals(health)).toEqual([0, 0])
+  })
+
+  it('writes nothing and counts no cut for the text of an Error below the configured level', () => {
+    const { service, health, written } = create({ level: 'info', maxStringLength: 64 })
+
+    service.debug(new Error('x'.repeat(500)))
+
+    expect(written).toHaveLength(0)
     expect(totals(health)).toEqual([0, 0])
   })
 
