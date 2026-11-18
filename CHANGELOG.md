@@ -61,8 +61,9 @@ yourself censors the text of an `Error` with its own redactor, as it does the te
 message; over a Pino instance from `buildPinoInstance` it uses the function the factory leaves on
 that instance, which also covers `redactStrategy: 'paths'`. The merge of the request and trace keys
 that `buildPinoInstance` installs, and the owned-key guard of the service, now compare names with
-their case and the separators `_`, `.` and `-` folded; nothing is required beyond what the Breaking
-entry above says.
+their case and the separators `_`, `.` and `-` folded, and the `err` serializer and the derived
+`exception.*` fields it builds censor the message where it opens a stack; nothing is required beyond
+what the Breaking entry above says.
 
 ### Fixed
 
@@ -72,14 +73,20 @@ entry above says.
   `err.message` was censored, so `redactPaths: ['message']` left the secret in `msg`. It is now
   censored under the name `message`, also with `redactStrategy: 'paths'`. It is still capped at
   16 KiB like every log message and not cut at `maxStringLength`, which does not apply to the log
-  message. **What this covers, precisely:** redaction works on field names, so it covers a field and
-  the text copied from a named field (the `message` or `event` of an object message, and the
-  `message` of an `Error`); it never reads the content of a string, so a text a caller passes as a
-  string, such as ``logger.warn(`card ${number}`)``, is written as it is, and the `stack` of an error,
-  whose first line repeats its message, is a different field that a name in `redactPaths` does not
-  cover. 1.4.23 said a secret in `event` or `message` does not reach `msg`; that holds for the text
-  of an object message and, from this release, for the message of an `Error`, and for no other
-  source of the text. **Apply:** nothing is required; a log search that relied on finding a
+  message. The same text is censored where it opens the stack: in `err.stack`, in the stack of each
+  `cause` and of each of the `errors` of an `AggregateError`, and in `exception.message` and
+  `exception.stacktrace` with `errorFormat: 'semconv'` or `'both'`. It is found by an exact match of
+  the message in the lines before the first frame, never by a pattern built from your text, for an
+  `Error`, a subclass and an `Error` of another realm; a message changed after the error was created
+  is not the one its stack opens with, and that stack is left as it is. **What this covers,
+  precisely:** redaction works on field names, so it covers a field and the text copied from a named
+  field (the `message` or `event` of an object message, and the `message` of an `Error` where it
+  appears as the text of the entry, in its stack and in the derived `exception.*` fields); it never
+  reads the content of a string, so a text a caller passes as a string, such as
+  ``logger.warn(`card ${number}`)``, is written as it is, and a secret that an error carries in
+  another field (a `code`, an own property) is covered only by the name of that field. 1.4.23 said a
+  secret in `event` or `message` does not reach `msg`; that holds for the text of an object message
+  and, from this release, for the message of an `Error`, and for no other source of the text. **Apply:** nothing is required; a log search that relied on finding a
   censored value in the `msg` of an `Error` no longer finds it.
 - **The derived exception fields are bounded by `maxEntrySizeBytes`.** With `errorFormat: 'semconv'`
   or `'both'`, `exception.type`, `exception.message`, `exception.stacktrace` and `error.type` were
