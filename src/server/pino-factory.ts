@@ -25,6 +25,7 @@ import type { TruncationReason } from './interfaces/logger-observability.interfa
 import { createTraceContextMixin } from './mixins/trace-context.mixin'
 import type { DestinationHealth } from './services/destination-health.service'
 import type { LogContextService } from './services/log-context.service'
+import { censorErrorStacks } from './utils/censor-stack-header.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
@@ -479,14 +480,22 @@ function buildSerializers(
   //      `_preview` carries `[REDACTED]` rather than the head of a secret.
   // `Object.fromEntries` avoids a dynamic `obj[key] =` write (which would trip
   // the object-injection lint rule).
-  const bound = <T>(serializer: (input: T) => unknown): ((input: T) => unknown) =>
+  // `afterRedact` sees the output before and after the redaction: for an error it censors, in the
+  // stacks, the message that the redaction censored in the node.
+  const bound = <T>(
+    serializer: (input: T) => unknown,
+    afterRedact: (raw: unknown, redacted: unknown) => unknown = (_raw, redacted) => redacted
+  ): ((input: T) => unknown) =>
     createSizeBoundedSerializer(
-      (input: T) => redactSerialized(serializer(input)),
+      (input: T) => {
+        const raw = serializer(input)
+        return afterRedact(raw, redactSerialized(raw))
+      },
       maxBytes,
       () => onTruncate('max_entry_size')
     )
   return {
-    err: bound((error) => serializeErrorValue(error, ownFields)),
+    err: bound((error) => serializeErrorValue(error, ownFields), censorErrorStacks),
     ...Object.fromEntries(
       Object.entries(options.serializers).map(
         ([key, serializer]): [string, (input: unknown) => unknown] => [key, bound(serializer)]
@@ -567,6 +576,10 @@ function buildRecordFormatter(
   const hostSerializesRequest = Object.hasOwn(options.serializers, 'req')
   const maxStringLength = options.maxStringLength
   const wholeRoots = wholeRootKeys(options)
+  // The fields derived from the message of an error are copies of it, so the name `message` censors
+  // them as it censors the field, whatever the strategy.
+  const finishText = createEntryTextFinisher(buildNameRedactor(options), undefined)
+  const censorMessage = (text: string): string => finishText('message', text, false, false)
   return (record) => {
     const redacted = redactRecord(
       hostSerializesRequest
@@ -584,7 +597,8 @@ function buildRecordFormatter(
       withEventName(bounded, options.eventNameField),
       options.errorFormat,
       options.maxEntrySizeBytes,
-      () => onTruncate('max_entry_size')
+      () => onTruncate('max_entry_size'),
+      censorMessage
     )
   }
 }

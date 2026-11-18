@@ -201,8 +201,14 @@ add('redaction-leaf-message-with-message-in-the-stack-header', () => ({
   extra: { redactPaths: ['*.message'] }
 }))
 
-/** Shapes that show less by decision: none in this part. */
-const ACCEPTED: Record<string, RegExp> = {}
+/**
+ * Shapes that show less by decision. With `*.message` redacted, the stack of the root `err` opens
+ * with the censored message, where 1.4.8 left the text of the message readable in its first line,
+ * so `Error: root` is no longer in the output.
+ */
+const ACCEPTED: Record<string, RegExp> = {
+  'redaction-leaf-message-with-message-in-the-stack-header': /^LOST "Error: root"$/
+}
 
 describe('nested Error shapes, the blind spots, against the 1.4.8 output', () => {
   if (process.env.RECORD_SHAPES) {

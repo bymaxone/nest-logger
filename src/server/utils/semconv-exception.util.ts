@@ -6,6 +6,7 @@
  * `maxEntrySizeBytes` here, on top of the fixed text cap.
  */
 import { cutBytes, cutText } from './bounded-text.util'
+import { censorStackHeader } from './censor-stack-header.util'
 import { scrubStack } from './sanitize-error.util'
 
 /**
@@ -16,11 +17,14 @@ import { scrubStack } from './sanitize-error.util'
  * @param record - The record, changed in place.
  * @param maxBytes - The ceiling of each field, in UTF-8 bytes.
  * @param onCut - Called once for each field the ceiling cut, so the cuts can be counted.
+ * @param censorMessage - The text of a message after the redaction that covers the name `message`:
+ *   the fields are copies of the message of the error, and the stack opens with it.
  */
 function deriveExceptionFields(
   record: Record<string, unknown>,
   maxBytes: number,
-  onCut: (() => void) | undefined
+  onCut: (() => void) | undefined,
+  censorMessage: (text: string) => string
 ): void {
   const bounded = (text: string): string => {
     const cut = cutBytes(text, maxBytes)
@@ -36,14 +40,22 @@ function deriveExceptionFields(
     record['exception.type'] = bounded(cutText(candidate.name))
     record['error.type'] = bounded(cutText(candidate.name))
   }
-  if (typeof candidate?.message === 'string') {
-    record['exception.message'] = bounded(cutText(candidate.message))
+  const message =
+    typeof candidate?.message === 'string'
+      ? { text: candidate.message, censored: censorMessage(candidate.message) }
+      : undefined
+  if (message !== undefined) {
+    record['exception.message'] = bounded(cutText(message.censored))
   }
   if (typeof candidate?.stack === 'string') {
     // Same scrubbing the legacy `err.stack` gets. Without it, a consumer moving to
     // `errorFormat: 'semconv'` would silently start seeing dependency frames that the shape they
     // migrated FROM had filtered out.
-    record['exception.stacktrace'] = bounded(scrubStack(candidate.stack))
+    const stack =
+      message === undefined
+        ? candidate.stack
+        : censorStackHeader(candidate.stack, message.text, message.censored)
+    record['exception.stacktrace'] = bounded(scrubStack(stack))
   }
 }
 
@@ -78,6 +90,9 @@ function deriveExceptionFields(
  * @param record - The redacted record about to be serialized.
  * @param format - `'pino'` keeps only `err`; `'semconv'` replaces it; `'both'`
  *   emits each.
+ * @param maxBytes - The ceiling of each derived field, in UTF-8 bytes.
+ * @param onCut - Called once for each field the ceiling cut.
+ * @param censorMessage - Censors the text of a message as the name `message` is; none by default.
  * @returns The record, with the exception attributes applied.
  * @example
  *   withSemconvException({ err: new TypeError('bad') }, 'both')
@@ -88,7 +103,8 @@ export function withSemconvException(
   record: Record<string, unknown>,
   format: 'pino' | 'semconv' | 'both',
   maxBytes = Number.POSITIVE_INFINITY,
-  onCut?: () => void
+  onCut?: () => void,
+  censorMessage: (text: string) => string = (text) => text
 ): Record<string, unknown> {
   if (format === 'pino') {
     return record
@@ -98,7 +114,7 @@ export function withSemconvException(
     // yields `undefined` for every field and adds nothing, which is exactly what
     // a guard would have produced. A guard whose presence no input can
     // distinguish is not a check, it is untested code.
-    deriveExceptionFields(record, maxBytes, onCut)
+    deriveExceptionFields(record, maxBytes, onCut, censorMessage)
     if (format === 'semconv') {
       // Explicitly opted out of the legacy shape. Kept as a deliberate choice
       // rather than a default: `err.*` is what every existing query reads, and

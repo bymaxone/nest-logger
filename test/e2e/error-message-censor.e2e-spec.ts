@@ -5,12 +5,14 @@
  * the way an application does it: the logger is installed with `app.useLogger`, and every call shape
  * that turns an `Error` into the text of an entry is made.
  *
- * The `stack` of an error repeats its message in its first line and is a different field; it is not
- * what is checked here.
+ * The first lines of the `stack` of an error are its message, so the same text is censored there, in
+ * the stack of each cause and in the `exception.*` fields derived from them, whatever the realm or
+ * the class of the error.
  *
  * Layer: e2e, server (`PinoLoggerService`, the redaction walk, `maxStringLength`).
  */
 import 'reflect-metadata'
+import { runInNewContext } from 'node:vm'
 import { Logger, Module } from '@nestjs/common'
 import { NestFactory } from '@nestjs/core'
 import { BymaxLoggerModule, PinoLoggerService } from '@bymax-one/nest-logger'
@@ -115,6 +117,71 @@ describe('Logger E2E — the text of an entry that comes from an Error', () => {
       })
 
       expect(entry).toMatchObject({ msg: 'boom' })
+    }
+  )
+})
+
+const SECRET_CAUSE = 'secret-cause-value'
+
+/** A way to make an error that holds `secret`, with a cause that holds `cause`. */
+const KINDS: ReadonlyArray<[string, (secret: string, cause: string) => Error]> = [
+  ['an Error', (secret, cause) => new Error(secret, { cause: new Error(cause) })],
+  [
+    'a subclass that names itself',
+    (secret, cause) => {
+      class ValidationError extends Error {
+        constructor(message: string, options: ErrorOptions) {
+          super(message, options)
+          this.name = 'ValidationError'
+        }
+      }
+      return new ValidationError(secret, { cause: new ValidationError(cause, {}) })
+    }
+  ],
+  [
+    'an Error of another realm',
+    (secret, cause) =>
+      runInNewContext('new Error(secret, { cause: new Error(cause) })', { secret, cause }) as Error
+  ]
+]
+
+/** The paths of every string in `value` that holds one of the secrets. */
+function leaks(value: unknown, path = 'entry'): string[] {
+  if (typeof value === 'string') {
+    return value.includes(SECRET) || value.includes(SECRET_CAUSE) ? [path] : []
+  }
+  if (typeof value !== 'object' || value === null) return []
+  return Object.entries(value).flatMap(([key, inner]) => leaks(inner, `${path}.${key}`))
+}
+
+describe.each(KINDS)('Logger E2E — the stack of %s', (_kind, make) => {
+  it.each(SHAPES)(
+    'carries the censored message, not the secret, anywhere in the entry: %s',
+    async (_label, call) => {
+      const entry = await runOne((l, s) => call(l, s, make(SECRET, SECRET_CAUSE)), {
+        redactPaths: ['message'],
+        errorFormat: 'both'
+      })
+
+      expect(leaks(entry)).toEqual([])
+      const err = entry['err'] as Entry
+      expect(String(err['stack'])).toMatch(/^[^\n]*\[REDACTED\]/)
+      expect(String(err['stack'])).toContain('\n    at ')
+      expect(String(entry['exception.stacktrace'])).toContain('[REDACTED]')
+    }
+  )
+
+  it.each(SHAPES)(
+    'leaves the stack as it is when message is not redacted: %s',
+    async (_l, call) => {
+      const entry = await runOne((l, s) => call(l, s, make(SECRET, SECRET_CAUSE)), {
+        redactPaths: ['password'],
+        errorFormat: 'both'
+      })
+
+      expect(String((entry['err'] as Entry)['stack'])).toContain(SECRET)
+      expect(entry['exception.message']).toBe(SECRET)
+      expect(String(entry['exception.stacktrace'])).toContain(SECRET)
     }
   )
 })
