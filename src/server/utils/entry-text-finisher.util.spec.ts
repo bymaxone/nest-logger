@@ -60,4 +60,25 @@ describe('createEntryTextFinisher', () => {
       ''
     )
   })
+
+  describe('the count of the texts it cuts', () => {
+    const cuts = (text: string, limit: number | undefined): number => {
+      let count = 0
+      createEntryTextFinisher(identity, limit, () => {
+        count += 1
+      })('message', text)
+      return count
+    }
+
+    it('calls back once for a text cut at the limit', () => {
+      expect(cuts('x'.repeat(LIMIT + 1), LIMIT)).toBe(1)
+    })
+
+    it.each([
+      ['a text at the limit', 'x'.repeat(LIMIT), LIMIT],
+      ['a text with no limit', 'x'.repeat(100_000), undefined]
+    ])('does not call back for %s', (_label, text, limit) => {
+      expect(cuts(text, limit)).toBe(0)
+    })
+  })
 })

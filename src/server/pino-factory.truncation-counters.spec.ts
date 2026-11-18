@@ -52,6 +52,22 @@ describe('the size bounds count what they cut', () => {
     expect(totals(health)).toEqual([0, 3])
   })
 
+  /*
+   * The text of an object message is a field of the entry too, cut at the same limit: a `message`
+   * is removed from the fields and written only as the text, an `event` is a field and the text.
+   */
+  it.each([
+    ['a message that is the text', { message: 'x'.repeat(500) }, 1],
+    ['an event, which is a field and the text', { event: 'y'.repeat(500) }, 2],
+    ['a text under the limit', { message: 'short' }, 0]
+  ])('counts the cut of the text of an object message: %s', (_label, message, expected) => {
+    const { service, health } = create({ maxStringLength: 64 })
+
+    service.warn(message)
+
+    expect(totals(health)).toEqual([0, expected])
+  })
+
   it('counts a serializer output over the ceiling, under max_entry_size', () => {
     const { service, health } = create({
       maxEntrySizeBytes: 1024,

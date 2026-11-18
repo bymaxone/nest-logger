@@ -501,15 +501,20 @@ function buildSerializers(
  *
  * @param logger - The Pino instance the factory built.
  * @param options - Fully-defaulted module options.
+ * @param onTruncate - Called for each text the finisher cuts, so the cuts are counted.
  * @returns `logger`.
  */
 function withEntryTextFinisher(
   logger: PinoLogger,
-  options: ResolvedBymaxLoggerModuleOptions
+  options: ResolvedBymaxLoggerModuleOptions,
+  onTruncate: TruncationSink
 ): PinoLogger {
   // The defaults of the name redactor cover the names whatever the strategy.
   const redact = buildNameRedactor(options)
-  Reflect.set(logger, ENTRY_TEXT_FINISHER, createEntryTextFinisher(redact, options.maxStringLength))
+  const finisher = createEntryTextFinisher(redact, options.maxStringLength, () =>
+    onTruncate('max_string_length')
+  )
+  Reflect.set(logger, ENTRY_TEXT_FINISHER, finisher)
   return logger
 }
 
@@ -691,5 +696,5 @@ export function buildPinoInstance(
   }
 
   const streams = pino.multistream(buildStreams(options, destinations, health))
-  return withEntryTextFinisher(pino(pinoOptions, streams), options)
+  return withEntryTextFinisher(pino(pinoOptions, streams), options, onTruncate)
 }
