@@ -12,6 +12,22 @@ heading here.
 
 ## [Unreleased]
 
+### Added
+
+- **The logger counts what it cuts and what its destinations refuse.** `LOGGER_OBSERVABILITY_TOKEN`
+  provides an `ILoggerObservability`: `truncatedTotal(reason)` (the fields cut or replaced for a size
+  bound, with `reason` of `'max_entry_size'` or `'max_string_length'`), `destinationErrorTotal()` (the
+  writes the destinations refused) and `deliveryState()` (how many destinations are up, how many
+  failed their init or refused a write, and whether one is healthy). The types `ILoggerObservability`,
+  `DeliveryState` and `TruncationReason` are exported with it. Nothing changes for a host that does
+  not read them.
+
+#### Apply to a derived backend
+
+Nothing is required. A derived backend that builds the Pino instance itself through
+`buildPinoInstance` passes its `DestinationHealth`, which now counts; one that provides its own
+`LOGGER_OBSERVABILITY_TOKEN` must return the three methods of `ILoggerObservability`.
+
 ### Fixed
 
 - **The derived exception fields are bounded by `maxEntrySizeBytes`.** With `errorFormat: 'semconv'`
