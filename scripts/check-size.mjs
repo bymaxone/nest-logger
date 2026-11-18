@@ -33,6 +33,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-17 — server: 41,654 B (40.68 KiB) real -> 40.70 KiB budget (41,677 B, +23 B over the
+//     measurement). The derived exception fields are cut to maxEntrySizeBytes in UTF-8 bytes
+//     (`cutBytes`), and the size ceiling measures a value with a cycle or a BigInt as it is written
+//     (`measurableJson`) and replaces one that cannot be read. It is +339 B over the 41,315 B
+//     measured at 1.4.23.
 //   - 2026-11-17 — server: 41,360 B (40.39 KiB) real -> 40.42 KiB budget (41,390 B, +30 B over the
 //     measurement). A plain object passed as the message of a Nest-style call is written as the
 //     fields of the entry (`objectMessageText`, the shared `isPlainRecord`), and the keys the logger
@@ -276,7 +281,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 40.42 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 40.7 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 }
 ]
 
