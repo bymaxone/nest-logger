@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.23] - 2026-11-17
+
 ### Breaking
 
 - **A payload cannot replace the correlation keys the logger writes from the request context and
@@ -45,7 +47,7 @@ jobs: 7 })` through `app.useLogger(app.get(PinoLoggerService))` wrote `msg: "[ob
   object's `message` string, else its `event` string, else empty, and the keys the logger
   owns are dropped from the object as they are from `meta`. The text is censored under the names of
   the field it came from, also with `redactStrategy: 'paths'`, so a secret in `event` or `message`
-  does not reach `msg`, and it is cut at `maxStringLength` like the field. An `Error`, and an object shaped like one, keep their own error-only path,
+  does not reach `msg`, and it is cut at `maxStringLength` like the field, within the 16 KiB cap that bounds every log message. A serializer keyed `event` or `message` shapes the field and not `msg`; redaction by name is what covers the text. An `Error`, and an object shaped like one, keep their own error-only path,
   and a value that is not plain (a class instance, an array) is still written as its string form.
   **Apply:** code that logged an object and got `[object Object]` now gets its fields; a
   dashboard or an alert that matched `[object Object]` in `msg` matches the `event` or `message`
@@ -72,6 +74,19 @@ jobs: 7 })` through `app.useLogger(app.get(PinoLoggerService))` wrote `msg: "[ob
   `ResolvedBymaxLoggerModuleOptions` itself and called the factory that builds the logger skipped it,
   and its censor would be cut. The factory refuses it with the same message. **Apply:** a derived
   backend that builds the resolved options keeps its censor within the limit.
+
+#### Apply to a derived backend
+
+`PinoLoggerService` gains two private members, `nestStyleMessage` and `censorText`, in its
+declaration. A subclass that defines a member of either name no longer compiles against it: rename
+yours. Nothing else about its constructor or its public methods changes.
+
+A service you build by hand over a Pino instance from `buildPinoInstance` censors and cuts the text
+of an object message with the function the factory leaves on that instance; over a Pino instance you
+built yourself, it falls back to its own redactor and applies no `maxStringLength`. Code that calls
+`buildPinoInstance` gets the merge in which the keys the logger writes from the request context and
+the span win over a payload, and the owned-key guard applies to the metadata and to an object message
+of every method of the service; nothing is required beyond what the Breaking entries above say.
 
 ## [1.4.22] - 2026-11-17
 
@@ -3081,7 +3096,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.22...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.23...HEAD
+[1.4.23]: https://github.com/bymaxone/nest-logger/compare/v1.4.22...v1.4.23
 [1.4.22]: https://github.com/bymaxone/nest-logger/compare/v1.4.21...v1.4.22
 [1.4.21]: https://github.com/bymaxone/nest-logger/compare/v1.4.20...v1.4.21
 [1.4.20]: https://github.com/bymaxone/nest-logger/compare/v1.4.19...v1.4.20
