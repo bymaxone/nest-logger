@@ -68,11 +68,14 @@ function measurableJson(value: unknown): string | undefined {
  * @typeParam T - The serializer's input type (inferred from `baseSerializer`).
  * @param baseSerializer - The serializer whose output is size-bounded.
  * @param maxBytes - Maximum UTF-8 byte size before the value is truncated.
+ * @param onTruncate - Called each time an output is replaced by the envelope, so the replacements
+ *   can be counted.
  * @returns A serializer with identical input but a size-capped output.
  */
 export function createSizeBoundedSerializer<T>(
   baseSerializer: (input: T) => unknown,
-  maxBytes: number
+  maxBytes: number,
+  onTruncate?: () => void
 ): (input: T) => unknown {
   return (input: T): unknown => {
     const serialized = baseSerializer(input)
@@ -82,6 +85,7 @@ export function createSizeBoundedSerializer<T>(
     } catch {
       // The value cannot be read (a `toJSON` or a getter that throws). The logging path must never
       // throw, and a value that cannot be measured cannot be shown to be bounded, so it is replaced.
+      onTruncate?.()
       return unmeasurableEnvelope()
     }
     // A serializer may legitimately produce `undefined` (JSON.stringify → undefined
@@ -92,6 +96,7 @@ export function createSizeBoundedSerializer<T>(
     }
     const byteSize = Buffer.byteLength(json, 'utf-8')
     if (byteSize > maxBytes) {
+      onTruncate?.()
       return {
         _truncated: true,
         _logKey: RESERVED_LOG_KEYS.LOGGER_ENTRY_TRUNCATED,

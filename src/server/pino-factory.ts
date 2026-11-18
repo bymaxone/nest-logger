@@ -21,10 +21,10 @@ import { refuseCensorBeyondLimit } from './config/validate-options'
 import { REDACT_COMMON_FIELDS } from './constants/default-redact-paths.constants'
 import type { ILogDestination } from './interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from './interfaces/logger-module-options.interface'
+import type { TruncationReason } from './interfaces/logger-observability.interface'
 import { createTraceContextMixin } from './mixins/trace-context.mixin'
 import type { DestinationHealth } from './services/destination-health.service'
 import type { LogContextService } from './services/log-context.service'
-import { cutBytes, cutText } from './utils/bounded-text.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
@@ -43,7 +43,8 @@ import {
   extraServiceFields,
   resolveServiceMetadata
 } from './utils/resolve-resource.util'
-import { assignOwnErrorFields, sanitizeError, scrubStack } from './utils/sanitize-error.util'
+import { assignOwnErrorFields, sanitizeError } from './utils/sanitize-error.util'
+import { withSemconvException } from './utils/semconv-exception.util'
 import { withSerializedRequest } from './utils/serialize-request.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
 
@@ -178,112 +179,6 @@ export function serializeErrorValue(
   // The policy already applied when `sanitized` was built, so what this copies is filtered.
   assignOwnErrorFields(serialized, sanitized)
   return serialized
-}
-
-/**
- * Writes the SemConv `exception.*` and `error.type` fields from the `err` of `record`, each cut to
- * `maxBytes` UTF-8 bytes on top of the fixed text cap: the fields are the library's own, written
- * after the `err` serializer, so the ceiling that bounds a serializer's output does not reach them.
- *
- * @param record - The record, changed in place.
- * @param maxBytes - The ceiling of each field, in UTF-8 bytes.
- */
-function deriveExceptionFields(record: Record<string, unknown>, maxBytes: number): void {
-  // Optional chaining rather than a type guard: a `null` or primitive `err` yields `undefined` for
-  // every field and adds nothing, which is exactly what a guard would have produced. A guard whose
-  // presence no input can distinguish is not a check, it is untested code.
-  const candidate = record['err'] as
-    { name?: unknown; message?: unknown; stack?: unknown } | undefined
-  if (typeof candidate?.name === 'string') {
-    record['exception.type'] = cutBytes(cutText(candidate.name), maxBytes)
-    record['error.type'] = cutBytes(cutText(candidate.name), maxBytes)
-  }
-  if (typeof candidate?.message === 'string') {
-    record['exception.message'] = cutBytes(cutText(candidate.message), maxBytes)
-  }
-  if (typeof candidate?.stack === 'string') {
-    // Same scrubbing the legacy `err.stack` gets. Without it, a consumer moving to
-    // `errorFormat: 'semconv'` would silently start seeing dependency frames that the shape they
-    // migrated FROM had filtered out.
-    record['exception.stacktrace'] = cutBytes(scrubStack(candidate.stack), maxBytes)
-  }
-}
-
-/**
- * Add the Stable OpenTelemetry exception attributes alongside (or instead of)
- * the legacy `err` object.
- *
- * **Stability, verified 2026-08-13 against SemConv v1.44.0.** `exception.type`,
- * `exception.message` and `exception.stacktrace` are **Stable** on log records;
- * the spec requires at least one of `type` / `message` to be present, which is
- * satisfied here because both are derived from the same value. `error.type` is
- * **Stable** and must be low cardinality — it carries the error's CLASS NAME,
- * which is bounded by the number of exception types a codebase defines, never a
- * message or an identifier.
- *
- * `error.type` and `exception.type` are not redundant even when they hold the
- * same string: `exception.type` describes the thrown object, while `error.type`
- * is the classification a consumer aggregates on. Emitting both is what lets a
- * dashboard group by failure class without parsing the exception.
- *
- * Runs at `formatters.log`, so the value read here is the REDACTED copy the walk
- * produced — a cloned `Error` with resolved properties, never the caller's live
- * object. A hostile getter has already been dealt with by the fail-closed guard
- * upstream; the try/catch is the belt to that braces, because this hook must not
- * be the thing that throws inside a log call.
- *
- * @internal Exported only for unit testing. These hooks write fields whose
- *   absence is invisible in a serialized line — `JSON.stringify` drops a key
- *   holding `undefined` — so asserting them through the sink cannot tell an
- *   omitted field from one written as `undefined`. Mutation testing found that
- *   gap. NOT re-exported by the package barrel.
- * @param record - The redacted record about to be serialized.
- * @param format - `'pino'` keeps only `err`; `'semconv'` replaces it; `'both'`
- *   emits each.
- * @returns The record, with the exception attributes applied.
- * @example
- *   withSemconvException({ err: new TypeError('bad') }, 'both')
- *   // → { err: TypeError, 'exception.type': 'TypeError',
- *   //     'error.type': 'TypeError', 'exception.message': 'bad', … }
- */
-export function withSemconvException(
-  record: Record<string, unknown>,
-  format: 'pino' | 'semconv' | 'both',
-  maxBytes = Number.POSITIVE_INFINITY
-): Record<string, unknown> {
-  if (format === 'pino') {
-    return record
-  }
-  try {
-    // Optional chaining rather than a type guard: a `null` or primitive `err`
-    // yields `undefined` for every field and adds nothing, which is exactly what
-    // a guard would have produced. A guard whose presence no input can
-    // distinguish is not a check, it is untested code.
-    deriveExceptionFields(record, maxBytes)
-    if (format === 'semconv') {
-      // Explicitly opted out of the legacy shape. Kept as a deliberate choice
-      // rather than a default: `err.*` is what every existing query reads, and
-      // dropping it silently would break dashboards that never asked to migrate.
-      //
-      // Rebuilt rather than deleted: the redaction walk defines every property
-      // of its snapshot as non-configurable, so `delete` throws `TypeError` here
-      // — silently, into the catch below, leaving `err` in place. Adding keys
-      // still works because the object itself is extensible; only the existing
-      // properties are pinned. Measured, not assumed.
-      const withoutErr: Record<string, unknown> = {}
-      for (const [key, value] of Object.entries(record)) {
-        if (key !== 'err') {
-          Reflect.set(withoutErr, key, value)
-        }
-      }
-      return withoutErr
-    }
-  } catch {
-    // A value that resists reading leaves the legacy `err` untouched rather than
-    // half-populated attributes. Partial semconv fields would be worse than
-    // none: a consumer cannot tell an absent attribute from a failed read.
-  }
-  return record
 }
 
 /**
@@ -546,6 +441,9 @@ export function resolveRedactOption(
   return { paths, censor: options.redactCensor }
 }
 
+/** Called for each field the logger cuts or replaces for a size bound, to count it by its reason. */
+type TruncationSink = (reason: TruncationReason) => void
+
 /**
  * The serializers of the logger: the default `err` one and every consumer-supplied one, each
  * composed as size-bound(redact(serialize)).
@@ -558,7 +456,8 @@ export function resolveRedactOption(
 function buildSerializers(
   options: ResolvedBymaxLoggerModuleOptions,
   redactSerialized: Redactor,
-  ownFields: OwnFieldPolicy
+  ownFields: OwnFieldPolicy,
+  onTruncate: TruncationSink
 ): Record<string, (input: unknown) => unknown> {
   const maxBytes = options.maxEntrySizeBytes
   // Every serializer (default `err` + any consumer-supplied) is composed as
@@ -581,7 +480,11 @@ function buildSerializers(
   // `Object.fromEntries` avoids a dynamic `obj[key] =` write (which would trip
   // the object-injection lint rule).
   const bound = <T>(serializer: (input: T) => unknown): ((input: T) => unknown) =>
-    createSizeBoundedSerializer((input: T) => redactSerialized(serializer(input)), maxBytes)
+    createSizeBoundedSerializer(
+      (input: T) => redactSerialized(serializer(input)),
+      maxBytes,
+      () => onTruncate('max_entry_size')
+    )
   return {
     err: bound((error) => serializeErrorValue(error, ownFields)),
     ...Object.fromEntries(
@@ -598,15 +501,20 @@ function buildSerializers(
  *
  * @param logger - The Pino instance the factory built.
  * @param options - Fully-defaulted module options.
+ * @param onTruncate - Called for each text the finisher cuts, so the cuts are counted.
  * @returns `logger`.
  */
 function withEntryTextFinisher(
   logger: PinoLogger,
-  options: ResolvedBymaxLoggerModuleOptions
+  options: ResolvedBymaxLoggerModuleOptions,
+  onTruncate: TruncationSink
 ): PinoLogger {
   // The defaults of the name redactor cover the names whatever the strategy.
   const redact = buildNameRedactor(options)
-  Reflect.set(logger, ENTRY_TEXT_FINISHER, createEntryTextFinisher(redact, options.maxStringLength))
+  const finisher = createEntryTextFinisher(redact, options.maxStringLength, () =>
+    onTruncate('max_string_length')
+  )
+  Reflect.set(logger, ENTRY_TEXT_FINISHER, finisher)
   return logger
 }
 
@@ -648,7 +556,8 @@ function buildStreams(
  */
 function buildRecordFormatter(
   options: ResolvedBymaxLoggerModuleOptions,
-  redactRecord: Redactor
+  redactRecord: Redactor,
+  onTruncate: TruncationSink
 ): (record: Record<string, unknown>) => Record<string, unknown> {
   // The request is serialized here, before the walk, and not as a Pino serializer: Pino runs the
   // record formatter first, so the walk would copy a whole `IncomingMessage`, its sockets and its
@@ -668,11 +577,14 @@ function buildRecordFormatter(
     // The cut follows every censor, so it can never precede a rule that needs the whole string,
     // and it precedes the fields the library derives, which are written whole after it.
     const bounded =
-      maxStringLength === undefined ? redacted : cutStrings(redacted, maxStringLength, wholeRoots)
+      maxStringLength === undefined
+        ? redacted
+        : cutStrings(redacted, maxStringLength, wholeRoots, () => onTruncate('max_string_length'))
     return withSemconvException(
       withEventName(bounded, options.eventNameField),
       options.errorFormat,
-      options.maxEntrySizeBytes
+      options.maxEntrySizeBytes,
+      () => onTruncate('max_entry_size')
     )
   }
 }
@@ -689,7 +601,8 @@ function buildRecordFormatter(
 function buildFormatters(
   options: ResolvedBymaxLoggerModuleOptions,
   redactRecord: Redactor,
-  redactBindings: Redactor
+  redactBindings: Redactor,
+  onTruncate: TruncationSink
 ): NonNullable<LoggerOptions['formatters']> {
   return {
     // Emit the level as a string label instead of the numeric code — easier
@@ -711,7 +624,7 @@ function buildFormatters(
     // `base` and child bindings are NOT visible at this hook — they are
     // library-owned (`service`, the `@InjectLogger` context) and carry nothing
     // sensitive, which `pino-factory.spec.ts` pins.
-    log: buildRecordFormatter(options, redactRecord)
+    log: buildRecordFormatter(options, redactRecord, onTruncate)
   }
 }
 
@@ -759,6 +672,7 @@ export function buildPinoInstance(
   const ownFields = ownFieldPolicyOf(options)
 
   const redactOption = resolveRedactOption(options)
+  const onTruncate: TruncationSink = (reason) => health.recordTruncation(reason)
   const pinoOptions: LoggerOptions = {
     level: options.level,
     ...(redactOption === undefined ? {} : { redact: redactOption }),
@@ -775,12 +689,12 @@ export function buildPinoInstance(
     // is encoded as a JSON string here: a quote, a backslash or a newline in it must
     // neither break the line nor add fields to it.
     timestamp: () => `,"time":${JSON.stringify(String(options.timestamp()))}`,
-    formatters: buildFormatters(options, redactRecord, resolveNameRedactor(options)),
-    serializers: buildSerializers(options, redactSerialized, ownFields),
+    formatters: buildFormatters(options, redactRecord, resolveNameRedactor(options), onTruncate),
+    serializers: buildSerializers(options, redactSerialized, ownFields, onTruncate),
     mixin: createTraceContextMixin(logContext, options.otel),
     mixinMergeStrategy: mergeMixinSafely
   }
 
   const streams = pino.multistream(buildStreams(options, destinations, health))
-  return withEntryTextFinisher(pino(pinoOptions, streams), options)
+  return withEntryTextFinisher(pino(pinoOptions, streams), options, onTruncate)
 }

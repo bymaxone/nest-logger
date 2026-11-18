@@ -70,6 +70,9 @@ export type {
   OtelOptions,
   IUnexpectedErrorSink,
   UnexpectedErrorReport,
+  DeliveryState,
+  ILoggerObservability,
+  TruncationReason,
   LogContext as LogContextBag
 } from './interfaces'
 
@@ -79,6 +82,7 @@ export {
   LOGGER_PINO_INSTANCE_TOKEN,
   LOGGER_DESTINATIONS_TOKEN,
   LOGGER_REDACTOR_TOKEN,
+  LOGGER_OBSERVABILITY_TOKEN,
   LOG_CONTEXT_TOKEN
 } from './constants/injection-tokens.constants'
 

@@ -4,7 +4,8 @@
  * Layer: server, tests.
  */
 import { applyDefaults } from './config/default-options'
-import { serializeErrorValue, withSemconvException } from './pino-factory'
+import { serializeErrorValue } from './pino-factory'
+import { withSemconvException } from './utils/semconv-exception.util'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
 import { buildPinoInstance, createCapture } from './__tests__/pino-factory.fixtures'
@@ -525,6 +526,30 @@ describe('withSemconvException (direct)', () => {
       const out = withSemconvException(recordWith(new Error('€'.repeat(2000))), 'both', CEILING)
 
       expect(bytes(out['exception.message'])).toBeLessThanOrEqual(CEILING)
+    })
+
+    it('calls back once for each field the ceiling cut', () => {
+      const err = Object.assign(new Error('m'.repeat(5000)), {
+        name: 'Short',
+        stack: `Error: ${'s'.repeat(5000)}\n    at a (f.js:1:1)`
+      })
+      let cuts = 0
+
+      withSemconvException(recordWith(err), 'both', CEILING, () => {
+        cuts += 1
+      })
+
+      expect(cuts).toBe(2)
+    })
+
+    it('does not call back for a field that fits the ceiling', () => {
+      let cuts = 0
+
+      withSemconvException(recordWith(new Error('short')), 'both', CEILING, () => {
+        cuts += 1
+      })
+
+      expect(cuts).toBe(0)
     })
 
     it('leaves a field that is under the ceiling as it is', () => {

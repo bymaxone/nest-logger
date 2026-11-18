@@ -1,0 +1,118 @@
+/**
+ * Pins that every field the logger cuts or replaces for a size bound is counted, under the reason
+ * for it and under no other: a string cut at `maxStringLength`, a serializer output over
+ * `maxEntrySizeBytes` or one that cannot be measured, and a derived exception field cut to it.
+ * Driven through the real factory, so the counts are those a scrape would read.
+ *
+ * Layer: server, tests.
+ */
+import { applyDefaults } from './config/default-options'
+import type { BymaxLoggerModuleOptions } from './interfaces/logger-module-options.interface'
+import type { ILogDestination } from './interfaces/log-destination.interface'
+import { buildPinoInstance } from './pino-factory'
+import { DestinationHealth } from './services/destination-health.service'
+import { LogContextService } from './services/log-context.service'
+import { PinoLoggerService } from './services/pino-logger.service'
+
+function create(extra: Partial<BymaxLoggerModuleOptions>): {
+  service: PinoLoggerService
+  health: DestinationHealth
+} {
+  const destination: ILogDestination = { name: 'capture', write: () => undefined }
+  const options = applyDefaults({ service: { name: 'app', version: '1.0.0' }, ...extra })
+  const health = new DestinationHealth()
+  const pino = buildPinoInstance(options, new LogContextService(), [destination], health)
+  return { service: new PinoLoggerService(pino), health }
+}
+
+const totals = (health: DestinationHealth): [number, number] => [
+  health.truncatedTotal('max_entry_size'),
+  health.truncatedTotal('max_string_length')
+]
+
+describe('the size bounds count what they cut', () => {
+  it('counts nothing when nothing is cut', () => {
+    const { service, health } = create({ maxStringLength: 64, serializers: { thing: (v) => v } })
+
+    service.info('SMALL', 'text', undefined, { note: 'short', thing: { a: 1 } })
+
+    expect(totals(health)).toEqual([0, 0])
+  })
+
+  it('counts each string cut at maxStringLength, under max_string_length', () => {
+    const { service, health } = create({ maxStringLength: 64 })
+
+    service.info('LONG', 'text', undefined, {
+      first: 'x'.repeat(100),
+      second: 'y'.repeat(100),
+      short: 'ok',
+      nested: { deep: 'z'.repeat(100) }
+    })
+
+    expect(totals(health)).toEqual([0, 3])
+  })
+
+  /*
+   * The text of an object message is a field of the entry too, cut at the same limit: a `message`
+   * is removed from the fields and written only as the text, an `event` is a field and the text.
+   */
+  it.each([
+    ['a message that is the text', { message: 'x'.repeat(500) }, 1],
+    ['an event, which is a field and the text', { event: 'y'.repeat(500) }, 2],
+    ['a text under the limit', { message: 'short' }, 0]
+  ])('counts the cut of the text of an object message: %s', (_label, message, expected) => {
+    const { service, health } = create({ maxStringLength: 64 })
+
+    service.warn(message)
+
+    expect(totals(health)).toEqual([0, expected])
+  })
+
+  /*
+   * Nothing is written for a level the logger does not emit, so nothing is cut and nothing is
+   * counted: the count is of the entries that carry a cut, like the fields that are cut in the
+   * formatter, which Pino does not run for a level below the configured one.
+   */
+  it.each([
+    ['a message that is the text', { message: 'x'.repeat(500) }],
+    ['an event, which is a field and the text', { event: 'y'.repeat(500) }]
+  ])('counts no cut for a level below the configured one: %s', (_label, message) => {
+    const { service, health } = create({ level: 'info', maxStringLength: 64 })
+
+    service.debug(message)
+
+    expect(totals(health)).toEqual([0, 0])
+  })
+
+  it('counts a serializer output over the ceiling, under max_entry_size', () => {
+    const { service, health } = create({
+      maxEntrySizeBytes: 1024,
+      serializers: { thing: (value: unknown) => value }
+    })
+
+    service.info('BIG', 'text', undefined, { thing: { blob: 'x'.repeat(5000) } })
+
+    expect(totals(health)).toEqual([1, 0])
+  })
+
+  it('counts each derived exception field cut to the ceiling, under max_entry_size', () => {
+    const { service, health } = create({ maxEntrySizeBytes: 1024, errorFormat: 'both' })
+    const error = new Error('m'.repeat(5000))
+    error.stack = `Error: ${'s'.repeat(5000)}\n    at a (f.js:1:1)`
+
+    service.error(error)
+
+    // exception.message and exception.stacktrace are cut; the type and the short name are not. The
+    // err serializer output is over the ceiling too and is counted once.
+    expect(health.truncatedTotal('max_entry_size')).toBeGreaterThanOrEqual(2)
+    expect(health.truncatedTotal('max_string_length')).toBe(0)
+  })
+
+  it('does not count a derived field that fits the ceiling', () => {
+    const { service, health } = create({ errorFormat: 'both' })
+
+    service.error(new Error('short'))
+
+    expect(totals(health)).toEqual([0, 0])
+  })
+})

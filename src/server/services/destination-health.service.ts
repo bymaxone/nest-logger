@@ -22,6 +22,11 @@ import { Injectable } from '@nestjs/common'
 import type { LogLevel } from '../../shared/types/log-level.type'
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
+import type {
+  DeliveryState,
+  ILoggerObservability,
+  TruncationReason
+} from '../interfaces/logger-observability.interface'
 
 /**
  * Tracks which destinations initialized, and which one speaks when none did.
@@ -68,7 +73,11 @@ function countInWindow(
 }
 
 @Injectable()
-export class DestinationHealth {
+export class DestinationHealth implements ILoggerObservability {
+  /** How many fields were cut or replaced for the entry-size ceiling, and for the string limit. */
+  private entrySizeTruncations = 0
+  private stringLengthTruncations = 0
+
   /** Destinations whose `onInit()` rejected. Identity-keyed, not name-keyed. */
   private readonly failed = new Set<ILogDestination>()
 
@@ -179,6 +188,38 @@ export class DestinationHealth {
   recordWriteFailure(destination: ILogDestination, now: number): number | undefined {
     this.writeFailed.add(destination)
     return countInWindow(this.writeFailures, destination, now)
+  }
+
+  /**
+   * Record one field cut or replaced for a size bound.
+   *
+   * @param reason - Which bound: the entry-size ceiling or the string limit.
+   */
+  recordTruncation(reason: TruncationReason): void {
+    if (reason === 'max_entry_size') this.entrySizeTruncations += 1
+    else this.stringLengthTruncations += 1
+  }
+
+  /** @inheritDoc */
+  truncatedTotal(reason: TruncationReason): number {
+    return reason === 'max_entry_size' ? this.entrySizeTruncations : this.stringLengthTruncations
+  }
+
+  /** @inheritDoc */
+  destinationErrorTotal(): number {
+    let total = 0
+    for (const count of this.writeFailures.values()) total += count.total
+    return total
+  }
+
+  /** @inheritDoc */
+  deliveryState(): DeliveryState {
+    return {
+      destinations: this.healthy.size + this.failed.size,
+      failedInit: this.failed.size,
+      writeFailing: this.writeFailed.size,
+      hasHealthySink: this.healthy.size > 0
+    }
   }
 
   /**

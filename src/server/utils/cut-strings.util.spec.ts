@@ -136,4 +136,27 @@ describe('cutStrings', () => {
       expect(record).toEqual({ note: long, nested: { note: long } })
     })
   })
+
+  describe('the count of the strings it cuts', () => {
+    const counted = (
+      record: Record<string, unknown>,
+      exempt: ReadonlySet<string> = NONE
+    ): number => {
+      let count = 0
+      cutStrings(record, LIMIT, exempt, () => {
+        count += 1
+      })
+      return count
+    }
+
+    it('calls back once for each string that was cut, at any depth', () => {
+      const long = cutOf(LIMIT + 1)
+
+      expect(counted({ a: long, b: { c: [long, 'short'] }, d: cutOf(LIMIT) })).toBe(2)
+    })
+
+    it('does not call back for a string left whole or under an exempt root key', () => {
+      expect(counted({ kept: cutOf(LIMIT + 50), note: 'short' }, new Set(['kept']))).toBe(0)
+    })
+  })
 })
