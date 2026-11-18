@@ -582,11 +582,18 @@ export function headerCensor(
 }
 
 /**
+ * How much of the opening of a message is looked for in a stack that was cut: enough to tell that
+ * the stack opens with it, and the same for every message, so the cost does not depend on its length.
+ */
+const OPENING_LENGTH = 1024
+
+/**
  * The part of a stack that is read, with the message censored where it opens the stack.
  *
- * A message longer than the part that is read cannot be found in it, and when the stack was cut
- * there, all of that part is the header: it is censored whole when the message was censored, and
- * left as it is when it was not.
+ * A stack that was cut can hold only the start of the message, because the header ran past the part
+ * that is read; the message is then not found whole, and what is read is the header when it holds
+ * the opening of the message. It is censored whole when the message was censored, and a stack that
+ * does not hold the opening is left as it is, like any other stack that does not hold the message.
  *
  * @param head - The part of the stack that is read.
  * @param cut - Whether the stack was cut to make `head`.
@@ -594,10 +601,11 @@ export function headerCensor(
  * @returns `head`, with the header censored.
  */
 function censorHead(head: string, cut: boolean, header: HeaderCensor): string {
-  if (cut && header.message.length > head.length) {
-    return header.censored === header.message ? head : header.censored
-  }
-  return censorStackHeader(head, header.message, header.censored)
+  const { message, censored } = header
+  if (message === '' || censored === message) return head
+  const found = censorStackHeader(head, message, censored)
+  if (found !== head || !cut) return found
+  return head.includes(message.slice(0, OPENING_LENGTH)) ? censored : head
 }
 
 /**

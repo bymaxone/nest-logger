@@ -84,20 +84,47 @@ describe('the reads of the message and the size of what is searched', () => {
     expect(reads).toBe(2)
   })
 
-  it('censors the whole part that is read when the message is longer than it', () => {
-    const message = 'S'.repeat(200_000) + ' secret'
+  /*
+   * The stack is read up to MAX_STACK_SCAN characters. The header is 'Error: ' and the message, so
+   * it fits while the message is at most MAX_STACK_SCAN - 7 characters, ends the part read exactly
+   * at that length, and runs past it for every longer message, which leaves the start of it in the
+   * part read and never the whole of it.
+   */
+  describe.each([
+    ['a message that fits in the part read', 100_000, 'Error: [REDACTED]\n'],
+    ['a message that ends the part read exactly', 131_065, 'Error: [REDACTED]'],
+    ['a message one character past it', 131_066, '[REDACTED]'],
+    ['a message that overruns it by a little', 131_071, '[REDACTED]'],
+    ['a message as long as the part read', 131_072, '[REDACTED]'],
+    ['a message longer than the part read', 131_073, '[REDACTED]'],
+    ['a message far longer than the part read', 200_000, '[REDACTED]']
+  ])('%s', (_label, length, opening) => {
+    const message = `SECRET${'x'.repeat(length - 6)}`
     const stack = `Error: ${message}\n    at run (/srv/app.js:1:1)`
 
-    const out = scrubStack(stack, { message, censored: '[REDACTED]' })
+    it('is censored, whatever part of the header the stack reads', () => {
+      const out = scrubStack(stack, { message, censored: '[REDACTED]' })
 
-    expect(out).toBe('[REDACTED]…[truncated]')
+      expect(out).not.toContain('SECRET')
+      expect(out.startsWith(opening)).toBe(true)
+    })
+
+    it('is left as it is when nothing censored it, at the same cost', () => {
+      expect(scrubStack(stack, { message, censored: message })).toBe(scrubStack(stack))
+    })
   })
 
-  it('leaves the part that is read as it is when a message longer than it was not censored', () => {
-    const message = 'S'.repeat(200_000)
-    const stack = `Error: ${message}\n    at run (/srv/app.js:1:1)`
+  it('leaves a cut stack alone when its header holds other text than the message', () => {
+    const stack = `Error: original\n    at run (/srv/app.js:1:1)${'x'.repeat(131_072)}`
+    const message = `secret${'x'.repeat(131_072)}`
 
-    expect(scrubStack(stack, { message, censored: message })).toBe(scrubStack(stack))
+    expect(scrubStack(stack, { message, censored: '[REDACTED]' })).toBe(scrubStack(stack))
+  })
+
+  it('leaves a cut stack alone when the message is empty, whatever it is censored to', () => {
+    const stack = `Error: \n    at run (/srv/app.js:1:1)${'x'.repeat(131_072)}`
+
+    expect(scrubStack(stack, { message: '', censored: '[REDACTED]' })).toBe(scrubStack(stack))
   })
 
   it('searches a message that is longer than the stack, which was not cut, and does not find it', () => {
