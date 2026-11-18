@@ -6,8 +6,7 @@
  * `maxEntrySizeBytes` here, on top of the fixed text cap.
  */
 import { cutBytes, cutText } from './bounded-text.util'
-import { censorStackHeader } from './censor-stack-header.util'
-import { scrubStack } from './sanitize-error.util'
+import { headerCensor, scrubStack } from './sanitize-error.util'
 
 /**
  * Writes the SemConv `exception.*` and `error.type` fields from the `err` of `record`, each cut to
@@ -40,22 +39,15 @@ function deriveExceptionFields(
     record['exception.type'] = bounded(cutText(candidate.name))
     record['error.type'] = bounded(cutText(candidate.name))
   }
-  const message =
-    typeof candidate?.message === 'string'
-      ? { text: candidate.message, censored: censorMessage(candidate.message) }
-      : undefined
-  if (message !== undefined) {
-    record['exception.message'] = bounded(cutText(message.censored))
+  const header = headerCensor(candidate?.message, censorMessage)
+  if (header !== undefined) {
+    record['exception.message'] = bounded(cutText(header.censored))
   }
   if (typeof candidate?.stack === 'string') {
     // Same scrubbing the legacy `err.stack` gets. Without it, a consumer moving to
     // `errorFormat: 'semconv'` would silently start seeing dependency frames that the shape they
     // migrated FROM had filtered out.
-    const stack =
-      message === undefined
-        ? candidate.stack
-        : censorStackHeader(candidate.stack, message.text, message.censored)
-    record['exception.stacktrace'] = bounded(scrubStack(stack))
+    record['exception.stacktrace'] = bounded(scrubStack(candidate.stack, header))
   }
 }
 

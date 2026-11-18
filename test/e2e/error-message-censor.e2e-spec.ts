@@ -200,3 +200,50 @@ describe('Logger E2E — the stack of each error an AggregateError holds', () =>
     expect(String(members[0]?.['stack'])).toMatch(/^[^\n]*\[REDACTED\]/)
   })
 })
+
+describe('Logger E2E — where the message sits in the stack', () => {
+  it.each(SHAPES)(
+    'censors a message that holds a control character, which the stack escapes: %s',
+    async (_label, call) => {
+      const entry = await runOne(
+        (l, s) => call(l, s, new Error(`tok\r${SECRET}\u001b${SECRET_CAUSE}`)),
+        { redactPaths: ['message'], errorFormat: 'both' }
+      )
+
+      expect(leaks(entry)).toEqual([])
+      expect(String((entry['err'] as Entry)['stack'])).toMatch(/^[^\n]*\[REDACTED\]/)
+    }
+  )
+
+  it.each(SHAPES)(
+    'censors the message, and not the name, when the name is the same text: %s',
+    async (_label, call) => {
+      class Named extends Error {}
+      Named.prototype.name = SECRET
+      const entry = await runOne((l, s) => call(l, s, new Named(SECRET)), {
+        redactPaths: ['message'],
+        errorFormat: 'both'
+      })
+
+      const err = entry['err'] as Entry
+      expect(String(err['stack'])).toContain(`${SECRET}: [REDACTED]`)
+      expect(String(err['stack'])).not.toContain(`: ${SECRET}`)
+      expect(String(entry['exception.stacktrace'])).toContain(`${SECRET}: [REDACTED]`)
+    }
+  )
+
+  it.each(SHAPES)(
+    'leaves the name whole when the message is a part of it: %s',
+    async (_label, call) => {
+      class ValidationError extends Error {}
+      ValidationError.prototype.name = 'ValidationError'
+      const entry = await runOne((l, s) => call(l, s, new ValidationError('Error')), {
+        redactPaths: ['message'],
+        errorFormat: 'both'
+      })
+
+      expect(String((entry['err'] as Entry)['stack'])).toMatch(/^ValidationError: \[REDACTED\]\n/)
+      expect(String(entry['exception.stacktrace'])).toMatch(/^ValidationError: \[REDACTED\]\n/)
+    }
+  )
+})
