@@ -75,18 +75,15 @@ what the Breaking entry above says.
   16 KiB like every log message and not cut at `maxStringLength`, which does not apply to the log
   message. The same text is censored where it opens the stack: in `err.stack`, in the stack of each
   `cause` and of each of the `errors` of an `AggregateError`, and in `exception.message` and
-  `exception.stacktrace` with `errorFormat: 'semconv'` or `'both'`. It is found by an exact match of
-  the message, never by a pattern built from your text: the last occurrence in the lines up to the
-  first frame line, so an error whose name repeats or contains its message is censored in the
-  message and not in the name. It holds for an `Error`, a subclass and an `Error` of another realm,
-  for a header another writer wrote (a custom stack formatter, a line after the message), for a
-  message with a control character, which the stack escapes. How much of a stack is read does not
-  depend on its message: a cut stack that holds only the start of a censored message is censored
-  whole in the part read.
-  A stack that does not
-  hold the message, because it was changed after the engine wrote the stack, is left as it is, and
-  one whose older header text holds the new message as a part of it is censored there; a header that
-  holds the message more than 64 times, which no engine writes, is censored whole. **What this covers,
+  `exception.stacktrace` with `errorFormat: 'semconv'` or `'both'`. It is replaced where the engine
+  writes it, right after the first `: ` of the first line (or at the start, for an error with no
+  name), by an exact comparison there, never by a search and never by a pattern built from your
+  text, so an error whose name repeats or contains its message is censored in the message and not
+  in the name, and so is a message that wraps another error with its frames. It holds for an `Error`,
+  a subclass and an `Error` of another realm, and for a message with a control character, which the
+  stack escapes. A stack whose header is not in the default form loses its frames when its message
+  is censored: it becomes its name, if any, and the censored message, as what it holds may be the
+  secret too. A stack of a message that nothing censored is not touched. **What this covers,
   precisely:** redaction works on field names, so it covers a field and the text copied from a named
   field (the `message` or `event` of an object message, and the `message` of an `Error` where it
   appears as the text of the entry, in its stack and in the derived `exception.*` fields); it never
