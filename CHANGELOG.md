@@ -23,12 +23,11 @@ heading here.
   object message, by the metadata of a structured call or by the raw Pino logger replaced the
   value the logger had written, so a line could be attributed to another request, tenant or trace.
   The logger's value now wins, except `userId`, which a structured call names as an argument and which keeps winning over the one of the request context; a key the logger does not write, including a `requestId` outside any
-  request, is kept as the payload has it. **Apply:** nothing is required; code that set one of
+  request, is kept as the payload has it, and a key the logger leaves `undefined` does not erase the payload's own value. The merge also drops the payload's own `__proto__` key and its symbol keys, which `Object.assign` used to copy. **Apply:** nothing is required; code that set one of
   these keys on purpose inside a request to override the context no longer gets that, so set it in
   the request context instead (`LogContextService.run`).
 - **A key the logger writes itself can no longer be replaced from `meta` or from an object
-  message.** `level`, `time`, `msg`, `service` and `deployment` and, with `resourceFormat: 'flat'`,
-  `service.*` and `deployment.environment.name`, in the metadata of `info`, `warnStructured` and
+  message.** `level`, `time`, `msg`, `service`, `deployment`, `service.*` and `deployment.*`, in the metadata of `info`, `warnStructured` and
   `errorStructured`, were written as a second key of the same name, and a reader that keeps the
   last of a repeated key saw the caller's `level`, `service` or environment. They are dropped from
   the metadata and from an object message, as `logKey`, `userId` and `context` already were.
@@ -55,8 +54,8 @@ jobs: 7 })` through `app.useLogger(app.get(PinoLoggerService))` wrote `msg: "[ob
 - **An option that holds `undefined` or `null` is read as not set, in the options and in every
   group.** An `undefined` in a group replaced its default in the spread that merges the two, so `shouldCaptureExceptions: undefined` stayed
   `undefined` and not the default `true`, and a `null` anywhere was refused as a value of the wrong
-  kind. Each known key is read by property access, so a group, or the options themselves, written as
-  a class instance whose values are getters on its prototype is honored; a spread skipped them and
+  kind. Each known key is read by property access, so an `http` or `otel` group written as
+  a class instance whose values are getters on its prototype is honored; the spread that merged it skipped them and
   the default won. `false`, `0` and `''` are values you set and are judged as before, and `service`
   is still required: a `null` or an `undefined` service says `options.service is required`, where
   1.4.22 said `must be an object. Received null` for `null`. **Apply:** nothing is required; code
@@ -65,7 +64,7 @@ jobs: 7 })` through `app.useLogger(app.get(PinoLoggerService))` wrote `msg: "[ob
 - **A refusal does not print the key of a serializer, and names the type of an `undefined` list
   member.** The refusal of a serializer that is not a function now says
   `options.serializers must map every serializer key to a function`, followed by the type
-  received, where it printed the key the caller chose, and a member of `redactPaths`,
+  received (a member that is itself `undefined` keeps no type), where it printed the key the caller chose, and a member of `redactPaths`,
   `errorOwnFieldNames`, `destinations`, `http.excludePaths` or `http.secretPathSegments`
   that is `undefined` is refused as `Received undefined`, where it had no
   type. **Apply:** code that matches the text of the serializer refusal matches the new one.
@@ -83,7 +82,7 @@ yours. Nothing else about its constructor or its public methods changes.
 
 A service you build by hand over a Pino instance from `buildPinoInstance` censors and cuts the text
 of an object message with the function the factory leaves on that instance; over a Pino instance you
-built yourself, it falls back to its own redactor and applies no `maxStringLength`. Code that calls
+built yourself, it falls back to its own redactor and applies no `maxStringLength`. That function is a property of the instance under a symbol key, so `getRawLogger()` returns an instance that carries it. Code that calls
 `buildPinoInstance` gets the merge in which the keys the logger writes from the request context and
 the span win over a payload, and the owned-key guard applies to the metadata and to an object message
 of every method of the service; nothing is required beyond what the Breaking entries above say.
