@@ -53,6 +53,9 @@ heading here.
 - Under `redactStrategy: 'paths'`, an `Error` held under a key of your own (`{ error: new Error(x) }`)
   is data of the record and is matched by the paths you wrote; its `message` and `stack` are hidden
   only when a path names them.
+- An error name longer than 16,384 characters is cut to that length before it is read, and the stack
+  header keeps the first 16,384 characters of it as written, while `err.name` and `err.type` are
+  censored. Keep a value out of a name of that length by putting it in a field that `redactPaths` covers.
 
 ## [1.4.24] - 2026-11-18
 
