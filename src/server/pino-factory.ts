@@ -616,6 +616,10 @@ function buildRecordFormatter(
   const maxStringLength = options.maxStringLength
   const wholeRoots = wholeRootKeys(options)
   const censorMessage = buildMessageCensor(options)
+  // The `stack` the `exception.*` fields copy is hidden by the names that hide the one `err` writes.
+  const redactSerialized = buildNameRedactor(options)
+  const redactStack = (stack: string): string =>
+    (redactSerialized({ stack }) as { stack: string }).stack
   return (record) => {
     const redacted = redactRecord(
       hostSerializesRequest
@@ -634,7 +638,8 @@ function buildRecordFormatter(
       options.errorFormat,
       options.maxEntrySizeBytes,
       () => onTruncate('max_entry_size'),
-      censorMessage
+      censorMessage,
+      redactStack
     )
   }
 }

@@ -23,7 +23,8 @@ function deriveExceptionFields(
   record: Record<string, unknown>,
   maxBytes: number,
   onCut: (() => void) | undefined,
-  censorMessage: (text: string) => string
+  censorMessage: (text: string) => string,
+  redactStack: (stack: string) => string
 ): void {
   const bounded = (text: string): string => {
     const cut = cutBytes(text, maxBytes)
@@ -40,15 +41,21 @@ function deriveExceptionFields(
     record['exception.type'] = type
     record['error.type'] = type
   }
-  const header = headerCensor(candidate?.name, candidate?.message, censorMessage)
+  const message = candidate?.message
+  const header = headerCensor(candidate?.name, message, censorMessage)
   if (header !== undefined) {
     record['exception.message'] = bounded(cutText(header.censored))
   }
-  if (typeof candidate?.stack === 'string') {
-    // Same scrubbing the legacy `err.stack` gets. Without it, a consumer moving to
-    // `errorFormat: 'semconv'` would silently start seeing dependency frames that the shape they
-    // migrated FROM had filtered out.
-    record['exception.stacktrace'] = bounded(scrubStack(candidate.stack, header))
+  // Same scrubbing the legacy `err.stack` gets. Without it, a consumer moving to
+  // `errorFormat: 'semconv'` would silently start seeing dependency frames that the shape they
+  // migrated FROM had filtered out. Written only for what the serializer reads as an error, a name
+  // and a message that are text, as `err.stack` is, and hidden by the names that hide that one.
+  if (
+    typeof candidate?.name === 'string' &&
+    typeof message === 'string' &&
+    typeof candidate.stack === 'string'
+  ) {
+    record['exception.stacktrace'] = bounded(redactStack(scrubStack(candidate.stack, header)))
   }
 }
 
@@ -97,7 +104,8 @@ export function withSemconvException(
   format: 'pino' | 'semconv' | 'both',
   maxBytes = Number.POSITIVE_INFINITY,
   onCut?: () => void,
-  censorMessage: (text: string) => string = (text) => text
+  censorMessage: (text: string) => string = (text) => text,
+  redactStack: (stack: string) => string = (stack) => stack
 ): Record<string, unknown> {
   if (format === 'pino') {
     return record
@@ -107,7 +115,7 @@ export function withSemconvException(
     // yields `undefined` for every field and adds nothing, which is exactly what
     // a guard would have produced. A guard whose presence no input can
     // distinguish is not a check, it is untested code.
-    deriveExceptionFields(record, maxBytes, onCut, censorMessage)
+    deriveExceptionFields(record, maxBytes, onCut, censorMessage, redactStack)
     if (format === 'semconv') {
       // Explicitly opted out of the legacy shape. Kept as a deliberate choice
       // rather than a default: `err.*` is what every existing query reads, and
