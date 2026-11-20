@@ -32,6 +32,24 @@ function errOf(
   return lines[0]?.err
 }
 
+/** The whole line written for `thrown` under `extra`. */
+function lineOf(
+  thrown: unknown,
+  extra: Partial<BymaxLoggerModuleOptions>
+): Record<string, unknown> {
+  const lines: Array<Record<string, unknown>> = []
+  const options = applyDefaults({ service: { name: 'app', version: '1.0.0' }, ...extra })
+  const sink = { name: 'sink', write: (line: unknown) => lines.push(JSON.parse(String(line))) }
+  const pino = buildPinoInstance(
+    options,
+    new LogContextService(),
+    [sink as never],
+    new DestinationHealth()
+  )
+  new PinoLoggerService(pino).error(thrown)
+  return lines[0] ?? {}
+}
+
 describe('an error-shaped object logged as err', () => {
   const shaped = (): object => ({
     name: 'Err',
@@ -64,4 +82,25 @@ describe('an error-shaped object logged as err', () => {
 
     expect(err).toEqual({ seen: '[REDACTED]' })
   })
+
+  it.each(['pino', 'semconv', 'both'] as const)(
+    'hides the stack in every field derived from it when stack is a name to hide, with errorFormat %s',
+    (errorFormat) => {
+      const line = lineOf(
+        { ...shaped(), stack: `Err: ${SECRET}\n    at FRAME_9f3a (/srv/app.js:1:1)` },
+        { redactPaths: ['stack'], errorFormat }
+      )
+
+      expect(JSON.stringify(line)).not.toContain('FRAME_9f3a')
+    }
+  )
+
+  it.each(['semconv', 'both'] as const)(
+    'writes exception.stacktrace as the censor when stack is a name to hide, with errorFormat %s',
+    (errorFormat) => {
+      const line = lineOf(shaped(), { redactPaths: ['stack'], errorFormat })
+
+      expect(line['exception.stacktrace']).toBe('[REDACTED]')
+    }
+  )
 })

@@ -216,9 +216,9 @@ interface RedactRules {
   /** Whether an `Error` outside those keys is written as data; off, it stays an `Error`. */
   readonly errorsAsData: boolean
   /**
-   * Whether the `message` and the `stack` of an error-shaped object under `err` are left to the
-   * serializer of `err`, which censors them in its output and knows the message the stack opens
-   * with. Off when the host serializes `err` itself.
+   * Whether the `message` of an error-shaped object under `err` is left to the serializer of `err`,
+   * which censors it in its output and knows the message the stack opens with. The `stack` stays
+   * under the names. Off when the host serializes `err` itself.
    */
   readonly errorTextToSerializer: boolean
   /** Names not censored in the one object these rules are given to, and in none below it. */
@@ -634,8 +634,8 @@ function walkProperties(
 }
 
 /**
- * Whether the value under `key` is an error-shaped object whose `message` and `stack` the serializer
- * of `err` reads: a plain object, since an `Error` keeps them out of its own enumerable keys.
+ * Whether the value under `key` is an error-shaped object whose `message` the serializer of `err`
+ * reads: a plain object, since an `Error` keeps it out of its own enumerable keys.
  */
 function leavesErrorText(
   rules: RedactRules,
@@ -666,8 +666,8 @@ function rulesBelow(
   return rules.exemptKeys === undefined ? rules : { ...rules, exemptKeys: undefined }
 }
 
-/** The names `message` and `stack`, which the serializer of `err` censors. */
-const ERROR_TEXT_KEYS: ReadonlySet<string> = new Set(['message', 'stack'])
+/** The name `message`, which the serializer of `err` censors: the stack header is built from it. */
+const ERROR_TEXT_KEYS: ReadonlySet<string> = new Set(['message'])
 
 /**
  * The keys that were not omitted, in their order.
@@ -739,8 +739,8 @@ function errorPartsHost(
  *   in the record is converted with the default names censored inside it, and data that is not an
  *   `Error` is matched only by the configured paths.
  * @param headerNames - The names a flat header array censors; `fieldNames` by default.
- * @param errorTextToSerializer - Leave the `message` and the `stack` of an error-shaped object under
- *   `err` to the serializer of `err`. Off by default.
+ * @param errorTextToSerializer - Leave the `message` of an error-shaped object under `err` to the
+ *   serializer of `err`. Off by default.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
  *   const redact = createNameRedactor(['password'], '[REDACTED]')

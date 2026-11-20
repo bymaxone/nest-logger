@@ -23,9 +23,10 @@ heading here.
   whose name `redactPaths` covers. The line a failed destination writes follows the same rule.
 - **The message of an error-shaped object is hidden in its stack under `redactStrategy: 'names'`.**
   `logger.error({ name, message, stack })` wrote `message` censored and kept it in the first line of
-  `err.stack`. The walk of the record now leaves the `message` and the `stack` of that object to the
-  serializer of `err`, which censors both and knows the message the stack opens with. A host that
-  serializes `err` itself still receives the censored message.
+  `err.stack`. The walk of the record now leaves the `message` of that object to the serializer of
+  `err`, which censors it in the stack header, while a `stack` that `redactPaths` names is still
+  hidden whole, in every field derived from it. A host that serializes `err` itself still receives
+  the censored message.
 - **More spellings of a key the logger writes are dropped.** The comparison reads through white
   space, characters that print as nothing (zero-width, soft hyphen, byte order mark), the
   compatibility forms Unicode defines (`ＲequestId`, `ſpan_id`, `TRACEİD`) and a short list of Cyrillic

@@ -28,11 +28,11 @@ const redactor = (leave?: boolean): ((record: unknown) => unknown) => {
 }
 
 describe('the text of an error-shaped object under the names walk', () => {
-  it('is left to the serializer under the key err, for message and stack both', () => {
+  it('leaves the message to the serializer under the key err, and hides the stack', () => {
     const out = redactor(true)({ err: shaped() }) as { err: Record<string, unknown> }
 
     expect(out.err['message']).toBe('SECRET')
-    expect(out.err['stack']).toBe(shaped()['stack'])
+    expect(out.err['stack']).toBe(CENSOR)
   })
 
   it('is hidden under any other key', () => {
