@@ -34,10 +34,11 @@ jobs:
     uses: bymaxone/.github/.github/workflows/mutation-full.yml@v1
     with:
       # The ceiling is per shard job. Run 44096688399, on eight shards, took between 9.6 and 31.7 minutes
-      # for them, the slowest 31.7, so 60 is 1.9 times that; run 44074911481, on four shards, took 37
-      # minutes for its slowest. A run the ceiling cancels leaves no score and no baseline for the week,
-      # and nothing blocks on this job, so an over-wide ceiling costs only the minutes it uses.
-      timeout-minutes: 60
+      # for them, the slowest 31.7. Run 44819362291, on the same eight shards, took between 14 and 51
+      # minutes, the slowest 51 (shard 5), so 60 left 1.2 times the slowest and 77 leaves 1.5 times it (76.5). A
+      # run the ceiling cancels leaves no score and no baseline for the week, and nothing blocks on this
+      # job, so an over-wide ceiling costs only the minutes it uses.
+      timeout-minutes: 77
       # A unit test the cold run did not run fails the job. The specs that judge no mutant are
       # listed, with the reason, in scripts/mutation-inventory.exempt.json.
       inventory: enforce
