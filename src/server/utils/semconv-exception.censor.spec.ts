@@ -69,8 +69,8 @@ describe('the message in the derived exception fields', () => {
   it('writes no stacktrace for a value with no message, which err.stack is not written for either', () => {
     const out = derive({ name: 'Error', stack: STACK }, censor)
 
-    expect(out).not.toHaveProperty('exception.message')
-    expect(out).not.toHaveProperty('exception.stacktrace')
+    expect(out).not.toHaveProperty(['exception.message'])
+    expect(out).not.toHaveProperty(['exception.stacktrace'])
   })
 
   it('reads the message of the error once, as a getter of the caller is its code', () => {
@@ -94,6 +94,6 @@ describe('the message in the derived exception fields', () => {
     const out = derive({ name: 'Error', message: 'secret' }, censor)
 
     expect(out['exception.message']).toBe('[REDACTED]')
-    expect(out).not.toHaveProperty('exception.stacktrace')
+    expect(out).not.toHaveProperty(['exception.stacktrace'])
   })
 })

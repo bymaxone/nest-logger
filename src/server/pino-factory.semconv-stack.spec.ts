@@ -64,7 +64,7 @@ describe('exception.stacktrace under the names the options hide', () => {
       (_label, make) => {
         const line = lineOf(make(), { redactPaths: ['message'], errorFormat })
 
-        expect(line).not.toHaveProperty('exception.stacktrace')
+        expect(line).not.toHaveProperty(['exception.stacktrace'])
         expect(JSON.stringify(line)).not.toContain(SECRET)
       }
     )
