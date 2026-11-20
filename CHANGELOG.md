@@ -30,8 +30,8 @@ heading here.
   space, characters that print as nothing (zero-width, soft hyphen, byte order mark), the
   compatibility forms Unicode defines (`ＲequestId`, `ſpan_id`, `TRACEİD`) and a short list of Cyrillic
   and Greek letters drawn like a Latin one (`rеquestId`), and `service_name`, `service-version`,
-  `service.instance_id` and `deployment_environment_name` are the dotted resource keys. A key that
-  only starts with `service` or `deployment` (`service_tier`, `services`) is still yours. A letter of
+  `service.instance_id` and `deployment_environment_name` are the dotted resource keys. A key such
+  as `service_tier` or `services` is still yours. A letter of
   another script that looks like a Latin one and is not on the list is kept: the list is not every
   lookalike Unicode has.
 
@@ -43,9 +43,8 @@ heading here.
   same work as `meta`. The code did not get faster or slower for this: the sentence did. Where the
   cost goes: an object message is walked as a structured call is (the owned keys are compared with
   the payload, the fields are redacted and the text of the entry is finished), so it costs what the
-  same call with `meta` costs, 1.0 times in the runs above. It is not cut because the extra work over
-  a string line is the work that hides a value and drops a forged key; the 2x figure compared it with
-  a line that has none of that. The release gate decides whether that guideline closes.
+  same call with `meta` costs. It is not cut because the extra work over
+  a string line is the work that hides a value and drops a forged key.
 
 ### Documented limits
 
