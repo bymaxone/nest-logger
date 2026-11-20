@@ -80,6 +80,27 @@ describe('the factory and the lines the library writes about a failure', () => {
     }
   )
 
+  it.each([
+    ['text that holds a value', 'N_user=U token=S', '[REDACTED]'],
+    ['a name of a class', 'ConnectionError', 'ConnectionError']
+  ])('writes err.type of a refused write as the options censor it: %s', (_l, name, expected) => {
+    const refusing: ILogDestination = {
+      name: 'refusing',
+      write(): void {
+        const error = new Error(LEAK)
+        error.name = name
+        throw error
+      }
+    }
+
+    logOne({ redactPaths: ['message'] }, [refusing])
+
+    const failure = stderrLines(stderr).find(
+      (l) => l['logKey'] === 'LOGGER_DESTINATION_WRITE_FAILED'
+    )
+    expect(failure?.['err']).toEqual({ type: expected, message: '[REDACTED]' })
+  })
+
   /*
    * `maxStringLength` does not apply to the log message, so the censor of the message of an error in
    * a line about a failure does not cut at it either, and a text that is not cut is not counted as

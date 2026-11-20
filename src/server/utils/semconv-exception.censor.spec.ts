@@ -22,6 +22,33 @@ describe('the message in the derived exception fields', () => {
     expect(String(out['exception.stacktrace'])).not.toContain('secret')
   })
 
+  it('writes a name that is text as the censor leaves it, in both type fields and the stacktrace', () => {
+    const out = derive(
+      {
+        name: 'N_user=U token=S',
+        message: 'm',
+        stack: 'N_user=U token=S: m\n    at a (/srv/a.js:1:1)'
+      },
+      (text) => (text.includes('token=S') ? '[REDACTED]' : text)
+    )
+
+    expect(out['exception.type']).toBe('[REDACTED]')
+    expect(out['error.type']).toBe('[REDACTED]')
+    expect(out['exception.stacktrace']).toMatch(/^\[REDACTED\]: m\n/)
+    const { err: _input, ...derived } = out
+    expect(JSON.stringify(derived)).not.toContain('token=S')
+  })
+
+  it('keeps the name of a class in both type fields', () => {
+    const out = derive(
+      { name: 'TypeError', message: 'm', stack: 'TypeError: m\n    at a (/a.js:1:1)' },
+      censor
+    )
+
+    expect(out['exception.type']).toBe('TypeError')
+    expect(out['error.type']).toBe('TypeError')
+  })
+
   it('writes the message as it is when nothing censors it', () => {
     const out = derive(
       { name: 'Error', message: 'kept', stack: 'Error: kept\n    at a (/srv/a.js:1:1)' },

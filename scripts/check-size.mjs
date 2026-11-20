@@ -33,6 +33,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-20 — server: 43,499 B (42.48 KiB) real -> 42.50 KiB budget (43,520 B, +21 B over the
+//     measurement). The comparison of two keys reads through white space, characters that print as
+//     nothing, the compatibility forms Unicode defines and a short list of lookalike letters
+//     (`foldKey`); the dotted resource keys are owned by their spellings; the name of an error that
+//     is text passes the censor of the message (`censorName`, in the node, the stack header, the
+//     derived exception fields and the line about a failed destination); and the walk of the names
+//     strategy leaves the text of an error-shaped object under `err` to its serializer. It is
+//     +578 B over the 42,921 B measured at the previous budget.
 //   - 2026-11-18 — server: 42,921 B (41.92 KiB) real -> 41.94 KiB budget (42,946 B, +25 B over the
 //     measurement). The lines the library writes about a failed destination keep the destination
 //     out of `msg`, write a failed shutdown as a structured line under its own key, and pass the
@@ -311,7 +319,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 41.94 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 42.5 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',

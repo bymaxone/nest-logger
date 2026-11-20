@@ -27,7 +27,13 @@ describe('mergeMixinSafely', () => {
     ['request_id', 'requestId'],
     ['REQUEST.ID', 'requestId'],
     ['Trace-Id', 'traceId'],
-    ['trace.id', 'trace_id']
+    ['trace.id', 'trace_id'],
+    ['trace\u200bid', 'traceId'],
+    ['request id', 'requestId'],
+    ['req\nuest_id', 'requestId'],
+    ['r\u0435questId', 'requestId'],
+    ['\uff32equestId', 'requestId'],
+    ['\u017fpan_id', 'spanId']
   ])('drops %s, a spelling of %s, whichever way the mixin writes it', (spelling, written) => {
     const out = merge({ [spelling]: 'forged', a: 1 }, { [written]: 'real' })
 

@@ -18,6 +18,7 @@
 import { toBoundedMessage, toSingleLineMessage } from './escape-log-text.util'
 import { isError } from './is-error.util'
 import { writeStderrSafely } from './safe-stdio.util'
+import { censorName } from './sanitize-error.util'
 import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.constants'
 import type { LogLevel } from '../../shared/types/log-level.type'
 import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
@@ -102,7 +103,7 @@ export function describeCause(
   try {
     return isError(cause)
       ? {
-          type: toBoundedMessage(String(cause.name)),
+          type: toBoundedMessage(censorName(String(cause.name), censorMessage)),
           message: toBoundedMessage(censor(String(cause.message)))
         }
       : { type: 'UnknownError', message: toBoundedMessage(censor(String(cause))) }

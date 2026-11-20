@@ -70,7 +70,7 @@ import {
   ERROR_TEXT_FIELDS,
   type ErrorPartsHost
 } from './redact-error-parts.util'
-import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
+import { OMIT_OWN_FIELD, isErrorLike, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 /** The keys of a message that hold headers as a flat `[name, value, ...]` array. */
@@ -215,6 +215,14 @@ interface RedactRules {
   readonly serializedKeys: ReadonlySet<string>
   /** Whether an `Error` outside those keys is written as data; off, it stays an `Error`. */
   readonly errorsAsData: boolean
+  /**
+   * Whether the `message` of an error-shaped object under `err` is left to the serializer of `err`,
+   * which censors it in its output and knows the message the stack opens with. The `stack` stays
+   * under the names. Off when the host serializes `err` itself.
+   */
+  readonly errorTextToSerializer: boolean
+  /** Names not censored in the one object these rules are given to, and in none below it. */
+  readonly exemptKeys?: ReadonlySet<string> | undefined
   /**
    * The rules that apply inside an `Error`, however it is written (as data, as what its `toJSON`
    * returns, or kept an instance), when they differ from the rest of the record: the names to
@@ -602,13 +610,13 @@ function walkProperties(
     defineOwn(
       copy,
       key,
-      rules.sensitive.has(key.toLowerCase())
+      rules.sensitive.has(key.toLowerCase()) && !rules.exemptKeys?.has(key.toLowerCase())
         ? rules.censor
         : censorHeaderArray(
             key,
             walk(
               scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
-              rules,
+              rulesBelow(rules, key, current, honorToJson),
               depth + 1,
               ancestors,
               true,
@@ -624,6 +632,42 @@ function walkProperties(
   }
   return copy
 }
+
+/**
+ * Whether the value under `key` is an error-shaped object whose `message` the serializer of `err`
+ * reads: a plain object, since an `Error` keeps it out of its own enumerable keys.
+ */
+function leavesErrorText(
+  rules: RedactRules,
+  key: string,
+  value: unknown,
+  honorToJson: boolean
+): boolean {
+  return (
+    rules.errorTextToSerializer &&
+    !honorToJson &&
+    key === 'err' &&
+    !isError(value) &&
+    isErrorLike(value)
+  )
+}
+
+/** The rules for the value under `key`: the exemption holds for the object under `err` only. */
+function rulesBelow(
+  rules: RedactRules,
+  key: string,
+  value: unknown,
+  honorToJson: boolean
+): RedactRules {
+  if (leavesErrorText(rules, key, value, honorToJson)) {
+    return { ...rules, exemptKeys: ERROR_TEXT_KEYS }
+  }
+  // Stryker disable next-line ConditionalExpression: equivalent: a copy with no exemption walks as the rules do, so this branch only saves the allocation.
+  return rules.exemptKeys === undefined ? rules : { ...rules, exemptKeys: undefined }
+}
+
+/** The name `message`, which the serializer of `err` censors: the stack header is built from it. */
+const ERROR_TEXT_KEYS: ReadonlySet<string> = new Set(['message'])
 
 /**
  * The keys that were not omitted, in their order.
@@ -694,6 +738,9 @@ function errorPartsHost(
  *   the walk, usually nothing. This is the rule of `redactStrategy: 'paths'`: an `Error` anywhere
  *   in the record is converted with the default names censored inside it, and data that is not an
  *   `Error` is matched only by the configured paths.
+ * @param headerNames - The names a flat header array censors; `fieldNames` by default.
+ * @param errorTextToSerializer - Leave the `message` of an error-shaped object under `err` to the
+ *   serializer of `err`. Off by default.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
  *   const redact = createNameRedactor(['password'], '[REDACTED]')
@@ -707,21 +754,19 @@ export function createNameRedactor(
   maxVisits: number = REDACT_MAX_VISITS,
   ownFields: OwnFieldPolicy = ALL_OWN_FIELDS,
   errorOnlyNames?: Iterable<string>,
-  headerNames?: Iterable<string>
+  headerNames?: Iterable<string>,
+  errorTextToSerializer: boolean = false
 ): Redactor {
-  // Matched case-INSENSITIVELY. HTTP header names are case-insensitive by spec,
-  // and only INBOUND Node headers arrive lower-cased — a hand-built or outbound
-  // bag routinely carries `Authorization`, `Cookie`, `X-API-Key`, which a
-  // case-sensitive set left in clear despite the documented header coverage.
-  // Applying it to every name rather than only to headers costs one
-  // `toLowerCase()` per key (~4 % of an entry, measured) and errs toward
-  // redacting `Password` / `Email` too, which is the safe direction.
+  // Matched case-INSENSITIVELY: header names are case-insensitive by spec and only INBOUND Node
+  // headers arrive lower-cased, so a hand-built bag with `Authorization` or `Cookie` must be covered.
+  // One `toLowerCase()` per key (~4 % of an entry, measured); it errs toward redacting `Password` too.
   const rules: Omit<RedactRules, 'visits'> = {
     sensitive: new Set(Array.from(fieldNames, (name) => name.toLowerCase())),
     headerNames: new Set(Array.from(headerNames ?? fieldNames, (name) => name.toLowerCase())),
     censor,
     serializedKeys: new Set(serializedKeys),
     errorsAsData: serializedKeys !== undefined,
+    errorTextToSerializer,
     maxVisits,
     ownFields
   }

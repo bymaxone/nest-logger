@@ -46,6 +46,18 @@ function failing(name: string, stage: 'init' | 'ready' | 'write' | 'shutdown'): 
   }
 }
 
+/** A destination whose write fails with an error whose NAME is text that holds a secret. */
+function failingWithNamedError(name: string): ILogDestination {
+  return {
+    name: 'NAMED',
+    write(): void {
+      const error = new Error('refused')
+      error.name = name
+      throw error
+    }
+  }
+}
+
 const STAGES = ['init', 'ready', 'write', 'shutdown'] as const
 
 /** Boot the real module with one failing destination per stage, log once, close, and return every byte written to stderr. */
@@ -160,4 +172,35 @@ describe('Logger E2E — the lines the library writes about its destinations', (
       )
     }
   })
+
+  it.each([
+    ['text that holds a value', `N_user=U token=${SECRET}`, '[REDACTED]'],
+    ['the name of a class', 'ConnectionError', 'ConnectionError']
+  ])(
+    'writes err.type of a refused write by the rule for a name: %s',
+    async (_l, name, expected) => {
+      const stderr = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+      @Module({
+        imports: [
+          BymaxLoggerModule.forRoot({
+            service: { name: 'e2e-operational', version: '0.0.0' },
+            destinations: [failingWithNamedError(name)],
+            redactPaths: ['message']
+          })
+        ]
+      })
+      class NamedModule {}
+
+      const app = await NestFactory.createApplicationContext(NamedModule, { logger: false })
+      app.get(PinoLoggerService).info('APP_EVENT', 'an entry of the application')
+      await app.close()
+      const { lines } = split(stderr.mock.calls.map((call) => String(call[0])))
+      stderr.mockRestore()
+
+      const failure = lines.find((line) => line['logKey'] === 'LOGGER_DESTINATION_WRITE_FAILED')
+      expect((failure?.['err'] as Line)['type']).toBe(expected)
+      expect(JSON.stringify(failure)).not.toContain(SECRET)
+    }
+  )
 })
