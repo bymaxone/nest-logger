@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.25] - 2026-11-20
+
 ### Fixed
 
 - **The name of an error is censored when it is text.** `err.type`, the stack header, `exception.type`
@@ -46,6 +48,17 @@ heading here.
   the payload, the fields are redacted and the text of the entry is finished), so it costs what the
   same call with `meta` costs. It is not cut because the extra work over
   a string line is the work that hides a value and drops a forged key.
+
+### Documentation
+
+- The README states the contract of `timestamp` (the value is converted with `String()` and written as
+  the JSON string `time`; a function that throws makes the log call throw), says that `OTEL_SERVICE_NAME`
+  and the name and version of `OTEL_RESOURCE_ATTRIBUTES` never apply to the required `service.name` and
+  `service.version`, describes what `LoggableRequest` and `LoggableResponse` carry and where the `userId`
+  of an HTTP entry comes from, adds a table of the application helpers (`useNestLogger`,
+  `useRequestContext`, `applyAccessLog`, `applyRequestIdMiddleware`) with when to call each and what
+  fails or stays silent, says what the log key regex accepts and that the library does not check a key
+  at run time, and states what the health indicator needs and where its `down` stops.
 
 ### Documented limits
 
@@ -3293,7 +3306,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.24...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.25...HEAD
+[1.4.25]: https://github.com/bymaxone/nest-logger/compare/v1.4.24...v1.4.25
 [1.4.24]: https://github.com/bymaxone/nest-logger/compare/v1.4.23...v1.4.24
 [1.4.23]: https://github.com/bymaxone/nest-logger/compare/v1.4.22...v1.4.23
 [1.4.22]: https://github.com/bymaxone/nest-logger/compare/v1.4.21...v1.4.22
