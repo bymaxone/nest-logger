@@ -221,11 +221,7 @@ interface RedactRules {
    * with. Off when the host serializes `err` itself.
    */
   readonly errorTextToSerializer: boolean
-  /**
-   * Lower-cased names that are not censored in the one object these rules are given to, and in no
-   * object it holds. Set only for the error-shaped object under `err` whose text is left to the
-   * serializer.
-   */
+  /** Names not censored in the one object these rules are given to, and in none below it. */
   readonly exemptKeys?: ReadonlySet<string> | undefined
   /**
    * The rules that apply inside an `Error`, however it is written (as data, as what its `toJSON`
@@ -656,10 +652,7 @@ function leavesErrorText(
   )
 }
 
-/**
- * The rules for what the object holds under `key`: the names of its own `message` and `stack` are
- * exempt for the error-shaped object under `err`, and for no value below it.
- */
+/** The rules for the value under `key`: the exemption holds for the object under `err` only. */
 function rulesBelow(
   rules: RedactRules,
   key: string,
