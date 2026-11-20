@@ -60,11 +60,24 @@ const OWNED_PAYLOAD_KEYS: readonly string[] = ['logKey', 'userId', 'context']
 const ENTRY_STRUCTURE_KEYS: readonly string[] = ['level', 'time', 'msg', 'service', 'deployment']
 
 /**
+ * The dotted keys of the flat resource format, owned by their spellings too: `service_name` and
+ * `service-name` are the key `service.name` for a backend that folds separators. A key that only
+ * starts with `service` or `deployment` is not owned, so `service_tier` is the caller's.
+ */
+const RESOURCE_KEYS: readonly string[] = [
+  'service.name',
+  'service.version',
+  'service.namespace',
+  'service.instance.id',
+  'deployment.environment.name'
+]
+
+/**
  * The owned keys by their folded form (see {@link foldKey}), so a spelling of one (`Level`,
  * `log_key`, `USERID`) is dropped like the key itself.
  */
 const OWNED_KEY_SPELLINGS: ReadonlySet<string> = new Set(
-  [...OWNED_PAYLOAD_KEYS, ...ENTRY_STRUCTURE_KEYS].map(foldKey)
+  [...OWNED_PAYLOAD_KEYS, ...ENTRY_STRUCTURE_KEYS, ...RESOURCE_KEYS].map(foldKey)
 )
 
 /** Whether `key` is an owned key or a spelling of one, or one of the dotted resource keys. */

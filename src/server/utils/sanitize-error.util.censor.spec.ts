@@ -112,16 +112,21 @@ describe('the reads of the message and the part of a stack that is read', () => 
     const stack = `Error: ${message}\n    at run (/srv/app.js:1:1)`
 
     it('is censored, and the header is rebuilt, for a message of this length', () => {
-      const out = scrubStack(stack, { name: 'Error', message, censored: '[REDACTED]' })
+      const out = scrubStack(stack, {
+        name: 'Error',
+        censoredName: 'Error',
+        message,
+        censored: '[REDACTED]'
+      })
 
       expect(out).not.toContain('SECRET')
       expect(out.startsWith(opening)).toBe(true)
     })
 
     it('leaves the stack as scrubStack writes it when nothing censored the message', () => {
-      expect(scrubStack(stack, { name: 'Error', message, censored: message })).toBe(
-        scrubStack(stack)
-      )
+      expect(
+        scrubStack(stack, { name: 'Error', censoredName: 'Error', message, censored: message })
+      ).toBe(scrubStack(stack))
     })
   })
 
@@ -129,30 +134,41 @@ describe('the reads of the message and the part of a stack that is read', () => 
     const stack = `Error: original\n    at run (/srv/app.js:1:1)${'x'.repeat(131_072)}`
     const message = `secret${'x'.repeat(131_072)}`
 
-    expect(scrubStack(stack, { name: 'Error', message, censored: '[REDACTED]' })).toBe(
-      'Error: [REDACTED]…[truncated]'
-    )
+    expect(
+      scrubStack(stack, { name: 'Error', censoredName: 'Error', message, censored: '[REDACTED]' })
+    ).toBe('Error: [REDACTED]…[truncated]')
   })
 
   it('leaves a cut stack alone when the message is empty', () => {
     const stack = `Error: \n    at run (/srv/app.js:1:1)${'x'.repeat(131_072)}`
 
-    expect(scrubStack(stack, { name: 'Error', message: '', censored: '[REDACTED]' })).toBe(
-      scrubStack(stack)
-    )
+    expect(
+      scrubStack(stack, {
+        name: 'Error',
+        censoredName: 'Error',
+        message: '',
+        censored: '[REDACTED]'
+      })
+    ).toBe(scrubStack(stack))
   })
 
   it('rebuilds the header when the message is longer than a stack that does not hold it', () => {
     const stack = 'Error: short\n    at run (/srv/app.js:1:1)'
 
     expect(
-      scrubStack(stack, { name: 'Error', message: 'x'.repeat(200_000), censored: '[R]' })
+      scrubStack(stack, {
+        name: 'Error',
+        censoredName: 'Error',
+        message: 'x'.repeat(200_000),
+        censored: '[R]'
+      })
     ).toBe('Error: [R]')
   })
 
   it('censors a header written with frames of two spaces', () => {
     const out = scrubStack('Error: SEC\n  at foo (/a.ts:1:1)', {
       name: 'Error',
+      censoredName: 'Error',
       message: 'SEC',
       censored: '[R]'
     })
@@ -165,6 +181,7 @@ describe('headerCensor', () => {
   it('pairs a text message with its censored form', () => {
     expect(headerCensor('Error', 'secret', censor)).toEqual({
       name: 'Error',
+      censoredName: 'Error',
       message: 'secret',
       censored: '[REDACTED]'
     })
@@ -177,6 +194,7 @@ describe('headerCensor', () => {
 
     expect(headerCensor('Error', 'secret', failing)).toEqual({
       name: 'Error',
+      censoredName: 'Error',
       message: 'secret',
       censored: ''
     })
@@ -195,6 +213,7 @@ describe('headerCensor', () => {
   it('takes an empty name for a name that is not text', () => {
     expect(headerCensor(undefined, 'secret', censor)).toEqual({
       name: '',
+      censoredName: '',
       message: 'secret',
       censored: '[REDACTED]'
     })

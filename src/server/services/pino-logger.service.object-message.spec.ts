@@ -59,6 +59,13 @@ describe('the keys an entry owns', () => {
     'service.name',
     'service.instance.id',
     'deployment.environment.name',
+    'service_name',
+    'serviceName',
+    'service-version',
+    'service.instance_id',
+    'deployment_environment_name',
+    'servi\u0441e.name',
+    'log key',
     'logKey',
     'userId',
     'context'
@@ -88,7 +95,7 @@ describe('the keys an entry owns', () => {
    */
   it.each([
     'services',
-    'serviceName',
+    'service_tier',
     'deployments',
     'deploymentId',
     'xservice.name',

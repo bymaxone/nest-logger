@@ -211,6 +211,7 @@ interface ErrorWalk {
  * the stack.
  *
  * @param value - The error.
+ * @param name - The name as it was read, once, for the node.
  * @param message - The message as it was read, once, for the node.
  * @param result - The node, marked incomplete when the stack cannot be read.
  * @param walk - What every node shares, with the censor of messages.
@@ -218,6 +219,7 @@ interface ErrorWalk {
  */
 function readScrubbedStack(
   value: Error,
+  name: string,
   message: string,
   result: SanitizedError,
   walk: ErrorWalk
@@ -225,7 +227,7 @@ function readScrubbedStack(
   const stack = readOptional(() => value.stack, result)
   return stack === undefined
     ? undefined
-    : scrubStack(stack, headerCensor(result.name, message, walk.censorMessage))
+    : scrubStack(stack, headerCensor(name, message, walk.censorMessage))
 }
 
 /**
@@ -253,12 +255,16 @@ function toSanitizedError(
     seen.add(value)
     // Read once: the header censor looks for the text written to the node.
     const message = value.message
-    const result: SanitizedError = { name: cutText(value.name), message: cutText(message) }
+    const name = cutText(value.name)
+    const result: SanitizedError = {
+      name: censorName(name, walk.censorMessage),
+      message: cutText(message)
+    }
     // `stack` and `cause` are optional, so each is read in its own guard: an unreadable one
     // costs the node that property and marks it incomplete, instead of costing the node its
     // name and message. The name and message identify the error; if THEY cannot be read the
     // outer catch still degrades the node to the visible `SanitizeFailed` shape.
-    const stack = readScrubbedStack(value, message, result, walk)
+    const stack = readScrubbedStack(value, name, message, result, walk)
     if (stack !== undefined) result.stack = stack
 
     const isAtDepthLimit = depth >= walk.maxDepth
@@ -279,16 +285,11 @@ function toSanitizedError(
       if (left > 0) result.errors.push(createWidthMarker(left))
     }
 
-    // At EVERY depth, not only the top. The `err` serializer used to copy own
-    // properties itself, so `code` survived on the error handed to the log call
-    // and vanished the moment that same error was wrapped as someone else's
-    // `cause` — measured on the published 1.2.6, where a nested cause kept
-    // `name`/`message`/`stack` and dropped both `code` and the error's entire
-    // structured payload. Nothing justified the asymmetry: the reason own
-    // properties are "part of the contract" at the top is the reason they are
-    // part of it one level down, and a wrapped error is the common case, not the
-    // exotic one. The reporting consumer put it precisely — the human stayed
-    // served, because the message survives, while the machine went blind.
+    // At EVERY depth, not only the top. The `err` serializer used to copy own properties itself, so
+    // `code` survived on the error handed to the log call and vanished once that error was wrapped as
+    // someone else's `cause` (measured on the published 1.2.6: a nested cause kept `name`, `message`
+    // and `stack` and dropped `code` and the structured payload). The reason own properties are part
+    // of the contract at the top is the reason they are part of it one level down.
     assignOwnErrorFields(result, value, walk.ownFields)
 
     return result
@@ -556,8 +557,39 @@ export const MAX_STACK_SCAN = 8 * MAX_TEXT_LENGTH
 /** The name and the message of an error and what the message became when it was censored. */
 export interface HeaderCensor {
   readonly name: string
+  /** The name as the stack writes it, after {@link censorName}. */
+  readonly censoredName: string
   readonly message: string
   readonly censored: string
+}
+
+/** How long a name can be and still be read as a name of a class. */
+const MAX_PLAIN_NAME = 64
+
+/** The shape of the name of a class, or of a code that names one: `TypeError`, `pg.DatabaseError`, `E_TIMEOUT`. */
+const PLAIN_NAME = /^[A-Za-z_$][\w$.-]*$/
+
+/**
+ * The name of an error as it is written: a name that reads as a name (identifier-shaped and at most
+ * {@link MAX_PLAIN_NAME} characters) is kept, so the types that aggregate keep working; any other,
+ * which is text that can hold a value, passes the censor of the message. A secret that is written as
+ * a short identifier in the name is not found by shape: it is the own-field limit the README states.
+ *
+ * @param name - The name of the error, cut.
+ * @param censorMessage - Censors the text of a message, when something does.
+ * @returns The name to write. A censor that cannot answer leaves an empty name, never the text.
+ */
+export function censorName(
+  name: string,
+  censorMessage: ((text: string) => string) | undefined
+): string {
+  if (censorMessage === undefined || name === '') return name
+  if (name.length <= MAX_PLAIN_NAME && PLAIN_NAME.test(name)) return name
+  try {
+    return censorMessage(name)
+  } catch {
+    return ''
+  }
 }
 
 /**
@@ -575,13 +607,24 @@ export function headerCensor(
 ): HeaderCensor | undefined {
   if (typeof message !== 'string' || censorMessage === undefined) return undefined
   const named = typeof name === 'string' ? name : ''
+  const censoredName = censorName(named, censorMessage)
   try {
-    return { name: named, message, censored: censorMessage(message) }
+    return { name: named, censoredName, message, censored: censorMessage(message) }
   } catch {
     // A censor that cannot answer leaves nothing to show: the message is removed from the header,
     // never kept, because keeping it would leave the text the censor was asked to hide.
-    return { name: named, message, censored: '' }
+    return { name: named, censoredName, message, censored: '' }
   }
+}
+
+/**
+ * The stack with its name replaced where it opens the stack, when the name was censored: the stack
+ * of a name that is text holds that text before the message.
+ */
+function censorStackName(stack: string, header: HeaderCensor): string {
+  return header.name !== '' && header.censoredName !== header.name && stack.startsWith(header.name)
+    ? header.censoredName + stack.slice(header.name.length)
+    : stack
 }
 
 /**
@@ -614,7 +657,12 @@ export function scrubStack(stack: string, header?: HeaderCensor): string {
   const scrubbed = escapeControlCharacters(
     (header === undefined
       ? head
-      : censorStackHeader(head, header.name, header.message, header.censored)
+      : censorStackHeader(
+          censorStackName(head, header),
+          header.censoredName,
+          header.message,
+          header.censored
+        )
     )
       .split('\n')
       .filter((line) => !line.includes('node_modules'))

@@ -6,7 +6,7 @@
  * `maxEntrySizeBytes` here, on top of the fixed text cap.
  */
 import { cutBytes, cutText } from './bounded-text.util'
-import { headerCensor, scrubStack } from './sanitize-error.util'
+import { censorName, headerCensor, scrubStack } from './sanitize-error.util'
 
 /**
  * Writes the SemConv `exception.*` and `error.type` fields from the `err` of `record`, each cut to
@@ -36,8 +36,9 @@ function deriveExceptionFields(
   const candidate = record['err'] as
     { name?: unknown; message?: unknown; stack?: unknown } | undefined
   if (typeof candidate?.name === 'string') {
-    record['exception.type'] = bounded(cutText(candidate.name))
-    record['error.type'] = bounded(cutText(candidate.name))
+    const type = bounded(censorName(cutText(candidate.name), censorMessage))
+    record['exception.type'] = type
+    record['error.type'] = type
   }
   const header = headerCensor(candidate?.name, candidate?.message, censorMessage)
   if (header !== undefined) {

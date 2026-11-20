@@ -31,7 +31,7 @@
   },
   "src/server/utils/redact-by-name.util.ts": {
     "max-lines-per-function": {
-      "count": 2
+      "count": 1
     }
   },
   "src/server/utils/sanitize-error.util.ts": {

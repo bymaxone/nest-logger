@@ -12,6 +12,49 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The name of an error is censored when it is text.** `err.type`, the stack header, `exception.type`
+  and `error.type` wrote the `name` of an error as it was, so a value placed in `e.name` was written
+  next to a `message` the options hid. A name that reads as a name (identifier-shaped, at most 64
+  characters: `TypeError`, `pg.DatabaseError`, `E_TIMEOUT`) is kept, so the types an alert groups by do
+  not change; any other passes the censor of the `message` of an entry. A secret written as a short
+  identifier in the name is not found by its shape: that is the limit, and a value belongs in a field
+  whose name `redactPaths` covers. The line a failed destination writes follows the same rule.
+- **The message of an error-shaped object is hidden in its stack under `redactStrategy: 'names'`.**
+  `logger.error({ name, message, stack })` wrote `message` censored and kept it in the first line of
+  `err.stack`. The walk of the record now leaves the `message` and the `stack` of that object to the
+  serializer of `err`, which censors both and knows the message the stack opens with. A host that
+  serializes `err` itself still receives the censored message.
+- **More spellings of a key the logger writes are dropped.** The comparison reads through white
+  space, characters that print as nothing (zero-width, soft hyphen, byte order mark), the
+  compatibility forms Unicode defines (`ＲequestId`, `ſpan_id`, `TRACEİD`) and a short list of Cyrillic
+  and Greek letters drawn like a Latin one (`rеquestId`), and `service_name`, `service-version`,
+  `service.instance_id` and `deployment_environment_name` are the dotted resource keys. A key that
+  only starts with `service` or `deployment` (`service_tier`, `services`) is still yours. A letter of
+  another script that looks like a Latin one and is not on the list is kept: the list is not every
+  lookalike Unicode has.
+
+### Changed
+
+- **The README states what an object message costs.** It said about 1.8 times a string line. Measured
+  on the shipped build, three runs of 200,000 calls: a string line 1.2 µs, a structured call with
+  `meta` 3.9 µs, an object message 3.3 to 3.8 µs, which is 2.8 to 3.1 times the string line and the
+  same work as `meta`. The code did not get faster or slower for this: the sentence did. Where the
+  cost goes: an object message is walked as a structured call is (the owned keys are compared with
+  the payload, the fields are redacted and the text of the entry is finished), so it costs what the
+  same call with `meta` costs, 1.0 times in the runs above. It is not cut because the extra work over
+  a string line is the work that hides a value and drops a forged key; the 2x figure compared it with
+  a line that has none of that. The release gate decides whether that guideline closes.
+
+### Documented limits
+
+- `logger.error('text ' + secret, error.stack)` (the NestJS `(message, stack)` form) writes both
+  strings as given: a string is never read for a value, and a stack string is not an `Error`.
+- Under `redactStrategy: 'paths'`, an `Error` held under a key of your own (`{ error: new Error(x) }`)
+  is data of the record and is matched by the paths you wrote; its `message` and `stack` are hidden
+  only when a path names them.
+
 ## [1.4.24] - 2026-11-18
 
 ### Breaking

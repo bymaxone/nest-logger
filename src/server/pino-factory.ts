@@ -404,7 +404,8 @@ function buildNameRedactor(
         undefined,
         ownFields,
         coversNames ? undefined : namesInsideErrors(options),
-        allNames
+        allNames,
+        !Object.hasOwn(options.serializers, 'err')
       )
     : createNameRedactor(
         names,
