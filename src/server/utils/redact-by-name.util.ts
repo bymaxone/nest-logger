@@ -222,6 +222,12 @@ interface RedactRules {
    */
   readonly errorTextToSerializer: boolean
   /**
+   * Lower-cased names that are not censored in the one object these rules are given to, and in no
+   * object it holds. Set only for the error-shaped object under `err` whose text is left to the
+   * serializer.
+   */
+  readonly exemptKeys?: ReadonlySet<string> | undefined
+  /**
    * The rules that apply inside an `Error`, however it is written (as data, as what its `toJSON`
    * returns, or kept an instance), when they differ from the rest of the record: the names to
    * censor there, which the record outside does not have. Absent, one set of rules covers the
@@ -608,13 +614,13 @@ function walkProperties(
     defineOwn(
       copy,
       key,
-      rules.sensitive.has(key.toLowerCase())
+      rules.sensitive.has(key.toLowerCase()) && !rules.exemptKeys?.has(key.toLowerCase())
         ? rules.censor
         : censorHeaderArray(
             key,
             walk(
               scrubbed && ERROR_TEXT_FIELDS.has(key) ? cutIfText(current) : current,
-              leavesErrorText(rules, key, current, honorToJson) ? withoutErrorText(rules) : rules,
+              rulesBelow(rules, key, current, honorToJson),
               depth + 1,
               ancestors,
               true,
@@ -650,13 +656,24 @@ function leavesErrorText(
   )
 }
 
-/** The rules without the names `message` and `stack`, which the serializer of `err` censors. */
-function withoutErrorText(rules: RedactRules): RedactRules {
-  const sensitive = new Set(rules.sensitive)
-  sensitive.delete('message')
-  sensitive.delete('stack')
-  return { ...rules, sensitive }
+/**
+ * The rules for what the object holds under `key`: the names of its own `message` and `stack` are
+ * exempt for the error-shaped object under `err`, and for no value below it.
+ */
+function rulesBelow(
+  rules: RedactRules,
+  key: string,
+  value: unknown,
+  honorToJson: boolean
+): RedactRules {
+  if (leavesErrorText(rules, key, value, honorToJson)) {
+    return { ...rules, exemptKeys: ERROR_TEXT_KEYS }
+  }
+  return rules.exemptKeys === undefined ? rules : { ...rules, exemptKeys: undefined }
 }
+
+/** The names `message` and `stack`, which the serializer of `err` censors. */
+const ERROR_TEXT_KEYS: ReadonlySet<string> = new Set(['message', 'stack'])
 
 /**
  * The keys that were not omitted, in their order.

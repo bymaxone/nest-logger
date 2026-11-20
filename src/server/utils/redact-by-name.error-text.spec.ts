@@ -51,4 +51,26 @@ describe('the text of an error-shaped object under the names walk', () => {
     expect(out.err['message']).toBe(CENSOR)
     expect(out.err['stack']).toBe(CENSOR)
   })
+
+  it('keeps the names for what the object holds: a nested message is still hidden, and so is what a toJSON of it reads', () => {
+    const nested = {
+      message: 'SECRET',
+      toJSON(this: { message: string }): Record<string, string> {
+        return { leak: this.message }
+      }
+    }
+    const out = redactor(true)({ err: { ...shaped(), nested } }) as {
+      err: { nested: unknown }
+    }
+
+    expect(JSON.stringify(out.err.nested)).not.toContain('SECRET')
+  })
+
+  it('keeps the names for a nested message that is a plain field', () => {
+    const out = redactor(true)({ err: { ...shaped(), nested: { message: 'SECRET' } } }) as {
+      err: { nested: { message: string } }
+    }
+
+    expect(out.err.nested.message).toBe(CENSOR)
+  })
 })
