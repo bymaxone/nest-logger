@@ -29,6 +29,12 @@ heading here.
   `err`, which censors it in the stack header, while a `stack` that `redactPaths` names is still
   hidden whole, in every field derived from it. A host that serializes `err` itself still receives
   the censored message.
+- **`exception.stacktrace` is hidden as `err.stack` is.** With `errorFormat: 'semconv'` or `'both'`, a
+  `stack` that `redactPaths` names hid `err.stack` and left the full stack in `exception.stacktrace`.
+  It is now the censor there too. The field is written for what `err` is written for, a value whose
+  `name` and `message` are text: an object with no `name`, or with no `message`, gets no
+  `exception.stacktrace`, as it gets no `err.stack`, and the secret in its first line no longer
+  reaches the field.
 - **More spellings of a key the logger writes are dropped.** The comparison reads through white
   space, characters that print as nothing (zero-width, soft hyphen, byte order mark), the
   compatibility forms Unicode defines (`ＲequestId`, `ſpan_id`, `TRACEİD`) and a short list of Cyrillic
