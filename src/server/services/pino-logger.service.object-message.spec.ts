@@ -65,6 +65,10 @@ describe('the keys an entry owns', () => {
     'service.instance_id',
     'deployment_environment_name',
     'servi\u0441e.name',
+    'service.region',
+    'Service.Region',
+    'deployment.region',
+    'Deployment.Region',
     'log key',
     'logKey',
     'userId',
@@ -100,6 +104,8 @@ describe('the keys an entry owns', () => {
     'deploymentId',
     'xservice.name',
     'my.deployment.name',
+    'my.service.',
+    'my.deployment.',
     'levelName',
     'timestamp'
   ])('%s is kept as a field', (key) => {
