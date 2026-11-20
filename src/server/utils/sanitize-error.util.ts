@@ -622,7 +622,7 @@ export function headerCensor(
  * of a name that is text holds that text before the message.
  */
 function censorStackName(stack: string, header: HeaderCensor): string {
-  return header.name !== '' && header.censoredName !== header.name && stack.startsWith(header.name)
+  return header.name !== '' && stack.startsWith(header.name)
     ? header.censoredName + stack.slice(header.name.length)
     : stack
 }

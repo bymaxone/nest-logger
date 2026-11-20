@@ -49,6 +49,7 @@ const LOOKALIKES: ReadonlyMap<string, string> = new Map(
  * @returns The folded name.
  */
 export function foldKey(key: string): string {
+  // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
   if (PLAIN.test(key)) return key.replace(IGNORED, '').toLowerCase()
   let folded = key.normalize('NFKC').replace(IGNORED, '').toLowerCase().replace(DOT_ABOVE, '')
   for (const [letter, latin] of LOOKALIKES) folded = folded.replaceAll(letter, latin)

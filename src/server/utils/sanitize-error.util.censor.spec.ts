@@ -165,6 +165,30 @@ describe('the reads of the message and the part of a stack that is read', () => 
     ).toBe('Error: [R]')
   })
 
+  it.each([
+    ['a name that is not in the stack', { name: 'Other', censoredName: '[N]' }],
+    ['an empty name', { name: '', censoredName: '[N]' }]
+  ])('leaves the stack alone for %s', (_label, names) => {
+    const out = scrubStack('Error: m\n  at foo (/a.ts:1:1)', {
+      ...names,
+      message: 'zzz',
+      censored: 'zzz'
+    })
+
+    expect(out).toBe('Error: m\n  at foo (/a.ts:1:1)')
+  })
+
+  it('replaces a name that opens the stack by its censored form', () => {
+    const out = scrubStack('N user=U: m\n  at foo (/a.ts:1:1)', {
+      name: 'N user=U',
+      censoredName: '[N]',
+      message: 'm',
+      censored: 'm'
+    })
+
+    expect(out).toBe('[N]: m\n  at foo (/a.ts:1:1)')
+  })
+
   it('censors a header written with frames of two spaces', () => {
     const out = scrubStack('Error: SEC\n  at foo (/a.ts:1:1)', {
       name: 'Error',
