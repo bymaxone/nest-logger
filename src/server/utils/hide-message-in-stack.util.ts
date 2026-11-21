@@ -18,7 +18,7 @@ type Span = readonly [number, number]
  */
 function failureTable(message: string): Int32Array {
   const table = new Int32Array(message.length)
-  // Stryker disable next-line EqualityOperator: equivalent: at `i === message.length` the loop only shrinks `matched` and writes past the end of a typed array, which stores nothing.
+  // Stryker disable next-line EqualityOperator: equivalent: at `i === message.length` there is no character, so the loop only shrinks `matched` and then writes past the end of the typed array, which stores nothing, and the table is read only below the length of the message.
   for (let i = 1, matched = 0; i < message.length; i += 1) {
     while (matched > 0 && message[i] !== message[matched]) matched = table[matched - 1] as number
     if (message[i] === message[matched]) matched += 1
@@ -34,7 +34,7 @@ function failureTable(message: string): Int32Array {
 function occurrences(stack: string, message: string): Span[] {
   const table = failureTable(message)
   const spans: Array<[number, number]> = []
-  // Stryker disable next-line EqualityOperator: equivalent: at `i === stack.length` no character is read, `matched` falls below the length of the message and no occurrence is added.
+  // Stryker disable next-line EqualityOperator: equivalent: at `i === stack.length` there is no character, so `matched` can only fall, or pass the length of the message when the last character ended an occurrence, and a count past that length is not a match: no span is added.
   for (let i = 0, matched = 0; i < stack.length; i += 1) {
     while (matched > 0 && stack[i] !== message[matched]) matched = table[matched - 1] as number
     if (stack[i] === message[matched]) matched += 1

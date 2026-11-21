@@ -98,4 +98,39 @@ describe('the text of an error-shaped object under the names walk', () => {
       expect(out.err).toBe(fn)
     }
   )
+
+  describe('the text fields of an Error under a key of your own, with message a name to hide', () => {
+    const errorWith = (fields: Record<string, unknown>): Error => {
+      const error = new Error('m')
+      for (const [key, value] of Object.entries(fields)) {
+        Object.defineProperty(error, key, {
+          value,
+          enumerable: true,
+          writable: true,
+          configurable: true
+        })
+      }
+      return error
+    }
+    const walked = (error: Error): Record<string, unknown> =>
+      (
+        createNameRedactor(['message'], CENSOR, ['err'])({ error }, true) as {
+          error: Record<string, unknown>
+        }
+      ).error
+
+    it('keeps a name that is not text as it is', () => {
+      expect(walked(errorWith({ name: 12 }))['name']).toBe(12)
+    })
+
+    it('censors a name that is text and not a name', () => {
+      expect(walked(errorWith({ name: 'N_user=U token=S' }))['name']).toBe(CENSOR)
+    })
+
+    it('does not read the stack as a name: its text stays', () => {
+      const stack = 'Err\n    at f (a.js:1:1)'
+
+      expect(walked(errorWith({ stack }))['stack']).toBe(stack)
+    })
+  })
 })
