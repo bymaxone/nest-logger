@@ -48,7 +48,15 @@ describe('foldKey', () => {
     ['r\u0435questId', 'requestid'],
     ['tr\u0430ce_id', 'traceid'],
     ['\u03bfrder', 'order'],
-    ['service_name', 'servicename']
+    ['service_name', 'servicename'],
+    ['trace\u0301id', 'traceid'],
+    ['tra\u0300ce_id', 'traceid'],
+    ['tr\u0000ace_id', 'traceid'],
+    ['TRACE\u0131D', 'traceid'],
+    ['\u1d1b\u0280\u1d00\u1d04\u1d07_\u026a\u1d05', 'traceid'],
+    ['trac\u03b5Id', 'traceid'],
+    ['trac\u03f5Id', 'traceid'],
+    ['r\u00e9questId', 'requestid']
   ])('reads %j as the spelling of a name: %s', (key, folded) => {
     expect(foldKey(key)).toBe(folded)
   })

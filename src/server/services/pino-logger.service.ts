@@ -81,11 +81,24 @@ const OWNED_KEY_SPELLINGS: ReadonlySet<string> = new Set(
   [...OWNED_PAYLOAD_KEYS, ...ENTRY_STRUCTURE_KEYS, ...RESOURCE_KEYS].map(foldKey)
 )
 
+/**
+ * The keys the library derives and writes on an entry itself. They are matched by their own spelling
+ * and not folded: `eventName` and `exceptionType` are names a caller may use for a field of its own.
+ */
+const DERIVED_KEYS: ReadonlySet<string> = new Set([
+  'event.name',
+  'exception.type',
+  'exception.message',
+  'exception.stacktrace',
+  'error.type'
+])
+
 /** Whether `key` is an owned key or a spelling of one, or one of the dotted resource keys. */
 const isOwnedKey = (key: string): boolean => {
   const lower = key.toLowerCase()
   return (
     OWNED_KEY_SPELLINGS.has(foldKey(key)) ||
+    DERIVED_KEYS.has(lower) ||
     lower.startsWith('service.') ||
     lower.startsWith('deployment.')
   )
