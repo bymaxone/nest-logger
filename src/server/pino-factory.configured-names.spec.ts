@@ -52,7 +52,8 @@ const SPELLINGS = (name: string): string[] => [
   `${name.slice(0, 2)}-${name.slice(2)}`,
   name.replace(/[ao]/, (letter) => (letter === 'a' ? '\uff41' : '\uff4f')),
   name.replace(/[ao]/, (letter) => (letter === 'a' ? '\u0430' : '\u043e')),
-  `${name.slice(0, 2)}\u3164${name.slice(2)}`
+  `${name.slice(0, 2)}\u3164${name.slice(2)}`,
+  name.replace('i', '\u0131')
 ]
 
 describe.each([
