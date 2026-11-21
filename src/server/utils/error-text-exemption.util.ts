@@ -96,5 +96,6 @@ export function errorTextField(
 ): unknown {
   if (!isError || !ERROR_TEXT_FIELDS.has(key)) return value
   const cut = cutIfText(value)
+  // Stryker disable next-line ConditionalExpression: equivalent: a `message` or a `stack` that the rules hide is written as the censor by the walk, and one they do not hide passes the censor of the name unchanged.
   return key === 'name' && typeof cut === 'string' ? censorName(cut, messageCensor(rules)) : cut
 }

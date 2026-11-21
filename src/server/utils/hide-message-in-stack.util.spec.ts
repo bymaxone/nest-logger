@@ -131,8 +131,51 @@ describe('hideMessageInStack', () => {
     ['abab', 'xababab\n  at f', 'x[R]\n  at f'],
     ['aabaa', 'aabaabaa\n  at f', '[R]\n  at f'],
     ['abaaba', 'abaabaaba\n  at f', '[R]\n  at f'],
-    ['aab', 'aaab aab\n  at f', 'a[R] [R]\n  at f']
+    ['aab', 'aaab aab\n  at f', 'a[R] [R]\n  at f'],
+    ['aabaaab', 'aabaabaaab\n  at f', 'aab[R]\n  at f'],
+    ['abcabd', 'abcabcabd\n  at f', 'abc[R]\n  at f'],
+    ['aaaa', 'aaaaaa\n  at f', '[R]\n  at f'],
+    ['aabaaa', 'aabaaabaaa\n  at f', '[R]\n  at f'],
+    ['aabaaaa', 'aabaaabaaaa\n  at f', 'aaba[R]\n  at f']
   ])('finds the occurrences of %s with the table of its prefixes', (message, stack, expected) => {
     expect(hideMessageInStack(stack, message, '[R]')).toBe(expected)
+  })
+
+  it('leaves the stack alone for a message longer than the stack, without building a table for it', () => {
+    expect(hideMessageInStack('Error: x', 'x'.repeat(50_000_000), '[R]')).toBe('Error: x')
+  })
+
+  /*
+   * The search is held against the plain one, indexOf from each next character, on every message and
+   * every stack over two letters up to a length: a wrong failure table gives a wrong occurrence for one
+   * of them, and no hand-written case has to guess which.
+   */
+  it('agrees with a plain search on every message and stack over two letters', () => {
+    const words = (length: number): string[] =>
+      Array.from({ length: 2 ** length }, (_, n) =>
+        n.toString(2).padStart(length, '0').replaceAll('0', 'a').replaceAll('1', 'b')
+      )
+    const plain = (stack: string, message: string): string => {
+      const spans: Array<[number, number]> = []
+      for (let at = stack.indexOf(message); at !== -1; at = stack.indexOf(message, at + 1)) {
+        const last = spans[spans.length - 1]
+        if (last !== undefined && at < last[1]) last[1] = at + message.length
+        else spans.push([at, at + message.length])
+      }
+      let result = ''
+      let from = 0
+      for (const [start, end] of spans) {
+        result += stack.slice(from, start) + '#'
+        from = end
+      }
+      return result + stack.slice(from)
+    }
+    const stacks = [1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap(words)
+    const messages = [1, 2, 3, 4, 5, 6, 7].flatMap(words)
+    const wrong = messages.flatMap((message) =>
+      stacks.filter((stack) => hideMessageInStack(stack, message, '#') !== plain(stack, message))
+    )
+
+    expect(wrong).toEqual([])
   })
 })

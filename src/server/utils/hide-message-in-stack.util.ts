@@ -18,6 +18,7 @@ type Span = readonly [number, number]
  */
 function failureTable(message: string): Int32Array {
   const table = new Int32Array(message.length)
+  // Stryker disable next-line EqualityOperator: equivalent: at `i === message.length` the loop only shrinks `matched` and writes past the end of a typed array, which stores nothing.
   for (let i = 1, matched = 0; i < message.length; i += 1) {
     while (matched > 0 && message[i] !== message[matched]) matched = table[matched - 1] as number
     if (message[i] === message[matched]) matched += 1
@@ -33,6 +34,7 @@ function failureTable(message: string): Int32Array {
 function occurrences(stack: string, message: string): Span[] {
   const table = failureTable(message)
   const spans: Array<[number, number]> = []
+  // Stryker disable next-line EqualityOperator: equivalent: at `i === stack.length` no character is read, `matched` falls below the length of the message and no occurrence is added.
   for (let i = 0, matched = 0; i < stack.length; i += 1) {
     while (matched > 0 && stack[i] !== message[matched]) matched = table[matched - 1] as number
     if (stack[i] === message[matched]) matched += 1
@@ -41,7 +43,6 @@ function occurrences(stack: string, message: string): Span[] {
       const last = spans[spans.length - 1]
       if (last !== undefined && start < last[1]) last[1] = i + 1
       else spans.push([start, i + 1])
-      matched = table[matched - 1] as number
     }
   }
   return spans
@@ -74,6 +75,8 @@ function headerEnd(stack: string, spans: readonly Span[]): number {
  */
 export function hideMessageInStack(stack: string, message: string, replacement: string): string {
   if (message === '') return stack
+  // Stryker disable next-line ConditionalExpression: equivalent in output: a message that does not fit in the stack is not found in it; the return only spares the table, which is as long as the message.
+  if (message.length > stack.length) return stack
   const spans = occurrences(stack, message)
   const end = headerEnd(stack, spans)
   let result = ''
