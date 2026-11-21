@@ -157,3 +157,21 @@ describe('toBoundedMessage', () => {
     expect(toBoundedMessage('x'.repeat(16_384))).toBe('x'.repeat(16_384))
   })
 })
+
+describe('a lone surrogate', () => {
+  const LONE_HIGH = '\ud800'
+  const LONE_LOW = '\udc00'
+  const PAIR = '\ud83d\ude00'
+
+  it.each([
+    ['toSingleLineMessage', toSingleLineMessage],
+    ['escapeControlCharacters', escapeControlCharacters]
+  ])('is escaped by %s, the code unit as it is, and a pair is kept', (_name, escape) => {
+    expect(escape(`a${LONE_HIGH}b${LONE_LOW}c`)).toBe('a\\ud800b\\udc00c')
+    expect(escape(`a${PAIR}b`)).toBe(`a${PAIR}b`)
+  })
+
+  it('is escaped next to a pair, which is not split', () => {
+    expect(toSingleLineMessage(`${PAIR}${LONE_HIGH}${PAIR}`)).toBe(`${PAIR}\\ud800${PAIR}`)
+  })
+})

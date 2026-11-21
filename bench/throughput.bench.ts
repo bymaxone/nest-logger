@@ -10,6 +10,8 @@
  *   C — THE SHIPPED CONFIGURATION: PinoLoggerService + default name-walk
  *       redaction + composed ALS/OTel mixin, inside an active request context
  *   D — the same, with the legacy `redactStrategy: 'paths'` escape hatch
+ *   E — the shipped configuration, a string message (the cost of a line)
+ *   F — the shipped configuration, an object message that carries the payload as its fields
  *
  * Scenario C is what `BymaxLoggerModule.forRoot({ service })` actually builds,
  * with no option set — the point of this bench is that the gate measures what
@@ -22,6 +24,12 @@
  *     for the noise of a shared CI runner. It replaces a 0.004 floor that was
  *     calibrated to the old wildcard-path engine and had stopped meaning
  *     anything: a 100× slowdown could pass it.
+ *   - F ops/sec ≥ E ops/sec × 0.20 — the HARD gate on the cost of an object message. The
+ *     same scenarios, run on the shipped build of 1.4.24 and of 1.4.25, keep 0.46 to 0.47 of the
+ *     throughput of a string line (a cost of about 2.2 times); the floor is 0.20, a cost of 5
+ *     times, so a change that makes the object form cost more than that against the same line
+ *     fails the job. It is a ratio of two throughputs read in one run, so the speed of the runner
+ *     cancels.
  *   - D is measured and PRINTED but never gated. It exists to keep the cost of
  *     the legacy strategy visible and reproducible — the README quotes this
  *     comparison — not to constrain it.
@@ -66,6 +74,11 @@ const ALLOCATION_BUDGET = 2.0
  * 75 % slowdown would still have passed.
  */
 const THROUGHPUT_BUDGET = 0.2
+/**
+ * Throughput-retention budget: an object message (F) vs a string message (E) on the shipped path.
+ * Measured at 0.46 to 0.47 on 1.4.24 and 1.4.25; the floor is 0.20, a cost of 5 times.
+ */
+const OBJECT_MESSAGE_BUDGET = 0.2
 /** Iterations used for the allocation probe. */
 const ALLOC_ITERATIONS = 50_000
 
@@ -136,6 +149,20 @@ function runProd(): void {
   )
 }
 
+/** A string message on the shipped configuration, in a request context (E). */
+function runString(): void {
+  logContext.run({ requestId: 'r_1', tenantId: 't_1' }, () =>
+    prodLogger.info('BENCH_EVENT_OK', 'bench')
+  )
+}
+
+/** An object message with the same fields on the shipped configuration (F). */
+function runObject(): void {
+  logContext.run({ requestId: 'r_1', tenantId: 't_1' }, () =>
+    prodLogger.log({ event: 'BENCH_EVENT_OK', message: 'bench', ...PAYLOAD, password: 'secret' })
+  )
+}
+
 /** The same call under the legacy `redactStrategy: 'paths'` escape hatch (D). */
 function runLegacy(): void {
   logContext.run({ requestId: 'r_1', tenantId: 't_1' }, () =>
@@ -176,6 +203,8 @@ async function main(): Promise<void> {
     .add('B: PinoLoggerService', runWrapper)
     .add('C: shipped config', runProd)
     .add("D: legacy redactStrategy 'paths'", runLegacy)
+    .add('E: shipped, string message', runString)
+    .add('F: shipped, object message', runObject)
   await bench.run()
 
   // tinybench v6 replaced the scalar `result.hz` with a `throughput` Statistics
@@ -189,6 +218,8 @@ async function main(): Promise<void> {
   const bOps = ops('B: PinoLoggerService')
   const cOps = ops('C: shipped config')
   const dOps = ops("D: legacy redactStrategy 'paths'")
+  const eOps = ops('E: shipped, string message')
+  const fOps = ops('F: shipped, object message')
 
   const aAlloc = bytesPerOp(runBare)
   const bAlloc = bytesPerOp(runWrapper)
@@ -197,6 +228,7 @@ async function main(): Promise<void> {
 
   const allocRatio = aAlloc === 0 ? 0 : bAlloc / aAlloc
   const throughputRatio = bOps === 0 ? 0 : cOps / bOps
+  const objectRatio = eOps === 0 ? 0 : fOps / eOps
 
   process.stdout.write('\n| Scenario | ops/sec | bytes/op |\n')
   process.stdout.write('| --- | ---: | ---: |\n')
@@ -205,12 +237,17 @@ async function main(): Promise<void> {
   process.stdout.write(
     `| C: shipped config (name redact + mixin) | ${fmt(cOps)} | ${fmt(cAlloc)} |\n`
   )
-  process.stdout.write(`| D: legacy 'paths' strategy | ${fmt(dOps)} | ${fmt(dAlloc)} |\n\n`)
+  process.stdout.write(`| D: legacy 'paths' strategy | ${fmt(dOps)} | ${fmt(dAlloc)} |\n`)
+  process.stdout.write(`| E: shipped, string message | ${fmt(eOps)} | - |\n`)
+  process.stdout.write(`| F: shipped, object message | ${fmt(fOps)} | - |\n\n`)
   process.stdout.write(
     `Allocation overhead (B/A): ${allocRatio.toFixed(3)}× (budget ≤ ${ALLOCATION_BUDGET}×)\n`
   )
   process.stdout.write(
     `Throughput retention (C/B): ${throughputRatio.toFixed(3)}× (budget ≥ ${THROUGHPUT_BUDGET}×)\n`
+  )
+  process.stdout.write(
+    `Object message vs string message (F/E): ${objectRatio.toFixed(3)}× (budget ≥ ${OBJECT_MESSAGE_BUDGET}×)\n`
   )
   process.stdout.write(
     `Name walk vs legacy paths (C/D): ${dOps === 0 ? 0 : (cOps / dOps).toFixed(1)}× faster (informational)\n`
@@ -221,6 +258,7 @@ async function main(): Promise<void> {
 
   const allocWithinGuideline = allocRatio <= ALLOCATION_BUDGET
   const throughputOk = throughputRatio >= THROUGHPUT_BUDGET
+  const objectOk = objectRatio >= OBJECT_MESSAGE_BUDGET
   if (!allocWithinGuideline) {
     // Advisory only — heapUsed sampling is too noisy on shared runners to gate CI.
     process.stdout.write(
@@ -232,7 +270,12 @@ async function main(): Promise<void> {
       `\nREGRESSION: throughput retention ${throughputRatio.toFixed(3)}× below ${THROUGHPUT_BUDGET}×\n`
     )
   }
-  process.exit(throughputOk ? 0 : 1)
+  if (!objectOk) {
+    process.stderr.write(
+      `\nREGRESSION: an object message keeps ${objectRatio.toFixed(3)}× of the throughput of a string message, below ${OBJECT_MESSAGE_BUDGET}×\n`
+    )
+  }
+  process.exit(throughputOk && objectOk ? 0 : 1)
 }
 
 void main()

@@ -29,6 +29,7 @@ import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-tex
 import type { EntryTextCut, EntryTextFinisher } from '../utils/entry-text-finisher.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { foldKey } from '../utils/fold-key.util'
+import { hideMessageInStack } from '../utils/hide-message-in-stack.util'
 import { isPlainRecord } from '../utils/is-plain-record.util'
 import type { Redactor } from '../utils/redact-by-name.util'
 import { isErrorLike } from '../utils/sanitize-error.util'
@@ -80,11 +81,24 @@ const OWNED_KEY_SPELLINGS: ReadonlySet<string> = new Set(
   [...OWNED_PAYLOAD_KEYS, ...ENTRY_STRUCTURE_KEYS, ...RESOURCE_KEYS].map(foldKey)
 )
 
+/**
+ * The keys the library derives from an error and writes on an entry itself. They are matched by
+ * their own spelling and not folded: `exceptionType` is a name a caller may use for a field of its
+ * own. `event.name` is not among them: a call with no log key may supply it.
+ */
+const DERIVED_KEYS: ReadonlySet<string> = new Set([
+  'exception.type',
+  'exception.message',
+  'exception.stacktrace',
+  'error.type'
+])
+
 /** Whether `key` is an owned key or a spelling of one, or one of the dotted resource keys. */
 const isOwnedKey = (key: string): boolean => {
   const lower = key.toLowerCase()
   return (
     OWNED_KEY_SPELLINGS.has(foldKey(key)) ||
+    DERIVED_KEYS.has(lower) ||
     lower.startsWith('service.') ||
     lower.startsWith('deployment.')
   )
@@ -179,6 +193,27 @@ function objectMessageText(fields: Record<string, unknown>): ObjectMessageText |
     }
   }
   return undefined
+}
+
+/**
+ * Hide the message in the first line of the `stack` of an object message, where the options hide
+ * `message`: the stack is a copy of it, and a copy made outside the pipeline would carry what the
+ * pipeline hides in the field itself.
+ *
+ * @param payload - The fields of the entry, whose `stack` is replaced.
+ * @param text - The text of the message and the member it came from.
+ * @param censor - Censors a text as the `message` of an entry is.
+ */
+function hideStackMessage(
+  payload: Record<string, unknown>,
+  text: ObjectMessageText | undefined,
+  censor: (message: string) => string
+): void {
+  const stack = Reflect.get(payload, 'stack') as unknown
+  if (text?.key !== 'message' || typeof stack !== 'string') return
+  const censored = censor(text.text)
+  if (censored === text.text) return
+  Reflect.set(payload, 'stack', hideMessageInStack(stack, text.text, censored))
 }
 
 /** A message read as the fields of an entry, with its text and the member the text came from. */
@@ -372,6 +407,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const context = typeof optionalParams[1] === 'string' ? optionalParams[1] : this.context
     // A plain-object message is the entry's fields, as in `emitNestStyle`.
     const { fields, text, payload } = readObjectMessage(message)
+    hideStackMessage(payload, text, (message) => this.censorText({ key: 'message', text: message }))
     assignIfDefined(payload, 'context', context)
     assignIfDefined(payload, 'stack', stack === undefined ? stack : cutText(stack))
     // An `Error` in the tail is attached as `err`, the same field the
@@ -642,6 +678,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     // "[object Object]" and lose every key. The fields go through the same owned-key guard as
     // `metadata`, and then through the redaction and string-limit pipeline like any other payload.
     const { fields, text, payload } = readObjectMessage(message)
+    hideStackMessage(payload, text, (message) => this.censorText({ key: 'message', text: message }))
     assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
     // Every level except `error` routes through here, so before this all of them
     // lost an `Error` in BOTH positions — measured at eleven of the twelve

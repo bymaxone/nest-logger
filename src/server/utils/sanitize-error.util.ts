@@ -188,15 +188,15 @@ export function isErrorLike(value: unknown): value is Error {
  * `SanitizeFailed` node, which says so, instead of passing for an unknown value.
  */
 function readsAsError(value: unknown): value is Error {
-  // No `instanceof Error` fast path. Every real `Error` carries string `name` and
-  // `message` through its prototype, so the structural test below already
-  // accepts one — the fast path decided nothing the structural test would not
-  // have decided identically, which made it untestable code rather than a check.
   if (typeof value !== 'object' || value === null) {
     return false
   }
   const candidate = value as { name?: unknown; message?: unknown }
-  return typeof candidate.name === 'string' && typeof candidate.message === 'string'
+  // A real `Error` needs a message that is text and no name that is text: a name that is not text
+  // must not make the message pass for the text of an unknown value, which no censor reads as one.
+  return (
+    typeof candidate.message === 'string' && (isError(value) || typeof candidate.name === 'string')
+  )
 }
 
 /** What every node of one sanitization shares: how deep the chain is walked and which fields are kept. */
@@ -255,7 +255,7 @@ function toSanitizedError(
     seen.add(value)
     // Read once: the header censor looks for the text written to the node.
     const message = value.message
-    const name = cutText(value.name)
+    const name = cutText(typeof value.name === 'string' ? value.name : 'Error')
     const result: SanitizedError = {
       name: censorName(name, walk.censorMessage),
       message: cutText(message)

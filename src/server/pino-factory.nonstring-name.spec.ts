@@ -1,0 +1,74 @@
+/**
+ * Pins that an `Error` whose `name` is not text is still read as an error: its message is hidden
+ * where the options hide `message`, in the line's `msg` and in `err`, as it is for any other `Error`,
+ * and its type is the one of an `Error`.
+ *
+ * Layer: server, tests. Driven through the real factory.
+ */
+import { applyDefaults } from './config/default-options'
+import { buildPinoInstance } from './pino-factory'
+import { DestinationHealth } from './services/destination-health.service'
+import { LogContextService } from './services/log-context.service'
+import { PinoLoggerService } from './services/pino-logger.service'
+import { isErrorLike, sanitizeError } from './utils/sanitize-error.util'
+
+const SECRET = 'SEC_9f3a'
+
+/** An `Error` with a message that holds the secret and the `name` given. */
+function errorNamed(name: unknown): Error {
+  const error = new Error(`msg ${SECRET}`)
+  Object.defineProperty(error, 'name', { value: name, configurable: true })
+  return error
+}
+
+/** The line written when the Error is the message of a NestJS call, under redactPaths message. */
+function lineOf(error: Error): Record<string, unknown> {
+  const lines: Array<Record<string, unknown>> = []
+  const options = applyDefaults({
+    service: { name: 'app', version: '1.0.0' },
+    redactPaths: ['message']
+  })
+  const sink = { name: 'sink', write: (line: unknown) => lines.push(JSON.parse(String(line))) }
+  const pino = buildPinoInstance(
+    options,
+    new LogContextService(),
+    [sink as never],
+    new DestinationHealth()
+  )
+  new PinoLoggerService(pino).warn(error as never)
+  return lines[0] ?? {}
+}
+
+describe('an Error whose name is not text', () => {
+  const names: Array<[string, unknown]> = [
+    ['a number', 12],
+    ['an array', ['a', 'b']],
+    ['an object with a toString', { toString: () => 'N' }]
+  ]
+
+  it.each(names)('is read as an error, with the name %s', (_label, name) => {
+    expect(isErrorLike(errorNamed(name))).toBe(true)
+  })
+
+  it.each(names)('is written as an Error with its message hidden, with the name %s', (_l, name) => {
+    const line = lineOf(errorNamed(name))
+
+    expect(JSON.stringify(line)).not.toContain(SECRET)
+    expect((line['err'] as { type: string }).type).toBe('Error')
+  })
+
+  it('has the name Error in the sanitized node', () => {
+    expect(sanitizeError(errorNamed(12)).name).toBe('Error')
+  })
+
+  it.each([42, { code: 'E1' }, undefined])(
+    'is not read as an error when its message is not text either, and is not a failure: %j',
+    (message) => {
+      const error = new Error('x')
+      Object.defineProperty(error, 'message', { value: message, configurable: true })
+
+      expect(isErrorLike(error)).toBe(false)
+      expect(sanitizeError(error).name).toBe('UnknownError')
+    }
+  )
+})

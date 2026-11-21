@@ -38,14 +38,14 @@ const LINE_TERMINATORS = new Set(['\r', '\n', '\u0085', '\u2028', '\u2029'])
  * TAB is deliberately kept — it moves horizontally, so it cannot forge a line,
  * and callers align text with it.
  */
-const UNSAFE_IN_SINGLE_LINE = /[\u0000-\u0008\u000A-\u001F\u007F-\u009F\u2028\u2029]/g
+const UNSAFE_IN_SINGLE_LINE = /[\u0000-\u0008\u000A-\u001F\u007F-\u009F\u2028\u2029\p{Cs}]/gu
 
 /**
  * The same set minus LF, for text that is legitimately multi-line (a stack
  * trace). CR stays in the set: alone it returns the cursor to column zero and
  * overwrites the line just drawn, which forges just as effectively as LF.
  */
-const UNSAFE_IN_MULTILINE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029]/g
+const UNSAFE_IN_MULTILINE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029\p{Cs}]/gu
 
 /**
  * Render a control character as its readable `\uXXXX` escape.

@@ -240,7 +240,8 @@ describe('maxStringLength through the logger: a logger built from resolved optio
 describe('maxStringLength through the logger: the exception fields', () => {
   /*
    * The fields the library derives from an error are written after the cut, so no name has to be
-   * left whole for them, and a key of the caller's with the same name is cut like any other string:
+   * left whole for them, and a key of the caller's named like them (the derived ones themselves are owned, and dropped) is cut
+   * like any other string:
    * left whole it would be a string no size cap bounds, since only `err` and the serializer keys
    * are bounded by `maxEntrySizeBytes`.
    */
@@ -250,15 +251,15 @@ describe('maxStringLength through the logger: the exception fields', () => {
       const { logger, capture } = loggerWith({ maxStringLength: LIMIT, errorFormat })
 
       logger.info('K', 'message', undefined, {
-        'exception.message': long,
-        'exception.stacktrace': long,
-        'error.type': long
+        'exception.detail': long,
+        'exception.frames': long,
+        'error.code': long
       })
 
       const entry = capture.entries()[0] as Record<string, unknown>
-      expect(entry['exception.message']).toBe(cutLong)
-      expect(entry['exception.stacktrace']).toBe(cutLong)
-      expect(entry['error.type']).toBe(cutLong)
+      expect(entry['exception.detail']).toBe(cutLong)
+      expect(entry['exception.frames']).toBe(cutLong)
+      expect(entry['error.code']).toBe(cutLong)
     }
   )
 
