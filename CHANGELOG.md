@@ -24,6 +24,12 @@ heading here.
 - **A key that only spells `stack` is written as a stack at the root of an entry too.** The message the
   options hide is hidden in the header of a `Stack`, `STACK` or zero-width spelling of the stack of an
   object message, as it is below the root, and in the same kind of own property of an `Error`.
+- **The stack of a plain object is bounded whatever its message.** A message longer than the text limit
+  made the part of the stack that is searched as long as the message, and buffering one span for every
+  place a dense run matched cost about 25 times the memory of the stack (1.4.29: a stack and a message of
+  ten million characters took 2.4 GB). A message longer than the text limit is no longer searched for:
+  the stack is written as the censor, as it is for more than eight messages, and a run of overlapping
+  matches is one span again.
 - **A `redactPaths` entry is at most 256 characters.** A longer one is refused at startup by the name
   of the option and its index, without echoing it: the name is compared with every key, so its length bounds that work.
 
