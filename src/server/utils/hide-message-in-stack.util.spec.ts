@@ -204,7 +204,7 @@ describe('hideMessagesInStack', () => {
     ['two messages that overlap', 'aXYZb', ['XY', 'YZ'], 5, 'a[R]b'],
     ['a message inside another', 'aXYZb', ['XYZ', 'Y'], 5, 'a[R]b'],
     [
-      'a second message that starts inside the first, past the limit',
+      'a second message that starts inside the first and at the limit',
       'aXYZb',
       ['XY', 'YZ'],
       2,

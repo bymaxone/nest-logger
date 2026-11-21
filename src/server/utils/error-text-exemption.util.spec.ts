@@ -111,7 +111,7 @@ describe('headerMessage, more than one key that spells the name', () => {
 })
 
 describe('errorTextField, a header with more than one message', () => {
-  it('hides each of them in every stack, longest first', () => {
+  it('hides each distinct text in a stack, the longer before the shorter', () => {
     const header = {
       texts: new Map([
         ['message', 'ab'],
@@ -119,9 +119,9 @@ describe('errorTextField, a header with more than one message', () => {
       ])
     }
 
-    expect(
-      errorTextField(rules(), 'Stack', 'Error: ab cd\n    at f (x.js:1:1)', false, header)
-    ).toBe('Error: [R]\n    at f (x.js:1:1)')
+    expect(errorTextField(rules(), 'Stack', 'Error: ab cd\n    at f (ab)', false, header)).toBe(
+      'Error: [R]\n    at f ([R])'
+    )
   })
 })
 

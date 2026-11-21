@@ -118,7 +118,7 @@ describe('foldName', () => {
     expect(foldName(key)).toBe(folded)
   })
 
-  it('folds a key of any length and keeps no memory of it', () => {
+  it('folds a key of any length, the same on each call', () => {
     const long = `${'a_'.repeat(200_000)}Z`
 
     expect(foldName(long)).toBe(`${'a'.repeat(200_000)}z`)

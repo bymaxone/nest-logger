@@ -73,15 +73,23 @@ describe.each([
 
 describe('the folded comparison', () => {
   it('leaves a key that is another word alone', () => {
-    const line = lineOf({ apiKeys: SECRET, passwords: SECRET }, { redactPaths: ['apiKey'] })
+    const line = lineOf(
+      { apiKeys: `${SECRET}_A`, passwords: `${SECRET}_B` },
+      { redactPaths: ['apiKey'] }
+    )
 
-    expect(line).toContain(SECRET)
+    expect(line).toContain(`${SECRET}_A`)
+    expect(line).toContain(`${SECRET}_B`)
   })
 
   it('does not take an empty-looking key for a configured name', () => {
-    const line = lineOf({ '\u200b': SECRET, ' ': SECRET }, { redactPaths: ['apiKey'] })
+    const line = lineOf(
+      { '\u200b': `${SECRET}_A`, ' ': `${SECRET}_B` },
+      { redactPaths: ['apiKey'] }
+    )
 
-    expect(line).toContain(SECRET)
+    expect(line).toContain(`${SECRET}_A`)
+    expect(line).toContain(`${SECRET}_B`)
   })
 
   it('hides the value beside a header whose name is spelled another way, in a raw header array', () => {

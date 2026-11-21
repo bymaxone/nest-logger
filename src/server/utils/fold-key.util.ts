@@ -94,9 +94,9 @@ const ALNUM = /^[A-Za-z0-9]*$/
  * @returns The folded name.
  */
 export function foldName(key: string): string {
-  // Stryker disable next-line ConditionalExpression: equivalent: foldKey returns the same text for a key of lower-case letters and digits; this branch only skips its work.
+  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (foldKey returns the same text for a key of lower-case letters and digits, so the branch only skips work); the true mutant is killed by the foldName rows of fold-key.util.spec.ts and by pino-factory.configured-names.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
   if (FOLDED.test(key)) return key
-  // Stryker disable next-line ConditionalExpression: equivalent: foldKey returns the lower-cased text for a key of ASCII letters and digits; this branch only skips its work.
+  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (foldKey returns the lower-cased text for a key of ASCII letters and digits, so the branch only skips work); the true mutant is killed by the foldName rows of fold-key.util.spec.ts and by pino-factory.configured-names.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
   if (ALNUM.test(key)) return key.toLowerCase()
   return foldKey(key)
 }

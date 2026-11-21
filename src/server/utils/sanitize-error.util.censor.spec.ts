@@ -286,7 +286,7 @@ describe('scrubStack, a hidden message against the part of the stack that is rea
     )
   })
 
-  it('hides a message that starts before the bound and ends after it, in a line that is kept', () => {
+  it('hides a message in a line that is kept, far from the header', () => {
     const message = `LEAKMARK${'q'.repeat(100)}`
     const stack = `Error: a\n    at app (/srv/${'z'.repeat(10_000)}${message}\n    at b (/srv/b.js:1:1)`
 
