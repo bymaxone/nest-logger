@@ -61,6 +61,7 @@ import { types } from 'node:util'
 
 import { cutIfText } from './bounded-text.util'
 import { censorRawHeaders } from './censor-raw-headers.util'
+import { isCensored, rulesBelow } from './error-text-exemption.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
@@ -70,7 +71,7 @@ import {
   ERROR_TEXT_FIELDS,
   type ErrorPartsHost
 } from './redact-error-parts.util'
-import { OMIT_OWN_FIELD, isErrorLike, ownFieldForLog, sanitizeError } from './sanitize-error.util'
+import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 /** The keys of a message that hold headers as a flat `[name, value, ...]` array. */
@@ -201,7 +202,7 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
 export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
 
 /** What one walk needs besides the value. */
-interface RedactRules {
+export interface RedactRules {
   /** Lower-cased field names whose values are censored. */
   readonly sensitive: ReadonlySet<string>
   /**
@@ -216,7 +217,7 @@ interface RedactRules {
   /** Whether an `Error` outside those keys is written as data; off, it stays an `Error`. */
   readonly errorsAsData: boolean
   /**
-   * Whether the `message` of an error-shaped object under `err` is left to the serializer of `err`,
+   * Whether the `message` of an object under `err` is left to the serializer of `err`,
    * which censors it in its output and knows the message the stack opens with. The `stack` stays
    * under the names. Off when the host serializes `err` itself.
    */
@@ -610,7 +611,7 @@ function walkProperties(
     defineOwn(
       copy,
       key,
-      rules.sensitive.has(key.toLowerCase()) && !rules.exemptKeys?.has(key.toLowerCase())
+      isCensored(rules, key, current)
         ? rules.censor
         : censorHeaderArray(
             key,
@@ -632,42 +633,6 @@ function walkProperties(
   }
   return copy
 }
-
-/**
- * Whether the value under `key` is an error-shaped object whose `message` the serializer of `err`
- * reads: a plain object, since an `Error` keeps it out of its own enumerable keys.
- */
-function leavesErrorText(
-  rules: RedactRules,
-  key: string,
-  value: unknown,
-  honorToJson: boolean
-): boolean {
-  return (
-    rules.errorTextToSerializer &&
-    !honorToJson &&
-    key === 'err' &&
-    !isError(value) &&
-    isErrorLike(value)
-  )
-}
-
-/** The rules for the value under `key`: the exemption holds for the object under `err` only. */
-function rulesBelow(
-  rules: RedactRules,
-  key: string,
-  value: unknown,
-  honorToJson: boolean
-): RedactRules {
-  if (leavesErrorText(rules, key, value, honorToJson)) {
-    return { ...rules, exemptKeys: ERROR_TEXT_KEYS }
-  }
-  // Stryker disable next-line ConditionalExpression: equivalent: a copy with no exemption walks as the rules do, so this branch only saves the allocation.
-  return rules.exemptKeys === undefined ? rules : { ...rules, exemptKeys: undefined }
-}
-
-/** The name `message`, which the serializer of `err` censors: the stack header is built from it. */
-const ERROR_TEXT_KEYS: ReadonlySet<string> = new Set(['message'])
 
 /**
  * The keys that were not omitted, in their order.
@@ -739,7 +704,7 @@ function errorPartsHost(
  *   in the record is converted with the default names censored inside it, and data that is not an
  *   `Error` is matched only by the configured paths.
  * @param headerNames - The names a flat header array censors; `fieldNames` by default.
- * @param errorTextToSerializer - Leave the `message` of an error-shaped object under `err` to the
+ * @param errorTextToSerializer - Leave the `message` of an object under `err` to the
  *   serializer of `err`. Off by default.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
