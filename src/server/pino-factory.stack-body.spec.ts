@@ -85,6 +85,34 @@ describe('a message the options hide, repeated in the body of a stack', () => {
   })
 })
 
+describe('the header of a stack whose name holds the text of the message', () => {
+  const stackOf = (line: string): string =>
+    (JSON.parse(line) as { err: { stack: string } }).err.stack
+
+  it('keeps the name whole and hides the message in the header and below it', () => {
+    class Named extends Error {}
+    Named.prototype.name = SECRET
+    const error = new Named(SECRET)
+    error.stack = `${SECRET}: ${SECRET}\n${FRAME}\nCaused by: Error: ${SECRET}`
+
+    const stack = stackOf(lineOf((s) => s.error(error)))
+
+    expect(stack).toBe(`${SECRET}: [REDACTED]\n${FRAME}\nCaused by: Error: [REDACTED]`)
+  })
+
+  it('keeps a name that contains the message whole in the header, and hides it in the lines', () => {
+    class ValidationError extends Error {}
+    ValidationError.prototype.name = 'ValidationError'
+    const error = new ValidationError('Error')
+    error.stack = `ValidationError: Error\n    at new ValidationError (/srv/a.js:1:1)\nCaused by: Error`
+
+    const stack = stackOf(lineOf((s) => s.error(error)))
+
+    expect(stack.startsWith('ValidationError: [REDACTED]\n')).toBe(true)
+    expect(stack.endsWith('Caused by: [REDACTED]')).toBe(true)
+  })
+})
+
 describe('the stack of an object that is no Error, at any depth', () => {
   const stackOf = (line: string): string =>
     (JSON.parse(line) as { meta?: unknown; deep: { stack: string } }).deep.stack

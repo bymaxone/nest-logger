@@ -7,7 +7,7 @@
  *
  * Layer: server/utils, tests. Pure.
  */
-import { censorStackHeader } from './censor-stack-header.util'
+import { censorStackHeader, splitCensoredHeader } from './censor-stack-header.util'
 
 const FRAMES = '\n    at run (/srv/app.js:1:1)\n    at main (/srv/main.js:2:2)'
 
@@ -231,5 +231,31 @@ describe('censorStackHeader', () => {
 
     expect(out).toBe('Named: [REDACTED]')
     expect(Date.now() - started).toBeLessThan(1_000)
+  })
+})
+
+describe('splitCensoredHeader', () => {
+  it.each([
+    [
+      'a header and the lines below it',
+      'Error: SEC\n  at f',
+      'Error',
+      'SEC',
+      '[R]',
+      ['Error: [R]', '\n  at f']
+    ],
+    ['a message with no name', 'SEC\n  at f', '', 'SEC', '[R]', ['[R]', '\n  at f']],
+    ['a header that is not in the form', 'odd\n  at f', 'Error', 'SEC', '[R]', ['Error: [R]', '']],
+    [
+      'a message that was not censored',
+      'Error: SEC\n  at f',
+      'Error',
+      'SEC',
+      'SEC',
+      ['', 'Error: SEC\n  at f']
+    ],
+    ['an empty message', 'Error: \n  at f', 'Error', '', '[R]', ['', 'Error: \n  at f']]
+  ])('splits %s', (_label, stack, name, message, censored, expected) => {
+    expect(splitCensoredHeader(stack, name, message, censored)).toEqual(expected)
   })
 })

@@ -16,7 +16,7 @@
  */
 
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
-import { censorStackHeader } from './censor-stack-header.util'
+import { splitCensoredHeader } from './censor-stack-header.util'
 import { escapeControlCharacters } from './escape-log-text.util'
 import { hideMessageInStack } from './hide-message-in-stack.util'
 import { isError } from './is-error.util'
@@ -655,19 +655,20 @@ function censorStackName(stack: string, header: HeaderCensor): string {
 }
 
 /**
- * The stack with the message of the error censored where it opens the stack and everywhere else the
- * stack repeats it, as a library does with `Caused by: ...`.
+ * The stack with the message of the error censored where it opens the stack and everywhere the lines
+ * below repeat it, as a library does with `Caused by: ...`. The header is left as it was written: the
+ * name in it may hold the same text as the message and stays.
  */
 function censorMessageInStack(stack: string, header: HeaderCensor): string {
-  const opened = censorStackHeader(
+  const [opened, rest] = splitCensoredHeader(
     censorStackName(stack, header),
     header.censoredName,
     header.message,
     header.censored
   )
   return header.censored === header.message
-    ? opened
-    : hideMessageInStack(opened, header.message, header.censored)
+    ? opened + rest
+    : opened + hideMessageInStack(rest, header.message, header.censored)
 }
 
 /**
