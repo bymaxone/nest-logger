@@ -13,15 +13,36 @@ const FRAME_LINE = /\n[ \t]+at /g
 type Span = readonly [number, number]
 
 /**
- * The spans where `message` occurs in `stack`, in order. Occurrences that overlap are one span, so
- * a message that overlaps itself is hidden whole.
+ * The length of the longest proper prefix of `message[0..i]` that is also its suffix, for each `i`:
+ * the table a search of a text for the message reads to go on after a mismatch without going back.
+ */
+function failureTable(message: string): Int32Array {
+  const table = new Int32Array(message.length)
+  for (let i = 1, matched = 0; i < message.length; i += 1) {
+    while (matched > 0 && message[i] !== message[matched]) matched = table[matched - 1] as number
+    if (message[i] === message[matched]) matched += 1
+    table[i] = matched
+  }
+  return table
+}
+
+/**
+ * The spans where `message` occurs in `stack`, in order, in one pass over the stack whatever the
+ * message is. Occurrences that overlap are one span, so a message that overlaps itself is hidden whole.
  */
 function occurrences(stack: string, message: string): Span[] {
+  const table = failureTable(message)
   const spans: Array<[number, number]> = []
-  for (let at = stack.indexOf(message); at !== -1; at = stack.indexOf(message, at + 1)) {
-    const last = spans[spans.length - 1]
-    if (last !== undefined && at < last[1]) last[1] = at + message.length
-    else spans.push([at, at + message.length])
+  for (let i = 0, matched = 0; i < stack.length; i += 1) {
+    while (matched > 0 && stack[i] !== message[matched]) matched = table[matched - 1] as number
+    if (stack[i] === message[matched]) matched += 1
+    if (matched === message.length) {
+      const start = i + 1 - message.length
+      const last = spans[spans.length - 1]
+      if (last !== undefined && start < last[1]) last[1] = i + 1
+      else spans.push([start, i + 1])
+      matched = table[matched - 1] as number
+    }
   }
   return spans
 }

@@ -115,4 +115,24 @@ describe('hideMessageInStack', () => {
     expect(hidden).toBe(`Error:${'[R]'.repeat(100_000)}\n  at f (g:1)`)
     expect(Date.now() - started).toBeLessThan(2_000)
   })
+
+  it('is linear in a message that overlaps itself, a long run of one character', () => {
+    const message = 'a'.repeat(250_000)
+    const stack = `Error: ${'a'.repeat(500_000)}\n  at f (g:1)`
+    const started = Date.now()
+
+    const hidden = hideMessageInStack(stack, message, '[R]')
+
+    expect(hidden).toBe('Error: [R]\n  at f (g:1)')
+    expect(Date.now() - started).toBeLessThan(2_000)
+  })
+
+  it.each([
+    ['abab', 'xababab\n  at f', 'x[R]\n  at f'],
+    ['aabaa', 'aabaabaa\n  at f', '[R]\n  at f'],
+    ['abaaba', 'abaabaaba\n  at f', '[R]\n  at f'],
+    ['aab', 'aaab aab\n  at f', 'a[R] [R]\n  at f']
+  ])('finds the occurrences of %s with the table of its prefixes', (message, stack, expected) => {
+    expect(hideMessageInStack(stack, message, '[R]')).toBe(expected)
+  })
 })
