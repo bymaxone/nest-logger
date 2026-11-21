@@ -99,8 +99,8 @@ export const MAX_LIST_ENTRIES = 10_000
 /**
  * Replace each list under `names` in `holder` by a copy that reads its length once and each index
  * once, so a Proxy or a getter on an element answers one time. A value that is not a list is left
- * as it is, for the validator to refuse; a list longer than {@link MAX_LIST_ENTRIES} is refused here,
- * by the name of the option, before anything is allocated for it.
+ * as it is, for the validator to refuse; a list whose length is not a count (negative, fractional, `NaN`, infinite) or is longer than
+ * {@link MAX_LIST_ENTRIES} is refused here, by the name of the option, before anything is allocated.
  *
  * @param holder - The object that holds the lists.
  * @param names - The keys of the lists.
@@ -111,6 +111,9 @@ function copyLists(holder: object, names: readonly string[], prefix: string): vo
     const value = Reflect.get(holder, name) as unknown
     if (!Array.isArray(value)) continue
     const length = Reflect.get(value, 'length') as number
+    if (!Number.isInteger(length) || length < 0) {
+      refuse(`[BymaxLoggerModule] options.${prefix}${name} has a length that is not a count`)
+    }
     if (length > MAX_LIST_ENTRIES) {
       refuse(
         `[BymaxLoggerModule] options.${prefix}${name} holds more than ${String(MAX_LIST_ENTRIES)} entries`

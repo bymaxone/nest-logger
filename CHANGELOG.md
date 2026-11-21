@@ -28,9 +28,24 @@ heading here.
   secret in a header: only the first key that spelled the name was read. Every one is read, once, and
   every distinct text is hidden in every stack, longest first. The 1.4.27 line "whatever the case or
   the look of the two keys" held for a single key of each name only.
-- **More characters that print as nothing are read through:** the Hangul fillers (`U+115F`,
-  `U+1160`, `U+3164`, `U+FFA0`) and the blank Braille pattern (`U+2800`), in the comparison of the
-  derived keys and of the owned keys.
+- **More characters that print as nothing, and more letters and dots drawn like another, are read
+  through:** the Hangul fillers and the blank Braille pattern, the characters drawn like a full stop
+  (`U+3002`, `U+00B7`, `U+22C5` and others) and a few more letters drawn like a Latin one, in the
+  comparison of the derived keys, of the owned keys and of the configured names. The list of drawn
+  letters is a list, not every look-alike Unicode has.
+- **A message the options hide is hidden wherever a stack repeats it.** Only the header of a stack was
+  rewritten, so a library that appends `Caused by: Error: <message>` left the text readable in the first
+  16 KiB of `err.stack`, of the stack of a cause and of `exception.stacktrace`. Every occurrence of the
+  message in the part of the stack that is read is replaced now, for an `Error`, an `Error` whose name is
+  not text, a cause and an object that is no `Error`. A message short enough to appear in a frame is
+  replaced there too.
+- **The `stack` of an object that is no `Error` is bounded and scrubbed at any depth.** A nested plain
+  object with a `stack` was written whole, up to its full length and with its dependency frames and
+  control characters. It is read up to the same bound as the stack of an error, written without
+  `node_modules` frames and with control characters escaped, and cut at the text limit with the suffix.
+  The name and the message of such an object are still written as given.
+- **A list option whose length is not a count is refused.** A Proxy that reports `-1`, `NaN`, `1.5` or
+  an infinite length was read as empty; it is refused by the name of the option.
 - **A list option is capped at 10,000 entries.** `redactPaths`, `errorOwnFieldNames`, `destinations`,
   `http.excludePaths` and `http.secretPathSegments` longer than that are refused at startup, by the
   name of the option, before an element is read; a length a host reports as a billion no longer

@@ -20,6 +20,9 @@ const IGNORED = /[\s._\p{Cc}\p{Cf}\p{M}\u115f\u1160\u2800\u3164\uffa0-]/gu
 /** The same without the separators: what prints as nothing, white space and the combining marks. */
 const INVISIBLE = /[\s\p{Cc}\p{Cf}\p{M}\u115f\u1160\u2800\u3164\uffa0]/gu
 
+/** The characters drawn like a full stop, which a key may use in place of the `.` of a dotted name. */
+const DOTS = /[\u3002\u0701\u06d4\u22c5\u00b7\ufe12]/gu
+
 /** A key made only of the printable ASCII characters that no rule here changes except case and `._-`. */
 const PLAIN = /^[\x21-\x7e]*$/
 
@@ -28,29 +31,29 @@ const LOOKALIKES: ReadonlyMap<string, string> = new Map(
   Object.entries({
     a: '\u0430\u03b1\u1d00',
     b: '\u0299',
-    c: '\u0441\u03f2\u1d04',
+    c: '\u0441\u03f2\u1d04\u023c\u0188',
     d: '\u0501\u1d05',
-    e: '\u0435\u03b5\u03f5\u1d07',
+    e: '\u0435\u03b5\u03f5\u1d07\u025b\u04bd',
     f: '\ua730',
     g: '\u0262',
     h: '\u029c',
-    i: '\u0456\u03b9\u0131\u026a',
+    i: '\u0456\u03b9\u0131\u026a\u0269',
     j: '\u0458\u1d0a',
     k: '\u1d0b',
     l: '\u029f',
     m: '\u1d0d',
     n: '\u0274',
-    o: '\u043e\u03bf\u1d0f',
-    p: '\u0440\u03c1\u1d18',
+    o: '\u043e\u03bf\u1d0f\u00f8',
+    p: '\u0440\u03c1\u1d18\u01bf',
     q: '\u051b',
     r: '\u0280',
     s: '\u0455\ua731',
-    t: '\u1d1b',
+    t: '\u1d1b\u0167',
     u: '\u1d1c',
     v: '\u03bd\u1d20',
     w: '\u051d\u1d21',
     x: '\u0445',
-    y: '\u0443\u028f',
+    y: '\u0443\u028f\u04af',
     z: '\u1d22'
   }).flatMap(([latin, letters]) => [...letters].map((letter): [string, string] => [letter, latin]))
 )
@@ -69,7 +72,7 @@ export function foldKey(key: string, keepSeparators = false): string {
   const ignored = keepSeparators ? INVISIBLE : IGNORED
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
   if (PLAIN.test(key)) return key.replace(ignored, '').toLowerCase()
-  let folded = key.normalize('NFKD').toLowerCase().replace(ignored, '')
+  let folded = key.normalize('NFKD').toLowerCase().replace(DOTS, '.').replace(ignored, '')
   for (const [letter, latin] of LOOKALIKES) folded = folded.replaceAll(letter, latin)
   return folded
 }

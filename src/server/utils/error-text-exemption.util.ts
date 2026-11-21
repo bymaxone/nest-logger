@@ -10,7 +10,7 @@ import { foldKey, foldName } from './fold-key.util'
 import { hideMessageInStack } from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
 import { ERROR_TEXT_FIELDS } from './redact-error-parts.util'
-import { censorName } from './sanitize-error.util'
+import { censorName, MAX_STACK_SCAN, scrubStack } from './sanitize-error.util'
 
 /** The name `message`, which the serializer of `err` censors: the stack header is built from it. */
 const ERROR_TEXT_KEYS: ReadonlySet<string> = new Set(['message'])
@@ -152,6 +152,28 @@ export function censorAnyName(rules: RedactRules, name: unknown): unknown {
 }
 
 /**
+ * The `stack` of an object that is no `Error`, as the stack of an error is written: read up to the
+ * scan bound, every copy of the message hidden when the options hide it, dependency frames dropped,
+ * control characters escaped and the text cut, with the suffix when anything was.
+ *
+ * @param rules - The rules of the walk.
+ * @param stack - The text of the stack.
+ * @param header - The messages of the object, when the options hide `message`.
+ * @returns The text to write.
+ */
+function scrubPlainStack(
+  rules: RedactRules,
+  stack: string,
+  header: HeaderText | undefined
+): string {
+  const head = stack.slice(0, MAX_STACK_SCAN)
+  const hidden = [...new Set(header?.texts.values())]
+    .sort((a, b) => b.length - a.length)
+    .reduce((text, message) => hideMessageInStack(text, message, rules.censor), head)
+  return scrubStack(hidden, undefined, stack.length > MAX_STACK_SCAN)
+}
+
+/**
  * A text field of an `Error` as the walk writes it: cut at the text limit, and, for the `name`,
  * censored as the name of the `err` of an entry is.
  *
@@ -169,10 +191,8 @@ export function errorTextField(
   isError: boolean,
   header?: HeaderText
 ): unknown {
-  if (header !== undefined && foldKey(key) === 'stack' && typeof value === 'string') {
-    return [...new Set(header.texts.values())]
-      .sort((a, b) => b.length - a.length)
-      .reduce((stack, text) => hideMessageInStack(stack, text, rules.censor), value)
+  if (!isError && typeof value === 'string' && foldName(key) === 'stack') {
+    return scrubPlainStack(rules, value, header)
   }
   if (!isError || !ERROR_TEXT_FIELDS.has(key)) return value
   const cut = cutIfText(value)

@@ -75,7 +75,22 @@ describe('foldKey', () => {
     ['exception\u2800.type', 'exception.type'],
     ['exception.\u3164type', 'exception.type'],
     ['exception.\u115ftype', 'exception.type'],
-    ['EXCEPTION.\u0085TYPE', 'exception.type']
+    ['EXCEPTION.\u0085TYPE', 'exception.type'],
+    ['exception\u3002type', 'exception.type'],
+    ['exception\u00b7type', 'exception.type'],
+    ['exception\u22c5type', 'exception.type'],
+    ['exception\u06d4type', 'exception.type'],
+    ['exception\u0701type', 'exception.type'],
+    ['exception\ufe12type', 'exception.type'],
+    ['exception.t\u04afpe', 'exception.type'],
+    ['error.typ\u025b', 'error.type'],
+    ['error.typ\u04bd', 'error.type'],
+    ['\u0269nfo', 'info'],
+    ['\u00f8rder', 'order'],
+    ['\u0167race', 'trace'],
+    ['\u023cache', 'cache'],
+    ['\u0188ache', 'cache'],
+    ['\u01bfath', 'path']
   ])('keeps the separators and reads %j as %s', (key, folded) => {
     expect(foldKey(key, true)).toBe(folded)
   })

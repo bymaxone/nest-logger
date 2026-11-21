@@ -199,6 +199,45 @@ describe('a value that is not a list where a list belongs', () => {
   })
 })
 
+describe('a list option whose length is not a count', () => {
+  const lengthOf = (length: unknown): unknown[] =>
+    new Proxy([], {
+      get: (inner, key, receiver) => (key === 'length' ? length : Reflect.get(inner, key, receiver))
+    })
+
+  it.each([-1, Number.NaN, 1.5, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'a length of %s is refused by option name, for each list',
+    (length) => {
+      for (const name of ['redactPaths', 'errorOwnFieldNames', 'destinations']) {
+        const given = { service: { name: 'api', version: '1.0.0' }, [name]: lengthOf(length) }
+
+        expect(() => resolveOptions(given as never)).toThrow(
+          `[BymaxLoggerModule] options.${name} has a length that is not a count`
+        )
+      }
+      for (const name of ['excludePaths', 'secretPathSegments']) {
+        const given = {
+          service: { name: 'api', version: '1.0.0' },
+          http: { [name]: lengthOf(length) }
+        }
+
+        expect(() => resolveOptions(given as never)).toThrow(
+          `[BymaxLoggerModule] options.http.${name} has a length that is not a count`
+        )
+      }
+    }
+  )
+
+  it('a length of zero is an empty list', () => {
+    const resolved = resolveOptions({
+      service: { name: 'api', version: '1.0.0' },
+      redactPaths: lengthOf(0)
+    } as never)
+
+    expect(resolved.redactPaths).toEqual([])
+  })
+})
+
 describe('a list option longer than the cap', () => {
   const longList = (length: number): unknown[] =>
     new Proxy([], {

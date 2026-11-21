@@ -1,13 +1,11 @@
 /**
- * The header of a stack with the text of a message replaced.
+ * The text of a message replaced wherever a stack holds it.
  *
  * Layer: server/utils. Pure. The stack of an object that is no error to the library opens with the
- * text of its own `message`, which the options hide in the `message` field; the header of the stack
- * is a copy of it, and is hidden the same way. The frames below it are the stack's own text.
+ * text of its own `message`, which the options hide in the `message` field; the stack is a copy of it
+ * where it opens and wherever a library repeats it (`Caused by: ...`), and every copy is hidden the
+ * same way.
  */
-
-/** A line that begins, after white space, with `at `: the start of a frame, or a line of a message that looks like one. */
-const FRAME_LINE = /\n[ \t]+at /g
 
 /** A `[start, end)` span of a stack. */
 type Span = readonly [number, number]
@@ -49,39 +47,23 @@ function occurrences(stack: string, message: string): Span[] {
 }
 
 /**
- * Where the header ends: the first frame-shaped line that lies outside every span. Both lists are in
- * order, so one pass over them is enough, however many lines the message itself holds.
- */
-function headerEnd(stack: string, spans: readonly Span[]): number {
-  let next = 0
-  for (const line of stack.matchAll(FRAME_LINE)) {
-    while (next < spans.length && (spans[next] as Span)[1] <= line.index) next += 1
-    const span = spans[next]
-    if (span === undefined || line.index < span[0]) return line.index
-  }
-  return stack.length
-}
-
-/**
- * Replace the occurrences of `message` in the header of `stack` by `replacement`. The header ends at
- * the first frame-shaped line that lies outside every occurrence of the message, so a message of
- * several lines, one that holds a frame-shaped line, one that repeats and one that overlaps itself
- * are all hidden, while an occurrence after that line is the text of a frame and stays.
+ * Replace every occurrence of `message` in `stack` by `replacement`: in the header, in a message of
+ * several lines, in a message that holds a frame-shaped line, that repeats or that overlaps itself,
+ * and in the lines below, where a library may repeat it. The search reads the stack once, whatever the
+ * message is.
  *
  * @param stack - The stack as the caller wrote it.
- * @param message - The text of the message the stack opens with, which may span lines.
+ * @param message - The message the stack opens with, which may span lines.
  * @param replacement - What the censor makes of the message.
- * @returns The stack, unchanged when the header does not hold the message.
+ * @returns The stack, unchanged when it does not hold the message.
  */
 export function hideMessageInStack(stack: string, message: string, replacement: string): string {
   if (message === '') return stack
   // Stryker disable next-line ConditionalExpression: equivalent in output: a message that does not fit in the stack is not found in it; the return only spares the table, which is as long as the message.
   if (message.length > stack.length) return stack
-  const spans = occurrences(stack, message)
-  const end = headerEnd(stack, spans)
   let result = ''
   let from = 0
-  for (const [start, stop] of spans.filter(([, stop]) => stop <= end)) {
+  for (const [start, stop] of occurrences(stack, message)) {
     result += stack.slice(from, start) + replacement
     from = stop
   }

@@ -18,6 +18,7 @@
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
 import { censorStackHeader } from './censor-stack-header.util'
 import { escapeControlCharacters } from './escape-log-text.util'
+import { hideMessageInStack } from './hide-message-in-stack.util'
 import { isError } from './is-error.util'
 import {
   ALL_OWN_FIELDS,
@@ -654,6 +655,22 @@ function censorStackName(stack: string, header: HeaderCensor): string {
 }
 
 /**
+ * The stack with the message of the error censored where it opens the stack and everywhere else the
+ * stack repeats it, as a library does with `Caused by: ...`.
+ */
+function censorMessageInStack(stack: string, header: HeaderCensor): string {
+  const opened = censorStackHeader(
+    censorStackName(stack, header),
+    header.censoredName,
+    header.message,
+    header.censored
+  )
+  return header.censored === header.message
+    ? opened
+    : hideMessageInStack(opened, header.message, header.censored)
+}
+
+/**
  * Remove `node_modules/` frames from a stack trace so logs surface app code, and cut it at
  * {@link MAX_TEXT_LENGTH}.
  *
@@ -683,15 +700,7 @@ export function scrubStack(stack: string, header?: HeaderCensor, wasLonger = fal
   // how long the message is, which a caller controls.
   const head = stack.slice(0, MAX_STACK_SCAN)
   const scrubbed = escapeControlCharacters(
-    (header === undefined
-      ? head
-      : censorStackHeader(
-          censorStackName(head, header),
-          header.censoredName,
-          header.message,
-          header.censored
-        )
-    )
+    (header === undefined ? head : censorMessageInStack(head, header))
       .split('\n')
       .filter((line) => !line.includes('node_modules'))
       .join('\n')

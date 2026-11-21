@@ -1,5 +1,5 @@
 /**
- * Pins the replacement of a message in the first line of a stack, and only there.
+ * Pins the replacement of a message wherever a stack holds it.
  *
  * Layer: server/utils, tests. Pure.
  */
@@ -86,23 +86,29 @@ describe('hideMessageInStack', () => {
   })
 
   it.each([
-    ['a frame that holds the message', 'Error: head\n  at SEC (f)', 'SEC'],
-    ['a message in a frame only', 'Error: x\n  at SEC (f)', 'SEC'],
-    ['an empty message', 'Error: x\n  at y', ''],
-    ['a header that does not hold the message', 'Error: other', 'SEC'],
     [
-      'a message that is in a frame only, below a first line that is not it',
-      'a\n  at SEC\n  at SEC',
-      'SEC'
+      'a frame that holds the message',
+      'Error: head\n  at SEC (f)',
+      'SEC',
+      'Error: head\n  at [R] (f)'
+    ],
+    ['a message in a frame only', 'Error: x\n  at SEC (f)', 'SEC', 'Error: x\n  at [R] (f)'],
+    ['the header and a later line', 'Error: SEC\n  at SEC (f)', 'SEC', 'Error: [R]\n  at [R] (f)'],
+    [
+      'a cause that repeats the message',
+      'Error: SEC\n  at f (g:1)\nCaused by: Error: SEC\n  at h (i:2)',
+      'SEC',
+      'Error: [R]\n  at f (g:1)\nCaused by: Error: [R]\n  at h (i:2)'
     ]
-  ])('leaves the stack alone for %s', (_label, stack, message) => {
-    expect(hideMessageInStack(stack, message, '[R]')).toBe(stack)
+  ])('replaces the message in %s', (_label, stack, message, expected) => {
+    expect(hideMessageInStack(stack, message, '[R]')).toBe(expected)
   })
 
-  it('replaces the message in the header and leaves the same text in a frame', () => {
-    expect(hideMessageInStack('Error: SEC\n  at SEC (f)', 'SEC', '[R]')).toBe(
-      'Error: [R]\n  at SEC (f)'
-    )
+  it.each([
+    ['an empty message', 'Error: x\n  at y', ''],
+    ['a stack that does not hold the message', 'Error: other', 'SEC']
+  ])('leaves the stack alone for %s', (_label, stack, message) => {
+    expect(hideMessageInStack(stack, message, '[R]')).toBe(stack)
   })
 
   it('is linear in a message made of a frame-shaped line that repeats many times', () => {
