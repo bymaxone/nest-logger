@@ -9,24 +9,42 @@
 /** A line that begins, after white space, with `at `: the start of a frame, or a line of a message that looks like one. */
 const FRAME_LINE = /\n[ \t]+at /g
 
-/** The `[start, end)` span of each non-overlapping occurrence of `message` in `stack`. */
-function occurrences(stack: string, message: string): Array<readonly [number, number]> {
-  const spans: Array<readonly [number, number]> = []
-  for (
-    let at = stack.indexOf(message);
-    at !== -1;
-    at = stack.indexOf(message, at + message.length)
-  ) {
-    spans.push([at, at + message.length])
+/** A `[start, end)` span of a stack. */
+type Span = readonly [number, number]
+
+/**
+ * The spans where `message` occurs in `stack`, in order. Occurrences that overlap are one span, so
+ * a message that overlaps itself is hidden whole.
+ */
+function occurrences(stack: string, message: string): Span[] {
+  const spans: Array<[number, number]> = []
+  for (let at = stack.indexOf(message); at !== -1; at = stack.indexOf(message, at + 1)) {
+    const last = spans[spans.length - 1]
+    if (last !== undefined && at < last[1]) last[1] = at + message.length
+    else spans.push([at, at + message.length])
   }
   return spans
 }
 
 /**
+ * Where the header ends: the first frame-shaped line that lies outside every span. Both lists are in
+ * order, so one pass over them is enough, however many lines the message itself holds.
+ */
+function headerEnd(stack: string, spans: readonly Span[]): number {
+  let next = 0
+  for (const line of stack.matchAll(FRAME_LINE)) {
+    while (next < spans.length && (spans[next] as Span)[1] <= line.index) next += 1
+    const span = spans[next]
+    if (span === undefined || line.index < span[0]) return line.index
+  }
+  return stack.length
+}
+
+/**
  * Replace the occurrences of `message` in the header of `stack` by `replacement`. The header ends at
  * the first frame-shaped line that lies outside every occurrence of the message, so a message of
- * several lines, one that holds a frame-shaped line, and one that repeats are all hidden, while an
- * occurrence after that line is the text of a frame and stays.
+ * several lines, one that holds a frame-shaped line, one that repeats and one that overlaps itself
+ * are all hidden, while an occurrence after that line is the text of a frame and stays.
  *
  * @param stack - The stack as the caller wrote it.
  * @param message - The text of the message the stack opens with, which may span lines.
@@ -36,15 +54,12 @@ function occurrences(stack: string, message: string): Array<readonly [number, nu
 export function hideMessageInStack(stack: string, message: string, replacement: string): string {
   if (message === '') return stack
   const spans = occurrences(stack, message)
-  const frame = [...stack.matchAll(FRAME_LINE)].find(
-    (line) => !spans.some(([start, end]) => line.index >= start && line.index < end)
-  )
-  const headerEnd = frame === undefined ? stack.length : frame.index
+  const end = headerEnd(stack, spans)
   let result = ''
   let from = 0
-  for (const [start, end] of spans.filter(([, end]) => end <= headerEnd)) {
+  for (const [start, stop] of spans.filter(([, stop]) => stop <= end)) {
     result += stack.slice(from, start) + replacement
-    from = end
+    from = stop
   }
   return result + stack.slice(from)
 }

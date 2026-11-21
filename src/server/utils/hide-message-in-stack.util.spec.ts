@@ -65,7 +65,8 @@ describe('hideMessageInStack', () => {
       'SEC!',
       'Error: SEC!\n  at x'
     ],
-    ['occurrences that overlap', 'Error: aaa\n  at x', 'aa', '[R]', 'Error: [R]a\n  at x'],
+    ['occurrences that overlap', 'Error: aaa\n  at x', 'aa', '[R]', 'Error: [R]\n  at x'],
+    ['a message that overlaps itself', 'Error: ababa\n  at f', 'aba', '[R]', 'Error: [R]\n  at f'],
     [
       'a message that begins with a frame-shaped line',
       'Error:\n  at SEC\n  at f',
@@ -102,5 +103,16 @@ describe('hideMessageInStack', () => {
     expect(hideMessageInStack('Error: SEC\n  at SEC (f)', 'SEC', '[R]')).toBe(
       'Error: [R]\n  at SEC (f)'
     )
+  })
+
+  it('is linear in a message made of a frame-shaped line that repeats many times', () => {
+    const message = '\n  at SEC'
+    const stack = `Error:${message.repeat(100_000)}\n  at f (g:1)`
+    const started = Date.now()
+
+    const hidden = hideMessageInStack(stack, message, '[R]')
+
+    expect(hidden).toBe(`Error:${'[R]'.repeat(100_000)}\n  at f (g:1)`)
+    expect(Date.now() - started).toBeLessThan(2_000)
   })
 })
