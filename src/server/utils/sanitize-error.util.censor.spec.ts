@@ -6,7 +6,7 @@
  *
  * Layer: server/utils, tests. Pure.
  */
-import { headerCensor, sanitizeError, scrubStack } from './sanitize-error.util'
+import { headerCensor, MAX_STACK_SCAN, sanitizeError, scrubStack } from './sanitize-error.util'
 
 const censor = (text: string): string => (text.includes('secret') ? '[REDACTED]' : text)
 
@@ -251,5 +251,45 @@ describe('scrubStack, a message that the censor leaves as it is', () => {
     expect(scrubStack('Error: aa\n    at f (x.js:1:1)\nCaused by: aaa', header)).toBe(
       'Error: aa\n    at f (x.js:1:1)\nCaused by: aaa'
     )
+  })
+})
+
+describe('scrubStack, a hidden message against the part of the stack that is read', () => {
+  const DEP = (text: string): string => `\n    at dep (/node_modules/${text})`
+  const censor = (): string => '[R]'
+
+  it('does not keep a frame whose offset is past the bound when long messages are hidden before it', () => {
+    const message = 'm'.repeat(5_000)
+    const lead = `Error: x${DEP(message).repeat(25)}`
+    const pad = '\n    at pad'
+    const stack = `${lead}${pad.repeat(Math.ceil((MAX_STACK_SCAN + 1_000 - lead.length) / pad.length))}\n    at ZZZ_APP (/srv/z.js:1:1)`
+    expect(stack.indexOf('ZZZ_APP')).toBeGreaterThan(MAX_STACK_SCAN)
+
+    expect(scrubStack(stack, headerCensor('Error', message, censor))).not.toContain('ZZZ_APP')
+  })
+
+  it('leaves no part of a message that starts before the end of the window and ends after it', () => {
+    const message = `LEAKMARK${'q'.repeat(992)}`
+    const before = `Error: a${DEP(message)}`
+    const padding = `\n    at dep (/node_modules/${'p'.repeat(MAX_STACK_SCAN + 500 - before.length - 30)}`
+    const stack = `${before}${padding})\n    at app (/srv/${message}`
+    expect(stack.indexOf('LEAKMARK', 100)).toBeGreaterThan(MAX_STACK_SCAN)
+
+    expect(scrubStack(stack, headerCensor('Error', message, censor))).not.toContain('LEAKMARK')
+  })
+
+  it('hides a message that opens the stack and is longer than the part read', () => {
+    const message = `LEAKMARK${'x'.repeat(140_000)}`
+
+    expect(scrubStack(`Error: ${message}`, headerCensor('Error', message, censor))).not.toContain(
+      'LEAKMARK'
+    )
+  })
+
+  it('hides a message that starts before the bound and ends after it, in a line that is kept', () => {
+    const message = `LEAKMARK${'q'.repeat(100)}`
+    const stack = `Error: a\n    at app (/srv/${'z'.repeat(10_000)}${message}\n    at b (/srv/b.js:1:1)`
+
+    expect(scrubStack(stack, headerCensor('Error', message, censor))).not.toContain('LEAKMARK')
   })
 })
