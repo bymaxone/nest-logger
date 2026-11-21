@@ -70,7 +70,7 @@ import {
   ERROR_TEXT_FIELDS,
   type ErrorPartsHost
 } from './redact-error-parts.util'
-import { OMIT_OWN_FIELD, isErrorLike, ownFieldForLog, sanitizeError } from './sanitize-error.util'
+import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 /** The keys of a message that hold headers as a flat `[name, value, ...]` array. */
@@ -634,8 +634,8 @@ function walkProperties(
 }
 
 /**
- * Whether the value under `key` is an error-shaped object whose `message` the serializer of `err`
- * reads: a plain object, since an `Error` keeps it out of its own enumerable keys.
+ * Whether the value under `key` is an object, not a list, for the serializer of `err`, which
+ * censors its `message` in the stack header the walk would have replaced beforehand.
  */
 function leavesErrorText(
   rules: RedactRules,
@@ -647,8 +647,9 @@ function leavesErrorText(
     rules.errorTextToSerializer &&
     !honorToJson &&
     key === 'err' &&
-    !isError(value) &&
-    isErrorLike(value)
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value)
   )
 }
 

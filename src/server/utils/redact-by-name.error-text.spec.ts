@@ -42,6 +42,20 @@ describe('the text of an error-shaped object under the names walk', () => {
     expect(out.error['stack']).toBe(CENSOR)
   })
 
+  it('is hidden in what a list under err holds', () => {
+    const out = redactor(true)({ err: [shaped()] }) as { err: Array<Record<string, unknown>> }
+
+    expect(out.err[0]?.['message']).toBe(CENSOR)
+  })
+
+  it('is left to the serializer for any object under err, an error-shaped one or not', () => {
+    const out = redactor(true)({ err: { message: 'SECRET', code: 7 } }) as {
+      err: Record<string, unknown>
+    }
+
+    expect(out.err).toEqual({ message: 'SECRET', code: 7 })
+  })
+
   it.each([
     ['not told so', false],
     ['not told at all', undefined]
