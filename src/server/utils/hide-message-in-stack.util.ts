@@ -31,6 +31,7 @@ function failureTable(message: string): Int32Array {
  */
 function occurrences(stack: string, message: string): Span[] {
   // No table for a message longer than the stack: it is not in it.
+  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (a message longer than the stack is not found in it, so the table that guard spares changes nothing); the true mutant is killed by the rows of hide-message-in-stack.util.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
   if (message.length > stack.length) return []
   const table = failureTable(message)
   const spans: Array<[number, number]> = []
