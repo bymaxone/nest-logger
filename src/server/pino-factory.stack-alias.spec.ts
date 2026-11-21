@@ -42,6 +42,16 @@ describe('the stack of an object message at the root of an entry', () => {
     expect(line).not.toContain(SECRET)
   })
 
+  it.each([[42], [{ frames: [SECRET] }], [null]])(
+    'leaves a stack key that holds %j, which is no text, to the walk',
+    (value) => {
+      const line = lineOf({ message: SECRET, Stack: value }, { redactPaths: ['message'] })
+
+      expect(line).not.toContain(`Error: ${SECRET}`)
+      expect(line).toContain('"Stack"')
+    }
+  )
+
   it('keeps the text when message is not a name to hide', () => {
     expect(lineOf({ message: SECRET, Stack: STACK })).toContain(SECRET)
   })
