@@ -205,3 +205,20 @@ function matchesName(letters: readonly string[], name: readonly string[]): boole
   }
   return at.has(name.length)
 }
+
+/**
+ * Whether a field name is one of the folded names: {@link matchesFolded} of the folded key, with the
+ * common spellings answered without folding, since this runs for every key of every record.
+ *
+ * @internal Shared across the logger. NOT re-exported by the package barrel.
+ * @param names - The folded names, from {@link foldedNames}.
+ * @param key - A field name as the record has it.
+ * @returns `true` when the key is one of the names.
+ */
+export function matchesKey(names: ReadonlySet<string>, key: string): boolean {
+  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (the full path gives the same answer for a key of lower-case letters and digits, so the branch only skips work); the true mutant is killed by the rows of fold-key.util.spec.ts and pino-factory.configured-names.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
+  if (FOLDED.test(key)) return names.has(key)
+  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (the full path gives the same answer for a key of ASCII letters and digits, so the branch only skips work); the true mutant is killed by the rows of fold-key.util.spec.ts and pino-factory.configured-names.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
+  if (ALNUM.test(key)) return names.has(key.toLowerCase())
+  return matchesFolded(names, foldKey(key))
+}

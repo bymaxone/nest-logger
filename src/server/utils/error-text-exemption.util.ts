@@ -6,7 +6,7 @@
  * Layer: server/utils. Pure.
  */
 import { cutIfText } from './bounded-text.util'
-import { foldKey, foldName, matchesFolded } from './fold-key.util'
+import { foldKey, foldName, matchesFolded, matchesKey } from './fold-key.util'
 import { hideMessagesInStack } from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
 import { ERROR_TEXT_FIELDS } from './redact-error-parts.util'
@@ -67,10 +67,9 @@ export function rulesBelow(
  * @returns `true` to write the censor in place of the value.
  */
 export function isCensored(rules: RedactRules, key: string, value: unknown): boolean {
-  const folded = foldName(key)
   return (
-    matchesFolded(rules.sensitive, folded) &&
-    !(typeof value === 'string' && rules.exemptKeys?.has(folded))
+    matchesKey(rules.sensitive, key) &&
+    !(typeof value === 'string' && rules.exemptKeys?.has(foldName(key)))
   )
 }
 
@@ -96,9 +95,14 @@ export const MAX_STACK_ALIASES = 8
 export interface HeaderText {
   /** The text of every own key that spells `message`, each read once; empty unless the options hide `message`. */
   readonly texts: ReadonlyMap<string, string>
+  /** The own keys that spell `stack`, which the walk writes as the stack of the object. */
+  readonly stackKeys: ReadonlySet<string>
   /** The object has more distinct messages or more stack keys than the walk searches for: every stack is hidden whole. */
   readonly overflow: boolean
 }
+
+/** What an object with no stack key has: nothing to write as a stack. */
+const NO_STACK: HeaderText = { texts: new Map(), stackKeys: new Set(), overflow: false }
 
 /**
  * What the walk needs to write the stack keys of an object that is no `Error` and carries one: the
@@ -112,7 +116,7 @@ export interface HeaderText {
  * @param source - The object being walked.
  * @param keys - Its own enumerable keys.
  * @param isError - Whether it is an `Error`.
- * @returns The plan, or `undefined` when the object has no stack key to write.
+ * @returns The plan: nothing to write for an object with no stack key, and `undefined` for an `Error`.
  */
 export function headerMessage(
   rules: RedactRules,
@@ -122,9 +126,9 @@ export function headerMessage(
 ): HeaderText | undefined {
   if (isError) return undefined
   const keysOf = (names: ReadonlySet<string>): string[] =>
-    keys.filter((candidate) => matchesFolded(names, foldName(candidate)))
+    keys.filter((candidate) => matchesKey(names, candidate))
   const stacks = keysOf(STACK_NAMES)
-  if (stacks.length === 0) return undefined
+  if (stacks.length === 0) return NO_STACK
   const hides =
     rules.sensitive.has('message') &&
     rules.exemptKeys?.has('message') !== true &&
@@ -142,7 +146,7 @@ export function headerMessage(
   }
   const overflow =
     stacks.length > MAX_STACK_ALIASES || new Set(texts.values()).size > MAX_STACK_ALIASES
-  return { texts, overflow }
+  return { texts, stackKeys: new Set(stacks), overflow }
 }
 
 /**
@@ -220,7 +224,11 @@ export function errorTextField(
   isError: boolean,
   header?: HeaderText
 ): unknown {
-  if (!isError && typeof value === 'string' && matchesFolded(STACK_NAMES, foldName(key))) {
+  const isStack =
+    !isError &&
+    typeof value === 'string' &&
+    (header === undefined ? matchesKey(STACK_NAMES, key) : header.stackKeys.has(key))
+  if (isStack) {
     return header?.overflow === true ? rules.censor : scrubPlainStack(rules, value, header)
   }
   if (!isError || !ERROR_TEXT_FIELDS.has(key)) return value

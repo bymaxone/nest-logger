@@ -26,6 +26,7 @@ describe('headerMessage', () => {
 
     expect(headerMessage(rules(), source, ['message', 'stack'], false)).toEqual({
       overflow: false,
+      stackKeys: new Set(['stack']),
       texts: new Map([['message', SECRET]])
     })
   })
@@ -36,6 +37,7 @@ describe('headerMessage', () => {
 
     expect(headerMessage(rules(), source, ['stack'], false)).toEqual({
       overflow: false,
+      stackKeys: new Set(['stack']),
       texts: new Map([['message', SECRET]])
     })
   })
@@ -58,7 +60,11 @@ describe('headerMessage', () => {
   it('reads nothing of an object that owns a message and no stack', () => {
     const source = { message: SECRET }
 
-    expect(headerMessage(rules(), source, ['message'], false)).toBeUndefined()
+    expect(headerMessage(rules(), source, ['message'], false)).toEqual({
+      overflow: false,
+      stackKeys: new Set(),
+      texts: new Map()
+    })
   })
 
   it('reads no message when the options do not hide it, and nothing of an error', () => {
@@ -66,6 +72,7 @@ describe('headerMessage', () => {
 
     expect(headerMessage(rules(['token']), source, ['message', 'stack'], false)).toEqual({
       overflow: false,
+      stackKeys: new Set(['stack']),
       texts: new Map()
     })
     expect(headerMessage(rules(), source, ['message', 'stack'], true)).toBeUndefined()
@@ -84,6 +91,7 @@ describe('headerMessage, the spelling of the keys', () => {
 
     expect(headerMessage(rules(), source, [messageKey, stackKey], false)).toEqual({
       overflow: false,
+      stackKeys: new Set([stackKey]),
       texts: new Map([[messageKey, SECRET]])
     })
   })
@@ -93,10 +101,12 @@ describe('headerMessage, the spelling of the keys', () => {
 
     expect(headerMessage(rules(), source, ['messages', 'stack'], false)).toEqual({
       overflow: false,
+      stackKeys: new Set(['stack']),
       texts: new Map()
     })
     expect(headerMessage(rules(), source, ['stack', 'stacks'], false)).toEqual({
       overflow: false,
+      stackKeys: new Set(['stack']),
       texts: new Map()
     })
   })
@@ -118,6 +128,7 @@ describe('headerMessage, more than one key that spells the name', () => {
 
     expect(header).toEqual({
       overflow: false,
+      stackKeys: new Set(['stack']),
       texts: new Map([
         ['message', 'benign'],
         ['Message', SECRET]
@@ -131,6 +142,7 @@ describe('headerMessage, more than one key that spells the name', () => {
 
     expect(headerMessage(rules(), source, ['message', 'Message', 'stack'], false)).toEqual({
       overflow: false,
+      stackKeys: new Set(['stack']),
       texts: new Map([['Message', SECRET]])
     })
   })
@@ -140,6 +152,7 @@ describe('headerMessage, more than one key that spells the name', () => {
 
     expect(headerMessage(rules(), source, ['message', 'stack'], false)).toEqual({
       overflow: false,
+      stackKeys: new Set(['stack']),
       texts: new Map()
     })
   })
@@ -149,6 +162,7 @@ describe('errorTextField, a header with more than one message', () => {
   it('hides each distinct text in a stack, the longer before the shorter', () => {
     const header = {
       overflow: false,
+      stackKeys: new Set(['stack', 'Stack']),
       texts: new Map([
         ['message', 'ab'],
         ['Message', 'ab cd']
@@ -180,7 +194,11 @@ describe('readField', () => {
     const source = { message: 'm', other: 'o' }
 
     expect(
-      readField(source, 'other', { overflow: false, texts: new Map([['message', 'cached']]) })
+      readField(source, 'other', {
+        overflow: false,
+        stackKeys: new Set(['stack', 'Stack']),
+        texts: new Map([['message', 'cached']])
+      })
     ).toBe('o')
     expect(readField(source, 'message', undefined)).toBe('m')
   })
@@ -193,12 +211,14 @@ describe('errorTextField', () => {
     expect(
       errorTextField(rules(), 'stack', stack, false, {
         overflow: false,
+        stackKeys: new Set(['stack', 'Stack']),
         texts: new Map([['message', SECRET]])
       })
     ).toBe('Error: [R]\n    at run (/srv/app.js:1:1)')
     expect(
       errorTextField(rules(), 'note', `see ${SECRET}`, false, {
         overflow: false,
+        stackKeys: new Set(['stack', 'Stack']),
         texts: new Map([['message', SECRET]])
       })
     ).toBe(`see ${SECRET}`)
@@ -242,6 +262,7 @@ describe('the stack of an object that is no Error, read up to the scan bound', (
 
     const written = errorTextField(rules(), 'stack', stack, false, {
       overflow: false,
+      stackKeys: new Set(['stack', 'Stack']),
       texts: new Map([['message', message]])
     }) as string
 
@@ -258,7 +279,11 @@ describe('the stack of an object that is no Error, read up to the scan bound', (
     expect(stack.length).toBe(MAX_STACK_SCAN + over)
 
     expect(
-      errorTextField(rules(), 'stack', stack, false, { overflow: false, texts: new Map() })
+      errorTextField(rules(), 'stack', stack, false, {
+        overflow: false,
+        stackKeys: new Set(['stack', 'Stack']),
+        texts: new Map()
+      })
     ).toBe(expected)
   })
 
@@ -266,7 +291,11 @@ describe('the stack of an object that is no Error, read up to the scan bound', (
     const stack = `Error: a${FRAME}`
 
     expect(
-      errorTextField(rules(), 'stack', stack, false, { overflow: false, texts: new Map() })
+      errorTextField(rules(), 'stack', stack, false, {
+        overflow: false,
+        stackKeys: new Set(['stack', 'Stack']),
+        texts: new Map()
+      })
     ).toBe(stack)
   })
 
@@ -280,6 +309,7 @@ describe('the stack of an object that is no Error, read up to the scan bound', (
 
     const written = errorTextField(rules(), 'stack', stack, false, {
       overflow: false,
+      stackKeys: new Set(['stack', 'Stack']),
       texts: new Map([['message', message]])
     }) as string
 
@@ -295,6 +325,7 @@ describe('the stack of an object that is no Error, read up to the scan bound', (
 
     const written = errorTextField(rules(), 'stack', stack, false, {
       overflow: false,
+      stackKeys: new Set(['stack', 'Stack']),
       texts: new Map([['message', message]])
     }) as string
 
@@ -339,7 +370,11 @@ describe('headerMessage, an object with more than a search can be bounded for', 
 
   it('writes the censor in place of a stack when the plan overflows', () => {
     expect(
-      errorTextField(rules(), 'stack', 'Error: x', false, { overflow: true, texts: new Map() })
+      errorTextField(rules(), 'stack', 'Error: x', false, {
+        overflow: true,
+        stackKeys: new Set(['stack']),
+        texts: new Map()
+      })
     ).toBe('[R]')
   })
 })

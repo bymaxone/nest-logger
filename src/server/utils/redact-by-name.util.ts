@@ -70,7 +70,7 @@ import {
   readField,
   rulesBelow
 } from './error-text-exemption.util'
-import { foldedNames, foldName, matchesFolded } from './fold-key.util'
+import { foldedNames, foldName, matchesKey } from './fold-key.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
@@ -575,7 +575,7 @@ function walkToJsonOutput(
   ancestors: Set<object>,
   inSerialized: boolean
 ): unknown {
-  if (Object.keys(value).some((key) => matchesFolded(rules.sensitive, foldName(key)))) {
+  if (Object.keys(value).some((key) => matchesKey(rules.sensitive, key))) {
     return rules.censor
   }
   return walk(toJson.call(value), rules, depth + 1, ancestors, true, inSerialized)
