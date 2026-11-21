@@ -213,6 +213,7 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   const ascii = letters.filter((letter) => letter <= '\x7f').length
   if (ascii === 0 || ascii * MIN_ASCII_SHARE < letters.length) return false
   const { byLength, longest } = groupsOf(names)
+  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (no name is as long as the key, so the walk finds none and answers the same), and the true mutant is killed by the rows of fold-key.util.spec.ts; this disable also hides it from the report because Stryker cannot disable one mutant of a line.
   if (letters.length > longest) return false
   const lengths = Array.from(
     { length: letters.length - ascii + 1 },

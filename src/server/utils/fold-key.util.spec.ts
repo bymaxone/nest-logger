@@ -254,6 +254,20 @@ describe('matchesFolded, the work for one key', () => {
     expect(matchesFolded(many, 'f\u04bbeld1234')).toBe(false)
   })
 
+  it.each([
+    [64, false],
+    [65, true]
+  ])(
+    'walks a key against %i candidate names and hides it only past the bound: %s',
+    (count, hidden) => {
+      const names = new Set(
+        Array.from({ length: count }, (_, i) => `field${String(i).padStart(3, '0')}`)
+      )
+
+      expect(matchesFolded(names, 'f\u04bbeld999')).toBe(hidden)
+    }
+  )
+
   it('groups a large set of names in a time that is linear in them', () => {
     const large = new Set(
       Array.from({ length: 40_000 }, (_, i) => `field${String(i).padStart(6, '0')}`)
