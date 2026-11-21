@@ -211,8 +211,8 @@ export function errorTextField(
   isError: boolean,
   header?: HeaderText
 ): unknown {
-  if (header !== undefined && typeof value === 'string' && foldName(key) === 'stack') {
-    return header.overflow ? rules.censor : scrubPlainStack(rules, value, header)
+  if (!isError && typeof value === 'string' && foldName(key) === 'stack') {
+    return header?.overflow === true ? rules.censor : scrubPlainStack(rules, value, header)
   }
   if (!isError || !ERROR_TEXT_FIELDS.has(key)) return value
   const cut = cutIfText(value)

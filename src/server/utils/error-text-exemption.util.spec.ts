@@ -328,3 +328,25 @@ describe('headerMessage, an object with more than a search can be bounded for', 
     ).toBe('[R]')
   })
 })
+
+describe('errorTextField, the stack of an Error the walk does not read as one', () => {
+  const DEP = '\n    at dep (/srv/node_modules/p/i.js:1:1)'
+
+  it('is bounded, without dependency frames and with control characters escaped, with no plan', () => {
+    const stack = `Error: a\u001b[31m\n    at app (/srv/a.js:1:1)${DEP.repeat(20_000)}`
+
+    const written = errorTextField(rules(), 'stack', stack, false, undefined) as string
+
+    expect(written).not.toContain('node_modules')
+    expect(written).not.toContain('\u001b')
+    expect(written).toContain('at app')
+    expect(written.endsWith('[truncated]')).toBe(true)
+    expect(written.length).toBeLessThan(stack.length)
+  })
+
+  it('is left as it is when the walk reads the object as an Error', () => {
+    expect(errorTextField(rules(), 'stack', `Error: a${DEP}`, true, undefined)).toBe(
+      `Error: a${DEP}`
+    )
+  })
+})
