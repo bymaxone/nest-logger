@@ -42,6 +42,8 @@ describe('the stack header of an error-shaped toJSON result', () => {
 
       expect((line['err'] as { stack: string }).stack).toMatch(/^TJ: \[REDACTED\]\n/)
       expect(line['exception.stacktrace']).toMatch(/^TJ: \[REDACTED\]\n/)
+      expect((line['err'] as { message: string }).message).toBe('[REDACTED]')
+      expect(line['exception.message']).toBe('[REDACTED]')
       expect(JSON.stringify(line)).not.toContain(SECRET)
     })
   })
