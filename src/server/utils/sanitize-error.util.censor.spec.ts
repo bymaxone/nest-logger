@@ -312,6 +312,6 @@ describe('scrubStack, a hidden message against the part of the stack that is rea
         stack,
         headerCensor('Error', 'SEC', () => censored)
       )
-    ).not.toContain('at app')
+    ).toBe('')
   })
 })
