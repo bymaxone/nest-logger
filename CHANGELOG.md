@@ -14,6 +14,29 @@ heading here.
 
 ### Fixed
 
+- **An `Error` whose `name` is not text is read as an error.** A number, an array or an object in
+  `name` made the error pass for an unknown value: the line's `msg` was `String(error)`, with the
+  message in it, and `err` was not written, so a `message` named in `redactPaths` hid nothing. The
+  error is read as one, its name is `Error`, and its message is hidden like any other. The message of
+  a real `Error` is read once for it, where the structural check used to read it too.
+- **The name of an `Error` under a key of your own is censored like the name of `err`.** With
+  `redactStrategy: 'names'`, `{ error: new Error(x) }` wrote `error.name` and `error.type` as they
+  were while the message and the stack were hidden. A name that is text now passes the censor of the
+  message there too, and a name that reads as a name stays.
+- **The message in the `stack` of an object message is hidden.** `logger.warn({ message, stack })`,
+  where the object is no error to the library, wrote its `stack` as given, so a `message` named in
+  `redactPaths` stayed in the first line. That line is now censored as the first line of `err.stack`
+  is; the frames below it are the stack's own text and are not read for values.
+- **More spellings of a key the logger writes are dropped.** Combining marks (an accent on the `e` of `traceId`), control
+  characters (NUL), the dotless `ı`, the small-capital letters (`ᴛʀᴀᴄᴇ_ɪᴅ`) and the Greek epsilon are
+  read through. The keys the logger derives on an entry, `event.name`, `exception.type`,
+  `exception.message`, `exception.stacktrace` and `error.type`, are owned, by their own spelling: a
+  field of yours called `eventName` or `exceptionType` is still yours.
+- **A lone surrogate in a log message or a stack is escaped** (`\ud800`), as the control characters
+  are, so it cannot reach a terminal as a replacement character that hides what came after it.
+- **The stack of an error is read once** for `exception.stacktrace`, where a getter of the caller's
+  was read twice.
+
 - **The message in the `toJSON` result of an `err` is hidden in its stack header under `redactStrategy: 'names'`.**
   When the value under `err` returned an error-shaped object from its `toJSON` (a `name`, a `message`
   and a `stack` that opens with it), the walk followed the `toJSON` and replaced the `message` before
@@ -22,6 +45,12 @@ heading here.
   serializer, as that of an error-shaped object is; a list under `err` and a `message` that is not text
   keep the names. The frames of a stack are
   the stack's own text and are not read for values.
+
+### Added
+
+- The benchmark gates the cost of an object message: it must keep 0.20 of the throughput of a string
+  line on the shipped configuration (measured 0.46 to 0.47 on 1.4.24 and 1.4.25). A change that makes
+  the object form cost more than 5 times a line fails the job.
 
 ## [1.4.25] - 2026-11-20
 

@@ -6,15 +6,17 @@ throughput regression**, so a PR cannot silently degrade logging performance.
 
 ## Scenarios
 
-All four write to a no-op sink, so only the logging **pipeline** cost is
+All six write to a no-op sink, so only the logging **pipeline** cost is
 measured — never disk or TTY I/O.
 
-| #     | Scenario                                                                                                                                                      | What it isolates            |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| **A** | bare Pino 10                                                                                                                                                  | baseline                    |
-| **B** | `PinoLoggerService` (no redact, no mixin)                                                                                                                     | wrapper overhead            |
-| **C** | **the shipped configuration** — `forRoot({ service })` with nothing else set: name-walk redaction + composed ALS/OTel mixin, inside an active request context | what consumers actually run |
-| **D** | the same under the legacy `redactStrategy: 'paths'` escape hatch                                                                                              | cost of the old engine      |
+| #     | Scenario                                                                                                                                                      | What it isolates              |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| **A** | bare Pino 10                                                                                                                                                  | baseline                      |
+| **B** | `PinoLoggerService` (no redact, no mixin)                                                                                                                     | wrapper overhead              |
+| **C** | **the shipped configuration** — `forRoot({ service })` with nothing else set: name-walk redaction + composed ALS/OTel mixin, inside an active request context | what consumers actually run   |
+| **D** | the same under the legacy `redactStrategy: 'paths'` escape hatch                                                                                              | cost of the old engine        |
+| **E** | the shipped configuration, a string message                                                                                                                   | the cost of a line            |
+| **F** | the shipped configuration, an object message with the same fields                                                                                             | the cost of an object message |
 
 Scenario **C** is the one that matters: it is what `BymaxLoggerModule.forRoot({ service })` builds with no option set. A gate that measured a configuration nobody runs would not be a gate.
 
@@ -27,7 +29,11 @@ baseline** (see Calibration history), not to aspirational targets:
 - **Throughput (HARD gate):** `C.opsPerSec ≥ B.opsPerSec × 0.20`. The shipped
   path measures **0.345×** of the bare wrapper, so the floor sits ~1.9× below the
   measurement — enough to survive runner noise, tight enough to fail on a real
-  ~2× regression. This is the only budget that fails CI.
+  ~2× regression. This budget fails CI.
+- **Object message (HARD gate):** `F.opsPerSec ≥ E.opsPerSec × 0.20`. An object
+  message keeps **0.46 to 0.47×** of the throughput of a string line on the shipped
+  build of 1.4.24 and of 1.4.25 (a cost of about 2.2×); the floor is 0.20, a cost of
+  5×. Both throughputs are read in one run, so the speed of the runner cancels.
 - **Scenario D is printed, never gated.** It keeps the legacy strategy's cost
   visible and reproducible (the README quotes the comparison); constraining it
   would be constraining an escape hatch nobody should be reaching for.
