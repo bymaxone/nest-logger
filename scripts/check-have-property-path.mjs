@@ -7,8 +7,7 @@
  * Jest reads `toHaveProperty('a.b')` as "the property `b` of the property `a`". The semantic-convention
  * fields the logger writes (`exception.stacktrace`, `service.name`) are keys whose names hold a dot, so
  * `expect(line).not.toHaveProperty('exception.stacktrace')` passes whatever the line holds. The key form
- * is `toHaveProperty(['exception.stacktrace'])`. Found by a mutation run that stayed green on a deleted
- * condition: the assertion that should have caught it was of the path form.
+ * is `toHaveProperty(['exception.stacktrace'])`.
  *
  * Every tracked `.ts` file under `src` and `test` is read, the call may span lines, and a string, a
  * template or a quoted literal with a dot in it is a hit. A nested path is written as an array of its

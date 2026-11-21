@@ -78,6 +78,13 @@ describe('the stack of a plain-object message that has a message of its own', ()
     expect(JSON.stringify(line)).not.toContain(SECRET)
   })
 
+  it('is left as it was written when message is not hidden and overlaps itself in the stack', () => {
+    const stack = 'Error: ababa\n    at run (/srv/a.js:1:1)'
+    const line = lineOf((s) => s.warn({ message: 'aba', stack }), { redactPaths: ['password'] })
+
+    expect(line['stack']).toBe(stack)
+  })
+
   it('is left as it was written when message is not a name to hide', () => {
     const line = lineOf((s) => s.warn({ message: SECRET, stack: STACK }), {
       redactPaths: ['password']

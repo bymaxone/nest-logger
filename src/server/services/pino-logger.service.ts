@@ -211,7 +211,9 @@ function hideStackMessage(
 ): void {
   const stack = Reflect.get(payload, 'stack') as unknown
   if (text?.key !== 'message' || typeof stack !== 'string') return
-  Reflect.set(payload, 'stack', hideMessageInStack(stack, text.text, censor(text.text)))
+  const censored = censor(text.text)
+  if (censored === text.text) return
+  Reflect.set(payload, 'stack', hideMessageInStack(stack, text.text, censored))
 }
 
 /** A message read as the fields of an entry, with its text and the member the text came from. */
