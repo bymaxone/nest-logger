@@ -286,7 +286,10 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase implements NestModu
       // gated at runtime against the async-resolved `http.isEnabled`.
       asyncHttpInterceptorProvider()
     ]
-    return augmentLoggerModule(super.forRootAsync(options), providers)
+    return augmentLoggerModule(
+      guardOptions(() => super.forRootAsync(options)),
+      providers
+    )
   }
 
   /**

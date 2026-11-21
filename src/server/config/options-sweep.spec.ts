@@ -78,7 +78,10 @@ function wrapper(n: number, run: Run): <T extends object>(target: T) => T {
 }
 
 /** Run `call` with the Nth operation on the options throwing, for every N, until none is reached. */
-function sweep(call: (wrapped: Record<string, unknown>) => void): {
+function sweep(
+  call: (wrapped: Record<string, unknown>) => void,
+  make: () => Record<string, unknown> = options
+): {
   runs: number
   raw: string[]
   withoutCause: string[]
@@ -90,7 +93,7 @@ function sweep(call: (wrapped: Record<string, unknown>) => void): {
     const run: Run = { operations: 0, reached: false }
     runs += 1
     try {
-      call(wrapper(n, run)(options()))
+      call(wrapper(n, run)(make()))
     } catch (error) {
       if (error instanceof HostError) raw.push(`N=${String(n)}`)
       else if (!((error as Error).cause instanceof HostError) && run.reached) {
@@ -154,6 +157,19 @@ describe('the options of the module read under a host that throws on the Nth ope
     })
 
     expect(result.runs).toBeGreaterThan(20)
+    expect(result.raw).toEqual([])
+    expect(result.withoutCause).toEqual([])
+  })
+
+  it('never surfaces the raw error of the host from the registration of forRootAsync', () => {
+    const result = sweep(
+      (wrapped) => {
+        BymaxLoggerModule.forRootAsync(wrapped as never)
+      },
+      () => ({ useFactory: () => options(), imports: [], inject: [], extraKey: 1 })
+    )
+
+    expect(result.runs).toBeGreaterThan(5)
     expect(result.raw).toEqual([])
     expect(result.withoutCause).toEqual([])
   })
