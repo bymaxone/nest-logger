@@ -198,3 +198,43 @@ describe('a value that is not a list where a list belongs', () => {
     expect(() => resolveOptions(given as never)).toThrow(`[BymaxLoggerModule] options.http.${name}`)
   })
 })
+
+describe('a list option longer than the cap', () => {
+  const longList = (length: number): unknown[] =>
+    new Proxy([], {
+      get: (inner, key, receiver) => (key === 'length' ? length : Reflect.get(inner, key, receiver))
+    })
+
+  it.each(['redactPaths', 'errorOwnFieldNames', 'destinations'])(
+    '%s is refused by name before anything is allocated for it',
+    (name) => {
+      const given = { service: { name: 'api', version: '1.0.0' }, [name]: longList(1_000_000_000) }
+
+      expect(() => resolveOptions(given as never)).toThrow(
+        `[BymaxLoggerModule] options.${name} holds more than 10000 entries`
+      )
+    }
+  )
+
+  it.each(['excludePaths', 'secretPathSegments'])('http.%s is refused by name too', (name) => {
+    const given = {
+      service: { name: 'api', version: '1.0.0' },
+      http: { [name]: longList(10_001) }
+    }
+
+    expect(() => resolveOptions(given as never)).toThrow(
+      `[BymaxLoggerModule] options.http.${name} holds more than`
+    )
+  })
+
+  it('accepts a list of exactly the cap', () => {
+    const names = Array.from({ length: 10_000 }, (_, index) => `field${String(index)}`)
+
+    const resolved = resolveOptions({
+      service: { name: 'api', version: '1.0.0' },
+      errorOwnFieldNames: names
+    } as never)
+
+    expect(resolved.errorOwnFieldNames).toHaveLength(10_000)
+  })
+})

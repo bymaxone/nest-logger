@@ -12,12 +12,13 @@
 
 /**
  * The separators that are not part of a name: `_`, `.` and `-`; white space; control and format
- * characters; and the combining marks, which include the dot that lower-casing `İ` leaves behind.
+ * characters; the combining marks, which include the dot that lower-casing `İ` leaves behind; and the
+ * Hangul fillers and the blank Braille pattern, which print as nothing and belong to no class above.
  */
-const IGNORED = /[\s._\p{Cc}\p{Cf}\p{M}-]/gu
+const IGNORED = /[\s._\p{Cc}\p{Cf}\p{M}\u115f\u1160\u2800\u3164\uffa0-]/gu
 
 /** The same without the separators: what prints as nothing, white space and the combining marks. */
-const INVISIBLE = /[\s\p{Cc}\p{Cf}\p{M}]/gu
+const INVISIBLE = /[\s\p{Cc}\p{Cf}\p{M}\u115f\u1160\u2800\u3164\uffa0]/gu
 
 /** A key made only of the printable ASCII characters that no rule here changes except case and `._-`. */
 const PLAIN = /^[\x21-\x7e]*$/

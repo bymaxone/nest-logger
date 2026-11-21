@@ -56,9 +56,28 @@ describe('foldKey', () => {
     ['\u1d1b\u0280\u1d00\u1d04\u1d07_\u026a\u1d05', 'traceid'],
     ['trac\u03b5Id', 'traceid'],
     ['trac\u03f5Id', 'traceid'],
-    ['r\u00e9questId', 'requestid']
+    ['r\u00e9questId', 'requestid'],
+    ['trace\u0085id', 'traceid'],
+    ['trace\u2028id', 'traceid'],
+    ['trace\u2029id', 'traceid'],
+    ['trace\u034fid', 'traceid'],
+    ['trace\ufe0fid', 'traceid'],
+    ['trace\u3164id', 'traceid'],
+    ['trace\u115fid', 'traceid'],
+    ['trace\u1160id', 'traceid'],
+    ['trace\uffa0id', 'traceid'],
+    ['trace\u2800id', 'traceid']
   ])('reads %j as the spelling of a name: %s', (key, folded) => {
     expect(foldKey(key)).toBe(folded)
+  })
+
+  it.each([
+    ['exception\u2800.type', 'exception.type'],
+    ['exception.\u3164type', 'exception.type'],
+    ['exception.\u115ftype', 'exception.type'],
+    ['EXCEPTION.\u0085TYPE', 'exception.type']
+  ])('keeps the separators and reads %j as %s', (key, folded) => {
+    expect(foldKey(key, true)).toBe(folded)
   })
 
   it('does not take a different name for another because of a character it folds', () => {
