@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.28] - 2026-11-21
+
 ### Fixed
 
 - The options are read once: the snapshot that passes validation is the one the defaults are made from,
@@ -3406,7 +3408,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.27...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.28...HEAD
+[1.4.28]: https://github.com/bymaxone/nest-logger/compare/v1.4.27...v1.4.28
 [1.4.27]: https://github.com/bymaxone/nest-logger/compare/v1.4.26...v1.4.27
 [1.4.26]: https://github.com/bymaxone/nest-logger/compare/v1.4.25...v1.4.26
 [1.4.25]: https://github.com/bymaxone/nest-logger/compare/v1.4.24...v1.4.25
