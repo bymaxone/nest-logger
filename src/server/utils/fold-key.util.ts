@@ -119,11 +119,17 @@ function withLookalikes(folded: string, all: boolean): string {
   return read
 }
 
-/** A key of lower-case letters and digits only: it is its own folded form. */
-const FOLDED = /^[a-z0-9]*$/
-
 /** A key of ASCII letters and digits: folding it is lower-casing it. */
 const ALNUM = /^[A-Za-z0-9]*$/
+
+/** A field name folded for hiding. */
+function formOf(key: string): string {
+  // Stryker disable next-line ConditionalExpression: false is equivalent (foldStrict lower-cases an ASCII alphanumeric key too); true is killed by the foldName rows, and one disable covers both mutants
+  return ALNUM.test(key) ? key.toLowerCase() : foldStrict(key)
+}
+
+/** What each set of names answered for the short keys it was asked about; a set is fixed once built. */
+const answers = new WeakMap<ReadonlySet<string>, Map<string, boolean>>()
 
 /**
  * The form of a field name that a configured name is compared in, where a value is hidden: the
@@ -131,18 +137,14 @@ const ALNUM = /^[A-Za-z0-9]*$/
  * letter read as it, so `apiKey`, `api_key`, `API-KEY`, `api\u200bKey` and `\u0430piKey` are one name.
  * A letter that is not ASCII and is no such look-alike is left, for {@link matchesFolded}.
  * The common spellings skip the fold, so the comparison that runs for every key of every record costs
- * about what lower-casing it did; nothing is remembered, so a payload of keys cannot grow it.
+ * about what lower-casing it did, and a short key is remembered, a bounded number of them.
  *
  * @internal Shared across the logger. NOT re-exported by the package barrel.
  * @param key - A field name, or a configured name.
  * @returns The folded name.
  */
 export function foldName(key: string): string {
-  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (foldKey returns the same text for a key of lower-case letters and digits, so the branch only skips work); the true mutant is killed by the foldName rows of fold-key.util.spec.ts and by pino-factory.configured-names.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
-  if (FOLDED.test(key)) return key
-  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (foldKey returns the lower-cased text for a key of ASCII letters and digits, so the branch only skips work); the true mutant is killed by the foldName rows of fold-key.util.spec.ts and by pino-factory.configured-names.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
-  if (ALNUM.test(key)) return key.toLowerCase()
-  return foldStrict(key)
+  return formOf(key)
 }
 
 /**
@@ -257,9 +259,15 @@ function matchesName(letters: readonly string[], name: readonly string[]): boole
  * @returns `true` when the key is one of the names.
  */
 export function matchesKey(names: ReadonlySet<string>, key: string): boolean {
-  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (the full path gives the same answer for a key of lower-case letters and digits, so the branch only skips work); the true mutant is killed by the rows of fold-key.util.spec.ts and pino-factory.configured-names.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
-  if (FOLDED.test(key)) return names.has(key)
-  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (the full path gives the same answer for a key of ASCII letters and digits, so the branch only skips work); the true mutant is killed by the rows of fold-key.util.spec.ts and pino-factory.configured-names.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
-  if (ALNUM.test(key)) return names.has(key.toLowerCase())
-  return matchesFolded(names, foldStrict(key))
+  const seen = answers.get(names) ?? new Map<string, boolean>()
+  answers.set(names, seen)
+  const known = seen.get(key)
+  if (known !== undefined) return known
+  const folded = formOf(key)
+  const answer = names.has(folded) || matchesFolded(names, folded)
+  if (key.length <= 64) {
+    if (seen.size > 1023) seen.clear()
+    seen.set(key, answer)
+  }
+  return answer
 }

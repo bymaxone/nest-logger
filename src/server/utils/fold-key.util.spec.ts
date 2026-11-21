@@ -4,7 +4,7 @@
  *
  * Layer: server/utils, tests. Pure.
  */
-import { foldedNames, foldKey, foldName, matchesFolded } from './fold-key.util'
+import { foldedNames, foldKey, foldName, matchesFolded, matchesKey } from './fold-key.util'
 
 describe('foldKey', () => {
   it.each([
@@ -285,5 +285,38 @@ describe('matchesFolded, the work for one key', () => {
 
     expect(matchesFolded(few, 'to\u04bben')).toBe(true)
     expect(matchesFolded(few, 'to\u04bbex')).toBe(false)
+  })
+})
+
+describe('matchesKey remembers what a set answered', () => {
+  const names = foldedNames(['apiKey'])
+
+  /**
+   * Given a set that has answered more keys than it remembers
+   * When it is asked about a key it has not seen, and about the ones it has
+   * Then every answer is the one the fold gives, and a second set does not share them
+   */
+  it('still answers a new key correctly once it has been filled, and keeps each set apart', () => {
+    for (let index = 0; index < 3000; index += 1) {
+      expect(matchesKey(names, `field${String(index)}`)).toBe(false)
+    }
+    expect(matchesKey(names, 'API_KEY')).toBe(true)
+    expect(matchesKey(names, 'API_KEY')).toBe(true)
+    expect(matchesKey(names, 'api​Key')).toBe(true)
+    expect(matchesKey(names, 'field7')).toBe(false)
+    expect(matchesKey(foldedNames(['field7']), 'field7')).toBe(true)
+    expect(matchesKey(names, 'field7')).toBe(false)
+  })
+
+  /**
+   * Given a key longer than what is remembered
+   * When it is asked twice
+   * Then both answers are right
+   */
+  it('answers a long key without remembering it', () => {
+    const long = `${'a'.repeat(100)}Key`
+    expect(matchesKey(foldedNames([long]), long)).toBe(true)
+    expect(matchesKey(names, long)).toBe(false)
+    expect(matchesKey(names, long)).toBe(false)
   })
 })
