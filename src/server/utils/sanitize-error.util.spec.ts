@@ -561,7 +561,7 @@ describe('sanitizeError — a stack or a cause that cannot be read', () => {
       const node = sanitizeError(withThrowingProperty(property))
 
       expect(node).toMatchObject({ name: 'Error', message: 'boom', _errorFieldsIncomplete: true })
-      expect(node).not.toHaveProperty(property)
+      expect(node).not.toHaveProperty([property])
     }
   )
 

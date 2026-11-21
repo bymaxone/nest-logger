@@ -41,7 +41,7 @@ describe('mergeMixinSafely', () => {
   ])('drops %s, a spelling of %s, whichever way the mixin writes it', (spelling, written) => {
     const out = merge({ [spelling]: 'forged', a: 1 }, { [written]: 'real' })
 
-    expect(out).not.toHaveProperty(spelling)
+    expect(out).not.toHaveProperty([spelling])
     expect(out).toEqual({ a: 1, [written]: 'real' })
   })
 
