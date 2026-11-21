@@ -239,6 +239,9 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   const stands = letters.filter((letter) => letter === SYMBOL_STAND_IN).length
   const { byLength, longest } = groupsOf(names)
   // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (no name is as long as the key, so the walk finds none and answers the same), and the true mutant is killed by the rows of fold-key.util.spec.ts; this disable also hides it from the report because Stryker cannot disable one mutant of a line.
+  // More stand-ins than the longest name has characters: the key is hidden without being walked, since
+  // the walk is quadratic in them and a key made of symbols is the safe way to be wrong.
+  if (stands > longest) return true
   if (letters.length - stands > longest) return false
   const lengths = Array.from(
     { length: wide + stands + 1 },

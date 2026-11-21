@@ -476,6 +476,24 @@ describe('a symbol that is not ASCII, where a value is hidden', () => {
     expect(matchesFolded(new Set([name]), foldName(key))).toBe(expected)
   })
 
+  /**
+   * Given a key with more stand-ins than the longest name has characters
+   * When it is compared
+   * Then it is hidden without being walked, in bounded time, and a key with as many as the longest name
+   * is still walked
+   */
+  it('hides a key of more symbols than the longest name has characters, without walking it', () => {
+    const names = foldedNames(['abc'])
+
+    expect(matchesFolded(names, foldName('\u00a9'.repeat(4) + 'z'))).toBe(true)
+    expect(matchesFolded(names, foldName('\u00a9'.repeat(3) + 'z'))).toBe(false)
+    const started = Date.now()
+    expect(
+      matchesFolded(foldedNames(['password', 'token']), foldName('\u00a9'.repeat(20_000)))
+    ).toBe(true)
+    expect(Date.now() - started).toBeLessThan(1_000)
+  })
+
   it('keeps the symbol as one stand-in, and drops a dash, a space and an ASCII symbol', () => {
     expect(foldName('a\u00a9b')).toBe('a\ufffcb')
     expect(foldName('a\u2010b')).toBe('ab')
