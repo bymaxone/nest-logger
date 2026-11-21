@@ -243,3 +243,13 @@ describe('headerCensor', () => {
     })
   })
 })
+
+describe('scrubStack, a message that the censor leaves as it is', () => {
+  it('leaves the stack as it was written, a message that overlaps itself included', () => {
+    const header = headerCensor('Error', 'aa', (text) => text)
+
+    expect(scrubStack('Error: aa\n    at f (x.js:1:1)\nCaused by: aaa', header)).toBe(
+      'Error: aa\n    at f (x.js:1:1)\nCaused by: aaa'
+    )
+  })
+})

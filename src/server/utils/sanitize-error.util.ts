@@ -666,7 +666,6 @@ function censorMessageInStack(stack: string, header: HeaderCensor): string {
     header.message,
     header.censored
   )
-  // Stryker disable next-line ConditionalExpression: equivalent in output: replacing the message by itself changes nothing; the guard only skips a pass over the stack.
   return header.censored === header.message
     ? opened + rest
     : opened + hideMessageInStack(rest, header.message, header.censored)
