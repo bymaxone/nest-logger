@@ -11,7 +11,8 @@ import type { RedactRules } from './redact-by-name.util'
 const ERROR_TEXT_KEYS: ReadonlySet<string> = new Set(['message'])
 
 /**
- * Whether the value under `key` is an object, not a list, for the serializer of `err`.
+ * Whether the value under `key` is not a list, for the serializer of `err`: a value that holds no keys
+ * (text, a number, `null`) is walked as it was.
  *
  * @param rules - The rules of the walk.
  * @param key - The key the value is under.
@@ -24,14 +25,7 @@ function leavesErrorText(
   value: unknown,
   honorToJson: boolean
 ): boolean {
-  return (
-    rules.errorTextToSerializer &&
-    !honorToJson &&
-    key === 'err' &&
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value)
-  )
+  return rules.errorTextToSerializer && !honorToJson && key === 'err' && !Array.isArray(value)
 }
 
 /**
