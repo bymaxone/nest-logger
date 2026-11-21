@@ -292,4 +292,26 @@ describe('scrubStack, a hidden message against the part of the stack that is rea
 
     expect(scrubStack(stack, headerCensor('Error', message, censor))).not.toContain('LEAKMARK')
   })
+
+  it('does not keep a frame whose offset is past the bound after a header that opens the stack', () => {
+    const message = 'm'.repeat(5_000)
+    const lead = `Error: ${message}${DEP(message).repeat(24)}`
+    const pad = '\n    at pad'
+    const stack = `${lead}${pad.repeat(Math.ceil((MAX_STACK_SCAN + 1_000 - lead.length) / pad.length))}\n    at ZZZ_APP (/srv/z.js:1:1)`
+    expect(stack.indexOf('ZZZ_APP')).toBeGreaterThan(MAX_STACK_SCAN)
+
+    expect(scrubStack(stack, headerCensor('Error', message, censor))).not.toContain('ZZZ_APP')
+  })
+
+  it('keeps no more than the bound of a stack whose censored header is longer than the bound', () => {
+    const censored = 'node_modules'.repeat(20_000)
+    const stack = 'Error: SEC\n    at app (/srv/a.js:1:1)'
+
+    expect(
+      scrubStack(
+        stack,
+        headerCensor('Error', 'SEC', () => censored)
+      )
+    ).not.toContain('at app')
+  })
 })

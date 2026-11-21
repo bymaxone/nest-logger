@@ -67,6 +67,7 @@ export function hideMessagesInStack(
   limit: number
 ): string {
   const spans = messages
+    // Stryker disable next-line ConditionalExpression: equivalent in output: a message that does not fit in the stack is not found in it; the test only spares the table, which is as long as the message.
     .filter((message) => message !== '' && message.length <= stack.length)
     .flatMap((message) => occurrences(stack, message))
     .sort((a, b) => a[0] - b[0])

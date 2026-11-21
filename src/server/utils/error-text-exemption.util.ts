@@ -171,6 +171,7 @@ function scrubPlainStack(
   // The part searched reaches as far past the bound as the longest message is long, so a message that
   // starts before the bound is found whole; the text kept stands for the bound and no more.
   const hidden = hideMessagesInStack(
+    // Stryker disable next-line MethodExpression: equivalent in output: an occurrence that starts before the bound ends inside the window, and one that starts after it is not read, so a longer text gives the same result; the slice only bounds the search.
     stack.slice(0, MAX_STACK_SCAN + longest),
     texts,
     rules.censor,
