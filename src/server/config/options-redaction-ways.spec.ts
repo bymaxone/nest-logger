@@ -17,37 +17,43 @@ import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-modu
 const SENTINEL = 'SENTINEL_9f3a'
 const SERVICE = { name: 'api', version: '1.0.0' }
 
-type Supply = (key: string, value: unknown) => Record<string, unknown>
+type Supply = (options: Record<string, unknown>) => Record<string, unknown>
 
-/** The four ways to hand one option to the module. */
+/** The four ways to hand options to the module: every key of `options` is given the same way. */
 const WAYS: ReadonlyArray<readonly [string, Supply]> = [
-  ['a property', (key, value) => ({ service: SERVICE, [key]: value })],
+  ['a property', (options) => ({ service: SERVICE, ...options })],
   [
     'a non-enumerable getter',
-    (key, value) =>
-      Object.defineProperty({ service: SERVICE }, key, {
-        enumerable: false,
-        get: () => value
-      })
+    (options) =>
+      Object.defineProperties(
+        { service: SERVICE },
+        Object.fromEntries(
+          Object.entries(options).map(([key, value]) => [
+            key,
+            { enumerable: false, get: () => value }
+          ])
+        )
+      )
   ],
   [
     'the answer of a Proxy that lists no key',
-    (key, value) =>
+    (options) =>
       new Proxy(
         {},
         {
-          get: (_target, name) => (name === 'service' ? SERVICE : name === key ? value : undefined)
+          get: (_target, name) =>
+            name === 'service' ? SERVICE : Reflect.get(options, name as string)
         }
       ) as Record<string, unknown>
   ],
   [
     'a getter of a class',
-    (key, value) => {
+    (options) => {
       class Given {
         service = SERVICE
-        get [key](): unknown {
-          return value
-        }
+      }
+      for (const [key, value] of Object.entries(options)) {
+        Object.defineProperty(Given.prototype, key, { get: () => value })
       }
       return new Given() as unknown as Record<string, unknown>
     }
@@ -81,34 +87,40 @@ function entryOf(given: Record<string, unknown>, payload: Record<string, unknown
 
 describe.each(WAYS)('an option supplied as %s', (_way, supply) => {
   it('redactPaths still redacts the field it names', () => {
-    const line = entryOf(supply('redactPaths', ['topSecret']), { topSecret: SENTINEL })
+    const line = entryOf(supply({ redactPaths: ['topSecret'] }), { topSecret: SENTINEL })
 
     expect(line).not.toContain(SENTINEL)
     expect(line).toContain('[REDACTED]')
   })
 
   it('redactCensor is still the text that replaces it', () => {
-    const line = entryOf(supply('redactCensor', '<<CENSOR>>'), { password: SENTINEL })
+    const line = entryOf(supply({ redactCensor: '<<CENSOR>>' }), { password: SENTINEL })
 
     expect(line).not.toContain(SENTINEL)
     expect(line).toContain('<<CENSOR>>')
   })
 
-  it("redactStrategy 'paths' is still the strategy: a name below the top is only matched by a path", () => {
-    const given = supply('redactStrategy', 'paths')
-    const line = entryOf(given, { topSecret: SENTINEL, nested: { topSecret: SENTINEL } })
+  it("redactStrategy 'paths' is still the strategy: a listed name covers that depth only", () => {
+    const payload = { topSecret: SENTINEL, nested: { topSecret: SENTINEL } }
+    const names = JSON.parse(entryOf(supply({ redactPaths: ['topSecret'] }), payload))
+    const paths = JSON.parse(
+      entryOf(supply({ redactStrategy: 'paths', redactPaths: ['topSecret'] }), payload)
+    )
 
-    expect(line).toContain(SENTINEL)
+    expect(names.topSecret).toBe('[REDACTED]')
+    expect(names.nested.topSecret).toBe('[REDACTED]')
+    expect(paths.topSecret).toBe('[REDACTED]')
+    expect(paths.nested.topSecret).toBe(SENTINEL)
   })
 
   it('shouldDisableDefaultRedact is still read: the default names stay on when it is false', () => {
-    const line = entryOf(supply('shouldDisableDefaultRedact', false), { password: SENTINEL })
+    const line = entryOf(supply({ shouldDisableDefaultRedact: false }), { password: SENTINEL })
 
     expect(line).not.toContain(SENTINEL)
   })
 
   it('shouldDisableDefaultRedact true is still read: the default names are off', () => {
-    const line = entryOf(supply('shouldDisableDefaultRedact', true), { password: SENTINEL })
+    const line = entryOf(supply({ shouldDisableDefaultRedact: true }), { password: SENTINEL })
 
     expect(line).toContain(SENTINEL)
   })
