@@ -130,3 +130,50 @@ describe('the default names that hold a separator', () => {
     expect(line).not.toContain(SECRET)
   })
 })
+
+describe('the names hide a key spelled with a hyphen or a letter the folding does not know', () => {
+  it.each([
+    ['x\u2011api\u2011key'],
+    ['access\u2010token'],
+    ['api\u2212key'],
+    ['set\u2011cookie'],
+    ['password\u2011hash'],
+    ['x\u2013api\u2013key'],
+    ['pass:word'],
+    ['pass/word'],
+    ['pass#word'],
+    ['aut\u04bborization'],
+    ['a\u057dthorization'],
+    ['authoriz\u0251tion'],
+    ['p\u0251ssword'],
+    ['pa\u057dsword'],
+    ['to\u0138en'],
+    ['\u2010password\u2010']
+  ])('hide a value under %j, at the top and below it', (key) => {
+    expect(lineOf({ [key]: SECRET })).not.toContain(SECRET)
+    expect(lineOf({ meta: { nested: { [key]: SECRET } } })).not.toContain(SECRET)
+  })
+
+  it('hide the value beside such a name in a raw header array', () => {
+    const line = lineOf({
+      meta: { rawHeaders: ['x\u2011api\u2011key', SECRET, 'aut\u04bborization', `${SECRET}2`] }
+    })
+
+    expect(line).not.toContain(SECRET)
+  })
+
+  it('hide the value under such a name inside a header object', () => {
+    expect(lineOf({ meta: { headers: { 'set\u2011cookie': SECRET } } })).not.toContain(SECRET)
+  })
+
+  it.each([
+    ['author'],
+    ['authorize'],
+    ['passwords'],
+    ['pr\u00e9nom'],
+    ['\u017c\u00f3\u0142\u0107'],
+    ['x-trace-id']
+  ])('leave a legitimate key %j alone', (key) => {
+    expect(lineOf({ [key]: SECRET })).toContain(SECRET)
+  })
+})

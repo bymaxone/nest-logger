@@ -11,11 +11,12 @@
  */
 
 /**
- * The separators that are not part of a name: `_`, `.` and `-`; white space; control and format
- * characters; the combining marks, which include the dot that lower-casing `İ` leaves behind; and the
- * Hangul fillers and the blank Braille pattern, which print as nothing and belong to no class above.
+ * What is not part of a name: everything that is not a letter or a digit (the separators and the rest
+ * of the punctuation, white space, control and format characters, the combining marks, which include
+ * the dot that lower-casing `İ` leaves behind, and symbols), and the Hangul fillers, which are letters
+ * that print as nothing.
  */
-const IGNORED = /[\s._\p{Cc}\p{Cf}\p{M}\u115f\u1160\u2800\u3164\uffa0-]/gu
+const NOT_NAME = /[^\p{L}\p{N}]|[\u115f\u1160\u3164\uffa0]/gu
 
 /** The same without the separators: what prints as nothing, white space and the combining marks. */
 const INVISIBLE = /[\s\p{Cc}\p{Cf}\p{M}\u115f\u1160\u2800\u3164\uffa0]/gu
@@ -23,8 +24,14 @@ const INVISIBLE = /[\s\p{Cc}\p{Cf}\p{M}\u115f\u1160\u2800\u3164\uffa0]/gu
 /** The characters drawn like a full stop, which a key may use in place of the `.` of a dotted name. */
 const DOTS = /[\u3002\u0701\u06d4\u22c5\u00b7\ufe12]/gu
 
-/** A key made only of the printable ASCII characters that no rule here changes except case and `._-`. */
+/** A key made only of printable ASCII: no rule here changes it except its case and what is not a letter or a digit. */
 const PLAIN = /^[\x21-\x7e]*$/
+
+/** The characters that are not ASCII. */
+const NON_ASCII = /[^\x20-\x7e]/
+
+/** What is not an ASCII letter or digit. */
+const NOT_ASCII_NAME = /[^A-Za-z0-9]/g
 
 /** The Cyrillic and Greek letters drawn like a Latin one, by the Latin letter they are taken for. */
 const LOOKALIKES: ReadonlyMap<string, string> = new Map(
@@ -69,10 +76,16 @@ const LOOKALIKES: ReadonlyMap<string, string> = new Map(
  * @returns The folded name.
  */
 export function foldKey(key: string, keepSeparators = false): string {
-  const ignored = keepSeparators ? INVISIBLE : IGNORED
+  if (keepSeparators) {
+    // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
+    if (PLAIN.test(key)) return key.replace(INVISIBLE, '').toLowerCase()
+    let kept = key.normalize('NFKD').toLowerCase().replace(DOTS, '.').replace(INVISIBLE, '')
+    for (const [letter, latin] of LOOKALIKES) kept = kept.replaceAll(letter, latin)
+    return kept
+  }
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
-  if (PLAIN.test(key)) return key.replace(ignored, '').toLowerCase()
-  let folded = key.normalize('NFKD').toLowerCase().replace(DOTS, '.').replace(ignored, '')
+  if (PLAIN.test(key)) return key.replace(NOT_ASCII_NAME, '').toLowerCase()
+  let folded = key.normalize('NFKD').toLowerCase().replace(NOT_NAME, '')
   for (const [letter, latin] of LOOKALIKES) folded = folded.replaceAll(letter, latin)
   return folded
 }
@@ -111,4 +124,45 @@ export function foldName(key: string): string {
  */
 export function foldedNames(names: Iterable<string>): Set<string> {
   return new Set(Array.from(names, foldName).filter((name) => name !== ''))
+}
+
+/** The names of a set grouped by their length in characters, built once for each set. */
+const byLength = new WeakMap<ReadonlySet<string>, ReadonlyMap<number, readonly string[]>>()
+
+/** The names of `names` of `length` characters. */
+function namesOfLength(names: ReadonlySet<string>, length: number): readonly string[] {
+  let groups = byLength.get(names)
+  if (groups === undefined) {
+    const built = new Map<number, string[]>()
+    for (const name of names) {
+      const same = built.get([...name].length) ?? []
+      same.push(name)
+      built.set([...name].length, same)
+    }
+    groups = built
+    byLength.set(names, groups)
+  }
+  return groups.get(length) ?? []
+}
+
+/**
+ * Whether a folded key is one of the folded names. A key that is only ASCII is looked up as it is. A
+ * key that still holds a letter that is not ASCII, one the folding has no Latin letter for, is compared
+ * as a pattern in which each such letter stands for any one character, against the names of the same
+ * length: a look-alike of a letter the folding does not know cannot hide a key from its name, and a
+ * key that only happens to share a name's length and its ASCII letters is hidden too, which is the
+ * safe way to be wrong.
+ *
+ * @internal Shared across the logger. NOT re-exported by the package barrel.
+ * @param names - The folded names, from {@link foldedNames}.
+ * @param folded - The key, folded.
+ * @returns `true` when the key is one of the names.
+ */
+export function matchesFolded(names: ReadonlySet<string>, folded: string): boolean {
+  if (!NON_ASCII.test(folded)) return names.has(folded)
+  const letters = [...folded]
+  return namesOfLength(names, letters.length).some((name) => {
+    const named = [...name]
+    return letters.every((letter, index) => letter > '\x7f' || letter === named[index])
+  })
 }

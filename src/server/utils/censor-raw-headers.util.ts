@@ -5,7 +5,7 @@
  * message twice: as `headers`, an object the walk censors by key, and as `rawHeaders`, a flat array
  * `[name, value, name, value, ...]` where a value is beside its name and not under it.
  */
-import { foldName } from './fold-key.util'
+import { foldName, matchesFolded } from './fold-key.util'
 
 /**
  * The `rawHeaders` array with the value of each sensitive header replaced by the censor.
@@ -22,6 +22,6 @@ export function censorRawHeaders(
 ): unknown[] {
   return raw.map((entry, index) => {
     const name = index % 2 === 1 ? raw[index - 1] : undefined
-    return typeof name === 'string' && sensitive.has(foldName(name)) ? censor : entry
+    return typeof name === 'string' && matchesFolded(sensitive, foldName(name)) ? censor : entry
   })
 }

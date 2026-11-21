@@ -6,7 +6,7 @@
  * Layer: server/utils. Pure.
  */
 import { cutIfText } from './bounded-text.util'
-import { foldKey, foldName } from './fold-key.util'
+import { foldKey, foldName, matchesFolded } from './fold-key.util'
 import { hideMessagesInStack } from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
 import { ERROR_TEXT_FIELDS } from './redact-error-parts.util'
@@ -69,7 +69,8 @@ export function rulesBelow(
 export function isCensored(rules: RedactRules, key: string, value: unknown): boolean {
   const folded = foldName(key)
   return (
-    rules.sensitive.has(folded) && !(typeof value === 'string' && rules.exemptKeys?.has(folded))
+    matchesFolded(rules.sensitive, folded) &&
+    !(typeof value === 'string' && rules.exemptKeys?.has(folded))
   )
 }
 
@@ -130,6 +131,10 @@ export function headerMessage(
       const text: unknown = Reflect.get(source, key)
       if (typeof text === 'string') texts.set(key, text)
     }
+    // The message by its own name too, whether or not it is an own enumerable key: the header of a
+    // stack is a copy of it all the same.
+    const named: unknown = keys.includes('message') ? undefined : Reflect.get(source, 'message')
+    if (typeof named === 'string') texts.set('message', named)
   }
   const overflow =
     stacks.length > MAX_STACK_ALIASES || new Set(texts.values()).size > MAX_STACK_ALIASES

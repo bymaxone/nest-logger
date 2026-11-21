@@ -21,7 +21,11 @@ heading here.
   `i` or a separator (`api_key`, `api.Key`) was written in clear under `redactStrategy: 'names'`. Both
   sides are now folded with the folding the library's own keys use (separators folded too), also for the
   header names of a flat `rawHeaders` array. A name that is another word (`apiKeys` for `apiKey`) is
-  still another name. Under `redactStrategy: 'paths'` the paths are matched exactly by `fast-redact`
+  still another name. Every character that is not a letter or a digit is dropped from both sides (so
+  `x\u2011api\u2011key`, `access\u2010token`, `api\u2212key` and `pass:word` are `xapikey`, `accesstoken`, `apikey`
+  and `password`), and a letter the look-alike list does not know stands for any one letter: a key with
+  one is hidden by any name of the same length that matches it everywhere else, which can hide a key that
+  only shares a name's length and its ASCII letters. Under `redactStrategy: 'paths'` the paths are matched exactly by `fast-redact`
   and are not folded.
 - **The stack header is hidden against every key that spells `message` or `stack`.** An object with
   `{ message: 'x', Message: secret, stack: 'Error: secret' }`, or a `stack` beside a `Stack`, kept the

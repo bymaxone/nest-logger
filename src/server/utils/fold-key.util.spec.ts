@@ -4,7 +4,7 @@
  *
  * Layer: server/utils, tests. Pure.
  */
-import { foldedNames, foldKey, foldName } from './fold-key.util'
+import { foldedNames, foldKey, foldName, matchesFolded } from './fold-key.util'
 
 describe('foldKey', () => {
   it.each([
@@ -25,7 +25,6 @@ describe('foldKey', () => {
     ['trace_ids', 'traceId'],
     ['traceIdx', 'traceId'],
     ['my_trace', 'traceId'],
-    ['trace:id', 'traceId'],
     ['levels', 'level']
   ])('does not take %s for a spelling of %s', (key, other) => {
     expect(foldKey(key)).not.toBe(foldKey(other))
@@ -37,6 +36,13 @@ describe('foldKey', () => {
 
   it.each([
     ['trace id', 'traceid'],
+    ['trace:id', 'traceid'],
+    ['trace/id', 'traceid'],
+    ['trace\u2011id', 'traceid'],
+    ['trace\u2010id', 'traceid'],
+    ['trace\u2212id', 'traceid'],
+    ['trace\u2013id', 'traceid'],
+    ['trace#id', 'traceid'],
     ['trace\tid', 'traceid'],
     ['req\nuestId', 'requestid'],
     ['trace\u200bid', 'traceid'],
@@ -135,5 +141,55 @@ describe('foldedNames', () => {
 
   it('takes any iterable', () => {
     expect(foldedNames(new Set(['A_b']))).toEqual(new Set(['ab']))
+  })
+})
+
+describe('matchesFolded', () => {
+  const names = new Set(['authorization', 'password', 'xapikey'])
+
+  it('looks an ASCII key up as it is', () => {
+    expect(matchesFolded(names, 'password')).toBe(true)
+    expect(matchesFolded(names, 'passwords')).toBe(false)
+    expect(matchesFolded(names, 'author')).toBe(false)
+  })
+
+  it.each([
+    ['aut\u04bborization', true],
+    ['\u04bbassword', true],
+    ['passw\u0251rd', true],
+    ['pa\u057d\u057dword', true],
+    ['\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb', true],
+    ['\u04bbassword1', false],
+    ['aut\u04bborizatio', false],
+    ['x\u04bbpikey', true],
+    ['\u04bbpikey', false],
+    ['aut\u04bborizatioz', false],
+    ['\u04bbassw0rd', false]
+  ])('reads %j, with a letter that is not ASCII standing for any one, as %s', (key, expected) => {
+    expect(matchesFolded(names, key)).toBe(expected)
+  })
+
+  it('counts a letter outside the basic plane as one character', () => {
+    expect(matchesFolded(names, 'pass\u{1d5ee}ord')).toBe(true)
+    expect(matchesFolded(new Set(['abc']), 'a\u{1d5ee}c')).toBe(true)
+    expect(matchesFolded(new Set(['abcd']), 'a\u{1d5ee}c')).toBe(false)
+  })
+
+  it('matches against a name that holds a letter that is not ASCII', () => {
+    expect(
+      matchesFolded(
+        new Set(['\u043f\u0430\u0440\u043e\u043b\u044c']),
+        '\u043f\u0430\u0440\u043e\u043b\u044c'
+      )
+    ).toBe(true)
+    expect(matchesFolded(new Set(['abc']), '\u04bb\u04bb\u04bb\u04bb')).toBe(false)
+  })
+
+  it('answers the same for a set it has met and for one it has not', () => {
+    const another = new Set(['token'])
+
+    expect(matchesFolded(another, 'to\u0138en')).toBe(true)
+    expect(matchesFolded(another, 'to\u0138en')).toBe(true)
+    expect(matchesFolded(names, 'to\u0138en')).toBe(false)
   })
 })

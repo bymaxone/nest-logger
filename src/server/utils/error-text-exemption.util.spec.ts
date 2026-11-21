@@ -30,14 +30,29 @@ describe('headerMessage', () => {
     })
   })
 
-  it('reads no message of an object that owns a stack and inherits its message', () => {
+  it('reads, by its name, the message of an object that owns a stack and inherits it', () => {
     const source = Object.create({ message: SECRET }) as object
     Object.assign(source, { stack: `Error: ${SECRET}` })
 
     expect(headerMessage(rules(), source, ['stack'], false)).toEqual({
       overflow: false,
-      texts: new Map()
+      texts: new Map([['message', SECRET]])
     })
+  })
+
+  it('reads the message once when it is an own key, and not by its name again', () => {
+    let reads = 0
+    const source = {
+      stack: 'x',
+      get message(): string {
+        reads += 1
+        return SECRET
+      }
+    }
+
+    headerMessage(rules(), source, ['message', 'stack'], false)
+
+    expect(reads).toBe(1)
   })
 
   it('reads nothing of an object that owns a message and no stack', () => {

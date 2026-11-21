@@ -135,6 +135,24 @@ describe('a message longer than the part of a stack that is read', () => {
   })
 })
 
+describe('a message that is no own enumerable key of an object with a stack', () => {
+  it('is hidden in the stack all the same', () => {
+    const deep: Record<string, string> = { stack: `Error: ${SECRET}\n${FRAME}` }
+    Object.defineProperty(deep, 'message', { value: SECRET, enumerable: false })
+
+    const line = lineOf((s) => s.info('KEY', 'text', undefined, { deep }))
+
+    expect(line).not.toContain(SECRET)
+  })
+
+  it('is hidden when it is inherited', () => {
+    const deep = Object.create({ message: SECRET }) as Record<string, string>
+    deep['stack'] = `Error: ${SECRET}\n${FRAME}`
+
+    expect(lineOf((s) => s.info('KEY', 'text', undefined, { deep }))).not.toContain(SECRET)
+  })
+})
+
 describe('a payload with many keys that spell message or stack', () => {
   /** A spelling of `name` for each `index`, as long as six invisible characters: the index in base six. */
   const spelled = (name: string, index: number): string =>
