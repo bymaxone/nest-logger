@@ -761,4 +761,12 @@ describe('sanitizeError — the stack header of an error whose name is not text'
     expect(result.stack?.startsWith(`Error: boom${FRAME}`)).toBe(true)
     expect(result.stack).not.toContain('hunter2')
   })
+
+  it('keeps nothing of a name longer than the part of the stack the scrub reads', () => {
+    const stack = `${'n'.repeat(MAX_STACK_SCAN)}pw=hunter2: boom${FRAME}`
+
+    const result = sanitizeError(named(stack, 'boom'))
+
+    expect(result.stack).toBe('Error: boom')
+  })
 })
