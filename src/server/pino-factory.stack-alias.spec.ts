@@ -11,6 +11,8 @@ import { buildPinoInstance } from './pino-factory'
 import { DestinationHealth } from './services/destination-health.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
+import { MAX_TEXT_LENGTH } from './utils/bounded-text.util'
+import { MAX_STACK_SCAN } from './utils/sanitize-error.util'
 
 const SECRET = 'SEC_9f3a'
 const STACK = `Error: ${SECRET}\n    at f (/app/x.js:1:1)`
@@ -122,5 +124,46 @@ describe('the stack of a plain object that is very long or very dense', () => {
     expect(Date.now() - started).toBeLessThan(3_000)
     expect(line).not.toContain('kkkkkkkkkk')
     expect(line).toContain('[REDACTED]')
+  })
+})
+
+describe('the length of the message a plain-object stack is searched for', () => {
+  const stackOf = (message: string, stack: string): string =>
+    (
+      JSON.parse(lineOf({ meta: { message, stack } }, { redactPaths: ['message'] })) as {
+        meta: { stack: string }
+      }
+    ).meta.stack
+
+  /**
+   * Given a message of exactly the text limit and one a character longer, each repeated by its stack
+   * When the entry is written
+   * Then the first is hidden where the stack repeats it and the second makes the stack the censor
+   */
+  it('searches a message of the text limit and gives up on one a character longer', () => {
+    const exact = 'e'.repeat(MAX_TEXT_LENGTH)
+    const longer = 'e'.repeat(MAX_TEXT_LENGTH + 1)
+
+    expect(stackOf(exact, `Error: ${exact}\n    at f (/app/x.js:1:1)`)).toBe(
+      'Error: [REDACTED]\n    at f (/app/x.js:1:1)'
+    )
+    expect(stackOf(longer, `Error: ${longer}\n    at f (/app/x.js:1:1)`)).toBe('[REDACTED]')
+  })
+
+  /**
+   * Given a message that starts before the end of the part of the stack that is read and ends after it
+   * When the entry is written
+   * Then none of it is left: the part searched reaches as far past the bound as the message is long
+   */
+  it('hides a message that starts before the bound and ends after it', () => {
+    const message = `LEAKMARK${'q'.repeat(MAX_TEXT_LENGTH - 8)}`
+    const head = 'Error: a\n'
+    const stack = `${head}${'p'.repeat(MAX_STACK_SCAN - 100 - head.length)}${message}`
+    expect(stack.indexOf('LEAKMARK')).toBe(MAX_STACK_SCAN - 100)
+
+    const written = stackOf(message, stack)
+
+    expect(written).not.toContain('LEAKMARK')
+    expect(written).not.toContain('qqqq')
   })
 })

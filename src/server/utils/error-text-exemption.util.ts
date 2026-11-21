@@ -200,12 +200,11 @@ function scrubPlainStack(
   header: HeaderText | undefined
 ): string {
   const texts = [...new Set(header?.texts.values())]
-  const longest = texts.reduce((most, text) => Math.max(most, text.length), 0)
-  // The part searched reaches as far past the bound as the longest message is long, so a message that
-  // starts before the bound is found whole; the text kept stands for the bound and no more.
+  // A message is never longer than the text limit here (a longer one is not searched for), and the
+  // text kept is cut at that limit, far inside the bound, so the part searched is the bound.
   const hidden = hideMessagesInStack(
-    // Stryker disable next-line MethodExpression: equivalent in output: an occurrence that starts before the bound ends inside the window, and one that starts after it is not read, so a longer text gives the same result; the slice only bounds the search.
-    stack.slice(0, MAX_STACK_SCAN + longest),
+    // Stryker disable next-line MethodExpression: equivalent in output: the text kept is cut at the text limit, far inside the bound, so a stack searched whole gives the same text; the slice only bounds the search.
+    stack.slice(0, MAX_STACK_SCAN),
     texts,
     rules.censor,
     MAX_STACK_SCAN
