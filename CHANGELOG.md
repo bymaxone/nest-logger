@@ -51,6 +51,9 @@ heading here.
 - The benchmark gates the cost of an object message: it must keep 0.20 of the throughput of a string
   line on the shipped configuration (measured 0.46 to 0.47 on 1.4.24 and 1.4.25). A change that makes
   the object form cost more than 5 times a line fails the job.
+- A check (`pnpm check:property-path`, part of `pnpm lint`) fails on a `toHaveProperty` call that takes a
+  string with a dot: Jest reads it as a nested path, so a negative assertion on a key such as
+  `exception.stacktrace` could never fail. The key form is `toHaveProperty(['exception.stacktrace'])`.
 
 ## [1.4.25] - 2026-11-20
 
