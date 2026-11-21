@@ -23,15 +23,14 @@ heading here.
   header names of a flat `rawHeaders` array. A name that is another word (`apiKeys` for `apiKey`) is
   still another name. Every character that is not a letter or a digit is dropped from both sides (so
   `x\u2011api\u2011key`, `access\u2010token`, `api\u2212key` and `pass:word` are `xapikey`, `accesstoken`, `apikey`
-  and `password`), and a letter the look-alike list does not know stands for any one letter: a key with
-  one is hidden by any name of the same length that matches it everywhere else, which can hide a key that
-  only shares a name's length and its ASCII letters; this applies only to a key that keeps at least a third
-  of its characters as ASCII and whose other letters are of a script that has look-alikes of the Latin
-  letters (Latin, Cyrillic, Greek, Armenian, Cherokee, Coptic, Lisu, Georgian), so a field written in words
-  of another script, or a Latin word followed by one, is never taken for a name. The letters that stand
-  for one or for two (`ß` for `b` or `ss`, `æ`, `œ`, `þ` for `p` or `th`) are read either way. A name of
-  which more than two thirds of the letters are replaced by look-alikes the list does not know can still
-  be written under a key that hides it from the name. Under `redactStrategy: 'paths'` the paths are matched exactly by `fast-redact`
+  and `password`), and every letter that is not ASCII and that the look-alike list does not read as one Latin letter
+  stands for one or for two letters of a name (`ß`, `ꜷ` and `ꝏ` are two; a capital Cyrillic or Greek i,
+  drawn like an `I` and an `l`, is one): a key with such letters is hidden by any name it matches
+  everywhere else, which can hide the value of a key that only shares a name's ASCII letters and a
+  compatible length. A key of words in another script, with fewer than a third of its characters in
+  ASCII, is never taken for a name. This is for hiding a value only: the keys the entry owns, the keys
+  its derived fields use and the keys of the mixin are compared exactly after folding, so a caller
+  field written with such letters is not dropped for resembling one of them. Under `redactStrategy: 'paths'` the paths are matched exactly by `fast-redact`
   and are not folded.
 - **The stack header is hidden against every key that spells `message` or `stack`.** An object with
   `{ message: 'x', Message: secret, stack: 'Error: secret' }`, or a `stack` beside a `Stack`, kept the

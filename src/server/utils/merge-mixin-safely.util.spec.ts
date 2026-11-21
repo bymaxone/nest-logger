@@ -38,9 +38,7 @@ describe('mergeMixinSafely', () => {
     ['tr\u0000ace_id', 'traceId'],
     ['\u1d1b\u0280\u1d00\u1d04\u1d07_\u026a\u1d05', 'traceId'],
     ['trace_\u0131d', 'traceId'],
-    ['tr\u0251ceId', 'traceId'],
-    ['trace\u2011id', 'traceId'],
-    ['tra\u00dfid', 'trassid']
+    ['trace\u2011id', 'traceId']
   ])('drops %s, a spelling of %s, whichever way the mixin writes it', (spelling, written) => {
     const out = merge({ [spelling]: 'forged', a: 1 }, { [written]: 'real' })
 

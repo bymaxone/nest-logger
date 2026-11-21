@@ -222,18 +222,41 @@ describe('a name spelled with a letter that stands for more than one Latin lette
     expect(lineOf({ '\u00dfearer': SECRET }, { redactPaths: ['bearer'] })).not.toContain(SECRET)
   })
 
-  it.each([
-    ['user\u7528\u6237'],
-    ['user\u540d\u79f0'],
-    ['m\u6d88\u606f'],
-    ['id\u30e6\u30fc\u30b6'],
-    ['time\ud55c\uae00']
-  ])('keeps a caller field %j that a word of another script follows a Latin word in', (key) => {
-    const line = JSON.parse(lineOf({ meta: { [key]: SECRET }, [key]: `${SECRET}2` })) as {
-      meta: Record<string, string>
-    }
+  it.each([['user\u7528\u6237'], ['user\u540d\u79f0'], ['m\u6d88\u606f'], ['time\ud55c\uae00']])(
+    'keeps a caller field %j that a word of another script follows a Latin word in',
+    (key) => {
+      const line = JSON.parse(lineOf({ meta: { [key]: SECRET }, [key]: `${SECRET}2` })) as {
+        meta: Record<string, string>
+      }
 
-    expect(line.meta[key]).toBe(SECRET)
-    expect(JSON.stringify(line)).toContain(`${SECRET}2`)
+      expect(line.meta[key]).toBe(SECRET)
+      expect(JSON.stringify(line)).toContain(`${SECRET}2`)
+    }
+  )
+})
+
+describe('a name spelled with letters that look like more than one Latin letter or like two', () => {
+  it.each([
+    ['C\u0406ientSecret'],
+    ['c\u0399ientsecret'],
+    ['cl\u0131entSecret'],
+    ['clientSecret'.replace('l', '\u026a')],
+    ['\ua737thorization'],
+    ['c\ua74fkie'],
+    ['set-c\ua74fkie'],
+    ['t\u3147ken'],
+    ['passw\u05e1rd'],
+    ['p\u0430\u0455sword']
+  ])('hides a value under %j', (key) => {
+    expect(lineOf({ [key]: SECRET })).not.toContain(SECRET)
   })
+
+  it.each([['logKe\u02b9'], ['user_\u0438\u0434'], ['lev\u0394l'], ['trace\u0251Id']])(
+    'does not drop a caller field %j, which is not the owned key it resembles',
+    (key) => {
+      const line = JSON.parse(lineOf({ [key]: SECRET })) as Record<string, string>
+
+      expect(line[key]).toBe(SECRET)
+    }
+  )
 })

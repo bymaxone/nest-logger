@@ -27,20 +27,18 @@ const DOTS = /[\u3002\u0701\u06d4\u22c5\u00b7\ufe12]/gu
 /** A key made only of printable ASCII: no rule here changes it except its case and what is not a letter or a digit. */
 const PLAIN = /^[\x21-\x7e]*$/
 
-/** The letters that stand for one or for two Latin letters (`ß` for `b` or `ss`), which the comparison reads either way. */
-const ONE_OR_TWO = new Set(['\u00df', '\u00e6', '\u0153', '\u00fe'])
-
-/** A letter of a script that has look-alikes of the Latin letters: the only ones that may stand for a letter of a name. */
-const LOOKALIKE_SCRIPT =
-  /^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Script=Armenian}\p{Script=Cherokee}\p{Script=Coptic}\p{Script=Lisu}\p{Script=Georgian}\p{Script=Common}\p{Script=Inherited}]$/u
-
 /** The characters that are not ASCII. */
 const NON_ASCII = /[^\x20-\x7e]/
 
 /** What is not an ASCII letter or digit. */
 const NOT_ASCII_NAME = /[^A-Za-z0-9]/g
 
-/** The Cyrillic and Greek letters drawn like a Latin one, by the Latin letter they are taken for. */
+/**
+ * The letters of other scripts drawn like one Latin letter and no other, by the Latin letter they are
+ * taken for. A letter that lower-cases from a capital drawn like two Latin letters (the capital Greek
+ * nu is an N, a capital Cyrillic or Greek i is an I and an l) is not here: it is a wildcard where a
+ * value is hidden.
+ */
 const LOOKALIKES: ReadonlyMap<string, string> = new Map(
   Object.entries({
     a: '\u0430\u03b1\u1d00',
@@ -51,7 +49,6 @@ const LOOKALIKES: ReadonlyMap<string, string> = new Map(
     f: '\ua730',
     g: '\u0262',
     h: '\u029c',
-    i: '\u0456\u03b9\u0131\u026a\u0269',
     j: '\u0458\u1d0a',
     k: '\u1d0b',
     l: '\u029f',
@@ -73,6 +70,14 @@ const LOOKALIKES: ReadonlyMap<string, string> = new Map(
 )
 
 /**
+ * The letters drawn like an I, which is also an l, mapped to `i` where a field is dropped: the key of the
+ * entry is not a secret, and a spelling that only looks like it is dropped like it.
+ */
+const I_LIKE: ReadonlyMap<string, string> = new Map(
+  [...'\u0456\u03b9\u0131\u026a\u0269'].map((letter): [string, string] => [letter, 'i'])
+)
+
+/**
  * A key with its case, its separators, its white space and its invisible characters removed, and the
  * letters drawn like a Latin one replaced by it, so the spellings of one name compare equal:
  * `trace_id`, `trace.id`, `Trace-Id`, `TRACEID`, `trace id` and `trace\u200bid` all fold to `traceid`.
@@ -80,21 +85,38 @@ const LOOKALIKES: ReadonlyMap<string, string> = new Map(
  * @internal Shared across the logger. NOT re-exported by the package barrel.
  * @param key - A field name.
  * @param keepSeparators - Keep `_`, `.` and `-`, so `exception_type` and `exception.type` stay two names.
- * @returns The folded name.
+ * @returns The folded name, with every look-alike read: this is the form where a field is dropped.
  */
 export function foldKey(key: string, keepSeparators = false): string {
   if (keepSeparators) {
     // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
     if (PLAIN.test(key)) return key.replace(INVISIBLE, '').toLowerCase()
-    let kept = key.normalize('NFKD').toLowerCase().replace(DOTS, '.').replace(INVISIBLE, '')
-    for (const [letter, latin] of LOOKALIKES) kept = kept.replaceAll(letter, latin)
-    return kept
+    return withLookalikes(
+      key.normalize('NFKD').toLowerCase().replace(DOTS, '.').replace(INVISIBLE, ''),
+      true
+    )
   }
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
   if (PLAIN.test(key)) return key.replace(NOT_ASCII_NAME, '').toLowerCase()
-  let folded = key.normalize('NFKD').toLowerCase().replace(NOT_NAME, '')
-  for (const [letter, latin] of LOOKALIKES) folded = folded.replaceAll(letter, latin)
-  return folded
+  return withLookalikes(key.normalize('NFKD').toLowerCase().replace(NOT_NAME, ''), true)
+}
+
+/**
+ * The key folded where a value is hidden: the look-alikes of one Latin letter and no other are read as
+ * it, and every other letter that is not ASCII is left for the comparison, where it stands for a letter.
+ */
+function foldStrict(key: string): string {
+  // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
+  if (PLAIN.test(key)) return key.replace(NOT_ASCII_NAME, '').toLowerCase()
+  return withLookalikes(key.normalize('NFKD').toLowerCase().replace(NOT_NAME, ''), false)
+}
+
+/** `folded` with the look-alikes read as the Latin letters, and the i-like ones too when `all` is set. */
+function withLookalikes(folded: string, all: boolean): string {
+  let read = folded
+  for (const [letter, latin] of LOOKALIKES) read = read.replaceAll(letter, latin)
+  if (all) for (const [letter, latin] of I_LIKE) read = read.replaceAll(letter, latin)
+  return read
 }
 
 /** A key of lower-case letters and digits only: it is its own folded form. */
@@ -118,7 +140,7 @@ export function foldName(key: string): string {
   if (FOLDED.test(key)) return key
   // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (foldKey returns the lower-cased text for a key of ASCII letters and digits, so the branch only skips work); the true mutant is killed by the foldName rows of fold-key.util.spec.ts and by pino-factory.configured-names.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
   if (ALNUM.test(key)) return key.toLowerCase()
-  return foldKey(key)
+  return foldStrict(key)
 }
 
 /**
@@ -173,12 +195,10 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   if (!NON_ASCII.test(folded)) return false
   const letters = [...folded]
   // A key of words in another script keeps no ASCII letter and is never taken for a name: it must keep
-  // at least a third of its characters, and one; and a letter of a script that has no look-alikes of
-  // the Latin letters (Han, Kana, Hangul, Arabic, Hebrew, the Indic scripts) makes it no pattern at all.
+  // at least a third of its characters, and one.
   const ascii = letters.filter((letter) => letter <= '\x7f').length
   if (ascii === 0 || ascii * MIN_ASCII_SHARE < letters.length) return false
-  if (!letters.every((letter) => letter <= '\x7f' || LOOKALIKE_SCRIPT.test(letter))) return false
-  const extra = letters.filter((letter) => ONE_OR_TWO.has(letter)).length
+  const extra = letters.length - ascii
   for (let length = letters.length; length <= letters.length + extra; length += 1) {
     if (namesOfLength(names, length).some((name) => matchesName(letters, [...name]))) return true
   }
@@ -186,8 +206,8 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
 }
 
 /**
- * Whether the letters of a key read as the characters of a name: an ASCII letter is itself, a letter of
- * one or two (`ß`) is one or two characters of the name, any other letter is one.
+ * Whether the letters of a key read as the characters of a name: an ASCII letter is itself, and any
+ * other letter is one or two characters of the name (`ß` is two, a capital drawn like an `l` is one).
  */
 function matchesName(letters: readonly string[], name: readonly string[]): boolean {
   let at = new Set([0])
@@ -199,7 +219,7 @@ function matchesName(letters: readonly string[], name: readonly string[]): boole
         continue
       }
       if (position < name.length) next.add(position + 1)
-      if (ONE_OR_TWO.has(letter) && position + 1 < name.length) next.add(position + 2)
+      if (position + 1 < name.length) next.add(position + 2)
     }
     at = next
   }
@@ -220,5 +240,5 @@ export function matchesKey(names: ReadonlySet<string>, key: string): boolean {
   if (FOLDED.test(key)) return names.has(key)
   // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (the full path gives the same answer for a key of ASCII letters and digits, so the branch only skips work); the true mutant is killed by the rows of fold-key.util.spec.ts and pino-factory.configured-names.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
   if (ALNUM.test(key)) return names.has(key.toLowerCase())
-  return matchesFolded(names, foldKey(key))
+  return matchesFolded(names, foldStrict(key))
 }

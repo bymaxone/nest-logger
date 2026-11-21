@@ -33,10 +33,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-21 — server: 46,384 B (45.30 KiB) real -> 45.31 KiB budget (46,397 B, +13 B over the
+//   - 2026-11-21 — server: 46,262 B (45.18 KiB) real -> 45.19 KiB budget (46,274 B, +12 B over the
 //     measurement). The 1.4.29 fixes: a configured name and a key are compared in the shared folded
-//     form, which drops every character that is not a letter or a digit and reads a letter it has no
-//     Latin letter for as any one letter against the names of the same length, every key that spells the
+//     form, which drops every character that is not a letter or a digit, reads a look-alike of one Latin
+//     letter and no other as it, and reads any other letter that is not ASCII as one or two letters
+//     against the names of a compatible length where a value is hidden, while a field is dropped only on
+//     an exact match; every key that spells the
 //     message or the stack is read for the header, a hidden message is replaced wherever a stack repeats
 //     it, whatever its length and wherever it sits against the part of the stack that is read, the stack
 //     of a plain object is scrubbed, an object with more messages or stack keys than a search can be
@@ -350,7 +352,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 45.31 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 45.19 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',

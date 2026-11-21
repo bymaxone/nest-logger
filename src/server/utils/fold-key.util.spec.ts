@@ -167,7 +167,7 @@ describe('matchesFolded', () => {
     ['\u04bbassword1', false],
     ['aut\u04bborizatio', false],
     ['x\u04bbpikey', true],
-    ['\u04bbpikey', false],
+    ['\u04bbpikey', true],
     ['aut\u04bborizatioz', false],
     ['\u04bbassw0rd', false]
   ])('reads %j, with a letter that is not ASCII standing for any one, as %s', (key, expected) => {
@@ -223,14 +223,14 @@ describe('matchesFolded', () => {
   })
 
   it.each([
-    ['user\u7528\u6237', false],
-    ['m\u6d88\u606f', false],
-    ['id\u30e6\u30fc\u30b6', false],
-    ['time\ud55c\uae00', false],
+    ['\u7528\u6237\u540d', false],
+    ['\u540d\u524d\u3067\u3059', false],
+    ['user\u7528\u6237', true],
+    ['m\u6d88\u606f', true],
     ['\u0442oken', true],
     ['to\u0138en', true],
     ['\u056a\u056a\u056a\u056a\u056a\u056a\u056a\u056a', false]
-  ])('reads %j, by the script of its letters, as %s', (key, expected) => {
+  ])('reads %j, whatever the script of its letters, as %s', (key, expected) => {
     expect(matchesFolded(new Set(['userid', 'msg', 'id', 'time', 'token']), key)).toBe(expected)
   })
 

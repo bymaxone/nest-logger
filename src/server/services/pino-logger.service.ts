@@ -28,7 +28,7 @@ import { cutText } from '../utils/bounded-text.util'
 import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-text-finisher.util'
 import type { EntryTextCut, EntryTextFinisher } from '../utils/entry-text-finisher.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
-import { foldKey, matchesFolded } from '../utils/fold-key.util'
+import { foldKey } from '../utils/fold-key.util'
 import { hideMessageInStack } from '../utils/hide-message-in-stack.util'
 import { isPlainRecord } from '../utils/is-plain-record.util'
 import type { Redactor } from '../utils/redact-by-name.util'
@@ -97,8 +97,8 @@ const DERIVED_KEYS: ReadonlySet<string> = new Set([
 const isOwnedKey = (key: string): boolean => {
   const lower = key.toLowerCase()
   return (
-    matchesFolded(OWNED_KEY_SPELLINGS, foldKey(key)) ||
-    matchesFolded(DERIVED_KEYS, foldKey(key, true)) ||
+    OWNED_KEY_SPELLINGS.has(foldKey(key)) ||
+    DERIVED_KEYS.has(foldKey(key, true)) ||
     lower.startsWith('service.') ||
     lower.startsWith('deployment.')
   )
