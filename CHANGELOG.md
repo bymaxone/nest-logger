@@ -12,8 +12,13 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.29] - 2026-11-21
+
 ### Fixed
 
+- **Only the key `message` is left to the serializer of `err`.** A field of the object under `err` that
+  only spells it (`Message`, a zero-width character inside it, a look-alike letter) is a field like any
+  other and is hidden when `message` is a name to hide.
 - **A configured name hides a field however its key is spelled.** The names of `redactPaths`, the
   default names and the leaves of a configured path were compared with a key by exact name, in lower
   case, so a field spelled with a zero-width character, a soft hyphen, a byte order mark, fullwidth
@@ -3464,7 +3469,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.28...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.29...HEAD
+[1.4.29]: https://github.com/bymaxone/nest-logger/compare/v1.4.28...v1.4.29
 [1.4.28]: https://github.com/bymaxone/nest-logger/compare/v1.4.27...v1.4.28
 [1.4.27]: https://github.com/bymaxone/nest-logger/compare/v1.4.26...v1.4.27
 [1.4.26]: https://github.com/bymaxone/nest-logger/compare/v1.4.25...v1.4.26
