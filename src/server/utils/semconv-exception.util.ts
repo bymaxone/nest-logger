@@ -50,12 +50,13 @@ function deriveExceptionFields(
   // `errorFormat: 'semconv'` would silently start seeing dependency frames that the shape they
   // migrated FROM had filtered out. Written only for what the serializer reads as an error, a name
   // and a message that are text, as `err.stack` is, and hidden by the names that hide that one.
+  const stack = candidate?.stack
   if (
     typeof candidate?.name === 'string' &&
     typeof message === 'string' &&
-    typeof candidate.stack === 'string'
+    typeof stack === 'string'
   ) {
-    record['exception.stacktrace'] = bounded(redactStack(scrubStack(candidate.stack, header)))
+    record['exception.stacktrace'] = bounded(redactStack(scrubStack(stack, header)))
   }
 }
 
