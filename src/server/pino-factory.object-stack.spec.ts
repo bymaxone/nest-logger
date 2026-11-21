@@ -100,10 +100,12 @@ describe('the stack of a plain-object message that has a message of its own', ()
     expect(line['stack']).toBe(stack)
   })
 
-  it('does not touch a frame that holds the message text', () => {
-    const stack = `Error: head\n    at ${SECRET} (/srv/app.js:1:1)`
+  it('hides the message text wherever the stack repeats it, a frame or a cause included', () => {
+    const stack = `Error: head\n    at ${SECRET} (/srv/app.js:1:1)\nCaused by: Error: ${SECRET}`
     const line = lineOf((s) => s.warn({ message: SECRET, stack }), { redactPaths: ['message'] })
 
-    expect(line['stack']).toBe(stack)
+    expect(line['stack']).toBe(
+      'Error: head\n    at [REDACTED] (/srv/app.js:1:1)\nCaused by: Error: [REDACTED]'
+    )
   })
 })

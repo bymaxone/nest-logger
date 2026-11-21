@@ -16,8 +16,9 @@
  */
 
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
-import { censorStackHeader } from './censor-stack-header.util'
+import { splitCensoredHeader } from './censor-stack-header.util'
 import { escapeControlCharacters } from './escape-log-text.util'
+import { hideMessagesInStack } from './hide-message-in-stack.util'
 import { isError } from './is-error.util'
 import {
   ALL_OWN_FIELDS,
@@ -654,6 +655,29 @@ function censorStackName(stack: string, header: HeaderCensor): string {
 }
 
 /**
+ * The stack with the message of the error censored where it opens the stack and everywhere the lines
+ * below repeat it, as a library does with `Caused by: ...`. The header is left as it was written: the
+ * name in it may hold the same text as the message and stays.
+ */
+function censorMessageInStack(stack: string, header: HeaderCensor): string {
+  const [opened, rest] = splitCensoredHeader(
+    censorStackName(stack, header),
+    header.censoredName,
+    header.message,
+    header.censored
+  )
+  return header.censored === header.message
+    ? opened + rest
+    : opened +
+        hideMessagesInStack(
+          rest,
+          [header.message],
+          header.censored,
+          Math.max(0, MAX_STACK_SCAN - (stack.length - rest.length))
+        )
+}
+
+/**
  * Remove `node_modules/` frames from a stack trace so logs surface app code, and cut it at
  * {@link MAX_TEXT_LENGTH}.
  *
@@ -681,17 +705,14 @@ export function scrubStack(stack: string, header?: HeaderCensor, wasLonger = fal
   // preserved — a stack is legitimately multi-line.
   // The scan is the same bound for every stack and every message: how much is read never depends on
   // how long the message is, which a caller controls.
-  const head = stack.slice(0, MAX_STACK_SCAN)
+  // The part searched for the message reaches as far past the scan bound as the message is long, so a
+  // message that starts before the bound is found whole and hidden whole; the text kept stands for the
+  // bound and no more, however much the hidden messages shrink it.
+  // Stryker disable next-line MethodExpression: equivalent in output: an occurrence that starts before the bound ends inside the window, and one that starts after it is not read, so a longer text gives the same result; the slice only bounds the search.
+  const window = stack.slice(0, MAX_STACK_SCAN + (header?.message.length ?? 0))
   const scrubbed = escapeControlCharacters(
-    (header === undefined
-      ? head
-      : censorStackHeader(
-          censorStackName(head, header),
-          header.censoredName,
-          header.message,
-          header.censored
-        )
-    )
+    (header === undefined ? window : censorMessageInStack(window, header))
+      .slice(0, MAX_STACK_SCAN)
       .split('\n')
       .filter((line) => !line.includes('node_modules'))
       .join('\n')

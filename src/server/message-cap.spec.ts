@@ -188,12 +188,16 @@ describe('a nested Error whose name, message or stack is an own enumerable field
 })
 
 describe('a name, message or stack that belongs to caller data', () => {
-  it('is written as given on a plain object that only looks like an error', () => {
+  it('is written as given on a plain object that only looks like an error, except its stack', () => {
     const { service, entry } = pipeline()
     const long = 'P'.repeat(100_000)
 
     service.info('KEY', 'hello', 'u1', { shaped: { name: long, message: long, stack: long } })
 
-    expect(entry().shaped).toEqual({ name: long, message: long, stack: long })
+    const shaped = entry().shaped as { name: string; message: string; stack: string }
+    expect(shaped.name).toBe(long)
+    expect(shaped.message).toBe(long)
+    expect(shaped.stack.length).toBeLessThan(long.length)
+    expect(shaped.stack.endsWith('[truncated]')).toBe(true)
   })
 })

@@ -12,6 +12,45 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A configured name hides a field however its key is spelled.** The names of `redactPaths`, the
+  default names and the leaves of a configured path were compared with a key by exact name, in lower
+  case, so a field spelled with a zero-width character, a soft hyphen, a byte order mark, fullwidth
+  letters, a no-break space, a tab, a trailing space, a Cyrillic letter, a combining mark, a dotless
+  `i` or a separator (`api_key`, `api.Key`) was written in clear under `redactStrategy: 'names'`. Both
+  sides are now folded with the folding the library's own keys use (separators folded too), also for the
+  header names of a flat `rawHeaders` array. A name that is another word (`apiKeys` for `apiKey`) is
+  still another name. Under `redactStrategy: 'paths'` the paths are matched exactly by `fast-redact`
+  and are not folded.
+- **The stack header is hidden against every key that spells `message` or `stack`.** An object with
+  `{ message: 'x', Message: secret, stack: 'Error: secret' }`, or a `stack` beside a `Stack`, kept the
+  secret in a header: only the first key that spelled the name was read. Every one is read, once, and
+  every distinct text is hidden in every stack, longest first. The 1.4.27 line "whatever the case or
+  the look of the two keys" held for a single key of each name only.
+- **More characters that print as nothing, and more letters and dots drawn like another, are read
+  through:** the Hangul fillers and the blank Braille pattern, the characters drawn like a full stop
+  (`U+3002`, `U+00B7`, `U+22C5` and others) and a few more letters drawn like a Latin one, in the
+  comparison of the derived keys, of the owned keys and of the configured names. The list of drawn
+  letters is a list, not every look-alike Unicode has.
+- **A message the options hide is hidden wherever a stack repeats it.** Only the header of a stack was
+  rewritten, so a library that appends `Caused by: Error: <message>` left the text readable in the first
+  16 KiB of `err.stack`, of the stack of a cause and of `exception.stacktrace`. Every occurrence of the
+  message in the part of the stack that is read is replaced now, for an `Error`, an `Error` whose name is
+  not text, a cause and an object that is no `Error`. A message short enough to appear in a frame is
+  replaced there too.
+- **The `stack` of an object that is no `Error` is bounded and scrubbed at any depth.** A nested plain
+  object with a `stack` was written whole, up to its full length and with its dependency frames and
+  control characters. It is read up to the same bound as the stack of an error, written without
+  `node_modules` frames and with control characters escaped, and cut at the text limit with the suffix.
+  The name and the message of such an object are still written as given.
+- **A list option whose length is not a count is refused.** A Proxy that reports `-1`, `NaN`, `1.5` or
+  an infinite length was read as empty; it is refused by the name of the option.
+- **A list option is capped at 10,000 entries.** `redactPaths`, `errorOwnFieldNames`, `destinations`,
+  `http.excludePaths` and `http.secretPathSegments` longer than that are refused at startup, by the
+  name of the option, before an element is read; a length a host reports as a billion no longer
+  allocates.
+
 ## [1.4.28] - 2026-11-21
 
 ### Fixed

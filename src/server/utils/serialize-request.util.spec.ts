@@ -137,7 +137,7 @@ describe('withSerializedRequest', () => {
 })
 
 describe('censorRawHeaders', () => {
-  const sensitive = new Set(['authorization', 'x-api-key'])
+  const sensitive = new Set(['authorization', 'xapikey'])
 
   it('censors the value beside a sensitive name, whatever its case, and nothing else', () => {
     expect(
@@ -220,7 +220,7 @@ describe('serializeRequestValue, what is and is not a request', () => {
 
 describe('censorRawHeaders, which entries are values', () => {
   it('reads only the entries at odd positions as values, never a name that follows a value spelled like a sensitive name', () => {
-    const sensitive = new Set(['authorization', 'x-api-key'])
+    const sensitive = new Set(['authorization', 'xapikey'])
 
     expect(censorRawHeaders(['Accept', 'authorization', 'keep-me'], sensitive, '[C]')).toEqual([
       'Accept',
