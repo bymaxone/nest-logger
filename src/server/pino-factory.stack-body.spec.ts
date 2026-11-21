@@ -113,6 +113,26 @@ describe('the header of a stack whose name holds the text of the message', () =>
   })
 })
 
+describe('a message longer than the part of a stack that is read', () => {
+  const PREFIX = 'DO_NOT_LOG_THIS_SECRET_'
+  const long = `${PREFIX}${'x'.repeat(140_000)}`
+
+  it('is hidden whole in a nested plain stack that opens with it', () => {
+    const line = lineOf((s) =>
+      s.info('KEY', 'text', undefined, { deep: { message: long, stack: `Error: ${long}` } })
+    )
+
+    expect(line).not.toContain(PREFIX)
+  })
+
+  it('is hidden whole in the stack of an Error that opens with it', () => {
+    const error = new Error(long)
+    error.stack = `Error: ${long}`
+
+    expect(lineOf((s) => s.error(error))).not.toContain(PREFIX)
+  })
+})
+
 describe('the stack of an object that is no Error, at any depth', () => {
   const stackOf = (line: string): string =>
     (JSON.parse(line) as { meta?: unknown; deep: { stack: string } }).deep.stack

@@ -166,10 +166,14 @@ function scrubPlainStack(
   stack: string,
   header: HeaderText | undefined
 ): string {
-  const head = stack.slice(0, MAX_STACK_SCAN)
-  const hidden = [...new Set(header?.texts.values())]
-    .sort((a, b) => b.length - a.length)
-    .reduce((text, message) => hideMessageInStack(text, message, rules.censor), head)
+  const texts = [...new Set(header?.texts.values())].sort((a, b) => b.length - a.length)
+  // The part searched reaches as far past the bound as the longest message is long, so a message that
+  // starts before the bound and ends after it is found whole and hidden whole.
+  const window = stack.slice(0, MAX_STACK_SCAN + (texts[0]?.length ?? 0))
+  const hidden = texts.reduce(
+    (text, message) => hideMessageInStack(text, message, rules.censor),
+    window
+  )
   return scrubStack(hidden, undefined, stack.length > MAX_STACK_SCAN)
 }
 

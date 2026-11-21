@@ -699,9 +699,13 @@ export function scrubStack(stack: string, header?: HeaderCensor, wasLonger = fal
   // preserved — a stack is legitimately multi-line.
   // The scan is the same bound for every stack and every message: how much is read never depends on
   // how long the message is, which a caller controls.
-  const head = stack.slice(0, MAX_STACK_SCAN)
+  // The part searched for the message reaches as far past the scan bound as the message is long, so a
+  // message that starts before the bound and ends after it is found whole and hidden whole; what is
+  // read for the rest is the bound.
+  const window = stack.slice(0, MAX_STACK_SCAN + (header?.message.length ?? 0))
   const scrubbed = escapeControlCharacters(
-    (header === undefined ? head : censorMessageInStack(head, header))
+    (header === undefined ? window : censorMessageInStack(window, header))
+      .slice(0, MAX_STACK_SCAN)
       .split('\n')
       .filter((line) => !line.includes('node_modules'))
       .join('\n')
