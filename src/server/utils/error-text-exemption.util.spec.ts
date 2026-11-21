@@ -6,6 +6,7 @@
  * Layer: server/utils, tests. Pure.
  */
 import {
+  MAX_STACK_ALIASES,
   censorAnyName,
   errorTextField,
   headerMessage,
@@ -24,15 +25,19 @@ describe('headerMessage', () => {
     const source = { message: SECRET, stack: 'x' }
 
     expect(headerMessage(rules(), source, ['message', 'stack'], false)).toEqual({
+      overflow: false,
       texts: new Map([['message', SECRET]])
     })
   })
 
-  it('reads nothing of an object that owns a stack and inherits its message', () => {
+  it('reads no message of an object that owns a stack and inherits its message', () => {
     const source = Object.create({ message: SECRET }) as object
     Object.assign(source, { stack: `Error: ${SECRET}` })
 
-    expect(headerMessage(rules(), source, ['stack'], false)).toBeUndefined()
+    expect(headerMessage(rules(), source, ['stack'], false)).toEqual({
+      overflow: false,
+      texts: new Map()
+    })
   })
 
   it('reads nothing of an object that owns a message and no stack', () => {
@@ -41,10 +46,13 @@ describe('headerMessage', () => {
     expect(headerMessage(rules(), source, ['message'], false)).toBeUndefined()
   })
 
-  it('reads nothing when the options do not hide the message, or the object is an error', () => {
+  it('reads no message when the options do not hide it, and nothing of an error', () => {
     const source = { message: SECRET, stack: 'x' }
 
-    expect(headerMessage(rules(['token']), source, ['message', 'stack'], false)).toBeUndefined()
+    expect(headerMessage(rules(['token']), source, ['message', 'stack'], false)).toEqual({
+      overflow: false,
+      texts: new Map()
+    })
     expect(headerMessage(rules(), source, ['message', 'stack'], true)).toBeUndefined()
   })
 })
@@ -60,15 +68,22 @@ describe('headerMessage, the spelling of the keys', () => {
     const source = { [messageKey]: SECRET, [stackKey]: 'x' }
 
     expect(headerMessage(rules(), source, [messageKey, stackKey], false)).toEqual({
+      overflow: false,
       texts: new Map([[messageKey, SECRET]])
     })
   })
 
-  it('reads nothing when a key is another word', () => {
+  it('reads no message when a key is another word', () => {
     const source = { messages: SECRET, stack: 'x' }
 
-    expect(headerMessage(rules(), source, ['messages', 'stack'], false)).toBeUndefined()
-    expect(headerMessage(rules(), source, ['stack', 'stacks'], false)).toBeUndefined()
+    expect(headerMessage(rules(), source, ['messages', 'stack'], false)).toEqual({
+      overflow: false,
+      texts: new Map()
+    })
+    expect(headerMessage(rules(), source, ['stack', 'stacks'], false)).toEqual({
+      overflow: false,
+      texts: new Map()
+    })
   })
 })
 
@@ -87,6 +102,7 @@ describe('headerMessage, more than one key that spells the name', () => {
     const header = headerMessage(rules(), source, ['message', 'Message', 'stack'], false)
 
     expect(header).toEqual({
+      overflow: false,
       texts: new Map([
         ['message', 'benign'],
         ['Message', SECRET]
@@ -99,20 +115,25 @@ describe('headerMessage, more than one key that spells the name', () => {
     const source = { message: 7, Message: SECRET, stack: 'x' }
 
     expect(headerMessage(rules(), source, ['message', 'Message', 'stack'], false)).toEqual({
+      overflow: false,
       texts: new Map([['Message', SECRET]])
     })
   })
 
-  it('reads nothing when no key that spells message holds text', () => {
+  it('reads no message when no key that spells message holds text', () => {
     const source = { message: 7, stack: 'x' }
 
-    expect(headerMessage(rules(), source, ['message', 'stack'], false)).toBeUndefined()
+    expect(headerMessage(rules(), source, ['message', 'stack'], false)).toEqual({
+      overflow: false,
+      texts: new Map()
+    })
   })
 })
 
 describe('errorTextField, a header with more than one message', () => {
   it('hides each distinct text in a stack, the longer before the shorter', () => {
     const header = {
+      overflow: false,
       texts: new Map([
         ['message', 'ab'],
         ['Message', 'ab cd']
@@ -143,7 +164,9 @@ describe('readField', () => {
   it('reads any other field, and the message when none was read, from the object', () => {
     const source = { message: 'm', other: 'o' }
 
-    expect(readField(source, 'other', { texts: new Map([['message', 'cached']]) })).toBe('o')
+    expect(
+      readField(source, 'other', { overflow: false, texts: new Map([['message', 'cached']]) })
+    ).toBe('o')
     expect(readField(source, 'message', undefined)).toBe('m')
   })
 })
@@ -153,10 +176,14 @@ describe('errorTextField', () => {
     const stack = `Error: ${SECRET}\n    at run (/srv/app.js:1:1)`
 
     expect(
-      errorTextField(rules(), 'stack', stack, false, { texts: new Map([['message', SECRET]]) })
+      errorTextField(rules(), 'stack', stack, false, {
+        overflow: false,
+        texts: new Map([['message', SECRET]])
+      })
     ).toBe('Error: [R]\n    at run (/srv/app.js:1:1)')
     expect(
       errorTextField(rules(), 'note', `see ${SECRET}`, false, {
+        overflow: false,
         texts: new Map([['message', SECRET]])
       })
     ).toBe(`see ${SECRET}`)
@@ -199,6 +226,7 @@ describe('the stack of an object that is no Error, read up to the scan bound', (
     expect(stack.indexOf('ZZZ_APP')).toBeGreaterThan(MAX_STACK_SCAN)
 
     const written = errorTextField(rules(), 'stack', stack, false, {
+      overflow: false,
       texts: new Map([['message', message]])
     }) as string
 
@@ -214,13 +242,17 @@ describe('the stack of an object that is no Error, read up to the scan bound', (
     const stack = `Error: a${frame.repeat(Math.floor(fill / frame.length))}${'x'.repeat(fill % frame.length)}`
     expect(stack.length).toBe(MAX_STACK_SCAN + over)
 
-    expect(errorTextField(rules(), 'stack', stack, false, undefined)).toBe(expected)
+    expect(
+      errorTextField(rules(), 'stack', stack, false, { overflow: false, texts: new Map() })
+    ).toBe(expected)
   })
 
   it('keeps a short clean stack as it was written', () => {
     const stack = `Error: a${FRAME}`
 
-    expect(errorTextField(rules(), 'stack', stack, false, undefined)).toBe(stack)
+    expect(
+      errorTextField(rules(), 'stack', stack, false, { overflow: false, texts: new Map() })
+    ).toBe(stack)
   })
 
   it('does not keep a frame whose offset is past the bound when long messages are hidden before it', () => {
@@ -232,6 +264,7 @@ describe('the stack of an object that is no Error, read up to the scan bound', (
     expect(stack.indexOf('ZZZ_APP')).toBeLessThan(MAX_STACK_SCAN + message.length)
 
     const written = errorTextField(rules(), 'stack', stack, false, {
+      overflow: false,
       texts: new Map([['message', message]])
     }) as string
 
@@ -246,9 +279,52 @@ describe('the stack of an object that is no Error, read up to the scan bound', (
     expect(stack.indexOf('LEAKMARK', 100)).toBeGreaterThan(MAX_STACK_SCAN)
 
     const written = errorTextField(rules(), 'stack', stack, false, {
+      overflow: false,
       texts: new Map([['message', message]])
     }) as string
 
     expect(written).not.toContain('LEAKMARK')
+  })
+})
+
+describe('headerMessage, an object with more than a search can be bounded for', () => {
+  const alias = (index: number): string => `message${'\u200b'.repeat(index)}`
+  const source = (messages: number, stacks = 1): Record<string, string> => ({
+    ...Object.fromEntries(
+      Array.from({ length: messages }, (_, i) => [alias(i), `secret${String(i)}`])
+    ),
+    ...Object.fromEntries(
+      Array.from({ length: stacks }, (_, i) => [`stack${'\u200b'.repeat(i)}`, 'x'])
+    )
+  })
+  const plan = (given: Record<string, string>): { overflow: boolean } | undefined =>
+    headerMessage(rules(), given, Object.keys(given), false)
+
+  it('searches for as many distinct messages as the cap', () => {
+    expect(plan(source(MAX_STACK_ALIASES))?.overflow).toBe(false)
+  })
+
+  it('hides every stack whole for one message more than the cap', () => {
+    expect(plan(source(MAX_STACK_ALIASES + 1))?.overflow).toBe(true)
+  })
+
+  it('counts distinct messages, so many keys that hold one text are one message', () => {
+    const given = Object.fromEntries([
+      ...Array.from({ length: 50 }, (_, i) => [alias(i), 'same']),
+      ['stack', 'x']
+    ]) as Record<string, string>
+
+    expect(plan(given)?.overflow).toBe(false)
+  })
+
+  it('searches for as many stack keys as the cap, and hides every stack whole beyond it', () => {
+    expect(plan(source(1, MAX_STACK_ALIASES))?.overflow).toBe(false)
+    expect(plan(source(1, MAX_STACK_ALIASES + 1))?.overflow).toBe(true)
+  })
+
+  it('writes the censor in place of a stack when the plan overflows', () => {
+    expect(
+      errorTextField(rules(), 'stack', 'Error: x', false, { overflow: true, texts: new Map() })
+    ).toBe('[R]')
   })
 })

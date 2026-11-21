@@ -15,6 +15,8 @@ import { PinoLoggerService } from './services/pino-logger.service'
 
 const SECRET = 'SEC_9f3a'
 const FRAME = '    at run (/srv/app.js:1:1)'
+/** Characters that print as nothing. */
+const INVISIBLE = ['\u200b', '\u200c', '\u200d', '\u2060', '\ufeff', '\u00ad']
 
 /** The text of the line written by `call` on a service built under `extra`. */
 function lineOf(
@@ -130,6 +132,62 @@ describe('a message longer than the part of a stack that is read', () => {
     error.stack = `Error: ${long}`
 
     expect(lineOf((s) => s.error(error))).not.toContain(PREFIX)
+  })
+})
+
+describe('a payload with many keys that spell message or stack', () => {
+  /** A spelling of `name` for each `index`, as long as six invisible characters: the index in base six. */
+  const spelled = (name: string, index: number): string =>
+    `${name}${[...index.toString(6).padStart(6, '0')].map((digit) => INVISIBLE[Number(digit)]).join('')}`
+  const alias = (index: number): string => spelled('message', index)
+  const stackOf = (line: string): string =>
+    (JSON.parse(line) as { deep: { stack: string } }).deep.stack
+  /** The milliseconds `lineOf` takes for `deep`, with its line. */
+  const timed = (deep: Record<string, string>): { ms: number; line: string } => {
+    const started = Date.now()
+    const line = lineOf((s) => s.info('KEY', 'text', undefined, { deep }))
+    return { ms: Date.now() - started, line }
+  }
+
+  it('costs about what the cap costs, and hides the stack whole, for 5,000 message aliases', () => {
+    const stack = `Error: x\n${'z'.repeat(131_000)}`
+    const make = (count: number): Record<string, string> => {
+      const deep: Record<string, string> = { stack }
+      for (let i = 0; i < count; i += 1) deep[alias(i)] = `secret${String(i)}`
+      return deep
+    }
+    const cap = timed(make(8))
+
+    const many = timed(make(5_000))
+
+    expect(many.ms).toBeLessThan(cap.ms * 10 + 500)
+    expect(stackOf(many.line)).toBe('[REDACTED]')
+    expect(many.line).not.toContain('secret4999')
+  })
+
+  it('costs about what the cap costs, for 5,000 keys that spell stack', () => {
+    const make = (count: number): Record<string, string> => {
+      const deep: Record<string, string> = {}
+      for (let i = 0; i < count; i += 1) {
+        deep[spelled('stack', i)] = `Error: x\n${'z'.repeat(60_000)}`
+      }
+      return deep
+    }
+    const cap = timed(make(8))
+
+    const many = timed(make(5_000))
+
+    expect(many.ms).toBeLessThan(cap.ms * 10 + 500)
+    expect(many.line).not.toContain('zzzz')
+  })
+
+  it('still hides the message in the stack for as many messages as the cap', () => {
+    const deep: Record<string, string> = { stack: `Error: secret0 secret7\n${FRAME}` }
+    for (let i = 0; i < 8; i += 1) deep[alias(i)] = `secret${String(i)}`
+
+    const line = lineOf((s) => s.info('KEY', 'text', undefined, { deep }))
+
+    expect(stackOf(line)).toBe(`Error: [REDACTED] [REDACTED]\n${FRAME}`)
   })
 })
 

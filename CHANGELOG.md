@@ -44,6 +44,10 @@ heading here.
   control characters. It is read up to the same bound as the stack of an error, written without
   `node_modules` frames and with control characters escaped, and cut at the text limit with the suffix.
   The name and the message of such an object are still written as given.
+- **The search for hidden messages in the stacks of one object is bounded.** An object with more than
+  eight distinct messages under keys that spell `message`, or more than eight keys that spell `stack`,
+  has every stack written as the censor instead of searched, so a payload of thousands of look-alike
+  keys cannot stall the event loop.
 - **A list option whose length is not a count is refused.** A Proxy that reports `-1`, `NaN`, `1.5` or
   an infinite length was read as empty; it is refused by the name of the option.
 - **A list option is capped at 10,000 entries.** `redactPaths`, `errorOwnFieldNames`, `destinations`,
