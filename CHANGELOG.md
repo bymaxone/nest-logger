@@ -25,8 +25,7 @@ heading here.
   options hide is hidden in the header of a `Stack`, `STACK` or zero-width spelling of the stack of an
   object message, as it is below the root, and in the same kind of own property of an `Error`.
 - **A `redactPaths` entry is at most 256 characters.** A longer one is refused at startup by the name
-  of the option and its index, without echoing it: the name is compared with every key, and the pattern
-  walk grows with the square of its length.
+  of the option and its index, without echoing it: the name is compared with every key, so its length bounds that work.
 
 ## [1.4.29] - 2026-11-21
 
