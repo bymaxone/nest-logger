@@ -216,7 +216,7 @@ interface RedactRules {
   /** Whether an `Error` outside those keys is written as data; off, it stays an `Error`. */
   readonly errorsAsData: boolean
   /**
-   * Whether the `message` of an error-shaped object under `err` is left to the serializer of `err`,
+   * Whether the `message` of an object under `err` is left to the serializer of `err`,
    * which censors it in its output and knows the message the stack opens with. The `stack` stays
    * under the names. Off when the host serializes `err` itself.
    */
@@ -740,7 +740,7 @@ function errorPartsHost(
  *   in the record is converted with the default names censored inside it, and data that is not an
  *   `Error` is matched only by the configured paths.
  * @param headerNames - The names a flat header array censors; `fieldNames` by default.
- * @param errorTextToSerializer - Leave the `message` of an error-shaped object under `err` to the
+ * @param errorTextToSerializer - Leave the `message` of an object under `err` to the
  *   serializer of `err`. Off by default.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
