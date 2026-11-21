@@ -208,4 +208,34 @@ describe('matchesFolded', () => {
     expect(matchesFolded(another, 'to\u0138en')).toBe(true)
     expect(matchesFolded(names, 'to\u0138en')).toBe(false)
   })
+
+  it.each([
+    ['\u00feassword', true],
+    ['thassword', false],
+    ['\u00dfearer', true],
+    ['\u00dfsearer', false],
+    ['pa\u00dfword', true],
+    ['au\u00feorization', true],
+    ['auth\u00feorization', false],
+    ['\u00fe\u00fe\u00fe\u00fe\u00fe\u00fe\u00fe\u00fe', false]
+  ])('reads %j, a letter of one or of two, as %s of a name', (key, expected) => {
+    expect(matchesFolded(new Set(['password', 'bearer', 'authorization']), key)).toBe(expected)
+  })
+
+  it.each([
+    ['user\u7528\u6237', false],
+    ['m\u6d88\u606f', false],
+    ['id\u30e6\u30fc\u30b6', false],
+    ['time\ud55c\uae00', false],
+    ['\u0442oken', true],
+    ['to\u0138en', true],
+    ['\u056a\u056a\u056a\u056a\u056a\u056a\u056a\u056a', false]
+  ])('reads %j, by the script of its letters, as %s', (key, expected) => {
+    expect(matchesFolded(new Set(['userid', 'msg', 'id', 'time', 'token']), key)).toBe(expected)
+  })
+
+  it('does not read Greek small nu as v, which would defeat a capital nu', () => {
+    expect(foldKey('toke\u039d')).toBe('toke\u03bd')
+    expect(matchesFolded(new Set(['token']), foldKey('TOKE\u039d'))).toBe(true)
+  })
 })

@@ -204,3 +204,36 @@ describe('a key that is a spelling of a name and a key that is only another scri
     expect(JSON.stringify(line)).toContain(`${SECRET}2`)
   })
 })
+
+describe('a name spelled with a letter that stands for more than one Latin letter', () => {
+  it.each([
+    ['TOKE\u039d'],
+    ['\u00feassword'],
+    ['\u00dfassword'],
+    ['pa\u00dfword'],
+    ['au\u00feorization'],
+    ['\u00feasswo\u0433d'],
+    ['pass\u0153rd']
+  ])('hides a value under %j', (key) => {
+    expect(lineOf({ [key]: SECRET })).not.toContain(SECRET)
+  })
+
+  it('hides a value under a spelling of a configured name with the letter that looks like its first', () => {
+    expect(lineOf({ '\u00dfearer': SECRET }, { redactPaths: ['bearer'] })).not.toContain(SECRET)
+  })
+
+  it.each([
+    ['user\u7528\u6237'],
+    ['user\u540d\u79f0'],
+    ['m\u6d88\u606f'],
+    ['id\u30e6\u30fc\u30b6'],
+    ['time\ud55c\uae00']
+  ])('keeps a caller field %j that a word of another script follows a Latin word in', (key) => {
+    const line = JSON.parse(lineOf({ meta: { [key]: SECRET }, [key]: `${SECRET}2` })) as {
+      meta: Record<string, string>
+    }
+
+    expect(line.meta[key]).toBe(SECRET)
+    expect(JSON.stringify(line)).toContain(`${SECRET}2`)
+  })
+})

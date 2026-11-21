@@ -26,8 +26,12 @@ heading here.
   and `password`), and a letter the look-alike list does not know stands for any one letter: a key with
   one is hidden by any name of the same length that matches it everywhere else, which can hide a key that
   only shares a name's length and its ASCII letters; this applies only to a key that keeps at least a third
-  of its characters as ASCII, so a field written in words of another script is never taken for a name.
-  The letters that stand for two (`ß`, `æ`, `œ`, `þ`) are read as the two. Under `redactStrategy: 'paths'` the paths are matched exactly by `fast-redact`
+  of its characters as ASCII and whose other letters are of a script that has look-alikes of the Latin
+  letters (Latin, Cyrillic, Greek, Armenian, Cherokee, Coptic, Lisu, Georgian), so a field written in words
+  of another script, or a Latin word followed by one, is never taken for a name. The letters that stand
+  for one or for two (`ß` for `b` or `ss`, `æ`, `œ`, `þ` for `p` or `th`) are read either way. A name of
+  which more than two thirds of the letters are replaced by look-alikes the list does not know can still
+  be written under a key that hides it from the name. Under `redactStrategy: 'paths'` the paths are matched exactly by `fast-redact`
   and are not folded.
 - **The stack header is hidden against every key that spells `message` or `stack`.** An object with
   `{ message: 'x', Message: secret, stack: 'Error: secret' }`, or a `stack` beside a `Stack`, kept the
