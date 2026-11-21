@@ -276,10 +276,8 @@ function toSanitizedError(
 
     seen.add(value)
     // Read once: the header censor looks for the text written to the node.
-    const message = value.message
-    const rawName: unknown = value.name
-    const textName = typeof rawName === 'string'
-    const name = cutText(textName ? rawName : 'Error')
+    const { message, name: rawName }: { message: string; name: unknown } = value
+    const name = cutText(typeof rawName === 'string' ? rawName : 'Error')
     const result: SanitizedError = {
       name: censorName(name, walk.censorMessage),
       message: cutText(message)
@@ -288,7 +286,7 @@ function toSanitizedError(
     // costs the node that property and marks it incomplete, instead of costing the node its
     // name and message. The name and message identify the error; if THEY cannot be read the
     // outer catch still degrades the node to the visible `SanitizeFailed` shape.
-    const stack = readScrubbedStack(value, name, message, textName, result, walk)
+    const stack = readScrubbedStack(value, name, message, typeof rawName === 'string', result, walk)
     if (stack !== undefined) result.stack = stack
 
     const isAtDepthLimit = depth >= walk.maxDepth
