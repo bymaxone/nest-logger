@@ -21,7 +21,7 @@ heading here.
   `shouldDisableDefaultRedact`) is read by name, so it takes effect whether it is a property, a
   non-enumerable getter, a get-only Proxy or a class getter.
 - The message of an object that is no `Error`, below the top level of a log record, is hidden in the
-  header of its `stack` as it is in its `message` field.
+  header of its `stack` as it is in its `message` field, whatever the case or the look of the two keys (`Message`, `STACK`).
 - A `name` that holds an object, an array or a function is hidden with the message (it may carry
   anything), in the stack header and under `error.type`; a number name is kept.
 - The derived keys (`exception.type`, `exception.message`, `exception.stacktrace`, `error.type`, ...) are
