@@ -6,14 +6,27 @@
  * is a copy of it, and is hidden the same way. The frames below it are the stack's own text.
  */
 
-/** The start of the first frame: a line that begins, after white space, with `at `. */
-const FIRST_FRAME = /\n[ \t]+at /
+/** A line that begins, after white space, with `at `: the start of a frame, or a line of a message that looks like one. */
+const FRAME_LINE = /\n[ \t]+at /g
+
+/** The `[start, end)` span of each non-overlapping occurrence of `message` in `stack`. */
+function occurrences(stack: string, message: string): Array<readonly [number, number]> {
+  const spans: Array<readonly [number, number]> = []
+  for (
+    let at = stack.indexOf(message);
+    at !== -1;
+    at = stack.indexOf(message, at + message.length)
+  ) {
+    spans.push([at, at + message.length])
+  }
+  return spans
+}
 
 /**
- * Replace every occurrence of `message` in the header of `stack`, by `replacement`. The header is
- * everything before the first frame that does not lie inside the message: the first occurrence of the
- * message that starts before a frame-shaped line decides where the header ends, and an occurrence
- * that starts at or after that line is the text of a frame, which stays.
+ * Replace the occurrences of `message` in the header of `stack` by `replacement`. The header ends at
+ * the first frame-shaped line that lies outside every occurrence of the message, so a message of
+ * several lines, one that holds a frame-shaped line, and one that repeats are all hidden, while an
+ * occurrence after that line is the text of a frame and stays.
  *
  * @param stack - The stack as the caller wrote it.
  * @param message - The text of the message the stack opens with, which may span lines.
@@ -21,12 +34,17 @@ const FIRST_FRAME = /\n[ \t]+at /
  * @returns The stack, unchanged when the header does not hold the message.
  */
 export function hideMessageInStack(stack: string, message: string, replacement: string): string {
-  const first = stack.indexOf(message)
-  if (message === '' || first === -1) return stack
-  const frame = stack.search(FIRST_FRAME)
-  if (frame !== -1 && first >= frame) return stack
-  const after = first + message.length
-  const next = stack.slice(after).search(FIRST_FRAME)
-  const end = next === -1 ? stack.length : after + next
-  return stack.slice(0, end).replaceAll(message, replacement) + stack.slice(end)
+  if (message === '') return stack
+  const spans = occurrences(stack, message)
+  const frame = [...stack.matchAll(FRAME_LINE)].find(
+    (line) => !spans.some(([start, end]) => line.index >= start && line.index < end)
+  )
+  const headerEnd = frame === undefined ? stack.length : frame.index
+  let result = ''
+  let from = 0
+  for (const [start, end] of spans.filter(([, end]) => end <= headerEnd)) {
+    result += stack.slice(from, start) + replacement
+    from = end
+  }
+  return result + stack.slice(from)
 }
