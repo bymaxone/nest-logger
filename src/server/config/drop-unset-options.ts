@@ -88,6 +88,24 @@ function readSet(source: object, keys: readonly string[]): Record<string, unknow
   return set
 }
 
+/** The options that hold a list, and the lists of the groups: each is copied once, element by element. */
+const LIST_OPTIONS = ['redactPaths', 'errorOwnFieldNames', 'destinations'] as const
+const GROUP_LISTS = [
+  ['http', 'excludePaths'],
+  ['http', 'secretPathSegments']
+] as const
+
+/**
+ * A copy of a list that reads its length once and each index once, so a Proxy or a getter on an
+ * element answers one time. Anything that is not a list is returned as it is, for the validator to
+ * refuse.
+ */
+function copyList(value: unknown): unknown {
+  if (!Array.isArray(value)) return value
+  const length = Reflect.get(value, 'length') as number
+  return Array.from({ length }, (_, index) => Reflect.get(value, index) as unknown)
+}
+
 /**
  * The options without the keys that are not set, in the options and in each group.
  *
@@ -105,7 +123,19 @@ export function dropUnsetOptions(options: BymaxLoggerModuleOptions): BymaxLogger
       Reflect.set(set, group, readSet(value, Object.keys(Reflect.get(GROUP_KEYS, group) as object)))
   }
   const service = Reflect.get(set, 'service') as unknown
-  // The metadata is copied as the defaults copy it, own enumerable keys, so it is read here once.
+  // The metadata and the serializers are copied as the defaults copy them, own enumerable keys, so
+  // each is read here once.
   if (isRecord(service)) Reflect.set(set, 'service', { ...service })
+  const serializers = Reflect.get(set, 'serializers') as unknown
+  if (isRecord(serializers)) Reflect.set(set, 'serializers', { ...serializers })
+  for (const name of LIST_OPTIONS) {
+    if (Reflect.has(set, name)) Reflect.set(set, name, copyList(Reflect.get(set, name)))
+  }
+  for (const [group, name] of GROUP_LISTS) {
+    const holder = Reflect.get(set, group) as unknown
+    if (isRecord(holder) && Reflect.has(holder, name)) {
+      Reflect.set(holder, name, copyList(Reflect.get(holder, name)))
+    }
+  }
   return set as unknown as BymaxLoggerModuleOptions
 }

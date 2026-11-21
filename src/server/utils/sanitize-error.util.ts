@@ -238,8 +238,8 @@ const FRAME_LINE = /\n[ \t]+at /
 /**
  * A stack whose first line is `Error: <message>`, for an error whose `name` is not text: the engine
  * wrote that name as its own text in front of the message, and it may hold a value. The frames are
- * kept. Only the part of the stack the scrub reads is searched, and when the message is not in it
- * nothing beyond it is kept, since that text is the name.
+ * kept. Only the part of the stack the scrub reads is searched and kept: what lies beyond it may be
+ * the name.
  *
  * @param stack - The stack as the engine wrote it.
  * @param message - The message of the error.
@@ -248,7 +248,7 @@ const FRAME_LINE = /\n[ \t]+at /
 function withNamedHeader(stack: string, message: string): string {
   const head = stack.slice(0, MAX_STACK_SCAN)
   const found = message === '' ? -1 : head.indexOf(message)
-  if (found !== -1) return `Error: ${head.slice(found)}${stack.slice(MAX_STACK_SCAN)}`
+  if (found !== -1) return `Error: ${head.slice(found)}`
   const end = head.search(FRAME_LINE)
   const frames = end === -1 ? '' : head.slice(end)
   return `Error${message === '' ? '' : `: ${message}`}${frames}`

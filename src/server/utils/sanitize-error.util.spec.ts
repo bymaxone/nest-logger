@@ -769,4 +769,13 @@ describe('sanitizeError — the stack header of an error whose name is not text'
 
     expect(result.stack).toBe('Error: boom')
   })
+
+  it('keeps nothing after the part the scrub reads when the message is in it', () => {
+    const stack = `${'n'.repeat(MAX_STACK_SCAN - 10)}: boom${FRAME}TAIL_SECRET${'z'.repeat(MAX_STACK_SCAN)}`
+
+    const result = sanitizeError(named(stack, 'boom'))
+
+    expect(result.stack).not.toContain('TAIL_SECRET')
+    expect(result.stack?.startsWith('Error: boom')).toBe(true)
+  })
 })

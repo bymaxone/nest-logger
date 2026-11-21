@@ -17,6 +17,7 @@ import type {
 } from '@nestjs/common'
 import { APP_FILTER, APP_INTERCEPTOR, HttpAdapterHost } from '@nestjs/core'
 
+import { dropUnsetOptions } from './config/drop-unset-options'
 import { guardOptions } from './config/options-refusal.util'
 import { resolveOptions } from './config/resolve-options'
 import {
@@ -221,7 +222,9 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase implements NestModu
    *   BymaxLoggerModule.forRoot({ service: { name: 'api', version: '1.0.0' } })
    */
   static override forRoot(options: typeof OPTIONS_TYPE): DynamicModule {
-    const resolved = resolveOptions(options)
+    // The options are read once here; what the module registers is made from that copy.
+    const snapshot = guardOptions(() => dropUnsetOptions(options as BymaxLoggerModuleOptions))
+    const resolved = resolveOptions(snapshot)
     const providers: Provider[] = [
       { provide: LOGGER_OPTIONS_TOKEN, useValue: resolved },
       ...buildCommonProviders()
@@ -237,7 +240,7 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase implements NestModu
       }
     }
     return augmentLoggerModule(
-      guardOptions(() => super.forRoot(options)),
+      guardOptions(() => super.forRoot(snapshot as typeof OPTIONS_TYPE)),
       providers
     )
   }

@@ -17,8 +17,9 @@ function counted<T extends object>(target: T, reads: Map<string, number>, path: 
       if (typeof key === 'string') {
         const name = `${path}.${key}`
         reads.set(name, (reads.get(name) ?? 0) + 1)
-        const group = typeof value === 'object' && value !== null && !Array.isArray(value)
-        if (group && !(value instanceof RegExp)) return counted(value, reads, name)
+        if (Array.isArray(value)) return counted(value, reads, name)
+        const group = typeof value === 'object' && value !== null && !(value instanceof RegExp)
+        if (group && !Array.isArray(target)) return counted(value, reads, name)
       }
       return value
     }
@@ -29,7 +30,10 @@ const options = (): Record<string, unknown> => ({
   service: { name: 'api', version: '1.0.0', environment: 'test' },
   level: 'info',
   redactPaths: ['secret'],
-  http: { isEnabled: true, excludePaths: [/^\/health$/] },
+  errorOwnFieldNames: ['code'],
+  destinations: [{ name: 'sink', write: () => undefined }],
+  serializers: { custom: (value: unknown) => value },
+  http: { isEnabled: true, excludePaths: [/^\/health$/], secretPathSegments: [/^token$/] },
   otel: { shouldAutoInjectTraceContext: false },
   shutdown: { timeoutMs: 5000 },
   destinationQueue: { maxBytes: 1024 }
@@ -45,6 +49,15 @@ describe('the options of the module are read once', () => {
     const reads = new Map<string, number>()
 
     resolveOptions(counted(options(), reads, 'options') as never)
+
+    expect(reads.size).toBeGreaterThan(5)
+    expect(repeated(reads)).toEqual([])
+  })
+
+  it('by the whole of forRoot, which hands the module builder the copy', () => {
+    const reads = new Map<string, number>()
+
+    BymaxLoggerModule.forRoot(counted(options(), reads, 'options') as never)
 
     expect(reads.size).toBeGreaterThan(5)
     expect(repeated(reads)).toEqual([])
@@ -85,5 +98,86 @@ describe('the options of the module are read once', () => {
     ) as { useValue: { level: string } }
 
     expect(provider.useValue.level).toBe('info')
+  })
+})
+
+/** A list whose first element answers `first` the first time it is read and `second` after that. */
+function flipping<T>(first: T, second: T): T[] {
+  let reads = 0
+  return new Proxy([first], {
+    get(inner, key, receiver): unknown {
+      if (key === '0') {
+        reads += 1
+        return reads === 1 ? first : second
+      }
+      return Reflect.get(inner, key, receiver)
+    }
+  })
+}
+
+describe('a list or a table that answers differently on a second read', () => {
+  const sink = (name: string): { name: string; write: () => void } => ({
+    name,
+    write: () => undefined
+  })
+  const cases: ReadonlyArray<
+    readonly [string, (given: Record<string, unknown>) => void, (r: any) => unknown, unknown]
+  > = [
+    [
+      'redactPaths',
+      (g) => (g['redactPaths'] = flipping('topSecret', 'x')),
+      (r) => r.redactPaths,
+      ['topSecret']
+    ],
+    [
+      'errorOwnFieldNames',
+      (g) => (g['errorOwnFieldNames'] = flipping('code', 'x')),
+      (r) => r.errorOwnFieldNames,
+      ['code']
+    ],
+    [
+      'destinations',
+      (g) => (g['destinations'] = flipping(sink('first'), sink('second'))),
+      (r) => r.destinations.map((d: { name: string }) => d.name),
+      ['first']
+    ],
+    [
+      'http.excludePaths',
+      (g) => (g['http'] = { excludePaths: flipping(/^a$/, /^b$/) }),
+      (r) => r.http.excludePaths.map(String),
+      ['/^a$/']
+    ],
+    [
+      'http.secretPathSegments',
+      (g) => (g['http'] = { secretPathSegments: flipping(/^a$/, /^b$/) }),
+      (r) => r.http.secretPathSegments.map(String),
+      ['/^a$/']
+    ]
+  ]
+
+  it.each(cases)('%s is the list that passed validation', (_name, set, read, expected) => {
+    const given: Record<string, unknown> = { service: { name: 'api', version: '1.0.0' } }
+    set(given)
+
+    expect(read(resolveOptions(given as never))).toEqual(expected)
+  })
+
+  it('serializers is the table that passed validation', () => {
+    let reads = 0
+    const first = (value: unknown): unknown => value
+    const second = (): unknown => 'second'
+    const serializers = {
+      get custom(): unknown {
+        reads += 1
+        return reads === 1 ? first : second
+      }
+    }
+
+    const resolved = resolveOptions({
+      service: { name: 'api', version: '1.0.0' },
+      serializers
+    } as never)
+
+    expect(resolved.serializers['custom']).toBe(first)
   })
 })

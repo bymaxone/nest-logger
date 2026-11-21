@@ -83,8 +83,8 @@ const OWNED_KEY_SPELLINGS: ReadonlySet<string> = new Set(
 
 /**
  * The keys the library derives from an error and writes on an entry itself. They are matched as they
- * look ({@link foldKey}, separators kept,) and not folded further: `exceptionType` is a name a caller may use for a field of its
- * own. `event.name` is not among them: a call with no log key may supply it.
+ * look ({@link foldKey} with the separators kept) and not folded further: `exceptionType` is a name a
+ * caller may use for a field of its own. `event.name` is not among them: a call with no log key may supply it.
  */
 const DERIVED_KEYS: ReadonlySet<string> = new Set([
   'exception.type',
