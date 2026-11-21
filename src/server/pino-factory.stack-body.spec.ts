@@ -135,6 +135,22 @@ describe('a message longer than the part of a stack that is read', () => {
   })
 })
 
+describe('a message and a stack under a spelling the folding reads as a wildcard', () => {
+  it.each([
+    ['m\u04bbssage', 'stack'],
+    ['message', 'st\u0251ck'],
+    ['m\u04bbssage', 'st\u0251ck'],
+    ['mes\u057dage', 'sta\u0441k']
+  ])('hides the message in the stack of %j and %j', (messageKey, stackKey) => {
+    const deep: Record<string, string> = {
+      [messageKey]: SECRET,
+      [stackKey]: `Error: ${SECRET}\n${FRAME}`
+    }
+
+    expect(lineOf((s) => s.info('KEY', 'text', undefined, { deep }))).not.toContain(SECRET)
+  })
+})
+
 describe('a message that is no own enumerable key of an object with a stack', () => {
   it('is hidden in the stack all the same', () => {
     const deep: Record<string, string> = { stack: `Error: ${SECRET}\n${FRAME}` }

@@ -158,7 +158,12 @@ describe('matchesFolded', () => {
     ['\u04bbassword', true],
     ['passw\u0251rd', true],
     ['pa\u057d\u057dword', true],
-    ['\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb', true],
+    ['\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb', false],
+    ['\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb', false],
+    ['pas\u04bb\u04bb\u04bb\u04bb\u04bb', true],
+    ['pa\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb', false],
+    ['\u7528\u6237\u540d', false],
+    ['\u540d\u524d', false],
     ['\u04bbassword1', false],
     ['aut\u04bborizatio', false],
     ['x\u04bbpikey', true],
@@ -175,14 +180,25 @@ describe('matchesFolded', () => {
     expect(matchesFolded(new Set(['abcd']), 'a\u{1d5ee}c')).toBe(false)
   })
 
-  it('matches against a name that holds a letter that is not ASCII', () => {
-    expect(
-      matchesFolded(
-        new Set(['\u043f\u0430\u0440\u043e\u043b\u044c']),
-        '\u043f\u0430\u0440\u043e\u043b\u044c'
-      )
-    ).toBe(true)
+  it('matches a name that holds a letter that is not ASCII, as it is', () => {
+    const russian = new Set(['\u043f\u0430\u0440\u043e\u043b\u044c'])
+
+    expect(matchesFolded(russian, '\u043f\u0430\u0440\u043e\u043b\u044c')).toBe(true)
+    expect(matchesFolded(russian, '\u043f\u0430\u0440\u043e\u043b')).toBe(false)
     expect(matchesFolded(new Set(['abc']), '\u04bb\u04bb\u04bb\u04bb')).toBe(false)
+  })
+
+  it('never takes a key of words in another script for a name of its length', () => {
+    const owned = new Set(['msg', 'time', 'level'])
+
+    for (const key of [
+      '\u7528\u6237\u540d',
+      '\u540d\u524d\u3067\u3059',
+      '\u0434\u0430\u043d\u043d\u044b\u0435',
+      '\u05e9\u05dd'
+    ]) {
+      expect(matchesFolded(owned, key)).toBe(false)
+    }
   })
 
   it('answers the same for a set it has met and for one it has not', () => {

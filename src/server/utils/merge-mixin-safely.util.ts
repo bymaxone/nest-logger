@@ -4,7 +4,7 @@
  * Layer: server/utils — pure, no I/O. Kept apart from the factory so the rule about whose value
  * wins sits in one place and in one file.
  */
-import { foldKey } from './fold-key.util'
+import { foldKey, matchesFolded } from './fold-key.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 /** The key that names a prototype, which a payload's own copy of it must not reach. */
@@ -48,7 +48,7 @@ export function mergeMixinSafely(mergeObject: object, mixinObject: object): obje
     // then run a setter the payload carries or be dropped by a non-writable property it carries.
     for (const key of Object.keys(mergeObject)) {
       if (key === PROTOTYPE_KEY) continue
-      if (key !== EXPLICIT_USER_KEY && written.has(foldKey(key))) continue
+      if (key !== EXPLICIT_USER_KEY && matchesFolded(written, foldKey(key))) continue
       Reflect.set(merged, key, Reflect.get(mergeObject, key))
     }
     // The mixin's keys are the correlation of the entry (the request, the tenant, the trace), so a

@@ -27,6 +27,14 @@ const DOTS = /[\u3002\u0701\u06d4\u22c5\u00b7\ufe12]/gu
 /** A key made only of printable ASCII: no rule here changes it except its case and what is not a letter or a digit. */
 const PLAIN = /^[\x21-\x7e]*$/
 
+/** The letters that stand for two Latin letters, read as the two. */
+const EXPANSIONS: ReadonlyArray<readonly [string, string]> = [
+  ['\u00df', 'ss'],
+  ['\u00e6', 'ae'],
+  ['\u0153', 'oe'],
+  ['\u00fe', 'th']
+]
+
 /** The characters that are not ASCII. */
 const NON_ASCII = /[^\x20-\x7e]/
 
@@ -80,12 +88,14 @@ export function foldKey(key: string, keepSeparators = false): string {
     // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
     if (PLAIN.test(key)) return key.replace(INVISIBLE, '').toLowerCase()
     let kept = key.normalize('NFKD').toLowerCase().replace(DOTS, '.').replace(INVISIBLE, '')
+    for (const [letter, latin] of EXPANSIONS) kept = kept.replaceAll(letter, latin)
     for (const [letter, latin] of LOOKALIKES) kept = kept.replaceAll(letter, latin)
     return kept
   }
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
   if (PLAIN.test(key)) return key.replace(NOT_ASCII_NAME, '').toLowerCase()
   let folded = key.normalize('NFKD').toLowerCase().replace(NOT_NAME, '')
+  for (const [letter, latin] of EXPANSIONS) folded = folded.replaceAll(letter, latin)
   for (const [letter, latin] of LOOKALIKES) folded = folded.replaceAll(letter, latin)
   return folded
 }
@@ -126,6 +136,9 @@ export function foldedNames(names: Iterable<string>): Set<string> {
   return new Set(Array.from(names, foldName).filter((name) => name !== ''))
 }
 
+/** A key with a letter that is not ASCII is read as a pattern only if it keeps this share of ASCII characters, one in this many. */
+const MIN_ASCII_SHARE = 3
+
 /** The names of a set grouped by their length in characters, built once for each set. */
 const byLength = new WeakMap<ReadonlySet<string>, ReadonlyMap<number, readonly string[]>>()
 
@@ -147,9 +160,9 @@ function namesOfLength(names: ReadonlySet<string>, length: number): readonly str
 
 /**
  * Whether a folded key is one of the folded names. A key that is only ASCII is looked up as it is. A
- * key that still holds a letter that is not ASCII, one the folding has no Latin letter for, is compared
- * as a pattern in which each such letter stands for any one character, against the names of the same
- * length: a look-alike of a letter the folding does not know cannot hide a key from its name, and a
+ * key that still holds a letter that is not ASCII, one the folding has no Latin letter for, and keeps at
+ * least a third of its characters as ASCII, is compared as a pattern in which each such letter stands
+ * for any one character, against the names of the same length: a look-alike of a letter the folding does not know cannot hide a key from its name, and a
  * key that only happens to share a name's length and its ASCII letters is hidden too, which is the
  * safe way to be wrong.
  *
@@ -159,8 +172,13 @@ function namesOfLength(names: ReadonlySet<string>, length: number): readonly str
  * @returns `true` when the key is one of the names.
  */
 export function matchesFolded(names: ReadonlySet<string>, folded: string): boolean {
-  if (!NON_ASCII.test(folded)) return names.has(folded)
+  if (names.has(folded)) return true
+  if (!NON_ASCII.test(folded)) return false
   const letters = [...folded]
+  // A key of words in another script keeps no ASCII letter and is never taken for a name: it must keep
+  // at least a third of its characters, and one.
+  const ascii = letters.filter((letter) => letter <= '\x7f').length
+  if (ascii === 0 || ascii * MIN_ASCII_SHARE < letters.length) return false
   return namesOfLength(names, letters.length).some((name) => {
     const named = [...name]
     return letters.every((letter, index) => letter > '\x7f' || letter === named[index])

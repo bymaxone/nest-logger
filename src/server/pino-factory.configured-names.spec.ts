@@ -177,3 +177,30 @@ describe('the names hide a key spelled with a hyphen or a letter the folding doe
     expect(lineOf({ [key]: SECRET })).toContain(SECRET)
   })
 })
+
+describe('a key that is a spelling of a name and a key that is only another script', () => {
+  it.each([
+    ['pa\u00dfword'],
+    ['acce\u00dftoken'],
+    ['x\u2011api\u2011k\u0113y'],
+    ['au\u00feorization']
+  ])('hides a value under %j', (key) => {
+    expect(lineOf({ [key]: SECRET })).not.toContain(SECRET)
+  })
+
+  it.each([
+    ['\u7528\u6237\u540d'],
+    ['\u540d\u524d'],
+    ['\u0434\u0430\u043d\u043d\u044b\u0435'],
+    ['\u05e9\u05dd'],
+    ['\u044f'.repeat(3)],
+    ['\u044f'.repeat(24)]
+  ])('keeps a caller field %j, neither hidden nor dropped', (key) => {
+    const line = JSON.parse(lineOf({ meta: { [key]: SECRET }, [key]: `${SECRET}2` })) as {
+      meta: Record<string, string>
+    }
+
+    expect(line.meta[key]).toBe(SECRET)
+    expect(JSON.stringify(line)).toContain(`${SECRET}2`)
+  })
+})

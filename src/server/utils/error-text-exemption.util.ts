@@ -85,6 +85,10 @@ export function messageCensor(rules: RedactRules): (text: string) => string {
   return (text) => (rules.sensitive.has('message') ? rules.censor : text)
 }
 
+/** The folded names the stack and the message of an object are looked for under. */
+const STACK_NAMES: ReadonlySet<string> = new Set(['stack'])
+const MESSAGE_NAMES: ReadonlySet<string> = new Set(['message'])
+
 /** The most distinct messages, and the most keys that spell `stack`, one object may make the walk search for. */
 export const MAX_STACK_ALIASES = 8
 
@@ -117,9 +121,9 @@ export function headerMessage(
   isError: boolean
 ): HeaderText | undefined {
   if (isError) return undefined
-  const keysOf = (name: string): string[] =>
-    keys.filter((candidate) => foldName(candidate) === name)
-  const stacks = keysOf('stack')
+  const keysOf = (names: ReadonlySet<string>): string[] =>
+    keys.filter((candidate) => matchesFolded(names, foldName(candidate)))
+  const stacks = keysOf(STACK_NAMES)
   if (stacks.length === 0) return undefined
   const hides =
     rules.sensitive.has('message') &&
@@ -127,7 +131,7 @@ export function headerMessage(
     rules.headerKept !== true
   const texts = new Map<string, string>()
   if (hides) {
-    for (const key of keysOf('message')) {
+    for (const key of keysOf(MESSAGE_NAMES)) {
       const text: unknown = Reflect.get(source, key)
       if (typeof text === 'string') texts.set(key, text)
     }
@@ -216,7 +220,7 @@ export function errorTextField(
   isError: boolean,
   header?: HeaderText
 ): unknown {
-  if (!isError && typeof value === 'string' && foldName(key) === 'stack') {
+  if (!isError && typeof value === 'string' && matchesFolded(STACK_NAMES, foldName(key))) {
     return header?.overflow === true ? rules.censor : scrubPlainStack(rules, value, header)
   }
   if (!isError || !ERROR_TEXT_FIELDS.has(key)) return value
