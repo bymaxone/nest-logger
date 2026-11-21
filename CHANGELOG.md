@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.27] - 2026-11-21
+
 ### Fixed
 
 - An option the host supplies that throws when it is read (a getter, a Proxy trap) now ends `forRoot` and
@@ -3390,7 +3392,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.26...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.27...HEAD
+[1.4.27]: https://github.com/bymaxone/nest-logger/compare/v1.4.26...v1.4.27
 [1.4.26]: https://github.com/bymaxone/nest-logger/compare/v1.4.25...v1.4.26
 [1.4.25]: https://github.com/bymaxone/nest-logger/compare/v1.4.24...v1.4.25
 [1.4.24]: https://github.com/bymaxone/nest-logger/compare/v1.4.23...v1.4.24
