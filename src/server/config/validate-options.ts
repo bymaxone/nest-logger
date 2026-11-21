@@ -98,10 +98,10 @@ function checkGroup(path: string, value: unknown): Record<string, unknown> | und
   return value
 }
 
-/** The largest delay a timer holds; a larger one fires at once. */
 /** The longest a `redactPaths` entry may be: a name is compared against every key, so its length bounds that work. */
 const MAX_REDACT_PATH_LENGTH = 256
 
+/** The largest delay a timer holds; a larger one fires at once. */
 const MAX_TIMER_MS = 2_147_483_647
 
 /** `value`, when defined, must be an integer from 1 to {@link MAX_TIMER_MS}. */
