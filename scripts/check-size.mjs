@@ -33,6 +33,21 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-21 — server: 46,417 B real -> 45.35 KiB budget (46,438 B), approved by the project manager
+//     at 46,440 B. A bounded answer cache per set of names, so a key that every record repeats is
+//     compared once instead of folded at each hide site (throughput retention C/B ~0.24 against 0.20).
+//   - 2026-11-21 — server: 46,394 B (45.31 KiB) real -> 45.32 KiB budget (46,407 B, +13 B over the
+//     measurement). The 1.4.29 fixes: a configured name and a key are compared in the shared folded
+//     form, which drops every character that is not a letter or a digit, reads a look-alike of one Latin
+//     letter and no other as it, and reads any other letter that is not ASCII as one or two letters
+//     against the names of a compatible length where a value is hidden, while a field is dropped only on
+//     an exact match; every key that spells the
+//     message or the stack is read for the header, a hidden message is replaced wherever a stack repeats
+//     it, whatever its length and wherever it sits against the part of the stack that is read, the stack
+//     of a plain object is scrubbed, an object with more messages or stack keys than a search can be
+//     bounded for has its stacks hidden whole, the list options have a cap and a length check, and more
+//     characters that print as nothing are read through. The disable comments that document the
+//     equivalent mutants ship in the bundle.
 //   - 2026-11-21 — server: 45,155 B (44.10 KiB) real -> 44.20 KiB budget (45,260 B, +105 B over the
 //     measurement). The 1.4.28 fixes: the options are read once into a copy (the lists, the serializers
 //     table and the service metadata included) that is validated, defaulted and handed to the module
@@ -340,7 +355,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 44.2 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 45.35 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',

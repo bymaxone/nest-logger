@@ -7,6 +7,7 @@
  * the spread that merges the two. Each KNOWN key is read by property access, not by `Object.entries` or a spread, so a
  * getter on the prototype of a class instance counts as the value it returns.
  */
+import { refuse } from './options-refusal.util'
 import type {
   BymaxLoggerModuleOptions,
   DestinationQueueOptions,
@@ -92,16 +93,32 @@ function readSet(source: object, keys: readonly string[]): Record<string, unknow
 const LIST_OPTIONS = ['redactPaths', 'errorOwnFieldNames', 'destinations'] as const
 const HTTP_LISTS = ['excludePaths', 'secretPathSegments'] as const
 
+/** The most entries a list option may hold: a larger one is refused before any element is read. */
+export const MAX_LIST_ENTRIES = 10_000
+
 /**
  * Replace each list under `names` in `holder` by a copy that reads its length once and each index
  * once, so a Proxy or a getter on an element answers one time. A value that is not a list is left
- * as it is, for the validator to refuse.
+ * as it is, for the validator to refuse; a list whose length is not a count (negative, fractional, `NaN`, infinite) or is longer than
+ * {@link MAX_LIST_ENTRIES} is refused here, by the name of the option, before anything is allocated.
+ *
+ * @param holder - The object that holds the lists.
+ * @param names - The keys of the lists.
+ * @param prefix - What the option is called in the refusal, up to the key.
  */
-function copyLists(holder: object, names: readonly string[]): void {
+function copyLists(holder: object, names: readonly string[], prefix: string): void {
   for (const name of names) {
     const value = Reflect.get(holder, name) as unknown
     if (!Array.isArray(value)) continue
     const length = Reflect.get(value, 'length') as number
+    if (!Number.isInteger(length) || length < 0) {
+      refuse(`[BymaxLoggerModule] options.${prefix}${name} has a length that is not a count`)
+    }
+    if (length > MAX_LIST_ENTRIES) {
+      refuse(
+        `[BymaxLoggerModule] options.${prefix}${name} holds more than ${String(MAX_LIST_ENTRIES)} entries`
+      )
+    }
     Reflect.set(
       holder,
       name,
@@ -132,8 +149,8 @@ export function dropUnsetOptions(options: BymaxLoggerModuleOptions): BymaxLogger
   if (isRecord(service)) Reflect.set(set, 'service', { ...service })
   const serializers = Reflect.get(set, 'serializers') as unknown
   if (isRecord(serializers)) Reflect.set(set, 'serializers', { ...serializers })
-  copyLists(set, LIST_OPTIONS)
+  copyLists(set, LIST_OPTIONS, '')
   const http = Reflect.get(set, 'http') as unknown
-  if (isRecord(http)) copyLists(http, HTTP_LISTS)
+  if (isRecord(http)) copyLists(http, HTTP_LISTS, 'http.')
   return set as unknown as BymaxLoggerModuleOptions
 }

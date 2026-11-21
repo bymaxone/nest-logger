@@ -70,6 +70,7 @@ import {
   readField,
   rulesBelow
 } from './error-text-exemption.util'
+import { foldedNames, foldName, matchesKey } from './fold-key.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
@@ -86,7 +87,7 @@ const RAW_HEADER_KEYS: ReadonlySet<string> = new Set(['rawheaders', 'rawtrailers
  * guards every other value has.
  */
 function censorHeaderArray(key: string, walked: unknown, rules: RedactRules): unknown {
-  return RAW_HEADER_KEYS.has(key.toLowerCase()) && Array.isArray(walked)
+  return matchesKey(RAW_HEADER_KEYS, key) && Array.isArray(walked)
     ? censorRawHeaders(walked, rules.headerNames, rules.censor)
     : walked
 }
@@ -574,7 +575,7 @@ function walkToJsonOutput(
   ancestors: Set<object>,
   inSerialized: boolean
 ): unknown {
-  if (Object.keys(value).some((key) => rules.sensitive.has(key.toLowerCase()))) {
+  if (Object.keys(value).some((key) => matchesKey(rules.sensitive, key))) {
     return rules.censor
   }
   return walk(toJson.call(value), rules, depth + 1, ancestors, true, inSerialized)
@@ -764,8 +765,8 @@ export function createNameRedactor(
   // headers arrive lower-cased, so a hand-built bag with `Authorization` or `Cookie` must be covered.
   // One `toLowerCase()` per key (~4 % of an entry, measured); it errs toward redacting `Password` too.
   const rules: Omit<RedactRules, 'visits'> = {
-    sensitive: new Set(Array.from(fieldNames, (name) => name.toLowerCase())),
-    headerNames: new Set(Array.from(headerNames ?? fieldNames, (name) => name.toLowerCase())),
+    sensitive: foldedNames(fieldNames),
+    headerNames: foldedNames(headerNames ?? fieldNames),
     censor,
     serializedKeys: new Set(serializedKeys),
     errorsAsData: serializedKeys !== undefined,
@@ -773,10 +774,7 @@ export function createNameRedactor(
     maxVisits,
     ownFields
   }
-  const insideNames =
-    errorOnlyNames === undefined
-      ? undefined
-      : new Set(Array.from(errorOnlyNames, (name) => name.toLowerCase()))
+  const insideNames = errorOnlyNames === undefined ? undefined : foldedNames(errorOnlyNames)
   return (value: unknown, isRecordRoot = false): unknown => {
     try {
       const visits = { count: 0 }

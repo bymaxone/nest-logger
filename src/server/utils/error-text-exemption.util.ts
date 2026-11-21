@@ -6,11 +6,11 @@
  * Layer: server/utils. Pure.
  */
 import { cutIfText } from './bounded-text.util'
-import { foldKey } from './fold-key.util'
-import { hideMessageInStack } from './hide-message-in-stack.util'
+import { foldKey, matchesFolded, matchesKey } from './fold-key.util'
+import { hideMessagesInStack } from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
 import { ERROR_TEXT_FIELDS } from './redact-error-parts.util'
-import { censorName } from './sanitize-error.util'
+import { censorName, MAX_STACK_SCAN, scrubStack } from './sanitize-error.util'
 
 /** The name `message`, which the serializer of `err` censors: the stack header is built from it. */
 const ERROR_TEXT_KEYS: ReadonlySet<string> = new Set(['message'])
@@ -67,8 +67,9 @@ export function rulesBelow(
  * @returns `true` to write the censor in place of the value.
  */
 export function isCensored(rules: RedactRules, key: string, value: unknown): boolean {
-  const lower = key.toLowerCase()
-  return rules.sensitive.has(lower) && !(typeof value === 'string' && rules.exemptKeys?.has(lower))
+  return (
+    matchesKey(rules.sensitive, key) && !(typeof value === 'string' && rules.exemptKeys?.has(key))
+  )
 }
 
 /**
@@ -82,26 +83,39 @@ export function messageCensor(rules: RedactRules): (text: string) => string {
   return (text) => (rules.sensitive.has('message') ? rules.censor : text)
 }
 
-/** What the header of a stack is a copy of: the message as it was read, and the key it was read from. */
+/** The folded names the stack and the message of an object are looked for under. */
+const STACK_NAMES: ReadonlySet<string> = new Set(['stack'])
+const MESSAGE_NAMES: ReadonlySet<string> = new Set(['message'])
+
+/** The most distinct messages, and the most keys that spell `stack`, one object may make the walk search for. */
+export const MAX_STACK_ALIASES = 8
+
+/** What the walk knows of the stack keys of an object that is no `Error`. */
 export interface HeaderText {
-  /** The own key holding the message, in the spelling the object wrote it. */
-  readonly key: string
-  /** The message, read once. */
-  readonly text: string
+  /** The text of every own key that spells `message`, each read once; empty unless the options hide `message`. */
+  readonly texts: ReadonlyMap<string, string>
+  /** The own keys that spell `stack`, which the walk writes as the stack of the object. */
+  readonly stackKeys: ReadonlySet<string>
+  /** The object has more distinct messages or more stack keys than the walk searches for: every stack is hidden whole. */
+  readonly overflow: boolean
 }
 
+/** What an object with no stack key has: nothing to write as a stack. */
+const NO_STACK: HeaderText = { texts: new Map(), stackKeys: new Set(), overflow: false }
+
 /**
- * The message of an object that is no `Error` and carries a `message` and a `stack` of its own, when
- * the rules hide `message` and the object is not the one under `err` (whose message the serializer
- * censors): the text the header of its stack is a copy of. The keys are matched as the spellings of
- * one name are, so `Message` and `STACK` count. Read once, here, so the walk uses the same text for
- * the field and for the header.
+ * What the walk needs to write the stack keys of an object that is no `Error` and carries one: the
+ * messages its stacks are a copy of when the options hide `message` and the object is not the one
+ * under `err` (whose message the serializer censors), and whether it carries more of either than a
+ * search can be bounded for. The keys are matched as the spellings of one name are, so `Message` and
+ * `STACK` count, and every key that spells `message` is read, since a header may be a copy of any of
+ * them. Each is read once, here, so the walk uses the same text for the field and for the header.
  *
  * @param rules - The rules of the walk.
  * @param source - The object being walked.
  * @param keys - Its own enumerable keys.
  * @param isError - Whether it is an `Error`.
- * @returns The message and its key, or `undefined` when there is no header to hide it in.
+ * @returns The plan: nothing to write for an object with no stack key, and `undefined` for an `Error`.
  */
 export function headerMessage(
   rules: RedactRules,
@@ -109,15 +123,29 @@ export function headerMessage(
   keys: readonly string[],
   isError: boolean
 ): HeaderText | undefined {
-  if (isError || !rules.sensitive.has('message') || rules.exemptKeys?.has('message') === true)
-    return undefined
-  if (rules.headerKept === true) return undefined
-  const key = keys.find((candidate) => foldKey(candidate) === 'message')
-  if (key === undefined || !keys.some((candidate) => foldKey(candidate) === 'stack')) {
-    return undefined
+  if (isError) return undefined
+  const keysOf = (names: ReadonlySet<string>): string[] =>
+    keys.filter((candidate) => matchesKey(names, candidate))
+  const stacks = keysOf(STACK_NAMES)
+  if (stacks.length === 0) return NO_STACK
+  const hides =
+    rules.sensitive.has('message') &&
+    rules.exemptKeys?.has('message') !== true &&
+    rules.headerKept !== true
+  const texts = new Map<string, string>()
+  if (hides) {
+    for (const key of keysOf(MESSAGE_NAMES)) {
+      const text: unknown = Reflect.get(source, key)
+      if (typeof text === 'string') texts.set(key, text)
+    }
+    // The message by its own name too, whether or not it is an own enumerable key: the header of a
+    // stack is a copy of it all the same.
+    const named: unknown = keys.includes('message') ? undefined : Reflect.get(source, 'message')
+    if (typeof named === 'string') texts.set('message', named)
   }
-  const text: unknown = Reflect.get(source, key)
-  return typeof text === 'string' ? { key, text } : undefined
+  const overflow =
+    stacks.length > MAX_STACK_ALIASES || new Set(texts.values()).size > MAX_STACK_ALIASES
+  return { texts, stackKeys: new Set(stacks), overflow }
 }
 
 /**
@@ -130,7 +158,7 @@ export function headerMessage(
  * @returns The value of the field.
  */
 export function readField(source: object, key: string, header: HeaderText | undefined): unknown {
-  return header !== undefined && key === header.key ? header.text : Reflect.get(source, key)
+  return header?.texts.get(key) ?? Reflect.get(source, key)
 }
 
 /**
@@ -146,6 +174,35 @@ export function censorAnyName(rules: RedactRules, name: unknown): unknown {
   if (typeof name === 'string') return censorName(name, messageCensor(rules))
   const holder = (typeof name === 'object' && name !== null) || typeof name === 'function'
   return holder && rules.sensitive.has('message') ? rules.censor : name
+}
+
+/**
+ * The `stack` of an object that is no `Error`, as the stack of an error is written: read up to the
+ * scan bound, every copy of the message hidden when the options hide it, dependency frames dropped,
+ * control characters escaped and the text cut, with the suffix when anything was.
+ *
+ * @param rules - The rules of the walk.
+ * @param stack - The text of the stack.
+ * @param header - The messages of the object, when the options hide `message`.
+ * @returns The text to write.
+ */
+function scrubPlainStack(
+  rules: RedactRules,
+  stack: string,
+  header: HeaderText | undefined
+): string {
+  const texts = [...new Set(header?.texts.values())]
+  const longest = texts.reduce((most, text) => Math.max(most, text.length), 0)
+  // The part searched reaches as far past the bound as the longest message is long, so a message that
+  // starts before the bound is found whole; the text kept stands for the bound and no more.
+  const hidden = hideMessagesInStack(
+    // Stryker disable next-line MethodExpression: equivalent in output: an occurrence that starts before the bound ends inside the window, and one that starts after it is not read, so a longer text gives the same result; the slice only bounds the search.
+    stack.slice(0, MAX_STACK_SCAN + longest),
+    texts,
+    rules.censor,
+    MAX_STACK_SCAN
+  )
+  return scrubStack(hidden, undefined, stack.length > MAX_STACK_SCAN)
 }
 
 /**
@@ -166,8 +223,12 @@ export function errorTextField(
   isError: boolean,
   header?: HeaderText
 ): unknown {
-  if (header !== undefined && foldKey(key) === 'stack' && typeof value === 'string') {
-    return hideMessageInStack(value, header.text, rules.censor)
+  const isStack =
+    !isError &&
+    typeof value === 'string' &&
+    (header === undefined ? matchesKey(STACK_NAMES, key) : header.stackKeys.has(key))
+  if (isStack) {
+    return header?.overflow === true ? rules.censor : scrubPlainStack(rules, value, header)
   }
   if (!isError || !ERROR_TEXT_FIELDS.has(key)) return value
   const cut = cutIfText(value)

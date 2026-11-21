@@ -1,9 +1,9 @@
 /**
- * Pins the replacement of a message in the first line of a stack, and only there.
+ * Pins the replacement of a message wherever a stack holds it.
  *
  * Layer: server/utils, tests. Pure.
  */
-import { hideMessageInStack } from './hide-message-in-stack.util'
+import { hideMessageInStack, hideMessagesInStack } from './hide-message-in-stack.util'
 
 describe('hideMessageInStack', () => {
   /*
@@ -86,23 +86,29 @@ describe('hideMessageInStack', () => {
   })
 
   it.each([
-    ['a frame that holds the message', 'Error: head\n  at SEC (f)', 'SEC'],
-    ['a message in a frame only', 'Error: x\n  at SEC (f)', 'SEC'],
-    ['an empty message', 'Error: x\n  at y', ''],
-    ['a header that does not hold the message', 'Error: other', 'SEC'],
     [
-      'a message that is in a frame only, below a first line that is not it',
-      'a\n  at SEC\n  at SEC',
-      'SEC'
+      'a frame that holds the message',
+      'Error: head\n  at SEC (f)',
+      'SEC',
+      'Error: head\n  at [R] (f)'
+    ],
+    ['a message in a frame only', 'Error: x\n  at SEC (f)', 'SEC', 'Error: x\n  at [R] (f)'],
+    ['the header and a later line', 'Error: SEC\n  at SEC (f)', 'SEC', 'Error: [R]\n  at [R] (f)'],
+    [
+      'a cause that repeats the message',
+      'Error: SEC\n  at f (g:1)\nCaused by: Error: SEC\n  at h (i:2)',
+      'SEC',
+      'Error: [R]\n  at f (g:1)\nCaused by: Error: [R]\n  at h (i:2)'
     ]
-  ])('leaves the stack alone for %s', (_label, stack, message) => {
-    expect(hideMessageInStack(stack, message, '[R]')).toBe(stack)
+  ])('replaces the message in %s', (_label, stack, message, expected) => {
+    expect(hideMessageInStack(stack, message, '[R]')).toBe(expected)
   })
 
-  it('replaces the message in the header and leaves the same text in a frame', () => {
-    expect(hideMessageInStack('Error: SEC\n  at SEC (f)', 'SEC', '[R]')).toBe(
-      'Error: [R]\n  at SEC (f)'
-    )
+  it.each([
+    ['an empty message', 'Error: x\n  at y', ''],
+    ['a stack that does not hold the message', 'Error: other', 'SEC']
+  ])('leaves the stack alone for %s', (_label, stack, message) => {
+    expect(hideMessageInStack(stack, message, '[R]')).toBe(stack)
   })
 
   it('is linear in a message made of a frame-shaped line that repeats many times', () => {
@@ -177,5 +183,43 @@ describe('hideMessageInStack', () => {
     )
 
     expect(wrong).toEqual([])
+  })
+})
+
+describe('hideMessagesInStack', () => {
+  it.each([
+    ['text before the limit', 'abcSECdef', ['SEC'], 6, 'abc[R]'],
+    ['no message, a limit inside the stack', 'abcdefgh', ['SEC'], 5, 'abcde'],
+    ['no message, a limit past the stack', 'abcd', ['SEC'], 50, 'abcd'],
+    [
+      'an occurrence that starts before the limit and ends after it',
+      'abSECcdef',
+      ['SEC'],
+      3,
+      'ab[R]'
+    ],
+    ['an occurrence that starts at the limit', 'abcSECdef', ['SEC'], 3, 'abc'],
+    ['an occurrence that starts after the limit', 'abcdSECef', ['SEC'], 3, 'abc'],
+    ['two messages', 'aXXbYYc', ['XX', 'YY'], 7, 'a[R]b[R]c'],
+    ['two messages that overlap', 'aXYZb', ['XY', 'YZ'], 5, 'a[R]b'],
+    ['a message inside another', 'aXYZb', ['XYZ', 'Y'], 5, 'a[R]b'],
+    [
+      'a second message that starts inside the first and at the limit',
+      'aXYZb',
+      ['XY', 'YZ'],
+      2,
+      'a[R]'
+    ],
+    ['an empty message', 'abc', ['', 'b'], 3, 'a[R]c'],
+    ['a message longer than the stack', 'abc', ['abcd'], 3, 'abc'],
+    ['no message', 'abc', [], 2, 'ab']
+  ])('keeps %s', (_label, stack, messages, limit, expected) => {
+    expect(hideMessagesInStack(stack, messages, '[R]', limit)).toBe(expected)
+  })
+
+  it('stands for the limit however much the replacement shrinks the text', () => {
+    const stack = `${'ABC'.repeat(30)}tail`
+
+    expect(hideMessagesInStack(stack, ['ABC'], '#', 10)).toBe('####')
   })
 })
