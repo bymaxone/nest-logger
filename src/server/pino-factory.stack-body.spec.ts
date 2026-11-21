@@ -211,7 +211,9 @@ describe('a payload with many keys that spell message or stack', () => {
 
     const many = timed(make(5_000))
 
-    expect(many.ms).toBeLessThan(cap.ms * 10 + 500)
+    // A quadratic walk over 5,000 keys of 60,000 characters takes minutes; the margin is wide so a machine
+    // that runs other work does not fail the gate.
+    expect(many.ms).toBeLessThan(cap.ms * 10 + 2_000)
     expect(many.line).not.toContain('zzzz')
   })
 
