@@ -239,3 +239,25 @@ describe('matchesFolded', () => {
     expect(matchesFolded(new Set(['token']), foldKey('TOKE\u039d'))).toBe(true)
   })
 })
+
+describe('matchesFolded, the work for one key', () => {
+  it('rejects a key longer than the longest name without walking', () => {
+    expect(matchesFolded(new Set(['token']), `tok\u04bbn${'x'.repeat(50)}`)).toBe(false)
+  })
+
+  it('hides a key that has more candidate names than the bound', () => {
+    const many = new Set(
+      Array.from({ length: 100 }, (_, i) => `field${String(i).padStart(3, '0')}`)
+    )
+
+    expect(matchesFolded(many, 'f\u04bbeld123')).toBe(true)
+    expect(matchesFolded(many, 'f\u04bbeld1234')).toBe(false)
+  })
+
+  it('walks a key against a few candidates and tells them apart', () => {
+    const few = new Set(['token', 'tokens', 'toke'])
+
+    expect(matchesFolded(few, 'to\u04bben')).toBe(true)
+    expect(matchesFolded(few, 'to\u04bbex')).toBe(false)
+  })
+})

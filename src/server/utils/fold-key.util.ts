@@ -126,8 +126,10 @@ const FOLDED = /^[a-z0-9]*$/
 const ALNUM = /^[A-Za-z0-9]*$/
 
 /**
- * The form of a field name that a configured name is compared in: {@link foldKey} without the
- * separators kept, so `apiKey`, `api_key`, `API-KEY`, `api\u200bKey` and `\u0430piKey` are one name.
+ * The form of a field name that a configured name is compared in, where a value is hidden: the
+ * key with everything that is not a letter or a digit dropped and the look-alikes of exactly one Latin
+ * letter read as it, so `apiKey`, `api_key`, `API-KEY`, `api\u200bKey` and `\u0430piKey` are one name.
+ * A letter that is not ASCII and is no such look-alike is left, for {@link matchesFolded}.
  * The common spellings skip the fold, so the comparison that runs for every key of every record costs
  * about what lower-casing it did; nothing is remembered, so a payload of keys cannot grow it.
  *
@@ -158,32 +160,42 @@ export function foldedNames(names: Iterable<string>): Set<string> {
 /** A key with a letter that is not ASCII is read as a pattern only if it keeps this share of ASCII characters, one in this many. */
 const MIN_ASCII_SHARE = 3
 
-/** The names of a set grouped by their length in characters, built once for each set. */
-const byLength = new WeakMap<ReadonlySet<string>, ReadonlyMap<number, readonly string[]>>()
+/** How many names of a compatible length a key is walked against before it is taken for one of them. */
+const MAX_CANDIDATES = 64
 
-/** The names of `names` of `length` characters. */
-function namesOfLength(names: ReadonlySet<string>, length: number): readonly string[] {
-  let groups = byLength.get(names)
+/** The names of a set grouped by their length in characters, and the longest, built once for each set. */
+interface Grouped {
+  readonly byLength: ReadonlyMap<number, readonly string[]>
+  readonly longest: number
+}
+const grouped = new WeakMap<ReadonlySet<string>, Grouped>()
+
+/** The names of `names` grouped by length. */
+function groupsOf(names: ReadonlySet<string>): Grouped {
+  let groups = grouped.get(names)
   if (groups === undefined) {
     const built = new Map<number, string[]>()
+    let longest = 0
     for (const name of names) {
-      const same = built.get([...name].length) ?? []
-      same.push(name)
-      built.set([...name].length, same)
+      const size = [...name].length
+      built.set(size, [...(built.get(size) ?? []), name])
+      longest = Math.max(longest, size)
     }
-    groups = built
-    byLength.set(names, groups)
+    groups = { byLength: built, longest }
+    grouped.set(names, groups)
   }
-  return groups.get(length) ?? []
+  return groups
 }
 
 /**
  * Whether a folded key is one of the folded names. A key that is only ASCII is looked up as it is. A
  * key that still holds a letter that is not ASCII, one the folding has no Latin letter for, and keeps at
  * least a third of its characters as ASCII, is compared as a pattern in which each such letter stands
- * for any one character, against the names of the same length: a look-alike of a letter the folding does not know cannot hide a key from its name, and a
- * key that only happens to share a name's length and its ASCII letters is hidden too, which is the
- * safe way to be wrong.
+ * for one or for two characters of a name, against the names of the lengths that allows: a look-alike of
+ * a letter the folding does not know cannot hide a key from its name, and a key that only happens to
+ * share a name's length and its ASCII letters is hidden too, which is the safe way to be wrong. A key
+ * longer than the longest name is no pattern, and one with more candidate names than a bound is
+ * hidden without being walked.
  *
  * @internal Shared across the logger. NOT re-exported by the package barrel.
  * @param names - The folded names, from {@link foldedNames}.
@@ -198,11 +210,20 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   // at least a third of its characters, and one.
   const ascii = letters.filter((letter) => letter <= '\x7f').length
   if (ascii === 0 || ascii * MIN_ASCII_SHARE < letters.length) return false
-  const extra = letters.length - ascii
-  for (let length = letters.length; length <= letters.length + extra; length += 1) {
-    if (namesOfLength(names, length).some((name) => matchesName(letters, [...name]))) return true
+  const { byLength, longest } = groupsOf(names)
+  if (letters.length > longest) return false
+  const candidates: string[] = []
+  for (
+    let length = letters.length;
+    length <= letters.length + letters.length - ascii;
+    length += 1
+  ) {
+    candidates.push(...(byLength.get(length) ?? []))
   }
-  return false
+  // More names of a compatible length than a key is walked against: the value is hidden, since the work
+  // for a key of any length and any set of names is bounded and a hidden value is the safe answer.
+  if (candidates.length > MAX_CANDIDATES) return true
+  return candidates.some((name) => matchesName(letters, [...name]))
 }
 
 /**

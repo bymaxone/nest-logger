@@ -260,3 +260,19 @@ describe('a name spelled with letters that look like more than one Latin letter 
     }
   )
 })
+
+describe('the key that marks a flat header array', () => {
+  it.each([
+    ['rawTra\u0131lers'],
+    ['rawTra\u0456lers'],
+    ['rawTra\u026alers'],
+    ['raw\u0397eaders'],
+    ['rawHeader\u015f'],
+    ['raw-Headers'],
+    ['RAW_HEADERS']
+  ])('hides the value beside a sensitive name in a header array under %j', (key) => {
+    const line = lineOf({ meta: { [key]: ['Authorization', SECRET, 'Accept', 'text/html'] } })
+
+    expect(line).not.toContain(SECRET)
+  })
+})

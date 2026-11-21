@@ -87,7 +87,7 @@ const RAW_HEADER_KEYS: ReadonlySet<string> = new Set(['rawheaders', 'rawtrailers
  * guards every other value has.
  */
 function censorHeaderArray(key: string, walked: unknown, rules: RedactRules): unknown {
-  return RAW_HEADER_KEYS.has(foldName(key)) && Array.isArray(walked)
+  return matchesKey(RAW_HEADER_KEYS, key) && Array.isArray(walked)
     ? censorRawHeaders(walked, rules.headerNames, rules.censor)
     : walked
 }
