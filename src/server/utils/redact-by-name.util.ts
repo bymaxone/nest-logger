@@ -193,6 +193,24 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
 }
 
 /**
+ * The rules that apply inside an `Error` when they differ from the rest of the walk.
+ *
+ * @param rules - The rules of the walk, without the counter of visits.
+ * @param names - The names censored there, if they differ.
+ * @param visits - The counter the walk shares.
+ * @returns The rules inside an `Error`, or `undefined` when one set covers the walk.
+ */
+function rulesInside(
+  rules: Omit<RedactRules, 'visits'>,
+  names: ReadonlySet<string> | undefined,
+  visits: RedactRules['visits']
+): RedactRules | undefined {
+  return names === undefined
+    ? undefined
+    : { ...rules, sensitive: names, visits, insideErrors: undefined }
+}
+
+/**
  * A configured redactor.
  *
  * @param value - The value to redact.
@@ -203,6 +221,20 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
  *   `JSON.stringify` and keep it.
  */
 export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
+
+/** What the `err` serializer returned: its `message` and stack header are already censored. */
+const errorOutputs = new WeakSet<object>()
+
+/**
+ * Mark the object the `err` serializer returned, so the walk of it leaves the header of its stack.
+ *
+ * @param output - What the serializer returned.
+ * @returns The same value.
+ */
+export function markErrorOutput<T>(output: T): T {
+  if (typeof output === 'object' && output !== null) errorOutputs.add(output)
+  return output
+}
 
 /** What one walk needs besides the value. */
 export interface RedactRules {
@@ -225,6 +257,8 @@ export interface RedactRules {
    * under the names. Off when the host serializes `err` itself.
    */
   readonly errorTextToSerializer: boolean
+  /** Whether the serializer that made the one object these rules are given to censored its stack header; not below it. */
+  readonly headerKept?: boolean | undefined
   /** Names not censored in the one object these rules are given to, and in none below it. */
   readonly exemptKeys?: ReadonlySet<string> | undefined
   /**
@@ -748,11 +782,9 @@ export function createNameRedactor(
       const visits = { count: 0 }
       const call: RedactRules = {
         ...rules,
+        headerKept: typeof value === 'object' && value !== null && errorOutputs.has(value),
         visits,
-        insideErrors:
-          insideNames === undefined
-            ? undefined
-            : { ...rules, sensitive: insideNames, visits, insideErrors: undefined }
+        insideErrors: rulesInside(rules, insideNames, visits)
       }
       return walk(value, call, 0, new Set<object>(), !isRecordRoot)
     } catch {

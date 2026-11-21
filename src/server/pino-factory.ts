@@ -39,7 +39,7 @@ import {
   type OwnFieldPolicy,
   ALL_OWN_FIELDS
 } from './utils/own-field-policy.util'
-import { createNameRedactor } from './utils/redact-by-name.util'
+import { createNameRedactor, markErrorOutput } from './utils/redact-by-name.util'
 import type { Redactor } from './utils/redact-by-name.util'
 import { safeMinLevel } from './utils/report-destination-failure.util'
 import {
@@ -493,7 +493,7 @@ function buildSerializers(
       () => onTruncate('max_entry_size')
     )
   return {
-    err: bound((error) => serializeErrorValue(error, ownFields, censorMessage)),
+    err: bound((error) => markErrorOutput(serializeErrorValue(error, ownFields, censorMessage))),
     ...Object.fromEntries(
       Object.entries(options.serializers).map(
         ([key, serializer]): [string, (input: unknown) => unknown] => [key, bound(serializer)]

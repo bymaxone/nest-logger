@@ -51,7 +51,9 @@ export function rulesBelow(
     return { ...rules, exemptKeys: ERROR_TEXT_KEYS }
   }
   // Stryker disable next-line ConditionalExpression: equivalent: a copy with no exemption walks as the rules do, so this branch only saves the allocation.
-  return rules.exemptKeys === undefined ? rules : { ...rules, exemptKeys: undefined }
+  return rules.exemptKeys === undefined && rules.headerKept !== true
+    ? rules
+    : { ...rules, exemptKeys: undefined, headerKept: undefined }
 }
 
 /**
@@ -99,6 +101,7 @@ export function headerMessage(
 ): string | undefined {
   if (isError || !rules.sensitive.has('message') || rules.exemptKeys?.has('message') === true)
     return undefined
+  if (rules.headerKept === true) return undefined
   if (!keys.includes('message') || !keys.includes('stack')) return undefined
   const message: unknown = Reflect.get(source, 'message')
   return typeof message === 'string' ? message : undefined

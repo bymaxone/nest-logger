@@ -12,6 +12,7 @@ import { buildPinoInstance } from './pino-factory'
 import { DestinationHealth } from './services/destination-health.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
+import { createNameRedactor, markErrorOutput } from './utils/redact-by-name.util'
 
 const SECRET = 'SEC_9f3a'
 const FRAME = '    at run (/srv/app.js:1:1)'
@@ -100,5 +101,36 @@ describe('the stack header of an object with a message and a stack, below the to
     )
 
     expect((line['n'] as { stack: string }).stack).toBe(stackOf('Error'))
+  })
+})
+
+describe('the redactor for what the err serializer returned', () => {
+  const redact = createNameRedactor(['message'], '[REDACTED]')
+  const output = { message: SECRET, stack: stackOf('Error') }
+
+  it('leaves the stack header to the serializer that already censored it', () => {
+    const result = redact(markErrorOutput({ ...output })) as { stack: string }
+
+    expect(result.stack).toBe(output.stack)
+  })
+
+  it('hides the message in the header of an object below it', () => {
+    const result = redact(markErrorOutput({ ...output, cause: output })) as {
+      cause: { stack: string }
+    }
+
+    expect(result.cause.stack).not.toContain(SECRET)
+  })
+
+  it('hides it in the header of an object that did not come from the serializer', () => {
+    const result = redact(output) as { stack: string }
+
+    expect(result.stack).not.toContain(SECRET)
+  })
+})
+
+describe('markErrorOutput', () => {
+  it.each([['text'], [null], [7], [undefined]])('returns %p as it is', (value) => {
+    expect(markErrorOutput(value)).toBe(value)
   })
 })
