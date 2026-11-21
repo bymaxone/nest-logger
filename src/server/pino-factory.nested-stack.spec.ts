@@ -104,6 +104,24 @@ describe('the stack header of an object with a message and a stack, below the to
   })
 })
 
+describe('the stack header of an object whose keys are spelled in another case, or look alike', () => {
+  it.each([
+    ['Message', 'Stack'],
+    ['MESSAGE', 'stack'],
+    ['message', 'STACK'],
+    ['M\u0435ssage', 'St\u0430ck'],
+    ['M\u200bessage', 'Stack']
+  ])('is censored for %s and %s', (messageKey, stackKey) => {
+    const line = lineOf(
+      { meta: { cause: { [messageKey]: SECRET, [stackKey]: stackOf('Error') } } },
+      { redactPaths: ['message'] }
+    )
+    const cause = (line['meta'] as { cause: Record<string, string> }).cause
+
+    expect(cause[stackKey]).toMatch(/^Error: \[REDACTED\]\n/)
+  })
+})
+
 describe('the redactor for what the err serializer returned', () => {
   const redact = createNameRedactor(['message'], '[REDACTED]')
   const output = { message: SECRET, stack: stackOf('Error') }

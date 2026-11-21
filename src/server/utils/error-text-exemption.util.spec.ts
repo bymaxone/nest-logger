@@ -22,7 +22,10 @@ describe('headerMessage', () => {
   it('reads the message of an object that owns a message and a stack', () => {
     const source = { message: SECRET, stack: 'x' }
 
-    expect(headerMessage(rules(), source, ['message', 'stack'], false)).toBe(SECRET)
+    expect(headerMessage(rules(), source, ['message', 'stack'], false)).toEqual({
+      key: 'message',
+      text: SECRET
+    })
   })
 
   it('reads nothing of an object that owns a stack and inherits its message', () => {
@@ -46,6 +49,30 @@ describe('headerMessage', () => {
   })
 })
 
+describe('headerMessage, the spelling of the keys', () => {
+  it.each([
+    ['Message', 'Stack'],
+    ['MESSAGE', 'stack'],
+    ['message', 'STACK'],
+    ['M\u200bessage', 'Stack'],
+    ['M\u0435ssage', 'St\u0430ck']
+  ])('reads %s and %s as the message and the stack', (messageKey, stackKey) => {
+    const source = { [messageKey]: SECRET, [stackKey]: 'x' }
+
+    expect(headerMessage(rules(), source, [messageKey, stackKey], false)).toEqual({
+      key: messageKey,
+      text: SECRET
+    })
+  })
+
+  it('reads nothing when a key is another word', () => {
+    const source = { messages: SECRET, stack: 'x' }
+
+    expect(headerMessage(rules(), source, ['messages', 'stack'], false)).toBeUndefined()
+    expect(headerMessage(rules(), source, ['stack', 'stacks'], false)).toBeUndefined()
+  })
+})
+
 describe('readField', () => {
   it('reads a field once when the message was read for the header', () => {
     let reads = 0
@@ -64,7 +91,7 @@ describe('readField', () => {
   it('reads any other field, and the message when none was read, from the object', () => {
     const source = { message: 'm', other: 'o' }
 
-    expect(readField(source, 'other', 'cached')).toBe('o')
+    expect(readField(source, 'other', { key: 'message', text: 'cached' })).toBe('o')
     expect(readField(source, 'message', undefined)).toBe('m')
   })
 })
@@ -73,10 +100,12 @@ describe('errorTextField', () => {
   it('hides the message in the stack of an object that is no error, and in no other field', () => {
     const stack = `Error: ${SECRET}\n    at run (/srv/app.js:1:1)`
 
-    expect(errorTextField(rules(), 'stack', stack, false, SECRET)).toBe(
+    expect(errorTextField(rules(), 'stack', stack, false, { key: 'message', text: SECRET })).toBe(
       'Error: [R]\n    at run (/srv/app.js:1:1)'
     )
-    expect(errorTextField(rules(), 'note', `see ${SECRET}`, false, SECRET)).toBe(`see ${SECRET}`)
+    expect(
+      errorTextField(rules(), 'note', `see ${SECRET}`, false, { key: 'message', text: SECRET })
+    ).toBe(`see ${SECRET}`)
   })
 })
 

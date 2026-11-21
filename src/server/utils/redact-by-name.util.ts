@@ -630,9 +630,9 @@ function walkProperties(
   const copy = startCopy(value, asData)
   const scrubbed = isError(value) && (rules.ownFields.safe || !inSerialized)
   const omitted = new Set<string>()
-  const message = headerMessage(rules, source, keys, isError(value))
+  const header = headerMessage(rules, source, keys, isError(value))
   for (const key of keys) {
-    const read = readField(source, key, message)
+    const read = readField(source, key, header)
     const current = scrubbed ? ownFieldForLog(source, key, read, rules.ownFields) : read
     // A `toJSON` that reads as a function only now is a hook the walk did not follow, which
     // `JSON.stringify` would run after the redaction.
@@ -653,7 +653,7 @@ function walkProperties(
         : censorHeaderArray(
             key,
             walk(
-              errorTextField(rules, key, current, scrubbed, message),
+              errorTextField(rules, key, current, scrubbed, header),
               rulesBelow(rules, key, current, honorToJson),
               depth + 1,
               ancestors,

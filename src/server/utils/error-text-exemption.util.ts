@@ -6,6 +6,7 @@
  * Layer: server/utils. Pure.
  */
 import { cutIfText } from './bounded-text.util'
+import { foldKey } from './fold-key.util'
 import { hideMessageInStack } from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
 import { ERROR_TEXT_FIELDS } from './redact-error-parts.util'
@@ -81,30 +82,42 @@ export function messageCensor(rules: RedactRules): (text: string) => string {
   return (text) => (rules.sensitive.has('message') ? rules.censor : text)
 }
 
+/** What the header of a stack is a copy of: the message as it was read, and the key it was read from. */
+export interface HeaderText {
+  /** The own key holding the message, in the spelling the object wrote it. */
+  readonly key: string
+  /** The message, read once. */
+  readonly text: string
+}
+
 /**
  * The message of an object that is no `Error` and carries a `message` and a `stack` of its own, when
  * the rules hide `message` and the object is not the one under `err` (whose message the serializer
- * censors): the text the header of its stack is a copy of. Read once, here, so the walk uses the same
- * text for the field and for the header.
+ * censors): the text the header of its stack is a copy of. The keys are matched as the spellings of
+ * one name are, so `Message` and `STACK` count. Read once, here, so the walk uses the same text for
+ * the field and for the header.
  *
  * @param rules - The rules of the walk.
  * @param source - The object being walked.
  * @param keys - Its own enumerable keys.
  * @param isError - Whether it is an `Error`.
- * @returns The message, or `undefined` when there is no header to hide it in.
+ * @returns The message and its key, or `undefined` when there is no header to hide it in.
  */
 export function headerMessage(
   rules: RedactRules,
   source: object,
   keys: readonly string[],
   isError: boolean
-): string | undefined {
+): HeaderText | undefined {
   if (isError || !rules.sensitive.has('message') || rules.exemptKeys?.has('message') === true)
     return undefined
   if (rules.headerKept === true) return undefined
-  if (!keys.includes('message') || !keys.includes('stack')) return undefined
-  const message: unknown = Reflect.get(source, 'message')
-  return typeof message === 'string' ? message : undefined
+  const key = keys.find((candidate) => foldKey(candidate) === 'message')
+  if (key === undefined || !keys.some((candidate) => foldKey(candidate) === 'stack')) {
+    return undefined
+  }
+  const text: unknown = Reflect.get(source, key)
+  return typeof text === 'string' ? { key, text } : undefined
 }
 
 /**
@@ -113,11 +126,11 @@ export function headerMessage(
  *
  * @param source - The object being walked.
  * @param key - The field.
- * @param message - What {@link headerMessage} read, if anything.
+ * @param header - What {@link headerMessage} read, if anything.
  * @returns The value of the field.
  */
-export function readField(source: object, key: string, message: string | undefined): unknown {
-  return key === 'message' && message !== undefined ? message : Reflect.get(source, key)
+export function readField(source: object, key: string, header: HeaderText | undefined): unknown {
+  return header !== undefined && key === header.key ? header.text : Reflect.get(source, key)
 }
 
 /**
@@ -143,7 +156,7 @@ export function censorAnyName(rules: RedactRules, name: unknown): unknown {
  * @param key - The field: `name`, `message` or `stack`.
  * @param value - Its value.
  * @param isError - Whether the object holding the field is an `Error` the walk reads.
- * @param message - The message of an object that is no `Error`, whose `stack` header holds it.
+ * @param header - The message of an object that is no `Error`, whose `stack` header holds it.
  * @returns The value to write.
  */
 export function errorTextField(
@@ -151,10 +164,10 @@ export function errorTextField(
   key: string,
   value: unknown,
   isError: boolean,
-  message?: string
+  header?: HeaderText
 ): unknown {
-  if (message !== undefined && key === 'stack' && typeof value === 'string') {
-    return hideMessageInStack(value, message, rules.censor)
+  if (header !== undefined && foldKey(key) === 'stack' && typeof value === 'string') {
+    return hideMessageInStack(value, header.text, rules.censor)
   }
   if (!isError || !ERROR_TEXT_FIELDS.has(key)) return value
   const cut = cutIfText(value)
