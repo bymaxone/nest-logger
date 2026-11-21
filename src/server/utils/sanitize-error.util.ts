@@ -213,6 +213,7 @@ interface ErrorWalk {
  * @param value - The error.
  * @param name - The name as it was read, once, for the node.
  * @param message - The message as it was read, once, for the node.
+ * @param textName - Whether the name, as it was read, is text.
  * @param result - The node, marked incomplete when the stack cannot be read.
  * @param walk - What every node shares, with the censor of messages.
  * @returns The scrubbed stack, or `undefined` when there is none or it cannot be read.
@@ -221,13 +222,34 @@ function readScrubbedStack(
   value: Error,
   name: string,
   message: string,
+  textName: boolean,
   result: SanitizedError,
   walk: ErrorWalk
 ): string | undefined {
   const stack = readOptional(() => value.stack, result)
-  return stack === undefined
-    ? undefined
-    : scrubStack(stack, headerCensor(name, message, walk.censorMessage))
+  if (stack === undefined) return undefined
+  const header = headerCensor(name, message, walk.censorMessage)
+  return scrubStack(textName ? stack : withNamedHeader(stack, message), header)
+}
+
+/** The start of the first frame: a line that begins, after white space, with `at `. */
+const FRAME_LINE = /\n[ \t]+at /
+
+/**
+ * A stack whose first line is `Error: <message>`, for an error whose `name` is not text: the engine
+ * wrote that name as its own text in front of the message, and it may hold a value. The frames are
+ * kept.
+ *
+ * @param stack - The stack as the engine wrote it.
+ * @param message - The message of the error.
+ * @returns The stack with the name that is not text replaced by `Error`.
+ */
+function withNamedHeader(stack: string, message: string): string {
+  const found = message === '' ? -1 : stack.indexOf(message)
+  if (found !== -1) return `Error: ${stack.slice(found)}`
+  const end = stack.search(FRAME_LINE)
+  const frames = end === -1 ? '' : stack.slice(end)
+  return `Error${message === '' ? '' : `: ${message}`}${frames}`
 }
 
 /**
@@ -255,7 +277,9 @@ function toSanitizedError(
     seen.add(value)
     // Read once: the header censor looks for the text written to the node.
     const message = value.message
-    const name = cutText(typeof value.name === 'string' ? value.name : 'Error')
+    const rawName: unknown = value.name
+    const textName = typeof rawName === 'string'
+    const name = cutText(textName ? rawName : 'Error')
     const result: SanitizedError = {
       name: censorName(name, walk.censorMessage),
       message: cutText(message)
@@ -264,7 +288,7 @@ function toSanitizedError(
     // costs the node that property and marks it incomplete, instead of costing the node its
     // name and message. The name and message identify the error; if THEY cannot be read the
     // outer catch still degrades the node to the visible `SanitizeFailed` shape.
-    const stack = readScrubbedStack(value, name, message, result, walk)
+    const stack = readScrubbedStack(value, name, message, textName, result, walk)
     if (stack !== undefined) result.stack = stack
 
     const isAtDepthLimit = depth >= walk.maxDepth

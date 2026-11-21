@@ -62,6 +62,7 @@ import { types } from 'node:util'
 import { cutIfText } from './bounded-text.util'
 import { censorRawHeaders } from './censor-raw-headers.util'
 import {
+  censorAnyName,
   errorTextField,
   headerMessage,
   isCensored,
@@ -73,7 +74,7 @@ import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
 import { addErrorParts, defineOwn, type ErrorPartsHost } from './redact-error-parts.util'
-import { censorName, OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
+import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 /** The keys of a message that hold headers as a flat `[name, value, ...]` array. */
@@ -674,7 +675,7 @@ function errorPartsHost(
     // What a serializer receives names the error `name`, as the error-like shape it reads does;
     // everything else keeps the `type` the written entries use.
     nameKey: inSerialized ? 'name' : 'type',
-    censorName: (name) => censorName(name, messageCensor(rules)),
+    censorName: (name) => censorAnyName(rules, name),
     walk: (value, depth) => walk(value, rules, depth, ancestors, true, inSerialized),
     // Under 'safe' the cap does not read a list's `toJSON`: a list over the cap becomes a fresh array
     // and is never read for it, and a list within the cap is read once, by the walk.

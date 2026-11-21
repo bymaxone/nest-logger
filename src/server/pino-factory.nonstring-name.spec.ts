@@ -71,4 +71,60 @@ describe('an Error whose name is not text', () => {
       expect(sanitizeError(error).name).toBe('UnknownError')
     }
   )
+
+  describe('when the name itself holds a value, with message hidden', () => {
+    const secretNames: Array<[string, () => unknown]> = [
+      ['an array', () => [SECRET]],
+      ['an object with a toString', () => ({ toString: () => `obj ${SECRET}` })]
+    ]
+
+    const warn = (extra: Record<string, unknown>, call: (s: PinoLoggerService) => void): string => {
+      const lines: string[] = []
+      const options = applyDefaults({
+        service: { name: 'app', version: '1.0.0' },
+        redactPaths: ['message'],
+        errorFormat: 'both',
+        ...extra
+      })
+      const sink = { name: 'sink', write: (line: unknown) => lines.push(String(line)) }
+      const pino = buildPinoInstance(
+        options,
+        new LogContextService(),
+        [sink as never],
+        new DestinationHealth()
+      )
+      call(new PinoLoggerService(pino))
+      return lines[0] ?? ''
+    }
+
+    it.each(secretNames)(
+      'writes nothing of the name %s as err, and opens the stack with Error',
+      (_l, name) => {
+        const line = warn({}, (s) => s.warn({ event: 'E', err: errorNamed(name()) } as never))
+
+        expect(line).not.toContain(SECRET)
+        expect((JSON.parse(line) as { err: { stack: string } }).err.stack).toMatch(/^Error: /)
+      }
+    )
+
+    it.each(secretNames)(
+      'writes nothing of the name %s as the message of a NestJS call',
+      (_l, name) => {
+        expect(warn({}, (s) => s.warn(errorNamed(name()) as never))).not.toContain(SECRET)
+      }
+    )
+
+    it.each(secretNames)('writes nothing of the name %s under a key of your own', (_l, name) => {
+      const line = warn({}, (s) => s.warn({ event: 'E', error: errorNamed(name()) } as never))
+
+      expect(line).not.toContain(SECRET)
+      expect((JSON.parse(line) as { error: { type: unknown } }).error.type).toBe('[REDACTED]')
+    })
+
+    it('keeps a name that is a number under a key of your own', () => {
+      const line = warn({}, (s) => s.warn({ event: 'E', error: errorNamed(12) } as never))
+
+      expect((JSON.parse(line) as { error: { type: unknown } }).error.type).toBe(12)
+    })
+  })
 })

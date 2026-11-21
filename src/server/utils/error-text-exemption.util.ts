@@ -118,6 +118,21 @@ export function readField(source: object, key: string, message: string | undefin
 }
 
 /**
+ * The name of an error as the censor of the message leaves it: text passes the censor of names, a
+ * value that is an object or a function may hold anything and is hidden with the message, and any
+ * other value is kept.
+ *
+ * @param rules - The rules of the walk.
+ * @param name - The name, of any type.
+ * @returns The name to write.
+ */
+export function censorAnyName(rules: RedactRules, name: unknown): unknown {
+  if (typeof name === 'string') return censorName(name, messageCensor(rules))
+  const holder = (typeof name === 'object' && name !== null) || typeof name === 'function'
+  return holder && rules.sensitive.has('message') ? rules.censor : name
+}
+
+/**
  * A text field of an `Error` as the walk writes it: cut at the text limit, and, for the `name`,
  * censored as the name of the `err` of an entry is.
  *
@@ -140,5 +155,5 @@ export function errorTextField(
   }
   if (!isError || !ERROR_TEXT_FIELDS.has(key)) return value
   const cut = cutIfText(value)
-  return key === 'name' && typeof cut === 'string' ? censorName(cut, messageCensor(rules)) : cut
+  return key === 'name' ? censorAnyName(rules, cut) : cut
 }

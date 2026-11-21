@@ -24,7 +24,7 @@ export interface ErrorPartsHost {
   /** The key the error's name is written under: `type` in an entry, `name` for a serializer. */
   readonly nameKey: 'name' | 'type'
   /** The name of an error as the censor of the message leaves it: text that is not a name is hidden. */
-  censorName(name: string): string
+  censorName(name: unknown): unknown
   /** Walk a value one container deeper than `depth`, under the walk's own bounds. */
   walk(value: unknown, depth: number): unknown
   /** Whether a value has a `toJSON` the walk would honour. */
@@ -135,9 +135,8 @@ function cutOrWalk(value: unknown, level: number, host: ErrorPartsHost, depth: n
 
 /** Write an added `name` or `type`: text passes the censor of names, anything else is walked as a chain part. */
 function writeName(value: unknown, level: number, host: ErrorPartsHost, depth: number): unknown {
-  return typeof value === 'string'
-    ? host.censorName(cutText(value))
-    : cutOrWalk(value, level, host, depth)
+  const censored = host.censorName(typeof value === 'string' ? cutText(value) : value)
+  return censored === value ? cutOrWalk(value, level, host, depth) : censored
 }
 
 /**
