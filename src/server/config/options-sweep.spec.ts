@@ -46,61 +46,60 @@ function options(): Record<string, unknown> {
   }
 }
 
+/** What one run counts: the operations reached and whether the Nth was made to throw. */
+interface Run {
+  operations: number
+  reached: boolean
+}
+
+/** A wrapper that makes the `n`th operation on the value, or on anything read through it, throw. */
+function wrapper(n: number, run: Run): <T extends object>(target: T) => T {
+  const wrap = <T extends object>(target: T): T =>
+    new Proxy(
+      target,
+      Object.fromEntries(
+        TRAPS.map((trap) => [
+          trap,
+          (inner: object, ...args: unknown[]): unknown => {
+            run.operations += 1
+            if (run.operations === n) {
+              run.reached = true
+              throw new HostError(`trap ${trap}`)
+            }
+            const result: unknown = (Reflect[trap] as (...a: unknown[]) => unknown)(inner, ...args)
+            const wrapped =
+              typeof result === 'object' && result !== null && !(result instanceof RegExp)
+            return trap === 'get' && wrapped ? wrap(result) : result
+          }
+        ])
+      )
+    )
+  return wrap
+}
+
 /** Run `call` with the Nth operation on the options throwing, for every N, until none is reached. */
 function sweep(call: (wrapped: Record<string, unknown>) => void): {
   runs: number
   raw: string[]
-  refused: string[]
   withoutCause: string[]
 } {
   const raw: string[] = []
-  const refused: string[] = []
   const withoutCause: string[] = []
   let runs = 0
   for (let n = 1; n < 1_000; n += 1) {
-    let operations = 0
-    let reached = false
-    const wrap = <T extends object>(target: T): T =>
-      new Proxy(
-        target,
-        Object.fromEntries(
-          TRAPS.map((trap) => [
-            trap,
-            (inner: object, ...args: unknown[]): unknown => {
-              operations += 1
-              if (operations === n) {
-                reached = true
-                throw new HostError(`trap ${trap}`)
-              }
-              const result: unknown = (Reflect[trap] as (...a: unknown[]) => unknown)(
-                inner,
-                ...args
-              )
-              return trap === 'get' &&
-                typeof result === 'object' &&
-                result !== null &&
-                !(result instanceof RegExp)
-                ? wrap(result)
-                : result
-            }
-          ])
-        )
-      )
+    const run: Run = { operations: 0, reached: false }
     runs += 1
     try {
-      call(wrap(options()))
+      call(wrapper(n, run)(options()))
     } catch (error) {
       if (error instanceof HostError) raw.push(`N=${String(n)}`)
-      else {
-        refused.push(`N=${String(n)}`)
-        if (!((error as Error).cause instanceof HostError) && reached) {
-          withoutCause.push(`N=${String(n)}: ${(error as Error).message}`)
-        }
+      else if (!((error as Error).cause instanceof HostError) && run.reached) {
+        withoutCause.push(`N=${String(n)}: ${(error as Error).message}`)
       }
     }
-    if (!reached) break
+    if (!run.reached) break
   }
-  return { runs, raw, refused, withoutCause }
+  return { runs, raw, withoutCause }
 }
 
 describe('the options of the module read under a host that throws on the Nth operation', () => {
