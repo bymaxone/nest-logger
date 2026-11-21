@@ -18,8 +18,9 @@ heading here.
   When the value under `err` returned an error-shaped object from its `toJSON` (a `name`, a `message`
   and a `stack` that opens with it), the walk followed the `toJSON` and replaced the `message` before
   the serializer of `err` ran, so the first line of `err.stack` and of `exception.stacktrace` kept the
-  text that `message` hid. The `message` of any object under `err` is now left to the serializer, as
-  that of an error-shaped object is, and a list under `err` keeps the names. The frames of a stack are
+  text that `message` hid. The `message` of any object under `err`, when it is text, is now left to the
+  serializer, as that of an error-shaped object is; a list under `err` and a `message` that is not text
+  keep the names. The frames of a stack are
   the stack's own text and are not read for values.
 
 ## [1.4.25] - 2026-11-20

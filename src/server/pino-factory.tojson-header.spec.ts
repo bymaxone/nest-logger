@@ -47,4 +47,15 @@ describe('the stack header of an error-shaped toJSON result', () => {
       expect(JSON.stringify(line)).not.toContain(SECRET)
     })
   })
+
+  it('keeps the type of an error-like object whose message is not text, with redactStrategy names', () => {
+    const line = lineOf(
+      { name: 'A', message: { detail: SECRET } },
+      { redactPaths: ['message'], redactStrategy: 'names', errorFormat: 'both' }
+    )
+
+    expect(line['err']).toEqual({ type: 'A', message: '[REDACTED]' })
+    expect(line['exception.message']).toBe('[REDACTED]')
+    expect(JSON.stringify(line)).not.toContain(SECRET)
+  })
 })

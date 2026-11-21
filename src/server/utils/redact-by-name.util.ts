@@ -61,6 +61,7 @@ import { types } from 'node:util'
 
 import { cutIfText } from './bounded-text.util'
 import { censorRawHeaders } from './censor-raw-headers.util'
+import { isCensored, rulesBelow } from './error-text-exemption.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
@@ -201,7 +202,7 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
 export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
 
 /** What one walk needs besides the value. */
-interface RedactRules {
+export interface RedactRules {
   /** Lower-cased field names whose values are censored. */
   readonly sensitive: ReadonlySet<string>
   /**
@@ -610,7 +611,7 @@ function walkProperties(
     defineOwn(
       copy,
       key,
-      rules.sensitive.has(key.toLowerCase()) && !rules.exemptKeys?.has(key.toLowerCase())
+      isCensored(rules, key, current)
         ? rules.censor
         : censorHeaderArray(
             key,
@@ -632,43 +633,6 @@ function walkProperties(
   }
   return copy
 }
-
-/**
- * Whether the value under `key` is an object, not a list, for the serializer of `err`, which
- * censors its `message` in the stack header the walk would have replaced beforehand.
- */
-function leavesErrorText(
-  rules: RedactRules,
-  key: string,
-  value: unknown,
-  honorToJson: boolean
-): boolean {
-  return (
-    rules.errorTextToSerializer &&
-    !honorToJson &&
-    key === 'err' &&
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value)
-  )
-}
-
-/** The rules for the value under `key`: the exemption holds for the object under `err` only. */
-function rulesBelow(
-  rules: RedactRules,
-  key: string,
-  value: unknown,
-  honorToJson: boolean
-): RedactRules {
-  if (leavesErrorText(rules, key, value, honorToJson)) {
-    return { ...rules, exemptKeys: ERROR_TEXT_KEYS }
-  }
-  // Stryker disable next-line ConditionalExpression: equivalent: a copy with no exemption walks as the rules do, so this branch only saves the allocation.
-  return rules.exemptKeys === undefined ? rules : { ...rules, exemptKeys: undefined }
-}
-
-/** The name `message`, which the serializer of `err` censors: the stack header is built from it. */
-const ERROR_TEXT_KEYS: ReadonlySet<string> = new Set(['message'])
 
 /**
  * The keys that were not omitted, in their order.
