@@ -80,17 +80,11 @@ const FOLDED = /^[a-z0-9]*$/
 /** A key of ASCII letters and digits: folding it is lower-casing it. */
 const ALNUM = /^[A-Za-z0-9]*$/
 
-/** The folded form of the keys seen, so a key that repeats from record to record is folded once. */
-const folded = new Map<string, string>()
-
-/** How many keys {@link foldName} remembers before it starts again. */
-const FOLDED_LIMIT = 4096
-
 /**
  * The form of a field name that a configured name is compared in: {@link foldKey} without the
  * separators kept, so `apiKey`, `api_key`, `API-KEY`, `api\u200bKey` and `\u0430piKey` are one name.
- * The common spellings skip the fold, and the rest are remembered up to a bound, so the comparison
- * that runs for every key of every record costs about what lower-casing it did.
+ * The common spellings skip the fold, so the comparison that runs for every key of every record costs
+ * about what lower-casing it did; nothing is remembered, so a payload of keys cannot grow it.
  *
  * @internal Shared across the logger. NOT re-exported by the package barrel.
  * @param key - A field name, or a configured name.
@@ -99,12 +93,7 @@ const FOLDED_LIMIT = 4096
 export function foldName(key: string): string {
   if (FOLDED.test(key)) return key
   if (ALNUM.test(key)) return key.toLowerCase()
-  const known = folded.get(key)
-  if (known !== undefined) return known
-  const result = foldKey(key)
-  if (folded.size >= FOLDED_LIMIT) folded.clear()
-  folded.set(key, result)
-  return result
+  return foldKey(key)
 }
 
 /**

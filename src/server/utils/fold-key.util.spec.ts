@@ -103,14 +103,10 @@ describe('foldName', () => {
     expect(foldName(key)).toBe(folded)
   })
 
-  it('answers the same for a key it has met and for one it has not, past the bound of what it remembers', () => {
-    const keys = Array.from({ length: 5000 }, (_, index) => `field_${String(index)}.x`)
+  it('folds a key of any length and keeps no memory of it', () => {
+    const long = `${'a_'.repeat(200_000)}Z`
 
-    const first = keys.map(foldName)
-    const second = keys.map(foldName)
-
-    expect(second).toEqual(first)
-    expect(first[0]).toBe('field0x')
-    expect(first[4999]).toBe('field4999x')
+    expect(foldName(long)).toBe(`${'a'.repeat(200_000)}z`)
+    expect(foldName(long)).toBe(`${'a'.repeat(200_000)}z`)
   })
 })
