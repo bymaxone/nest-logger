@@ -44,6 +44,29 @@ describe('the stack of a plain-object message that has a message of its own', ()
     expect(JSON.stringify(line)).not.toContain(SECRET)
   })
 
+  it('hides a message that repeats in the header, and a message of several lines', () => {
+    const repeated = lineOf(
+      (s) =>
+        s.warn({
+          message: SECRET,
+          stack: `Error: ${SECRET} ${SECRET}\n    at run (/srv/a.js:1:1)`
+        }),
+      { redactPaths: ['message'] }
+    )
+    const several = lineOf(
+      (s) =>
+        s.warn({
+          message: `a\n${SECRET}\nb`,
+          stack: `Error: a\n${SECRET}\nb\n    at run (/srv/a.js:1:1)`
+        }),
+      { redactPaths: ['message'] }
+    )
+
+    expect(repeated['stack']).toBe('Error: [REDACTED] [REDACTED]\n    at run (/srv/a.js:1:1)')
+    expect(several['stack']).toBe('Error: [REDACTED]\n    at run (/srv/a.js:1:1)')
+    expect(JSON.stringify([repeated, several])).not.toContain(SECRET)
+  })
+
   it('is left as it was written when message is not a name to hide', () => {
     const line = lineOf((s) => s.warn({ message: SECRET, stack: STACK }), {
       redactPaths: ['password']

@@ -24,8 +24,8 @@ import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-/** `toHaveProperty(` and the string literal that follows, which may be on the next line. */
-const CALL = /toHaveProperty\(\s*(['"`])([^'"`]*)\1/g
+/** `toHaveProperty(` and the string literal that follows, which may be on the next line and holds escapes. */
+const CALL = /toHaveProperty\(\s*(['"`])((?:\\.|(?!\1)[^\\])*)\1/g
 
 /**
  * The lines of a text where `toHaveProperty` takes a string that holds a dot.

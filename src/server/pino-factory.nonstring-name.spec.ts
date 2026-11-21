@@ -60,4 +60,15 @@ describe('an Error whose name is not text', () => {
   it('has the name Error in the sanitized node', () => {
     expect(sanitizeError(errorNamed(12)).name).toBe('Error')
   })
+
+  it.each([42, { code: 'E1' }, undefined])(
+    'is not read as an error when its message is not text either, and is not a failure: %j',
+    (message) => {
+      const error = new Error('x')
+      Object.defineProperty(error, 'message', { value: message, configurable: true })
+
+      expect(isErrorLike(error)).toBe(false)
+      expect(sanitizeError(error).name).toBe('UnknownError')
+    }
+  )
 })

@@ -188,14 +188,15 @@ export function isErrorLike(value: unknown): value is Error {
  * `SanitizeFailed` node, which says so, instead of passing for an unknown value.
  */
 function readsAsError(value: unknown): value is Error {
-  // A real `Error` is an error whatever its `name` holds: a name that is not text must not make
-  // the message pass for the text of an unknown value, which no censor reads as a message.
-  if (isError(value)) return true
   if (typeof value !== 'object' || value === null) {
     return false
   }
   const candidate = value as { name?: unknown; message?: unknown }
-  return typeof candidate.name === 'string' && typeof candidate.message === 'string'
+  // A real `Error` needs a message that is text and no name that is text: a name that is not text
+  // must not make the message pass for the text of an unknown value, which no censor reads as one.
+  return (
+    typeof candidate.message === 'string' && (isError(value) || typeof candidate.name === 'string')
+  )
 }
 
 /** What every node of one sanitization shares: how deep the chain is walked and which fields are kept. */

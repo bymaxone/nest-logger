@@ -6,10 +6,20 @@
 import { hideMessageInStack } from './hide-message-in-stack.util'
 
 describe('hideMessageInStack', () => {
-  it('replaces the first occurrence in the first line, in the middle of it', () => {
+  it('replaces every occurrence in the header, in the middle of it', () => {
     expect(hideMessageInStack('Err: a SEC b SEC\n  at x', 'SEC', '[R]')).toBe(
-      'Err: a [R] b SEC\n  at x'
+      'Err: a [R] b [R]\n  at x'
     )
+  })
+
+  it('replaces a message of several lines, which the header holds up to the first frame', () => {
+    expect(hideMessageInStack('Error: a\nSEC\nb\n    at x (f:1)', 'a\nSEC\nb', '[R]')).toBe(
+      'Error: [R]\n    at x (f:1)'
+    )
+  })
+
+  it('replaces the message in a header of lines that none is a frame', () => {
+    expect(hideMessageInStack('Error: SEC\nmore SEC', 'SEC', '[R]')).toBe('Error: [R]\nmore [R]')
   })
 
   it('replaces the message in a stack of one line, which has no frame', () => {

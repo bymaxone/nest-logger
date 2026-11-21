@@ -82,11 +82,11 @@ const OWNED_KEY_SPELLINGS: ReadonlySet<string> = new Set(
 )
 
 /**
- * The keys the library derives and writes on an entry itself. They are matched by their own spelling
- * and not folded: `eventName` and `exceptionType` are names a caller may use for a field of its own.
+ * The keys the library derives from an error and writes on an entry itself. They are matched by
+ * their own spelling and not folded: `exceptionType` is a name a caller may use for a field of its
+ * own. `event.name` is not among them: a call with no log key may supply it.
  */
 const DERIVED_KEYS: ReadonlySet<string> = new Set([
-  'event.name',
   'exception.type',
   'exception.message',
   'exception.stacktrace',

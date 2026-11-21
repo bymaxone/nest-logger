@@ -34,6 +34,11 @@ describe('dottedPathHits', () => {
     assert.deepEqual(dottedPathHits(text), [{ line: 1, path: 'exception.message' }])
   })
 
+  it('reads a string with an escaped quote to its end', () => {
+    const text = "x.toHaveProperty('a\\'b.c')\n"
+    assert.deepEqual(dottedPathHits(text), [{ line: 1, path: "a\\'b.c" }])
+  })
+
   it('accepts the key form, a key without a dot, and a variable', () => {
     const text =
       "a.toHaveProperty(['exception.stacktrace'])\nb.toHaveProperty('message')\nc.toHaveProperty(key)\n"

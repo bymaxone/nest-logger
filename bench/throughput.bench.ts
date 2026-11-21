@@ -11,7 +11,7 @@
  *       redaction + composed ALS/OTel mixin, inside an active request context
  *   D — the same, with the legacy `redactStrategy: 'paths'` escape hatch
  *   E — the shipped configuration, a string message (the cost of a line)
- *   F — the shipped configuration, an object message (the same fields in one object)
+ *   F — the shipped configuration, an object message that carries the payload as its fields
  *
  * Scenario C is what `BymaxLoggerModule.forRoot({ service })` actually builds,
  * with no option set — the point of this bench is that the gate measures what
