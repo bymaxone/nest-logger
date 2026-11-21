@@ -10,6 +10,8 @@
  * like a Latin one.
  */
 
+import { GLYPH_LETTER_RUNS } from './glyph-letters.generated'
+
 /**
  * What is not part of a name: everything that is not a letter or a digit (the separators and the rest
  * of the punctuation, white space, control and format characters, the combining marks, which include
@@ -17,6 +19,21 @@
  * that print as nothing.
  */
 const NOT_NAME = /[^\p{L}\p{N}]|[\u115f\u1160\u3164\uffa0]/gu
+
+/** The symbols drawn as a Latin letter that Unicode gives no decomposition for, by the letter, from {@link GLYPH_LETTER_RUNS}. */
+const GLYPH_LETTERS: ReadonlyMap<string, string> = new Map(
+  GLYPH_LETTER_RUNS.flatMap(([first, letters]) =>
+    [...letters].map((letter, index): [string, string] => [
+      String.fromCodePoint(first + index),
+      letter
+    ])
+  )
+)
+
+/** `text` with each symbol drawn as a Latin letter read as the letter, before the symbols are dropped as punctuation. */
+function readGlyphs(text: string): string {
+  return Array.from(text, (glyph) => GLYPH_LETTERS.get(glyph) ?? glyph).join('')
+}
 
 /** The same without the separators: what prints as nothing, white space and the combining marks. */
 const INVISIBLE = /[\s\p{Cc}\p{Cf}\p{M}\u115f\u1160\u2800\u3164\uffa0]/gu
@@ -92,13 +109,13 @@ export function foldKey(key: string, keepSeparators = false): string {
     // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
     if (PLAIN.test(key)) return key.toLowerCase()
     return withLookalikes(
-      key.normalize('NFKD').toLowerCase().replace(DOTS, '.').replace(INVISIBLE, ''),
+      readGlyphs(key.normalize('NFKD').toLowerCase()).replace(DOTS, '.').replace(INVISIBLE, ''),
       true
     )
   }
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
   if (PLAIN.test(key)) return key.replace(NOT_ASCII_NAME, '').toLowerCase()
-  return withLookalikes(key.normalize('NFKD').toLowerCase().replace(NOT_NAME, ''), true)
+  return withLookalikes(readGlyphs(key.normalize('NFKD').toLowerCase()).replace(NOT_NAME, ''), true)
 }
 
 /**
@@ -108,7 +125,10 @@ export function foldKey(key: string, keepSeparators = false): string {
 function foldStrict(key: string): string {
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
   if (PLAIN.test(key)) return key.replace(NOT_ASCII_NAME, '').toLowerCase()
-  return withLookalikes(key.normalize('NFKD').toLowerCase().replace(NOT_NAME, ''), false)
+  return withLookalikes(
+    readGlyphs(key.normalize('NFKD').toLowerCase()).replace(NOT_NAME, ''),
+    false
+  )
 }
 
 /** `folded` with the look-alikes read as the Latin letters, and the i-like ones too when `all` is set. */

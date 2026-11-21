@@ -12,6 +12,22 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A name spelled with symbol glyphs is read as the name.** The negative circled letters
+  (`U+1F150`..), the negative squared letters (`U+1F170`..) and the regional indicators (`U+1F1E6`..)
+  have no compatibility form, so the fold dropped them as punctuation and `🆃🅾🅺🅴🅽` folded to nothing
+  and kept its value in clear, at every depth, in a flat header array and as a property of an `Error`.
+  Each is now read as the Latin letter its Unicode name ends in. The table is generated from the
+  Unicode Character Database names (`scripts/generate-glyph-letters.mjs`, with a test that holds the
+  generated file to its input).
+- **A key that only spells `stack` is written as a stack at the root of an entry too.** The message the
+  options hide is hidden in the header of a `Stack`, `STACK` or zero-width spelling of the stack of an
+  object message, as it is below the root, and in the same kind of own property of an `Error`.
+- **A `redactPaths` entry is at most 256 characters.** A longer one is refused at startup by the name
+  of the option and its index, without echoing it: the name is compared with every key, and the pattern
+  walk grows with the square of its length.
+
 ## [1.4.29] - 2026-11-21
 
 ### Fixed

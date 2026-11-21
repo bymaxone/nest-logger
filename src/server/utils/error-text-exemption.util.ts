@@ -83,6 +83,9 @@ export function messageCensor(rules: RedactRules): (text: string) => string {
   return (text) => (rules.sensitive.has('message') ? rules.censor : text)
 }
 
+/** Whether `key` spells `stack`, however it is written. */
+export const isStackKey = (key: string): boolean => matchesKey(STACK_NAMES, key)
+
 /** The folded names the stack and the message of an object are looked for under. */
 const STACK_NAMES: ReadonlySet<string> = new Set(['stack'])
 const MESSAGE_NAMES: ReadonlySet<string> = new Set(['message'])
@@ -115,7 +118,8 @@ const NO_STACK: HeaderText = { texts: new Map(), stackKeys: new Set(), overflow:
  * @param source - The object being walked.
  * @param keys - Its own enumerable keys.
  * @param isError - Whether it is an `Error`.
- * @returns The plan: nothing to write for an object with no stack key, and `undefined` for an `Error`.
+ * @returns The plan: nothing to write for an object with no stack key; for an `Error`, the plan of the keys
+ *   that only spell `stack`, and `undefined` when it has none.
  */
 export function headerMessage(
   rules: RedactRules,
@@ -123,15 +127,15 @@ export function headerMessage(
   keys: readonly string[],
   isError: boolean
 ): HeaderText | undefined {
-  if (isError) return undefined
   const keysOf = (names: ReadonlySet<string>): string[] =>
     keys.filter((candidate) => matchesKey(names, candidate))
-  const stacks = keysOf(STACK_NAMES)
-  if (stacks.length === 0) return NO_STACK
+  // The `stack` of an `Error` is written by the serializer; a key that only spells it is a field like
+  // any other, whose text is a copy of the message.
+  const stacks = keysOf(STACK_NAMES).filter((key) => !isError || key !== 'stack')
+  if (stacks.length === 0) return isError ? undefined : NO_STACK
   const hides =
     rules.sensitive.has('message') &&
-    rules.exemptKeys?.has('message') !== true &&
-    rules.headerKept !== true
+    (isError || (rules.exemptKeys?.has('message') !== true && rules.headerKept !== true))
   const texts = new Map<string, string>()
   if (hides) {
     for (const key of keysOf(MESSAGE_NAMES)) {
@@ -224,9 +228,8 @@ export function errorTextField(
   header?: HeaderText
 ): unknown {
   const isStack =
-    !isError &&
     typeof value === 'string' &&
-    (header === undefined ? matchesKey(STACK_NAMES, key) : header.stackKeys.has(key))
+    (header === undefined ? !isError && matchesKey(STACK_NAMES, key) : header.stackKeys.has(key))
   if (isStack) {
     return header?.overflow === true ? rules.censor : scrubPlainStack(rules, value, header)
   }

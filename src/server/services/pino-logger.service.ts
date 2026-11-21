@@ -27,6 +27,7 @@ import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.
 import { cutText } from '../utils/bounded-text.util'
 import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-text-finisher.util'
 import type { EntryTextCut, EntryTextFinisher } from '../utils/entry-text-finisher.util'
+import { isStackKey } from '../utils/error-text-exemption.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { foldKey } from '../utils/fold-key.util'
 import { hideMessageInStack } from '../utils/hide-message-in-stack.util'
@@ -209,11 +210,15 @@ function hideStackMessage(
   text: ObjectMessageText | undefined,
   censor: (message: string) => string
 ): void {
-  const stack = Reflect.get(payload, 'stack') as unknown
-  if (text?.key !== 'message' || typeof stack !== 'string') return
+  if (text?.key !== 'message') return
   const censored = censor(text.text)
   if (censored === text.text) return
-  Reflect.set(payload, 'stack', hideMessageInStack(stack, text.text, censored))
+  for (const key of Object.keys(payload).filter(isStackKey)) {
+    const stack = Reflect.get(payload, key) as unknown
+    if (typeof stack === 'string') {
+      Reflect.set(payload, key, hideMessageInStack(stack, text.text, censored))
+    }
+  }
 }
 
 /** A message read as the fields of an entry, with its text and the member the text came from. */
