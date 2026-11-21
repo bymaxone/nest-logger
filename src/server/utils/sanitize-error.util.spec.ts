@@ -714,7 +714,7 @@ describe('ownFieldForLog', () => {
 
 describe('sanitizeError — the stack header of an error whose name is not text', () => {
   const FRAME = '\n    at run (/srv/app.js:1:1)'
-  const named = (stack: string | undefined, message: string): Error => {
+  const named = (stack: string, message: string): Error => {
     const error = new Error(message)
     Object.defineProperty(error, 'name', { value: { toString: () => 'pw=hunter2' } })
     Object.defineProperty(error, 'stack', { value: stack })
@@ -724,18 +724,26 @@ describe('sanitizeError — the stack header of an error whose name is not text'
   it.each([
     [
       'the engine header, with the message in it',
-      'pw=hunter2: boom' + FRAME,
+      `pw=hunter2: boom${FRAME}`,
       'boom',
-      'Error: boom'
+      `Error: boom${FRAME}`
     ],
-    ['a stack that holds no message and has frames', 'pw=hunter2' + FRAME, 'boom', 'Error: boom'],
+    [
+      'a message that holds a frame-shaped line',
+      `pw=hunter2: m\n    at fake${FRAME}`,
+      'm\n    at fake',
+      `Error: m\n    at fake${FRAME}`
+    ],
+    [
+      'a stack that holds no message, with frames',
+      `pw=hunter2${FRAME}`,
+      'boom',
+      `Error: boom${FRAME}`
+    ],
     ['a stack that holds no message, and no frames', 'pw=hunter2', 'boom', 'Error: boom'],
-    ['an empty message and frames', 'pw=hunter2: ' + FRAME, '', 'Error']
-  ])('opens with Error and the message, %s', (_label, stack, message, header) => {
-    const result = sanitizeError(named(stack, message))
-
-    expect(result.stack?.startsWith(header)).toBe(true)
-    expect(result.stack).not.toContain('hunter2')
-    expect(result.stack?.includes('at run')).toBe(stack.includes('at run'))
+    ['an empty message, with frames', `pw=hunter2: ${FRAME}`, '', `Error${FRAME}`],
+    ['an empty message, and no frames', 'pw=hunter2', '', 'Error']
+  ])('is written with Error as the name, %s', (_label, stack, message, expected) => {
+    expect(sanitizeError(named(stack, message)).stack).toBe(expected)
   })
 })

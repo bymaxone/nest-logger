@@ -1,0 +1,106 @@
+/**
+ * Pins the helpers that read the message of an object for the header of its stack, and the name of an
+ * error, as the rules of the walk hide them: which object has a header to hide, that the message is
+ * read once, which field the header replacement reaches, and which values a name hides with the message.
+ *
+ * Layer: server/utils, tests. Pure.
+ */
+import {
+  censorAnyName,
+  errorTextField,
+  headerMessage,
+  readField
+} from './error-text-exemption.util'
+import type { RedactRules } from './redact-by-name.util'
+
+const SECRET = 'SEC_9f3a'
+
+const rules = (sensitive: string[] = ['message']): RedactRules =>
+  ({ sensitive: new Set(sensitive), censor: '[R]' }) as unknown as RedactRules
+
+describe('headerMessage', () => {
+  it('reads the message of an object that owns a message and a stack', () => {
+    const source = { message: SECRET, stack: 'x' }
+
+    expect(headerMessage(rules(), source, ['message', 'stack'], false)).toBe(SECRET)
+  })
+
+  it('reads nothing of an object that owns a stack and inherits its message', () => {
+    const source = Object.create({ message: SECRET }) as object
+    Object.assign(source, { stack: `Error: ${SECRET}` })
+
+    expect(headerMessage(rules(), source, ['stack'], false)).toBeUndefined()
+  })
+
+  it('reads nothing of an object that owns a message and no stack', () => {
+    const source = { message: SECRET }
+
+    expect(headerMessage(rules(), source, ['message'], false)).toBeUndefined()
+  })
+
+  it('reads nothing when the options do not hide the message, or the object is an error', () => {
+    const source = { message: SECRET, stack: 'x' }
+
+    expect(headerMessage(rules(['token']), source, ['message', 'stack'], false)).toBeUndefined()
+    expect(headerMessage(rules(), source, ['message', 'stack'], true)).toBeUndefined()
+  })
+})
+
+describe('readField', () => {
+  it('reads a field once when the message was read for the header', () => {
+    let reads = 0
+    const source = {
+      get message(): string {
+        reads += 1
+        return SECRET
+      }
+    }
+    const message = headerMessage(rules(), source, ['message', 'stack'], false)
+
+    expect(readField(source, 'message', message)).toBe(SECRET)
+    expect(reads).toBe(1)
+  })
+
+  it('reads any other field, and the message when none was read, from the object', () => {
+    const source = { message: 'm', other: 'o' }
+
+    expect(readField(source, 'other', 'cached')).toBe('o')
+    expect(readField(source, 'message', undefined)).toBe('m')
+  })
+})
+
+describe('errorTextField', () => {
+  it('hides the message in the stack of an object that is no error, and in no other field', () => {
+    const stack = `Error: ${SECRET}\n    at run (/srv/app.js:1:1)`
+
+    expect(errorTextField(rules(), 'stack', stack, false, SECRET)).toBe(
+      'Error: [R]\n    at run (/srv/app.js:1:1)'
+    )
+    expect(errorTextField(rules(), 'note', `see ${SECRET}`, false, SECRET)).toBe(`see ${SECRET}`)
+  })
+})
+
+describe('censorAnyName', () => {
+  it.each([
+    ['an object', { toString: () => SECRET }],
+    ['an array', [SECRET]],
+    ['a function', () => SECRET]
+  ])('hides %s with the message', (_label, name) => {
+    expect(censorAnyName(rules(), name)).toBe('[R]')
+  })
+
+  it.each([
+    ['a number', 7],
+    ['null', null],
+    ['undefined', undefined],
+    ['a boolean', true]
+  ])('keeps %s', (_label, name) => {
+    expect(censorAnyName(rules(), name)).toBe(name)
+  })
+
+  it('keeps a value that holds anything when the options do not hide the message', () => {
+    const name = { toString: () => SECRET }
+
+    expect(censorAnyName(rules(['token']), name)).toBe(name)
+  })
+})
