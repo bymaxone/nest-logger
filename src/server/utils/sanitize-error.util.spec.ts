@@ -767,7 +767,7 @@ describe('sanitizeError — the stack header of an error whose name is not text'
 
     const result = sanitizeError(named(stack, 'boom'))
 
-    expect(result.stack).toBe('Error: boom')
+    expect(result.stack).toBe('Error: boom…[truncated]')
   })
 
   it('keeps nothing after the part the scrub reads when the message is in it', () => {
@@ -777,5 +777,16 @@ describe('sanitizeError — the stack header of an error whose name is not text'
 
     expect(result.stack).not.toContain('TAIL_SECRET')
     expect(result.stack?.startsWith('Error: boom')).toBe(true)
+  })
+
+  it('ends with the truncation suffix when the stack was longer than the part the scrub reads', () => {
+    const frames = '\n    at dep (/srv/node_modules/p/i.js:2:2)'.repeat(MAX_STACK_SCAN / 20)
+    const stack = `pw=hunter2: boom${frames}`
+
+    const result = sanitizeError(named(stack, 'boom'))
+    const text = sanitizeError(Object.assign(new Error('boom'), { stack })).stack
+
+    expect(result.stack?.endsWith('[truncated]')).toBe(true)
+    expect(text?.endsWith('[truncated]')).toBe(true)
   })
 })

@@ -229,7 +229,9 @@ function readScrubbedStack(
   const stack = readOptional(() => value.stack, result)
   if (stack === undefined) return undefined
   const header = headerCensor(name, message, walk.censorMessage)
-  return scrubStack(textName ? stack : withNamedHeader(stack, message), header)
+  return textName
+    ? scrubStack(stack, header)
+    : scrubStack(withNamedHeader(stack, message), header, stack.length > MAX_STACK_SCAN)
 }
 
 /** The start of the first frame: a line that begins, after white space, with `at `. */
@@ -663,13 +665,15 @@ function censorStackName(stack: string, header: HeaderCensor): string {
  * @param header - The message of the error and its censored form: the stack opens with the message,
  *   which is replaced there before the lines are filtered and escaped, so the text that is looked for
  *   is the one the engine wrote. None by default.
+ * @param wasLonger - The stack was cut before it reached here, so the suffix is added whatever its
+ *   length now.
  * @returns The stack with dependency frames stripped, at most {@link MAX_TEXT_LENGTH} characters
  *   followed by the truncation suffix when it was longer.
  * @example
  *   scrubStack('Error: boom\n at app (/srv/src/a.ts:1:1)\n at dep (/srv/node_modules/p/i.js:2)')
  *   // → 'Error: boom\n at app (/srv/src/a.ts:1:1)'
  */
-export function scrubStack(stack: string, header?: HeaderCensor): string {
+export function scrubStack(stack: string, header?: HeaderCensor, wasLonger = false): string {
   // Control characters are escaped here, not only in the message: `pino-pretty`
   // prints the stack RAW rather than as a JSON string, and a stack's first line
   // repeats the error message. Without this, attacker-supplied text reaches the
@@ -692,7 +696,7 @@ export function scrubStack(stack: string, header?: HeaderCensor): string {
       .filter((line) => !line.includes('node_modules'))
       .join('\n')
   )
-  return cutText(scrubbed, stack.length > MAX_STACK_SCAN)
+  return cutText(scrubbed, wasLonger || stack.length > MAX_STACK_SCAN)
 }
 
 /**
