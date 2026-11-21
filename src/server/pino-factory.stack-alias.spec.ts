@@ -185,6 +185,8 @@ describe('the length of the message a plain-object stack is searched for', () =>
 
     expect(written).not.toContain('LEAKMARK')
     expect(written).not.toContain('qqqq')
+    // The copy is replaced where it stands: the part searched reaches the end of the copy.
+    expect(written).toContain('p[REDACTED]')
   })
 
   /**
@@ -207,5 +209,7 @@ describe('the length of the message a plain-object stack is searched for', () =>
 
     expect(written).not.toContain('LEAKMARK')
     expect(written).not.toContain('qqqq')
+    // The copy is replaced where it stands: the part searched reaches the end of the copy.
+    expect(written).toContain('p[REDACTED]')
   })
 })
