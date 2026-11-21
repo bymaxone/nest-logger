@@ -320,3 +320,114 @@ describe('matchesKey remembers what a set answered', () => {
     expect(matchesKey(names, long)).toBe(false)
   })
 })
+
+/** A set that counts how often it is asked, so a test can tell an answer that was remembered. */
+class CountingSet extends Set<string> {
+  asked = 0
+
+  override has(value: string): boolean {
+    this.asked += 1
+    return super.has(value)
+  }
+}
+
+describe('matchesKey, what it remembers', () => {
+  /** How often one more question about the key reaches the set. */
+  const cost = (names: CountingSet, key: string): number => {
+    const before = names.asked
+    matchesKey(names, key)
+    return names.asked - before
+  }
+
+  /**
+   * Given a key of 64 characters and one of 65
+   * When each is put to the set twice
+   * Then the first is remembered and the second is not
+   */
+  it('remembers a key of 64 characters and not one of 65', () => {
+    const names = new CountingSet(['apikey'])
+
+    matchesKey(names, 'a'.repeat(64))
+    matchesKey(names, 'a'.repeat(65))
+
+    expect(cost(names, 'a'.repeat(64))).toBe(0)
+    expect(cost(names, 'a'.repeat(65))).toBeGreaterThan(0)
+  })
+
+  /**
+   * Given a set that has answered 1,024 keys
+   * When a 1,025th is put to it
+   * Then the first 1,024 were all remembered, and the set then starts over
+   */
+  it('holds 1,024 answers and starts over at the next', () => {
+    const names = new CountingSet(['apikey'])
+    for (let index = 0; index < 1024; index += 1) matchesKey(names, `field${String(index)}`)
+
+    expect(cost(names, 'field0')).toBe(0)
+    expect(cost(names, 'field1023')).toBe(0)
+    matchesKey(names, 'one-more')
+    expect(cost(names, 'field1')).toBeGreaterThan(0)
+  })
+
+  /**
+   * Given a set that has answered a key
+   * When it is built once and asked for the groups of two keys
+   * Then the names are walked once, not once a key
+   */
+  it('groups the names of a set once', () => {
+    let walks = 0
+    const names = new Set(['clientsecret'])
+    names[Symbol.iterator] = function* (this: Set<string>) {
+      walks += 1
+      yield* Set.prototype.values.call(this)
+    } as never
+
+    matchesFolded(names, 'cl用ntsecret')
+    matchesFolded(names, 'cli用ntsecret')
+
+    expect(walks).toBe(1)
+  })
+})
+
+describe('matchesFolded, what it counts', () => {
+  /**
+   * Given more than the bound of names of the key's length and a key that is only ASCII
+   * When the key is not one of them
+   * Then it is not hidden
+   */
+  it('does not hide an ASCII key because the names of its length are many', () => {
+    const names = new Set(Array.from({ length: 65 }, (_, index) => `n${String(1000 + index)}`))
+
+    expect(matchesFolded(names, 'abcde')).toBe(false)
+  })
+
+  /**
+   * Given many names that are longer than any length a key can stand for
+   * When a key with one letter of another script is put to them
+   * Then they are not counted
+   */
+  it('counts only the lengths the letters of another script can stand for', () => {
+    const names = new Set(Array.from({ length: 65 }, (_, index) => `n${String(100000 + index)}`))
+    names.add('abcdefgh')
+
+    expect(matchesFolded(names, 'abc字')).toBe(false)
+  })
+
+  /**
+   * Given a name and a key whose last character is a C1 control character
+   * When the key is put to the name
+   * Then that character is a letter of another script, not an ASCII one
+   */
+  it('takes the first character past DEL for a letter of another script', () => {
+    expect(matchesFolded(new Set(['abc']), 'ab\u0080')).toBe(true)
+  })
+
+  /**
+   * Given a name and a key whose last character is DEL
+   * When the key is put to the name
+   * Then DEL is an ASCII character, so it is itself and no name's letter
+   */
+  it('takes DEL for an ASCII character', () => {
+    expect(matchesFolded(new Set(['abc']), 'ab\u007f')).toBe(false)
+  })
+})

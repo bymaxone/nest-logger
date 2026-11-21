@@ -90,7 +90,7 @@ const I_LIKE: ReadonlyMap<string, string> = new Map(
 export function foldKey(key: string, keepSeparators = false): string {
   if (keepSeparators) {
     // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
-    if (PLAIN.test(key)) return key.replace(INVISIBLE, '').toLowerCase()
+    if (PLAIN.test(key)) return key.toLowerCase()
     return withLookalikes(
       key.normalize('NFKD').toLowerCase().replace(DOTS, '.').replace(INVISIBLE, ''),
       true
@@ -137,7 +137,7 @@ const answers = new WeakMap<ReadonlySet<string>, Map<string, boolean>>()
  * letter read as it, so `apiKey`, `api_key`, `API-KEY`, `api\u200bKey` and `\u0430piKey` are one name.
  * A letter that is not ASCII and is no such look-alike is left, for {@link matchesFolded}.
  * The common spellings skip the fold, so the comparison that runs for every key of every record costs
- * about what lower-casing it did, and a short key is remembered, a bounded number of them.
+ * about what lower-casing it did; {@link matchesKey} remembers what a set answered for a short key.
  *
  * @internal Shared across the logger. NOT re-exported by the package barrel.
  * @param key - A field name, or a configured name.
@@ -212,8 +212,8 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   const letters = [...folded]
   // A key of words in another script keeps no ASCII letter and is never taken for a name: it must keep
   // at least a third of its characters, and one.
-  const ascii = letters.filter((letter) => letter <= '\x7f').length
-  if (ascii === 0 || ascii * MIN_ASCII_SHARE < letters.length) return false
+  const ascii = letters.filter(isAscii).length
+  if (ascii * MIN_ASCII_SHARE < letters.length) return false
   const { byLength, longest } = groupsOf(names)
   // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (no name is as long as the key, so the walk finds none and answers the same), and the true mutant is killed by the rows of fold-key.util.spec.ts; this disable also hides it from the report because Stryker cannot disable one mutant of a line.
   if (letters.length > longest) return false
@@ -228,6 +228,9 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   return lengths.some((same) => same.some((name) => matchesName(letters, [...name])))
 }
 
+/** Whether a character is ASCII, the DEL character included. */
+const isAscii = (letter: string): boolean => letter < '\x80'
+
 /**
  * Whether the letters of a key read as the characters of a name: an ASCII letter is itself, and any
  * other letter is one or two characters of the name (`ß` is two, a capital drawn like an `l` is one).
@@ -237,12 +240,12 @@ function matchesName(letters: readonly string[], name: readonly string[]): boole
   for (const letter of letters) {
     const next = new Set<number>()
     for (const position of at) {
-      if (letter <= '\x7f') {
+      if (isAscii(letter)) {
         if (name[position] === letter) next.add(position + 1)
         continue
       }
-      if (position < name.length) next.add(position + 1)
-      if (position + 1 < name.length) next.add(position + 2)
+      next.add(position + 1)
+      next.add(position + 2)
     }
     at = next
   }
