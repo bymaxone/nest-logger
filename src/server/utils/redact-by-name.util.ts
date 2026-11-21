@@ -61,7 +61,14 @@ import { types } from 'node:util'
 
 import { cutIfText } from './bounded-text.util'
 import { censorRawHeaders } from './censor-raw-headers.util'
-import { errorTextField, isCensored, messageCensor, rulesBelow } from './error-text-exemption.util'
+import {
+  errorTextField,
+  headerMessage,
+  isCensored,
+  messageCensor,
+  readField,
+  rulesBelow
+} from './error-text-exemption.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
@@ -584,13 +591,13 @@ function walkProperties(
 ): unknown {
   const source = value as Record<string, unknown>
   const keys = Object.keys(source)
-  const { safe } = rules.ownFields
-  const asData = isError(value) && (safe || (rules.errorsAsData && !inSerialized))
+  const asData = isError(value) && (rules.ownFields.safe || (rules.errorsAsData && !inSerialized))
   const copy = startCopy(value, asData)
-  const scrubbed = isError(value) && (safe || !inSerialized)
+  const scrubbed = isError(value) && (rules.ownFields.safe || !inSerialized)
   const omitted = new Set<string>()
+  const message = headerMessage(rules, source, keys, isError(value))
   for (const key of keys) {
-    const read = Reflect.get(source, key)
+    const read = readField(source, key, message)
     const current = scrubbed ? ownFieldForLog(source, key, read, rules.ownFields) : read
     // A `toJSON` that reads as a function only now is a hook the walk did not follow, which
     // `JSON.stringify` would run after the redaction.
@@ -611,7 +618,7 @@ function walkProperties(
         : censorHeaderArray(
             key,
             walk(
-              errorTextField(rules, key, current, scrubbed),
+              errorTextField(rules, key, current, scrubbed, message),
               rulesBelow(rules, key, current, honorToJson),
               depth + 1,
               ancestors,
