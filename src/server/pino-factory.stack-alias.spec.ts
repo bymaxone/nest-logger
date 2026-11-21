@@ -166,4 +166,46 @@ describe('the length of the message a plain-object stack is searched for', () =>
     expect(written).not.toContain('LEAKMARK')
     expect(written).not.toContain('qqqq')
   })
+
+  /**
+   * Given a stack where earlier copies of the message shrink once hidden, so the text kept reaches
+   * the bound, and a last copy that starts before the bound and ends after it
+   * When the entry is written
+   * Then no part of the last copy is written
+   */
+  it('hides a straddling copy when the copies before it shrink the text', () => {
+    const message = `LEAKMARK${'q'.repeat(1_991)}`
+    const head = 'Error: a\n'
+    const copies = message.repeat(60)
+    const filler = 'p'.repeat(MAX_STACK_SCAN - 100 - head.length - copies.length)
+    const stack = `${head}${copies}${filler}${message}`
+    expect(stack.lastIndexOf('LEAKMARK')).toBe(MAX_STACK_SCAN - 100)
+
+    const written = stackOf(message, stack)
+
+    expect(written).not.toContain('LEAKMARK')
+    expect(written).not.toContain('qqqq')
+  })
+
+  /**
+   * Given dependency frames that are dropped from the text kept, and a copy that straddles the bound
+   * When the entry is written
+   * Then no part of the copy is written
+   */
+  it('hides a straddling copy when dependency frames before it are dropped', () => {
+    const message = `LEAKMARK${'q'.repeat(1_991)}`
+    const head = 'Error: a'
+    const frame = '\n    at dep (/node_modules/x/index.js:1:1)'
+    const app = '\n    at app (/srv/'
+    const room = MAX_STACK_SCAN - 100 - head.length - app.length
+    const frames = frame.repeat(Math.floor(room / frame.length))
+    const filler = 'p'.repeat(room - frames.length)
+    const stack = `${head}${frames}${app}${filler}${message}`
+    expect(stack.lastIndexOf('LEAKMARK')).toBe(MAX_STACK_SCAN - 100)
+
+    const written = stackOf(message, stack)
+
+    expect(written).not.toContain('LEAKMARK')
+    expect(written).not.toContain('qqqq')
+  })
 })
