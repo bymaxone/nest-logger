@@ -12,6 +12,38 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- An option the host supplies that throws when it is read (a getter, a Proxy trap) now ends `forRoot` and
+  `forRootAsync` with `[BymaxLoggerModule] options could not be read`, and the error the host threw is its
+  `cause`. Before, the host's own error left the module, and a read made after validation could reach
+  the logger. The refusals of the options themselves (`[BymaxLoggerModule] options.<path> ...`) are
+  unchanged. Each redaction option (`redactPaths`, `redactCensor`, `redactStrategy`,
+  `shouldDisableDefaultRedact`) is read by name, so it takes effect whether it is a property, a
+  non-enumerable getter, a get-only Proxy or a class getter.
+- The message of an object that is no `Error`, below the top level of a log record, is hidden in the
+  header of its `stack` as it is in its `message` field.
+- A `name` that holds an object, an array or a function is hidden with the message (it may carry
+  anything), in the stack header and under `error.type`; a number name is kept.
+- The derived keys (`exception.type`, `exception.message`, `exception.stacktrace`, `error.type`, ...) are
+  owned as they look in a viewer: a spelling that differs only in case, in white space or zero-width
+  characters, or in fullwidth forms is owned too. `errorType`, `exception_type`, `exceptionType` and
+  `event.name` are other keys and are kept.
+
+### Known limits
+
+- An object whose `toJSON` returns a `message` that is not text and a `stack` that carries a secret which
+  is not the message text has no text to match: the stack header is written as the object gave it. Put
+  such a secret under a name in `redactPaths`, or keep it out of the `stack`.
+
+### Changed
+
+- The benchmark of the object message states its margin: the floor is 0.20 and the measurement ranges
+  from 0.38 to 0.47 with the load of the host.
+- `pnpm check:property-path` also refuses a variable, a concatenation or a template with a
+  substitution as the argument of `toHaveProperty`, and a call with a space before the paren; a key is
+  written as an array, `toHaveProperty([key])`.
+
 ## [1.4.26] - 2026-11-21
 
 ### Fixed
@@ -53,7 +85,7 @@ heading here.
 ### Added
 
 - The benchmark gates the cost of an object message: it must keep 0.20 of the throughput of a string
-  line on the shipped configuration (measured 0.46 to 0.47 on 1.4.24 and 1.4.25). A change that makes
+  line on the shipped configuration (measured 0.46 to 0.47 on a quiet host and 0.38 to 0.42 on a loaded one, on 1.4.24 and 1.4.25). A change that makes
   the object form cost more than 5 times a line fails the job.
 - A check (`pnpm check:property-path`, part of `pnpm lint`) fails on a `toHaveProperty` call that takes a
   string with a dot: Jest reads it as a nested path, so a negative assertion on a key such as
