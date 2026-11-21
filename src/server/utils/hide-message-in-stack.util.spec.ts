@@ -1,0 +1,32 @@
+/**
+ * Pins the replacement of a message in the first line of a stack, and only there.
+ *
+ * Layer: server/utils, tests. Pure.
+ */
+import { hideMessageInStack } from './hide-message-in-stack.util'
+
+describe('hideMessageInStack', () => {
+  it('replaces the first occurrence in the first line, in the middle of it', () => {
+    expect(hideMessageInStack('Err: a SEC b SEC\n  at x', 'SEC', '[R]')).toBe(
+      'Err: a [R] b SEC\n  at x'
+    )
+  })
+
+  it('replaces the message in a stack of one line, which has no frame', () => {
+    expect(hideMessageInStack('Error: SEC', 'SEC', '[R]')).toBe('Error: [R]')
+  })
+
+  it('leaves a frame that holds the message alone', () => {
+    expect(hideMessageInStack('Error: head\n  at SEC (f)', 'SEC', '[R]')).toBe(
+      'Error: head\n  at SEC (f)'
+    )
+  })
+
+  it('leaves the stack alone for an empty message', () => {
+    expect(hideMessageInStack('Error: x\n  at y', '', '[R]')).toBe('Error: x\n  at y')
+  })
+
+  it('leaves the stack alone when the first line does not hold the message', () => {
+    expect(hideMessageInStack('Error: other', 'SEC', '[R]')).toBe('Error: other')
+  })
+})

@@ -29,6 +29,7 @@ import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-tex
 import type { EntryTextCut, EntryTextFinisher } from '../utils/entry-text-finisher.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { foldKey } from '../utils/fold-key.util'
+import { hideMessageInStack } from '../utils/hide-message-in-stack.util'
 import { isPlainRecord } from '../utils/is-plain-record.util'
 import type { Redactor } from '../utils/redact-by-name.util'
 import { isErrorLike } from '../utils/sanitize-error.util'
@@ -372,6 +373,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const context = typeof optionalParams[1] === 'string' ? optionalParams[1] : this.context
     // A plain-object message is the entry's fields, as in `emitNestStyle`.
     const { fields, text, payload } = readObjectMessage(message)
+    this.hideMessageInStack(payload, text)
     assignIfDefined(payload, 'context', context)
     assignIfDefined(payload, 'stack', stack === undefined ? stack : cutText(stack))
     // An `Error` in the tail is attached as `err`, the same field the
@@ -637,11 +639,27 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     return finish(text.key, text.text, cut)
   }
 
+  /**
+   * Hide the message in the first line of the `stack` of an object message, where the options hide
+   * `message`: the stack is a copy of it, and a copy made outside the pipeline would carry what the
+   * pipeline hides in the field itself.
+   */
+  private hideMessageInStack(
+    payload: Record<string, unknown>,
+    text: ObjectMessageText | undefined
+  ): void {
+    const stack = Reflect.get(payload, 'stack') as unknown
+    if (text?.key !== 'message' || typeof stack !== 'string') return
+    const censored = this.censorText({ key: 'message', text: text.text })
+    Reflect.set(payload, 'stack', hideMessageInStack(stack, text.text, censored))
+  }
+
   private emitNestStyle(level: PinoLevelMethod, message: unknown, optionalParams: unknown[]): void {
     // A plain object is the entry's fields, not text: `String(message)` would reduce it to
     // "[object Object]" and lose every key. The fields go through the same owned-key guard as
     // `metadata`, and then through the redaction and string-limit pipeline like any other payload.
     const { fields, text, payload } = readObjectMessage(message)
+    this.hideMessageInStack(payload, text)
     assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
     // Every level except `error` routes through here, so before this all of them
     // lost an `Error` in BOTH positions — measured at eleven of the twelve
