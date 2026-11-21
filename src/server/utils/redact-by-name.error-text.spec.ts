@@ -87,4 +87,15 @@ describe('the text of an error-shaped object under the names walk', () => {
 
     expect(out.err.nested.message).toBe(CENSOR)
   })
+
+  it.each([true, false])(
+    'returns a function under err as it is, with its own message, when leaving is %s',
+    (leave) => {
+      const fn = Object.assign(() => 1, { message: 'SECRET' })
+
+      const out = redactor(leave)({ err: fn }) as { err: unknown }
+
+      expect(out.err).toBe(fn)
+    }
+  )
 })

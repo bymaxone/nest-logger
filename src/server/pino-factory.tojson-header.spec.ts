@@ -36,7 +36,8 @@ describe('the stack header of an error-shaped toJSON result', () => {
   describe.each(['names', 'paths'] as const)('with redactStrategy %s', (redactStrategy) => {
     it.each([
       ['an Error', () => Object.assign(new Error('own'), { toJSON: result })],
-      ['an object', () => ({ toJSON: result })]
+      ['an object', () => ({ toJSON: result })],
+      ['a function', () => Object.assign(() => 1, { toJSON: result })]
     ])('is censored in err.stack and exception.stacktrace, for %s', (_label, make) => {
       const line = lineOf(make(), { redactPaths: ['message'], redactStrategy, errorFormat: 'both' })
 
