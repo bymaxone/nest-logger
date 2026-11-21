@@ -28,7 +28,7 @@ heading here.
   secret in a header: only the first key that spelled the name was read. Every one is read, once, and
   every distinct text is hidden in every stack, longest first. The 1.4.27 line "whatever the case or
   the look of the two keys" held for a single key of each name only.
-- **Two more characters that print as nothing are read through:** the Hangul fillers (`U+115F`,
+- **More characters that print as nothing are read through:** the Hangul fillers (`U+115F`,
   `U+1160`, `U+3164`, `U+FFA0`) and the blank Braille pattern (`U+2800`), in the comparison of the
   derived keys and of the owned keys.
 - **A list option is capped at 10,000 entries.** `redactPaths`, `errorOwnFieldNames`, `destinations`,
