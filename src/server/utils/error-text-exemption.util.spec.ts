@@ -222,4 +222,33 @@ describe('the stack of an object that is no Error, read up to the scan bound', (
 
     expect(errorTextField(rules(), 'stack', stack, false, undefined)).toBe(stack)
   })
+
+  it('does not keep a frame whose offset is past the bound when long messages are hidden before it', () => {
+    const message = 'm'.repeat(5_000)
+    const lead = `Error: x${DEP(message).repeat(25)}`
+    const pad = '\n    at pad'
+    const stack = `${lead}${pad.repeat(Math.ceil((MAX_STACK_SCAN + 1_000 - lead.length) / pad.length))}\n    at ZZZ_APP (/srv/z.js:1:1)`
+    expect(stack.indexOf('ZZZ_APP')).toBeGreaterThan(MAX_STACK_SCAN)
+    expect(stack.indexOf('ZZZ_APP')).toBeLessThan(MAX_STACK_SCAN + message.length)
+
+    const written = errorTextField(rules(), 'stack', stack, false, {
+      texts: new Map([['message', message]])
+    }) as string
+
+    expect(written).not.toContain('ZZZ_APP')
+  })
+
+  it('leaves no part of a message that starts before the end of the window and ends after it', () => {
+    const message = `LEAKMARK${'q'.repeat(992)}`
+    const before = `Error: a${DEP(message)}`
+    const padding = `\n    at dep (/node_modules/${'p'.repeat(MAX_STACK_SCAN + 500 - before.length - 30)}`
+    const stack = `${before}${padding})\n    at app (/srv/${message}`
+    expect(stack.indexOf('LEAKMARK', 100)).toBeGreaterThan(MAX_STACK_SCAN)
+
+    const written = errorTextField(rules(), 'stack', stack, false, {
+      texts: new Map([['message', message]])
+    }) as string
+
+    expect(written).not.toContain('LEAKMARK')
+  })
 })

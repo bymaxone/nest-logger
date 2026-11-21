@@ -18,7 +18,7 @@
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
 import { splitCensoredHeader } from './censor-stack-header.util'
 import { escapeControlCharacters } from './escape-log-text.util'
-import { hideMessageInStack } from './hide-message-in-stack.util'
+import { hideMessagesInStack } from './hide-message-in-stack.util'
 import { isError } from './is-error.util'
 import {
   ALL_OWN_FIELDS,
@@ -668,7 +668,13 @@ function censorMessageInStack(stack: string, header: HeaderCensor): string {
   )
   return header.censored === header.message
     ? opened + rest
-    : opened + hideMessageInStack(rest, header.message, header.censored)
+    : opened +
+        hideMessagesInStack(
+          rest,
+          [header.message],
+          header.censored,
+          Math.max(0, MAX_STACK_SCAN - (stack.length - rest.length))
+        )
 }
 
 /**
@@ -700,8 +706,8 @@ export function scrubStack(stack: string, header?: HeaderCensor, wasLonger = fal
   // The scan is the same bound for every stack and every message: how much is read never depends on
   // how long the message is, which a caller controls.
   // The part searched for the message reaches as far past the scan bound as the message is long, so a
-  // message that starts before the bound and ends after it is found whole and hidden whole; what is
-  // read for the rest is the bound.
+  // message that starts before the bound is found whole and hidden whole; the text kept stands for the
+  // bound and no more, however much the hidden messages shrink it.
   const window = stack.slice(0, MAX_STACK_SCAN + (header?.message.length ?? 0))
   const scrubbed = escapeControlCharacters(
     (header === undefined ? window : censorMessageInStack(window, header))

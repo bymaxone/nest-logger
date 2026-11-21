@@ -7,7 +7,7 @@
  */
 import { cutIfText } from './bounded-text.util'
 import { foldKey, foldName } from './fold-key.util'
-import { hideMessageInStack } from './hide-message-in-stack.util'
+import { hideMessagesInStack } from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
 import { ERROR_TEXT_FIELDS } from './redact-error-parts.util'
 import { censorName, MAX_STACK_SCAN, scrubStack } from './sanitize-error.util'
@@ -166,13 +166,15 @@ function scrubPlainStack(
   stack: string,
   header: HeaderText | undefined
 ): string {
-  const texts = [...new Set(header?.texts.values())].sort((a, b) => b.length - a.length)
+  const texts = [...new Set(header?.texts.values())]
+  const longest = texts.reduce((most, text) => Math.max(most, text.length), 0)
   // The part searched reaches as far past the bound as the longest message is long, so a message that
-  // starts before the bound and ends after it is found whole and hidden whole.
-  const window = stack.slice(0, MAX_STACK_SCAN + (texts[0]?.length ?? 0))
-  const hidden = texts.reduce(
-    (text, message) => hideMessageInStack(text, message, rules.censor),
-    window
+  // starts before the bound is found whole; the text kept stands for the bound and no more.
+  const hidden = hideMessagesInStack(
+    stack.slice(0, MAX_STACK_SCAN + longest),
+    texts,
+    rules.censor,
+    MAX_STACK_SCAN
   )
   return scrubStack(hidden, undefined, stack.length > MAX_STACK_SCAN)
 }

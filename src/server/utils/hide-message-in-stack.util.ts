@@ -47,10 +47,48 @@ function occurrences(stack: string, message: string): Span[] {
 }
 
 /**
- * Replace every occurrence of `message` in `stack` by `replacement`: in the header, in a message of
- * several lines, in a message that holds a frame-shaped line, that repeats or that overlaps itself,
- * and in the lines below, where a library may repeat it. The search reads the stack once, whatever the
- * message is.
+ * The first `limit` characters of `stack`, with every occurrence of each of `messages` replaced by
+ * `replacement`: in the header, in a message of several lines, in a message that holds a frame-shaped
+ * line, that repeats or that overlaps itself, and in the lines below, where a library may repeat it.
+ * An occurrence that starts before `limit` is replaced whole, and the text ends where it ends, so no
+ * part of a message is left at the end; an occurrence that starts at or after `limit` is not read.
+ * Each message is searched in one pass over the stack, whatever it is.
+ *
+ * @param stack - The stack as the caller wrote it, read up to `limit` plus the longest message.
+ * @param messages - The messages to hide, which may span lines.
+ * @param replacement - What the censor makes of a message.
+ * @param limit - How much of the stack, counted in its own characters, the result stands for.
+ * @returns That part of the stack, unchanged where it holds no message.
+ */
+export function hideMessagesInStack(
+  stack: string,
+  messages: readonly string[],
+  replacement: string,
+  limit: number
+): string {
+  const spans = messages
+    .filter((message) => message !== '' && message.length <= stack.length)
+    .flatMap((message) => occurrences(stack, message))
+    .sort((a, b) => a[0] - b[0])
+  let result = ''
+  let from = 0
+  let end = limit
+  for (const [start, stop] of spans) {
+    if (start >= end) break
+    if (start < from) {
+      from = Math.max(from, stop)
+      end = Math.max(end, from)
+      continue
+    }
+    result += stack.slice(from, start) + replacement
+    from = stop
+    end = Math.max(end, stop)
+  }
+  return result + stack.slice(from, Math.max(end, from))
+}
+
+/**
+ * Replace every occurrence of `message` in `stack` by `replacement`.
  *
  * @param stack - The stack as the caller wrote it.
  * @param message - The message the stack opens with, which may span lines.
@@ -58,14 +96,5 @@ function occurrences(stack: string, message: string): Span[] {
  * @returns The stack, unchanged when it does not hold the message.
  */
 export function hideMessageInStack(stack: string, message: string, replacement: string): string {
-  if (message === '') return stack
-  // Stryker disable next-line ConditionalExpression: equivalent in output: a message that does not fit in the stack is not found in it; the return only spares the table, which is as long as the message.
-  if (message.length > stack.length) return stack
-  let result = ''
-  let from = 0
-  for (const [start, stop] of occurrences(stack, message)) {
-    result += stack.slice(from, start) + replacement
-    from = stop
-  }
-  return result + stack.slice(from)
+  return hideMessagesInStack(stack, [message], replacement, stack.length)
 }

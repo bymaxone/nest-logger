@@ -3,7 +3,7 @@
  *
  * Layer: server/utils, tests. Pure.
  */
-import { hideMessageInStack } from './hide-message-in-stack.util'
+import { hideMessageInStack, hideMessagesInStack } from './hide-message-in-stack.util'
 
 describe('hideMessageInStack', () => {
   /*
@@ -183,5 +183,43 @@ describe('hideMessageInStack', () => {
     )
 
     expect(wrong).toEqual([])
+  })
+})
+
+describe('hideMessagesInStack', () => {
+  it.each([
+    ['text before the limit', 'abcSECdef', ['SEC'], 6, 'abc[R]'],
+    ['no message, a limit inside the stack', 'abcdefgh', ['SEC'], 5, 'abcde'],
+    ['no message, a limit past the stack', 'abcd', ['SEC'], 50, 'abcd'],
+    [
+      'an occurrence that starts before the limit and ends after it',
+      'abSECcdef',
+      ['SEC'],
+      3,
+      'ab[R]'
+    ],
+    ['an occurrence that starts at the limit', 'abcSECdef', ['SEC'], 3, 'abc'],
+    ['an occurrence that starts after the limit', 'abcdSECef', ['SEC'], 3, 'abc'],
+    ['two messages', 'aXXbYYc', ['XX', 'YY'], 7, 'a[R]b[R]c'],
+    ['two messages that overlap', 'aXYZb', ['XY', 'YZ'], 5, 'a[R]b'],
+    ['a message inside another', 'aXYZb', ['XYZ', 'Y'], 5, 'a[R]b'],
+    [
+      'a second message that starts inside the first, past the limit',
+      'aXYZb',
+      ['XY', 'YZ'],
+      2,
+      'a[R]'
+    ],
+    ['an empty message', 'abc', ['', 'b'], 3, 'a[R]c'],
+    ['a message longer than the stack', 'abc', ['abcd'], 3, 'abc'],
+    ['no message', 'abc', [], 2, 'ab']
+  ])('keeps %s', (_label, stack, messages, limit, expected) => {
+    expect(hideMessagesInStack(stack, messages, '[R]', limit)).toBe(expected)
+  })
+
+  it('stands for the limit however much the replacement shrinks the text', () => {
+    const stack = `${'ABC'.repeat(30)}tail`
+
+    expect(hideMessagesInStack(stack, ['ABC'], '#', 10)).toBe('####')
   })
 })

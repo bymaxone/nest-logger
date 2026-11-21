@@ -33,12 +33,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-21 — server: 45,461 B (44.40 KiB) real -> 44.41 KiB budget (45,475 B, +14 B over the
+//   - 2026-11-21 — server: 45,569 B (44.50 KiB) real -> 44.52 KiB budget (45,588 B, +19 B over the
 //     measurement). The 1.4.29 fixes: a configured name and a key are compared in the shared folded
 //     form, every key that spells the message or the stack is read for the header, a hidden message is
-//     replaced wherever a stack repeats it, including a message longer than the part of the stack that
-//     is read, the stack of a plain object is scrubbed, the list options have a cap and a length check,
-//     and more characters that print as nothing are read through.
+//     replaced wherever a stack repeats it, whatever its length and wherever it sits against the part of
+//     the stack that is read, the stack of a plain object is scrubbed, the list options have a cap and a
+//     length check, and more characters that print as nothing are read through.
 //   - 2026-11-21 — server: 45,155 B (44.10 KiB) real -> 44.20 KiB budget (45,260 B, +105 B over the
 //     measurement). The 1.4.28 fixes: the options are read once into a copy (the lists, the serializers
 //     table and the service metadata included) that is validated, defaulted and handed to the module
@@ -346,7 +346,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 44.41 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 44.52 * 1024 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',
