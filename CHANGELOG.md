@@ -12,6 +12,30 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A configured name hides a field however its key is spelled.** The names of `redactPaths`, the
+  default names and the leaves of a configured path were compared with a key by exact name, in lower
+  case, so a field spelled with a zero-width character, a soft hyphen, a byte order mark, fullwidth
+  letters, a no-break space, a tab, a trailing space, a Cyrillic letter, a combining mark, a dotless
+  `i` or a separator (`api_key`, `api.Key`) was written in clear under `redactStrategy: 'names'`. Both
+  sides are now folded with the folding the library's own keys use (separators folded too), also for the
+  header names of a flat `rawHeaders` array. A name that is another word (`apiKeys` for `apiKey`) is
+  still another name. Under `redactStrategy: 'paths'` the paths are matched exactly by `fast-redact`
+  and are not folded.
+- **The stack header is hidden against every key that spells `message` or `stack`.** An object with
+  `{ message: 'x', Message: secret, stack: 'Error: secret' }`, or a `stack` beside a `Stack`, kept the
+  secret in a header: only the first key that spelled the name was read. Every one is read, once, and
+  every distinct text is hidden in every stack, longest first. The 1.4.27 line "whatever the case or
+  the look of the two keys" held for a single key of each name only.
+- **Two more characters that print as nothing are read through:** the Hangul fillers (`U+115F`,
+  `U+1160`, `U+3164`, `U+FFA0`) and the blank Braille pattern (`U+2800`), in the comparison of the
+  derived keys and of the owned keys.
+- **A list option is capped at 10,000 entries.** `redactPaths`, `errorOwnFieldNames`, `destinations`,
+  `http.excludePaths` and `http.secretPathSegments` longer than that are refused at startup, by the
+  name of the option, before an element is read; a length a host reports as a billion no longer
+  allocates.
+
 ## [1.4.28] - 2026-11-21
 
 ### Fixed

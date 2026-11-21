@@ -4,7 +4,7 @@
  *
  * Layer: server/utils, tests. Pure.
  */
-import { foldKey } from './fold-key.util'
+import { foldKey, foldName } from './fold-key.util'
 
 describe('foldKey', () => {
   it.each([
@@ -83,5 +83,34 @@ describe('foldKey', () => {
   it('does not take a different name for another because of a character it folds', () => {
     expect(foldKey('trace\u200bids')).not.toBe(foldKey('traceId'))
     expect(foldKey('r\u0435questIds')).not.toBe(foldKey('requestId'))
+  })
+})
+
+describe('foldName', () => {
+  it.each([
+    ['apikey', 'apikey'],
+    ['apiKey', 'apikey'],
+    ['API2Key', 'api2key'],
+    ['api_key', 'apikey'],
+    ['api-Key', 'apikey'],
+    ['api.Key', 'apikey'],
+    ['api\u200bKey', 'apikey'],
+    ['\u0430pi_Key ', 'apikey'],
+    ['\uff41piKey', 'apikey'],
+    ['', ''],
+    ['\u200b', '']
+  ])('reads %j as %j', (key, folded) => {
+    expect(foldName(key)).toBe(folded)
+  })
+
+  it('answers the same for a key it has met and for one it has not, past the bound of what it remembers', () => {
+    const keys = Array.from({ length: 5000 }, (_, index) => `field_${String(index)}.x`)
+
+    const first = keys.map(foldName)
+    const second = keys.map(foldName)
+
+    expect(second).toEqual(first)
+    expect(first[0]).toBe('field0x')
+    expect(first[4999]).toBe('field4999x')
   })
 })

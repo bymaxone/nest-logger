@@ -6,7 +6,7 @@
  * Layer: server/utils. Pure.
  */
 import { cutIfText } from './bounded-text.util'
-import { foldKey } from './fold-key.util'
+import { foldKey, foldName } from './fold-key.util'
 import { hideMessageInStack } from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
 import { ERROR_TEXT_FIELDS } from './redact-error-parts.util'
@@ -67,8 +67,10 @@ export function rulesBelow(
  * @returns `true` to write the censor in place of the value.
  */
 export function isCensored(rules: RedactRules, key: string, value: unknown): boolean {
-  const lower = key.toLowerCase()
-  return rules.sensitive.has(lower) && !(typeof value === 'string' && rules.exemptKeys?.has(lower))
+  const folded = foldName(key)
+  return (
+    rules.sensitive.has(folded) && !(typeof value === 'string' && rules.exemptKeys?.has(folded))
+  )
 }
 
 /**
