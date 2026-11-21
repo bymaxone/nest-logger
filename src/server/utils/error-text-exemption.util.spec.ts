@@ -23,8 +23,7 @@ describe('headerMessage', () => {
     const source = { message: SECRET, stack: 'x' }
 
     expect(headerMessage(rules(), source, ['message', 'stack'], false)).toEqual({
-      key: 'message',
-      text: SECRET
+      texts: new Map([['message', SECRET]])
     })
   })
 
@@ -60,8 +59,7 @@ describe('headerMessage, the spelling of the keys', () => {
     const source = { [messageKey]: SECRET, [stackKey]: 'x' }
 
     expect(headerMessage(rules(), source, [messageKey, stackKey], false)).toEqual({
-      key: messageKey,
-      text: SECRET
+      texts: new Map([[messageKey, SECRET]])
     })
   })
 
@@ -70,6 +68,59 @@ describe('headerMessage, the spelling of the keys', () => {
 
     expect(headerMessage(rules(), source, ['messages', 'stack'], false)).toBeUndefined()
     expect(headerMessage(rules(), source, ['stack', 'stacks'], false)).toBeUndefined()
+  })
+})
+
+describe('headerMessage, more than one key that spells the name', () => {
+  it('reads every key that spells message, each once', () => {
+    let reads = 0
+    const source = {
+      message: 'benign',
+      get Message(): string {
+        reads += 1
+        return SECRET
+      },
+      stack: 'x'
+    }
+
+    const header = headerMessage(rules(), source, ['message', 'Message', 'stack'], false)
+
+    expect(header).toEqual({
+      texts: new Map([
+        ['message', 'benign'],
+        ['Message', SECRET]
+      ])
+    })
+    expect(reads).toBe(1)
+  })
+
+  it('skips a key that spells message and holds no text', () => {
+    const source = { message: 7, Message: SECRET, stack: 'x' }
+
+    expect(headerMessage(rules(), source, ['message', 'Message', 'stack'], false)).toEqual({
+      texts: new Map([['Message', SECRET]])
+    })
+  })
+
+  it('reads nothing when no key that spells message holds text', () => {
+    const source = { message: 7, stack: 'x' }
+
+    expect(headerMessage(rules(), source, ['message', 'stack'], false)).toBeUndefined()
+  })
+})
+
+describe('errorTextField, a header with more than one message', () => {
+  it('hides each of them in every stack, longest first', () => {
+    const header = {
+      texts: new Map([
+        ['message', 'ab'],
+        ['Message', 'ab cd']
+      ])
+    }
+
+    expect(
+      errorTextField(rules(), 'Stack', 'Error: ab cd\n    at f (x.js:1:1)', false, header)
+    ).toBe('Error: [R]\n    at f (x.js:1:1)')
   })
 })
 
@@ -91,7 +142,7 @@ describe('readField', () => {
   it('reads any other field, and the message when none was read, from the object', () => {
     const source = { message: 'm', other: 'o' }
 
-    expect(readField(source, 'other', { key: 'message', text: 'cached' })).toBe('o')
+    expect(readField(source, 'other', { texts: new Map([['message', 'cached']]) })).toBe('o')
     expect(readField(source, 'message', undefined)).toBe('m')
   })
 })
@@ -100,11 +151,13 @@ describe('errorTextField', () => {
   it('hides the message in the stack of an object that is no error, and in no other field', () => {
     const stack = `Error: ${SECRET}\n    at run (/srv/app.js:1:1)`
 
-    expect(errorTextField(rules(), 'stack', stack, false, { key: 'message', text: SECRET })).toBe(
-      'Error: [R]\n    at run (/srv/app.js:1:1)'
-    )
     expect(
-      errorTextField(rules(), 'note', `see ${SECRET}`, false, { key: 'message', text: SECRET })
+      errorTextField(rules(), 'stack', stack, false, { texts: new Map([['message', SECRET]]) })
+    ).toBe('Error: [R]\n    at run (/srv/app.js:1:1)')
+    expect(
+      errorTextField(rules(), 'note', `see ${SECRET}`, false, {
+        texts: new Map([['message', SECRET]])
+      })
     ).toBe(`see ${SECRET}`)
   })
 })

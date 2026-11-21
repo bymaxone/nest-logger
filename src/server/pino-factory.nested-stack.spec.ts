@@ -122,6 +122,35 @@ describe('the stack header of an object whose keys are spelled in another case, 
   })
 })
 
+describe('the stack header of an object with more than one key that spells message or stack', () => {
+  const header = (): string => `Error: ${SECRET}\n    at f (x.js:1:1)`
+
+  it.each([
+    [
+      'a benign message first and Message holding the secret',
+      { message: 'benign', Message: SECRET, stack: header() }
+    ],
+    [
+      'the secret first and a benign Message',
+      { message: SECRET, Message: 'benign', stack: header() }
+    ],
+    ['MESSAGE and message both holding it', { MESSAGE: SECRET, message: SECRET, stack: header() }],
+    [
+      'a plain stack and a Stack with the header',
+      { message: SECRET, stack: 'ok', Stack: header() }
+    ],
+    [
+      'a plain stack and a STACK with the header',
+      { message: SECRET, stack: 'ok', STACK: header() }
+    ],
+    ['both keys duplicated', { message: 'x', Message: SECRET, stack: 'ok', Stack: header() }]
+  ])('is censored with %s', (_label, cause) => {
+    const line = lineOf({ meta: { cause } }, { redactPaths: ['message'] })
+
+    expect(JSON.stringify(line)).not.toContain(SECRET)
+  })
+})
+
 describe('the redactor for what the err serializer returned', () => {
   const redact = createNameRedactor(['message'], '[REDACTED]')
   const output = { message: SECRET, stack: stackOf('Error') }
