@@ -188,21 +188,26 @@ describe('a key that is a spelling of a name and a key that is only another scri
     expect(lineOf({ [key]: SECRET })).not.toContain(SECRET)
   })
 
-  it.each([
-    ['\u7528\u6237\u540d'],
-    ['\u540d\u524d'],
-    ['\u0434\u0430\u043d\u043d\u044b\u0435'],
-    ['\u05e9\u05dd'],
-    ['\u044f'.repeat(3)],
-    ['\u044f'.repeat(24)]
-  ])('keeps a caller field %j, neither hidden nor dropped', (key) => {
-    const line = JSON.parse(lineOf({ meta: { [key]: SECRET }, [key]: `${SECRET}2` })) as {
-      meta: Record<string, string>
-    }
+  it.each([['\u0434\u0430\u043d\u043d\u044b\u0435'], ['\u044f'.repeat(24)]])(
+    'keeps a caller field %j, neither hidden nor dropped',
+    (key) => {
+      const line = JSON.parse(lineOf({ meta: { [key]: SECRET }, [key]: `${SECRET}2` })) as {
+        meta: Record<string, string>
+      }
 
-    expect(line.meta[key]).toBe(SECRET)
-    expect(JSON.stringify(line)).toContain(`${SECRET}2`)
-  })
+      expect(line.meta[key]).toBe(SECRET)
+      expect(JSON.stringify(line)).toContain(`${SECRET}2`)
+    }
+  )
+})
+
+describe('a short key with no Latin letter in it', () => {
+  it.each([['\u7528\u6237\u540d'], ['\u540d\u524d'], ['\u05e9\u05dd'], ['\u044f'.repeat(3)]])(
+    'is hidden like a spelling of a name when it is no longer than the longest name, %j',
+    (key) => {
+      expect(lineOf({ [key]: SECRET })).not.toContain(SECRET)
+    }
+  )
 })
 
 describe('a name spelled with a letter that stands for more than one Latin letter', () => {

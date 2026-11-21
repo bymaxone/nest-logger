@@ -159,9 +159,6 @@ export function foldedNames(names: Iterable<string>): Set<string> {
   return new Set(Array.from(names, foldName).filter((name) => name !== ''))
 }
 
-/** A key with a letter that is not ASCII is read as a pattern only if it keeps this share of ASCII characters, one in this many. */
-const MIN_ASCII_SHARE = 3
-
 /** How many names of a compatible length a key is walked against before it is taken for one of them. */
 const MAX_CANDIDATES = 64
 
@@ -193,13 +190,12 @@ function groupsOf(names: ReadonlySet<string>): Grouped {
 
 /**
  * Whether a folded key is one of the folded names. A key that is only ASCII is looked up as it is. A
- * key that still holds a letter that is not ASCII, one the folding has no Latin letter for, and keeps at
- * least a third of its characters as ASCII, is compared as a pattern in which each such letter stands
- * for one or for two characters of a name, against the names of the lengths that allows: a look-alike of
- * a letter the folding does not know cannot hide a key from its name, and a key that only happens to
- * share a name's length and its ASCII letters is hidden too, which is the safe way to be wrong. A key
- * longer than the longest name is no pattern, and one with more candidate names than a bound is
- * hidden without being walked.
+ * key that still holds a letter that is not ASCII is compared as a pattern in which each such letter
+ * stands for one or for two characters of a name, against the names of the lengths that allows: a
+ * look-alike of a letter the folding does not know cannot hide a key from its name, and a key that only
+ * happens to share a name's length is hidden too, which is the safe way to be wrong. A key longer than
+ * the longest name is no pattern, and one with more candidate names than a bound is hidden without
+ * being walked.
  *
  * @internal Shared across the logger. NOT re-exported by the package barrel.
  * @param names - The folded names, from {@link foldedNames}.
@@ -210,15 +206,12 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   if (names.has(folded)) return true
   if (!NON_ASCII.test(folded)) return false
   const letters = [...folded]
-  // A key of words in another script keeps no ASCII letter and is never taken for a name: it must keep
-  // at least a third of its characters, and one.
-  const ascii = letters.filter(isAscii).length
-  if (ascii * MIN_ASCII_SHARE < letters.length) return false
+  const wide = letters.filter((letter) => !isAscii(letter)).length
   const { byLength, longest } = groupsOf(names)
   // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (no name is as long as the key, so the walk finds none and answers the same), and the true mutant is killed by the rows of fold-key.util.spec.ts; this disable also hides it from the report because Stryker cannot disable one mutant of a line.
   if (letters.length > longest) return false
   const lengths = Array.from(
-    { length: letters.length - ascii + 1 },
+    { length: wide + 1 },
     (_, extra) => byLength.get(letters.length + extra) ?? []
   )
   // More names of a compatible length than a key is walked against: the value is hidden, since the work

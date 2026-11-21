@@ -10,6 +10,7 @@ import {
   censorAnyName,
   errorTextField,
   headerMessage,
+  isCensored,
   readField
 } from './error-text-exemption.util'
 import type { RedactRules } from './redact-by-name.util'
@@ -398,5 +399,27 @@ describe('errorTextField, the stack of an Error the walk does not read as one', 
     expect(errorTextField(rules(), 'stack', `Error: a${DEP}`, true, undefined)).toBe(
       `Error: a${DEP}`
     )
+  })
+})
+
+describe('isCensored, the exemption of the message under err', () => {
+  const exempt = { ...rules(), exemptKeys: new Set(['message']) } as unknown as RedactRules
+
+  /**
+   * Given the rules of the object under err, which leave the serializer the text of `message`
+   * When a text sits under the name itself and under a key that only spells it
+   * Then only the name itself is left; every spelling is censored
+   */
+  it.each([['Message'], ['MESSAGE'], ['m\u200bessage'], ['m\u0435ssage'], ['mes-sage']])(
+    'censors the text under %j',
+    (key) => {
+      expect(isCensored(exempt, key, SECRET)).toBe(true)
+    }
+  )
+
+  it('leaves the text under message alone, and censors a value that is not text', () => {
+    expect(isCensored(exempt, 'message', SECRET)).toBe(false)
+    expect(isCensored(exempt, 'message', { text: SECRET })).toBe(true)
+    expect(isCensored(rules(), 'message', SECRET)).toBe(true)
   })
 })

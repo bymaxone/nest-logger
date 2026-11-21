@@ -27,10 +27,12 @@ heading here.
   stands for one or for two letters of a name (`ß`, `ꜷ` and `ꝏ` are two; a capital Cyrillic or Greek i,
   drawn like an `I` and an `l`, is one): a key with such letters is hidden by any name it matches
   everywhere else, which can hide the value of a key that only shares a name's ASCII letters and a
-  compatible length. A key of words in another script, with fewer than a third of its characters in
-  ASCII, is never taken for a name by that rule (a configured name written in that script still matches
-  itself exactly), and a key with more candidate names of a compatible length than a bound is hidden
-  without being compared. This is for hiding a value only: the keys the entry owns, the keys
+  compatible length. The rule holds for a key made only of letters of another script too, as long as it
+  is no longer than the longest name: a spelling of `token` in Cyrillic and Armenian letters is hidden,
+  and so is a short field written in words of another script, which is the price of never letting a
+  spelling through. A key longer than every name is never taken for one (a configured name written in
+  that script still matches itself exactly), and a key with more candidate names of a compatible length
+  than a bound is hidden without being compared. This is for hiding a value only: the keys the entry owns, the keys
   its derived fields use and the keys of the mixin are compared exactly after folding, so a caller
   field written with such letters is not dropped for resembling one of them. Under `redactStrategy: 'paths'` the paths are matched exactly by `fast-redact`
   and are not folded.

@@ -158,10 +158,11 @@ describe('matchesFolded', () => {
     ['\u04bbassword', true],
     ['passw\u0251rd', true],
     ['pa\u057d\u057dword', true],
-    ['\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb', false],
-    ['\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb', false],
+    ['\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb', true],
+    ['\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb', true],
+    ['\u04bb'.repeat(30), false],
     ['pas\u04bb\u04bb\u04bb\u04bb\u04bb', true],
-    ['pa\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb', false],
+    ['pa\u04bb\u04bb\u04bb\u04bb\u04bb\u04bb', true],
     ['\u7528\u6237\u540d', false],
     ['\u540d\u524d', false],
     ['\u04bbassword1', false],
@@ -184,21 +185,39 @@ describe('matchesFolded', () => {
     const russian = new Set(['\u043f\u0430\u0440\u043e\u043b\u044c'])
 
     expect(matchesFolded(russian, '\u043f\u0430\u0440\u043e\u043b\u044c')).toBe(true)
-    expect(matchesFolded(russian, '\u043f\u0430\u0440\u043e\u043b')).toBe(false)
-    expect(matchesFolded(new Set(['abc']), '\u04bb\u04bb\u04bb\u04bb')).toBe(false)
+    expect(matchesFolded(russian, '\u043f\u0430\u0440\u043e\u043b')).toBe(true)
+    expect(matchesFolded(russian, '\u043f\u0430\u0440\u043e\u043b'.repeat(3))).toBe(false)
+    expect(matchesFolded(new Set(['abc']), '\u04bb'.repeat(7))).toBe(false)
   })
 
-  it('never takes a key of words in another script for a name of its length', () => {
+  /**
+   * Given a key with no ASCII letter at all, such as a word of another script that a name can be spelled
+   * with look-alikes of
+   * When it is not longer than the longest name
+   * Then it is read as a pattern and hidden, and a key longer than every name is not: a leak is worse
+   * than hiding a short field of another script
+   */
+  it('hides a key of another script that is no longer than the longest name, and no other', () => {
     const owned = new Set(['msg', 'time', 'level'])
 
     for (const key of [
       '\u7528\u6237\u540d',
       '\u540d\u524d\u3067\u3059',
-      '\u0434\u0430\u043d\u043d\u044b\u0435',
+      '\u0434\u0430\u043d',
       '\u05e9\u05dd'
     ]) {
-      expect(matchesFolded(owned, key)).toBe(false)
+      expect(matchesFolded(owned, key)).toBe(true)
     }
+    expect(matchesFolded(owned, '\u0434\u0430\u043d\u043d\u044b\u0435')).toBe(false)
+    expect(matchesFolded(owned, '\u044f'.repeat(24))).toBe(false)
+  })
+
+  it.each([
+    '\u0442\u0585\u043a\u0454\u043d',
+    '\u0442\u043e\u043a\u0454\u043d',
+    '\u0442\u043e\u043a\u0435\u043d'
+  ])('hides %j, a spelling of token with no Latin letter in it', (key) => {
+    expect(matchesFolded(new Set(['password', 'token']), key)).toBe(true)
   })
 
   it('answers the same for a set it has met and for one it has not', () => {
@@ -217,19 +236,20 @@ describe('matchesFolded', () => {
     ['pa\u00dfword', true],
     ['au\u00feorization', true],
     ['auth\u00feorization', false],
-    ['\u00fe\u00fe\u00fe\u00fe\u00fe\u00fe\u00fe\u00fe', false]
+    ['\u00fe\u00fe\u00fe\u00fe\u00fe\u00fe\u00fe\u00fe', true],
+    ['\u00fe'.repeat(30), false]
   ])('reads %j, a letter of one or of two, as %s of a name', (key, expected) => {
     expect(matchesFolded(new Set(['password', 'bearer', 'authorization']), key)).toBe(expected)
   })
 
   it.each([
-    ['\u7528\u6237\u540d', false],
-    ['\u540d\u524d\u3067\u3059', false],
+    ['\u7528\u6237\u540d', true],
+    ['\u540d\u524d\u3067\u3059', true],
     ['user\u7528\u6237', true],
     ['m\u6d88\u606f', true],
     ['\u0442oken', true],
     ['to\u0138en', true],
-    ['\u056a\u056a\u056a\u056a\u056a\u056a\u056a\u056a', false]
+    ['\u056a'.repeat(8), false]
   ])('reads %j, whatever the script of its letters, as %s', (key, expected) => {
     expect(matchesFolded(new Set(['userid', 'msg', 'id', 'time', 'token']), key)).toBe(expected)
   })

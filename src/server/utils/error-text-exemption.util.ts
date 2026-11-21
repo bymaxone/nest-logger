@@ -6,7 +6,7 @@
  * Layer: server/utils. Pure.
  */
 import { cutIfText } from './bounded-text.util'
-import { foldKey, foldName, matchesFolded, matchesKey } from './fold-key.util'
+import { foldKey, matchesFolded, matchesKey } from './fold-key.util'
 import { hideMessagesInStack } from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
 import { ERROR_TEXT_FIELDS } from './redact-error-parts.util'
@@ -68,8 +68,7 @@ export function rulesBelow(
  */
 export function isCensored(rules: RedactRules, key: string, value: unknown): boolean {
   return (
-    matchesKey(rules.sensitive, key) &&
-    !(typeof value === 'string' && rules.exemptKeys?.has(foldName(key)))
+    matchesKey(rules.sensitive, key) && !(typeof value === 'string' && rules.exemptKeys?.has(key))
   )
 }
 
