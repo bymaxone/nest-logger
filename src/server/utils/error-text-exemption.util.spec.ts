@@ -12,6 +12,7 @@ import {
   readField
 } from './error-text-exemption.util'
 import type { RedactRules } from './redact-by-name.util'
+import { MAX_STACK_SCAN } from './sanitize-error.util'
 
 const SECRET = 'SEC_9f3a'
 
@@ -184,5 +185,41 @@ describe('censorAnyName', () => {
     const name = { toString: () => SECRET }
 
     expect(censorAnyName(rules(['token']), name)).toBe(name)
+  })
+})
+
+describe('the stack of an object that is no Error, read up to the scan bound', () => {
+  const FRAME = '\n    at app (/srv/a.js:1:1)'
+  const DEP = (text: string): string => `\n    at dep (/node_modules/${text})`
+
+  it('does not read a frame beyond the bound, even when the hidden messages shrink the text before it', () => {
+    const message = 'm'.repeat(100)
+    const lines = DEP(message).repeat(Math.ceil(MAX_STACK_SCAN / DEP(message).length) + 900)
+    const stack = `Error: x${lines}\n    at ZZZ_APP (/srv/z.js:1:1)`
+    expect(stack.indexOf('ZZZ_APP')).toBeGreaterThan(MAX_STACK_SCAN)
+
+    const written = errorTextField(rules(), 'stack', stack, false, {
+      texts: new Map([['message', message]])
+    }) as string
+
+    expect(written).not.toContain('ZZZ_APP')
+  })
+
+  it.each([
+    [0, 'Error: a'],
+    [1, 'Error: a…[truncated]']
+  ])('adds the suffix only to a stack longer than the bound (%i over)', (over, expected) => {
+    const frame = DEP('p/i.js:1:1')
+    const fill = MAX_STACK_SCAN + over - 'Error: a'.length
+    const stack = `Error: a${frame.repeat(Math.floor(fill / frame.length))}${'x'.repeat(fill % frame.length)}`
+    expect(stack.length).toBe(MAX_STACK_SCAN + over)
+
+    expect(errorTextField(rules(), 'stack', stack, false, undefined)).toBe(expected)
+  })
+
+  it('keeps a short clean stack as it was written', () => {
+    const stack = `Error: a${FRAME}`
+
+    expect(errorTextField(rules(), 'stack', stack, false, undefined)).toBe(stack)
   })
 })

@@ -4,7 +4,7 @@
  *
  * Layer: server/utils, tests. Pure.
  */
-import { foldKey, foldName } from './fold-key.util'
+import { foldedNames, foldKey, foldName } from './fold-key.util'
 
 describe('foldKey', () => {
   it.each([
@@ -123,5 +123,17 @@ describe('foldName', () => {
 
     expect(foldName(long)).toBe(`${'a'.repeat(200_000)}z`)
     expect(foldName(long)).toBe(`${'a'.repeat(200_000)}z`)
+  })
+})
+
+describe('foldedNames', () => {
+  it('folds each name and leaves out one that folds to nothing', () => {
+    expect(foldedNames(['apiKey', 'x-auth-token', '\u200b', ' ', 'PASSWORD'])).toEqual(
+      new Set(['apikey', 'xauthtoken', 'password'])
+    )
+  })
+
+  it('takes any iterable', () => {
+    expect(foldedNames(new Set(['A_b']))).toEqual(new Set(['ab']))
   })
 })

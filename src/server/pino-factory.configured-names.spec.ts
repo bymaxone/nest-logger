@@ -101,3 +101,24 @@ describe('raw headers', () => {
     expect(line).not.toContain(SECRET)
   })
 })
+
+describe('the default names that hold a separator', () => {
+  it.each([
+    'x-api-key',
+    'X-Api-Key',
+    'x_api_key',
+    'xApiKey',
+    'set-cookie',
+    'Set-Cookie',
+    'x-auth-token'
+  ])('hide a value under %s', (key) => {
+    expect(lineOf({ [key]: SECRET })).not.toContain(SECRET)
+    expect(lineOf({ meta: { nested: { [key]: SECRET } } })).not.toContain(SECRET)
+  })
+
+  it('hide the value beside such a name in a raw header array', () => {
+    const line = lineOf({ meta: { rawHeaders: ['X-API-KEY', SECRET, 'Accept', 'text/html'] } })
+
+    expect(line).not.toContain(SECRET)
+  })
+})

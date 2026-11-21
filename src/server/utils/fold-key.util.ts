@@ -94,7 +94,9 @@ const ALNUM = /^[A-Za-z0-9]*$/
  * @returns The folded name.
  */
 export function foldName(key: string): string {
+  // Stryker disable next-line ConditionalExpression: equivalent: foldKey returns the same text for a key of lower-case letters and digits; this branch only skips its work.
   if (FOLDED.test(key)) return key
+  // Stryker disable next-line ConditionalExpression: equivalent: foldKey returns the lower-cased text for a key of ASCII letters and digits; this branch only skips its work.
   if (ALNUM.test(key)) return key.toLowerCase()
   return foldKey(key)
 }
