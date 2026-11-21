@@ -88,6 +88,28 @@ function readSet(source: object, keys: readonly string[]): Record<string, unknow
   return set
 }
 
+/** The options that hold a list, and the lists of the `http` group: each is copied once, element by element. */
+const LIST_OPTIONS = ['redactPaths', 'errorOwnFieldNames', 'destinations'] as const
+const HTTP_LISTS = ['excludePaths', 'secretPathSegments'] as const
+
+/**
+ * Replace each list under `names` in `holder` by a copy that reads its length once and each index
+ * once, so a Proxy or a getter on an element answers one time. A value that is not a list is left
+ * as it is, for the validator to refuse.
+ */
+function copyLists(holder: object, names: readonly string[]): void {
+  for (const name of names) {
+    const value = Reflect.get(holder, name) as unknown
+    if (!Array.isArray(value)) continue
+    const length = Reflect.get(value, 'length') as number
+    Reflect.set(
+      holder,
+      name,
+      Array.from({ length }, (_, index) => Reflect.get(value, index) as unknown)
+    )
+  }
+}
+
 /**
  * The options without the keys that are not set, in the options and in each group.
  *
@@ -104,5 +126,14 @@ export function dropUnsetOptions(options: BymaxLoggerModuleOptions): BymaxLogger
     if (isRecord(value))
       Reflect.set(set, group, readSet(value, Object.keys(Reflect.get(GROUP_KEYS, group) as object)))
   }
+  const service = Reflect.get(set, 'service') as unknown
+  // The metadata and the serializers are copied as the defaults copy them, own enumerable keys, so
+  // each is read here once.
+  if (isRecord(service)) Reflect.set(set, 'service', { ...service })
+  const serializers = Reflect.get(set, 'serializers') as unknown
+  if (isRecord(serializers)) Reflect.set(set, 'serializers', { ...serializers })
+  copyLists(set, LIST_OPTIONS)
+  const http = Reflect.get(set, 'http') as unknown
+  if (isRecord(http)) copyLists(http, HTTP_LISTS)
   return set as unknown as BymaxLoggerModuleOptions
 }

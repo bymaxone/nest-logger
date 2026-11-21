@@ -16,6 +16,9 @@
  */
 const IGNORED = /[\s._\p{Cc}\p{Cf}\p{M}-]/gu
 
+/** The same without the separators: what prints as nothing, white space and the combining marks. */
+const INVISIBLE = /[\s\p{Cc}\p{Cf}\p{M}]/gu
+
 /** A key made only of the printable ASCII characters that no rule here changes except case and `._-`. */
 const PLAIN = /^[\x21-\x7e]*$/
 
@@ -58,12 +61,14 @@ const LOOKALIKES: ReadonlyMap<string, string> = new Map(
  *
  * @internal Shared across the logger. NOT re-exported by the package barrel.
  * @param key - A field name.
+ * @param keepSeparators - Keep `_`, `.` and `-`, so `exception_type` and `exception.type` stay two names.
  * @returns The folded name.
  */
-export function foldKey(key: string): string {
+export function foldKey(key: string, keepSeparators = false): string {
+  const ignored = keepSeparators ? INVISIBLE : IGNORED
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
-  if (PLAIN.test(key)) return key.replace(IGNORED, '').toLowerCase()
-  let folded = key.normalize('NFKD').toLowerCase().replace(IGNORED, '')
+  if (PLAIN.test(key)) return key.replace(ignored, '').toLowerCase()
+  let folded = key.normalize('NFKD').toLowerCase().replace(ignored, '')
   for (const [letter, latin] of LOOKALIKES) folded = folded.replaceAll(letter, latin)
   return folded
 }
