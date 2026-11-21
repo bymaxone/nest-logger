@@ -16,8 +16,7 @@ heading here.
 
 - An option the host supplies that throws when it is read (a getter, a Proxy trap) now ends `forRoot` and
   `forRootAsync` with `[BymaxLoggerModule] options could not be read`, and the error the host threw is its
-  `cause`. Before, the host's own error left the module, and a read made after validation could reach
-  the logger. The refusals of the options themselves (`[BymaxLoggerModule] options.<path> ...`) are
+  `cause`. Before, the host's own error left the module. The refusals of the options themselves (`[BymaxLoggerModule] options.<path> ...`) are
   unchanged. Each redaction option (`redactPaths`, `redactCensor`, `redactStrategy`,
   `shouldDisableDefaultRedact`) is read by name, so it takes effect whether it is a property, a
   non-enumerable getter, a get-only Proxy or a class getter.

@@ -32,7 +32,7 @@ baseline** (see Calibration history), not to aspirational targets:
   ~2× regression. This budget fails CI.
 - **Object message (HARD gate):** `F.opsPerSec ≥ E.opsPerSec × 0.20`. An object
   message keeps about **0.4 to 0.47×** of the throughput of a string line on the shipped
-  build: 0.46 to 0.47 on a quiet host (1.4.24, 1.4.25) and 0.38 to 0.42 on a loaded one, a
+  build: 0.46 to 0.47 on a quiet host and 0.38 to 0.42 on a loaded one, a
   cost of about 2.2 to 2.6×. The floor is 0.20, a cost of 5×, so the margin is about 1.9× on
   the loaded host. Both throughputs are read in one run, so the speed of the runner cancels.
 - **Scenario D is printed, never gated.** It keeps the legacy strategy's cost
