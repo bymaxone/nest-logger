@@ -789,4 +789,17 @@ describe('sanitizeError — the stack header of an error whose name is not text'
     expect(result.stack?.endsWith('[truncated]')).toBe(true)
     expect(text?.endsWith('[truncated]')).toBe(true)
   })
+
+  it.each([
+    [0, 'Error: boom'],
+    [1, 'Error: boom…[truncated]']
+  ])('adds the suffix only to a stack longer than the part read (%i over)', (over, expected) => {
+    const head = 'pw=hunter2: boom'
+    const frame = '\n    at dep (/srv/node_modules/p/i.js:1:1)'
+    const fill = MAX_STACK_SCAN + over - head.length
+    const stack = `${head}${frame.repeat(Math.floor(fill / frame.length))}${'x'.repeat(fill % frame.length)}`
+
+    expect(stack.length).toBe(MAX_STACK_SCAN + over)
+    expect(sanitizeError(named(stack, 'boom')).stack).toBe(expected)
+  })
 })

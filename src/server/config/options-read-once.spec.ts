@@ -181,3 +181,20 @@ describe('a list or a table that answers differently on a second read', () => {
     expect(resolved.serializers['custom']).toBe(first)
   })
 })
+
+describe('a value that is not a list where a list belongs', () => {
+  it.each(['redactPaths', 'errorOwnFieldNames', 'destinations'])(
+    '%s is refused by the validator and not read as a list',
+    (name) => {
+      const given = { service: { name: 'api', version: '1.0.0' }, [name]: 'abc' }
+
+      expect(() => resolveOptions(given as never)).toThrow(`[BymaxLoggerModule] options.${name}`)
+    }
+  )
+
+  it.each(['excludePaths', 'secretPathSegments'])('http.%s is refused too', (name) => {
+    const given = { service: { name: 'api', version: '1.0.0' }, http: { [name]: 'abc' } }
+
+    expect(() => resolveOptions(given as never)).toThrow(`[BymaxLoggerModule] options.http.${name}`)
+  })
+})
