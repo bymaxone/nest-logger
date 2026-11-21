@@ -29,12 +29,12 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
-/** The message prefix of every `throw new Error('[Class] ...')` in `src`, with its file. */
+/** The message prefix of every `throw new Error('[Class] ...')` and `refuse('[Class] ...')` in `src`, with its file. */
 function thrownPrefixes(): { file: string; prefix: string }[] {
   const found: { file: string; prefix: string }[] = []
   for (const file of sourceFiles(join(ROOT, 'src'))) {
     const text = readFileSync(file, 'utf-8')
-    for (const match of text.matchAll(/throw new Error\(\s*[`']\[(\w+)\] ([^`'$]*)/g)) {
+    for (const match of text.matchAll(/(?:throw new Error|refuse)\(\s*[`']\[(\w+)\] ([^`'$]*)/g)) {
       const message = (match[2] ?? '').trim()
       // Every option the validator rejects names its own path, so they share one row.
       const words = message.startsWith('options.') ? ['options.'] : message.split(' ').slice(0, 2)
