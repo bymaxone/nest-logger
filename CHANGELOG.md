@@ -12,6 +12,18 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- The options are read once: the snapshot that passes validation is the one the defaults are made from,
+  including the `service` metadata. A getter that answered differently on a second read could pass the
+  validator and then change.
+- The derived keys (`exception.type` and the others) are compared with the same folding as the other
+  owned keys, with the separators kept: a variation selector, a line or paragraph separator, a
+  combining mark or a lookalike letter no longer lets a spelling of them through; `exception_type`,
+  `exceptionType` and `errorType` are still the caller's.
+- Searching the stack of an error whose `name` is not text for its message is bounded by the part of
+  the stack the scrub reads.
+
 ## [1.4.27] - 2026-11-21
 
 ### Fixed

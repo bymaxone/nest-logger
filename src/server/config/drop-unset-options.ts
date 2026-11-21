@@ -104,5 +104,8 @@ export function dropUnsetOptions(options: BymaxLoggerModuleOptions): BymaxLogger
     if (isRecord(value))
       Reflect.set(set, group, readSet(value, Object.keys(Reflect.get(GROUP_KEYS, group) as object)))
   }
+  const service = Reflect.get(set, 'service') as unknown
+  // The metadata is copied as the defaults copy it, own enumerable keys, so it is read here once.
+  if (isRecord(service)) Reflect.set(set, 'service', { ...service })
   return set as unknown as BymaxLoggerModuleOptions
 }

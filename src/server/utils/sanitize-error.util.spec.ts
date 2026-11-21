@@ -5,7 +5,13 @@
  *
  * Layer: server/utils, tests.
  */
-import { isErrorLike, OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
+import {
+  isErrorLike,
+  MAX_STACK_SCAN,
+  OMIT_OWN_FIELD,
+  ownFieldForLog,
+  sanitizeError
+} from './sanitize-error.util'
 
 describe('sanitizeError', () => {
   /*
@@ -745,5 +751,14 @@ describe('sanitizeError — the stack header of an error whose name is not text'
     ['an empty message, and no frames', 'pw=hunter2', '', 'Error']
   ])('is written with Error as the name, %s', (_label, stack, message, expected) => {
     expect(sanitizeError(named(stack, message)).stack).toBe(expected)
+  })
+
+  it('searches the part of the stack the scrub reads, and no further', () => {
+    const stack = `pw=hunter2${FRAME}${'z'.repeat(MAX_STACK_SCAN)}boom`
+
+    const result = sanitizeError(named(stack, 'boom'))
+
+    expect(result.stack?.startsWith(`Error: boom${FRAME}`)).toBe(true)
+    expect(result.stack).not.toContain('hunter2')
   })
 })

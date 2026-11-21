@@ -17,9 +17,8 @@ import type {
 } from '@nestjs/common'
 import { APP_FILTER, APP_INTERCEPTOR, HttpAdapterHost } from '@nestjs/core'
 
-import { applyDefaults } from './config/default-options'
 import { guardOptions } from './config/options-refusal.util'
-import { validateOptions } from './config/validate-options'
+import { resolveOptions } from './config/resolve-options'
 import {
   LOG_CONTEXT_TOKEN,
   LOGGER_DESTINATIONS_TOKEN,
@@ -222,10 +221,7 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase implements NestModu
    *   BymaxLoggerModule.forRoot({ service: { name: 'api', version: '1.0.0' } })
    */
   static override forRoot(options: typeof OPTIONS_TYPE): DynamicModule {
-    const resolved = guardOptions(() => {
-      validateOptions(options)
-      return applyDefaults(options)
-    })
+    const resolved = resolveOptions(options)
     const providers: Provider[] = [
       { provide: LOGGER_OPTIONS_TOKEN, useValue: resolved },
       ...buildCommonProviders()
@@ -273,12 +269,8 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase implements NestModu
     const providers: Provider[] = [
       {
         provide: LOGGER_OPTIONS_TOKEN,
-        useFactory: (raw: BymaxLoggerModuleOptions): ResolvedBymaxLoggerModuleOptions => {
-          return guardOptions(() => {
-            validateOptions(raw)
-            return applyDefaults(raw)
-          })
-        },
+        useFactory: (raw: BymaxLoggerModuleOptions): ResolvedBymaxLoggerModuleOptions =>
+          resolveOptions(raw),
         inject: [BUILDER_OPTIONS_TOKEN]
       },
       ...buildCommonProviders(),
