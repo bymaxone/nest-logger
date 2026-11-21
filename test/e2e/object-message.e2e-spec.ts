@@ -482,7 +482,7 @@ describe('Logger E2E — a spelling of a key the entry owns', () => {
       logger.warn({ event: 'LIB_EVENT', [spelling]: 'forged', kept: 'yes' })
     )
 
-    expect(entry).not.toHaveProperty(spelling)
+    expect(entry).not.toHaveProperty([spelling])
     expect(entry).toMatchObject({ kept: 'yes' })
     expect(JSON.stringify(entry)).not.toContain('forged')
   })
@@ -492,7 +492,7 @@ describe('Logger E2E — a spelling of a key the entry owns', () => {
       service.info('LIB_EVENT', 'text', undefined, { [spelling]: 'forged', kept: 'yes' })
     )
 
-    expect(entry).not.toHaveProperty(spelling)
+    expect(entry).not.toHaveProperty([spelling])
     expect(entry).toMatchObject({ kept: 'yes' })
     expect(JSON.stringify(entry)).not.toContain('forged')
   })

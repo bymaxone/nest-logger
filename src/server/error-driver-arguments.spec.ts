@@ -76,8 +76,8 @@ describe('the arguments of a failed driver call', () => {
     })
 
     expect(entry.err.code).toBe('E_Q')
-    expect(entry.err).not.toHaveProperty(field)
-    expect(entry.nested).not.toHaveProperty(field)
+    expect(entry.err).not.toHaveProperty([field])
+    expect(entry.nested).not.toHaveProperty([field])
     expect(line).not.toContain('person@example.com')
   })
 
@@ -151,7 +151,7 @@ describe('the row values a database error quotes', () => {
       routine: '_bt_check_unique'
     })
     for (const field of ['detail', 'where', 'internalQuery']) {
-      expect(entry.err).not.toHaveProperty(field)
+      expect(entry.err).not.toHaveProperty([field])
     }
     expect(line).not.toContain('person@example.com')
   })
@@ -183,7 +183,7 @@ describe('the row values a database error quotes', () => {
 
     expect(entry.err).toMatchObject({ code: '23505', constraint: 'users_email_key' })
     for (const field of ['detail', 'where', 'internalQuery']) {
-      expect(entry.err).not.toHaveProperty(field)
+      expect(entry.err).not.toHaveProperty([field])
     }
     expect(line).not.toContain('person@example.com')
   })
@@ -237,7 +237,7 @@ describe('a driver error held as a field of another error', () => {
     })
     for (const held of [entry.err.driverError, entry.err]) {
       for (const field of ['detail', 'where', 'internalQuery']) {
-        expect(held).not.toHaveProperty(field)
+        expect(held).not.toHaveProperty([field])
       }
     }
   })
@@ -257,7 +257,7 @@ describe('a driver error held as a field of another error', () => {
       )
 
       expect(entry.err).toMatchObject({ code: 'E_X' })
-      expect(entry.err).not.toHaveProperty(field)
+      expect(entry.err).not.toHaveProperty([field])
       expect(line).not.toContain('person@example.com')
     }
   )

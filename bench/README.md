@@ -31,9 +31,10 @@ baseline** (see Calibration history), not to aspirational targets:
   measurement — enough to survive runner noise, tight enough to fail on a real
   ~2× regression. This budget fails CI.
 - **Object message (HARD gate):** `F.opsPerSec ≥ E.opsPerSec × 0.20`. An object
-  message keeps **0.46 to 0.47×** of the throughput of a string line on the shipped
-  build of 1.4.24 and of 1.4.25 (a cost of about 2.2×); the floor is 0.20, a cost of
-  5×. Both throughputs are read in one run, so the speed of the runner cancels.
+  message keeps about **0.4 to 0.47×** of the throughput of a string line on the shipped
+  build: 0.46 to 0.47 on a quiet host and 0.38 to 0.42 on a loaded one, a
+  cost of about 2.2 to 2.6×. The floor is 0.20, a cost of 5×, so the margin is about 1.9× on
+  the loaded host. Both throughputs are read in one run, so the speed of the runner cancels.
 - **Scenario D is printed, never gated.** It keeps the legacy strategy's cost
   visible and reproducible (the README quotes the comparison); constraining it
   would be constraining an escape hatch nobody should be reaching for.

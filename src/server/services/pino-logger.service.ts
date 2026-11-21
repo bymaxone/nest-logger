@@ -82,8 +82,8 @@ const OWNED_KEY_SPELLINGS: ReadonlySet<string> = new Set(
 )
 
 /**
- * The keys the library derives from an error and writes on an entry itself. They are matched by
- * their own spelling and not folded: `exceptionType` is a name a caller may use for a field of its
+ * The keys the library derives from an error and writes on an entry itself. They are matched as they
+ * look ({@link lookAlike}) and not folded further: `exceptionType` is a name a caller may use for a field of its
  * own. `event.name` is not among them: a call with no log key may supply it.
  */
 const DERIVED_KEYS: ReadonlySet<string> = new Set([
@@ -93,12 +93,23 @@ const DERIVED_KEYS: ReadonlySet<string> = new Set([
   'error.type'
 ])
 
+/**
+ * A key as it looks in a log viewer: the compatibility forms read as the letter they stand for, the
+ * characters that print as nothing and the spaces are gone, and the case is folded. The separators and
+ * the camel case are kept, since `exception_type` and `exceptionType` look different.
+ */
+const lookAlike = (key: string): string =>
+  key
+    .normalize('NFKC')
+    .replace(/[\p{Cf}\p{Zs}]/gu, '')
+    .toLowerCase()
+
 /** Whether `key` is an owned key or a spelling of one, or one of the dotted resource keys. */
 const isOwnedKey = (key: string): boolean => {
   const lower = key.toLowerCase()
   return (
     OWNED_KEY_SPELLINGS.has(foldKey(key)) ||
-    DERIVED_KEYS.has(lower) ||
+    DERIVED_KEYS.has(lookAlike(key)) ||
     lower.startsWith('service.') ||
     lower.startsWith('deployment.')
   )

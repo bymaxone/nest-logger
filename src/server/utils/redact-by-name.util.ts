@@ -61,12 +61,20 @@ import { types } from 'node:util'
 
 import { cutIfText } from './bounded-text.util'
 import { censorRawHeaders } from './censor-raw-headers.util'
-import { errorTextField, isCensored, messageCensor, rulesBelow } from './error-text-exemption.util'
+import {
+  censorAnyName,
+  errorTextField,
+  headerMessage,
+  isCensored,
+  messageCensor,
+  readField,
+  rulesBelow
+} from './error-text-exemption.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
 import { addErrorParts, defineOwn, type ErrorPartsHost } from './redact-error-parts.util'
-import { censorName, OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
+import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 /** The keys of a message that hold headers as a flat `[name, value, ...]` array. */
@@ -185,6 +193,24 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
 }
 
 /**
+ * The rules that apply inside an `Error` when they differ from the rest of the walk.
+ *
+ * @param rules - The rules of the walk, without the counter of visits.
+ * @param names - The names censored there, if they differ.
+ * @param visits - The counter the walk shares.
+ * @returns The rules inside an `Error`, or `undefined` when one set covers the walk.
+ */
+function rulesInside(
+  rules: Omit<RedactRules, 'visits'>,
+  names: ReadonlySet<string> | undefined,
+  visits: RedactRules['visits']
+): RedactRules | undefined {
+  return names === undefined
+    ? undefined
+    : { ...rules, sensitive: names, visits, insideErrors: undefined }
+}
+
+/**
  * A configured redactor.
  *
  * @param value - The value to redact.
@@ -195,6 +221,20 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
  *   `JSON.stringify` and keep it.
  */
 export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
+
+/** What the `err` serializer returned: its `message` and stack header are already censored. */
+const errorOutputs = new WeakSet<object>()
+
+/**
+ * Mark the object the `err` serializer returned, so the walk of it leaves the header of its stack.
+ *
+ * @param output - What the serializer returned.
+ * @returns The same value.
+ */
+export function markErrorOutput<T>(output: T): T {
+  if (typeof output === 'object' && output !== null) errorOutputs.add(output)
+  return output
+}
 
 /** What one walk needs besides the value. */
 export interface RedactRules {
@@ -217,6 +257,8 @@ export interface RedactRules {
    * under the names. Off when the host serializes `err` itself.
    */
   readonly errorTextToSerializer: boolean
+  /** Whether the serializer that made the one object these rules are given to censored its stack header; not below it. */
+  readonly headerKept?: boolean | undefined
   /** Names not censored in the one object these rules are given to, and in none below it. */
   readonly exemptKeys?: ReadonlySet<string> | undefined
   /**
@@ -584,13 +626,13 @@ function walkProperties(
 ): unknown {
   const source = value as Record<string, unknown>
   const keys = Object.keys(source)
-  const { safe } = rules.ownFields
-  const asData = isError(value) && (safe || (rules.errorsAsData && !inSerialized))
+  const asData = isError(value) && (rules.ownFields.safe || (rules.errorsAsData && !inSerialized))
   const copy = startCopy(value, asData)
-  const scrubbed = isError(value) && (safe || !inSerialized)
+  const scrubbed = isError(value) && (rules.ownFields.safe || !inSerialized)
   const omitted = new Set<string>()
+  const header = headerMessage(rules, source, keys, isError(value))
   for (const key of keys) {
-    const read = Reflect.get(source, key)
+    const read = readField(source, key, header)
     const current = scrubbed ? ownFieldForLog(source, key, read, rules.ownFields) : read
     // A `toJSON` that reads as a function only now is a hook the walk did not follow, which
     // `JSON.stringify` would run after the redaction.
@@ -611,7 +653,7 @@ function walkProperties(
         : censorHeaderArray(
             key,
             walk(
-              errorTextField(rules, key, current, scrubbed),
+              errorTextField(rules, key, current, scrubbed, header),
               rulesBelow(rules, key, current, honorToJson),
               depth + 1,
               ancestors,
@@ -667,7 +709,7 @@ function errorPartsHost(
     // What a serializer receives names the error `name`, as the error-like shape it reads does;
     // everything else keeps the `type` the written entries use.
     nameKey: inSerialized ? 'name' : 'type',
-    censorName: (name) => censorName(name, messageCensor(rules)),
+    censorName: (name) => censorAnyName(rules, name),
     walk: (value, depth) => walk(value, rules, depth, ancestors, true, inSerialized),
     // Under 'safe' the cap does not read a list's `toJSON`: a list over the cap becomes a fresh array
     // and is never read for it, and a list within the cap is read once, by the walk.
@@ -740,11 +782,9 @@ export function createNameRedactor(
       const visits = { count: 0 }
       const call: RedactRules = {
         ...rules,
+        headerKept: typeof value === 'object' && value !== null && errorOutputs.has(value),
         visits,
-        insideErrors:
-          insideNames === undefined
-            ? undefined
-            : { ...rules, sensitive: insideNames, visits, insideErrors: undefined }
+        insideErrors: rulesInside(rules, insideNames, visits)
       }
       return walk(value, call, 0, new Set<object>(), !isRecordRoot)
     } catch {

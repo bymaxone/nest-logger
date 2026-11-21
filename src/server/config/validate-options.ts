@@ -18,6 +18,7 @@
 import { types } from 'node:util'
 
 import { dropUnsetOptions } from './drop-unset-options'
+import { refuse } from './options-refusal.util'
 import {
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
   MAX_ENTRY_SIZE_BYTES,
@@ -41,7 +42,7 @@ import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-optio
  */
 function reject(path: string, rule: string, got?: unknown, wasGiven = got !== undefined): never {
   const received = wasGiven ? `. Received ${describeValue(got)}` : ''
-  throw new Error(`[BymaxLoggerModule] options.${path} ${rule}${received}`)
+  refuse(`[BymaxLoggerModule] options.${path} ${rule}${received}`)
 }
 
 /**
@@ -193,7 +194,7 @@ function validateLifecycle(options: BymaxLoggerModuleOptions): void {
 function validateCore(options: BymaxLoggerModuleOptions): void {
   const service: unknown = options.service
   if (service === undefined) {
-    throw new Error('[BymaxLoggerModule] options.service is required')
+    refuse('[BymaxLoggerModule] options.service is required')
   }
   if (!isRecord(service)) reject('service', 'must be an object', service)
   for (const field of ['name', 'version'] as const) {

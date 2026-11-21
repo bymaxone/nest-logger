@@ -6,6 +6,8 @@
  * Layer: server/utils. Pure.
  */
 import { cutIfText } from './bounded-text.util'
+import { foldKey } from './fold-key.util'
+import { hideMessageInStack } from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
 import { ERROR_TEXT_FIELDS } from './redact-error-parts.util'
 import { censorName } from './sanitize-error.util'
@@ -50,7 +52,9 @@ export function rulesBelow(
     return { ...rules, exemptKeys: ERROR_TEXT_KEYS }
   }
   // Stryker disable next-line ConditionalExpression: equivalent: a copy with no exemption walks as the rules do, so this branch only saves the allocation.
-  return rules.exemptKeys === undefined ? rules : { ...rules, exemptKeys: undefined }
+  return rules.exemptKeys === undefined && rules.headerKept !== true
+    ? rules
+    : { ...rules, exemptKeys: undefined, headerKept: undefined }
 }
 
 /**
@@ -78,6 +82,72 @@ export function messageCensor(rules: RedactRules): (text: string) => string {
   return (text) => (rules.sensitive.has('message') ? rules.censor : text)
 }
 
+/** What the header of a stack is a copy of: the message as it was read, and the key it was read from. */
+export interface HeaderText {
+  /** The own key holding the message, in the spelling the object wrote it. */
+  readonly key: string
+  /** The message, read once. */
+  readonly text: string
+}
+
+/**
+ * The message of an object that is no `Error` and carries a `message` and a `stack` of its own, when
+ * the rules hide `message` and the object is not the one under `err` (whose message the serializer
+ * censors): the text the header of its stack is a copy of. The keys are matched as the spellings of
+ * one name are, so `Message` and `STACK` count. Read once, here, so the walk uses the same text for
+ * the field and for the header.
+ *
+ * @param rules - The rules of the walk.
+ * @param source - The object being walked.
+ * @param keys - Its own enumerable keys.
+ * @param isError - Whether it is an `Error`.
+ * @returns The message and its key, or `undefined` when there is no header to hide it in.
+ */
+export function headerMessage(
+  rules: RedactRules,
+  source: object,
+  keys: readonly string[],
+  isError: boolean
+): HeaderText | undefined {
+  if (isError || !rules.sensitive.has('message') || rules.exemptKeys?.has('message') === true)
+    return undefined
+  if (rules.headerKept === true) return undefined
+  const key = keys.find((candidate) => foldKey(candidate) === 'message')
+  if (key === undefined || !keys.some((candidate) => foldKey(candidate) === 'stack')) {
+    return undefined
+  }
+  const text: unknown = Reflect.get(source, key)
+  return typeof text === 'string' ? { key, text } : undefined
+}
+
+/**
+ * The value of a field as the walk reads it: the message already read for the header, so the field
+ * and the header are made from one read, and any other field by property access.
+ *
+ * @param source - The object being walked.
+ * @param key - The field.
+ * @param header - What {@link headerMessage} read, if anything.
+ * @returns The value of the field.
+ */
+export function readField(source: object, key: string, header: HeaderText | undefined): unknown {
+  return header !== undefined && key === header.key ? header.text : Reflect.get(source, key)
+}
+
+/**
+ * The name of an error as the censor of the message leaves it: text passes the censor of names, a
+ * value that is an object or a function may hold anything and is hidden with the message, and any
+ * other value is kept.
+ *
+ * @param rules - The rules of the walk.
+ * @param name - The name, of any type.
+ * @returns The name to write.
+ */
+export function censorAnyName(rules: RedactRules, name: unknown): unknown {
+  if (typeof name === 'string') return censorName(name, messageCensor(rules))
+  const holder = (typeof name === 'object' && name !== null) || typeof name === 'function'
+  return holder && rules.sensitive.has('message') ? rules.censor : name
+}
+
 /**
  * A text field of an `Error` as the walk writes it: cut at the text limit, and, for the `name`,
  * censored as the name of the `err` of an entry is.
@@ -86,15 +156,20 @@ export function messageCensor(rules: RedactRules): (text: string) => string {
  * @param key - The field: `name`, `message` or `stack`.
  * @param value - Its value.
  * @param isError - Whether the object holding the field is an `Error` the walk reads.
+ * @param header - The message of an object that is no `Error`, whose `stack` header holds it.
  * @returns The value to write.
  */
 export function errorTextField(
   rules: RedactRules,
   key: string,
   value: unknown,
-  isError: boolean
+  isError: boolean,
+  header?: HeaderText
 ): unknown {
+  if (header !== undefined && foldKey(key) === 'stack' && typeof value === 'string') {
+    return hideMessageInStack(value, header.text, rules.censor)
+  }
   if (!isError || !ERROR_TEXT_FIELDS.has(key)) return value
   const cut = cutIfText(value)
-  return key === 'name' && typeof cut === 'string' ? censorName(cut, messageCensor(rules)) : cut
+  return key === 'name' ? censorAnyName(rules, cut) : cut
 }

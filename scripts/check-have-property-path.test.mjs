@@ -18,31 +18,52 @@ const SCRIPT = fileURLToPath(new URL('./check-have-property-path.mjs', import.me
 describe('dottedPathHits', () => {
   it('flags a negative assertion on a key with a dot, which could never fail', () => {
     const hits = dottedPathHits("expect(out).not.toHaveProperty('exception.stacktrace')\n")
-    assert.deepEqual(hits, [{ line: 1, path: 'exception.stacktrace' }])
+    assert.deepEqual(hits, [{ line: 1, path: 'exception.stacktrace', literal: true }])
   })
 
   it('flags a positive path, a double-quoted and a template literal, with the value', () => {
     const text = 'a.toHaveProperty("a.b", 1)\nb.toHaveProperty(`c.d`)\n'
     assert.deepEqual(dottedPathHits(text), [
-      { line: 1, path: 'a.b' },
-      { line: 2, path: 'c.d' }
+      { line: 1, path: 'a.b', literal: true },
+      { line: 2, path: 'c.d', literal: true }
     ])
   })
 
   it('flags a call whose string is on the next line', () => {
     const text = 'expect(out).not.toHaveProperty(\n  "exception.message"\n)\n'
-    assert.deepEqual(dottedPathHits(text), [{ line: 1, path: 'exception.message' }])
+    assert.deepEqual(dottedPathHits(text), [{ line: 1, path: 'exception.message', literal: true }])
   })
 
   it('reads a string with an escaped quote to its end', () => {
     const text = "x.toHaveProperty('a\\'b.c')\n"
-    assert.deepEqual(dottedPathHits(text), [{ line: 1, path: "a\\'b.c" }])
+    assert.deepEqual(dottedPathHits(text), [{ line: 1, path: "a\\'b.c", literal: true }])
   })
 
-  it('accepts the key form, a key without a dot, and a variable', () => {
+  it('accepts the key form, in every spelling, and a key without a dot', () => {
     const text =
-      "a.toHaveProperty(['exception.stacktrace'])\nb.toHaveProperty('message')\nc.toHaveProperty(key)\n"
+      "a.toHaveProperty(['exception.stacktrace'])\nb.toHaveProperty('message')\nc.toHaveProperty([key])\nd.toHaveProperty( [key] , 1)\n"
     assert.deepEqual(dottedPathHits(text), [])
+  })
+
+  it('flags a variable, whose value may hold a dot', () => {
+    assert.deepEqual(dottedPathHits('c.toHaveProperty(key)\n'), [
+      { line: 1, path: 'key', literal: false }
+    ])
+    assert.deepEqual(dottedPathHits('c.toHaveProperty(key, 1)\n'), [
+      { line: 1, path: 'key', literal: false }
+    ])
+  })
+
+  it('flags a concatenation and a template with a substitution', () => {
+    assert.equal(dottedPathHits("c.toHaveProperty('a' + b)\n").length, 1)
+    assert.equal(dottedPathHits('c.toHaveProperty(`a${b}`)\n').length, 1)
+  })
+
+  it('reads a call with a space before the paren, and a variable on the next line', () => {
+    assert.equal(dottedPathHits("c.toHaveProperty ('a.b')\n").length, 1)
+    assert.deepEqual(dottedPathHits('c.toHaveProperty(\n  key\n)\n'), [
+      { line: 1, path: 'key', literal: false }
+    ])
   })
 
   it('counts the line of each hit', () => {

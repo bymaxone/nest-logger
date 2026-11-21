@@ -234,8 +234,8 @@ describe('Logger E2E — a spelling of a context key', () => {
     it.each(REQUEST_ALIASES)('drops %s, a spelling of %s', async (alias, key) => {
       const entry = await inRequest(makeAct({ [alias]: FORGED }))
 
-      expect(entry).not.toHaveProperty(alias)
-      expect(entry).toHaveProperty(key)
+      expect(entry).not.toHaveProperty([alias])
+      expect(entry).toHaveProperty([key])
       expect(JSON.stringify(entry)).not.toContain(FORGED)
     })
   })
@@ -258,8 +258,8 @@ describe('Logger E2E — a spelling of a trace key', () => {
     it.each(TRACE_ALIASES)('drops %s, a spelling of %s', async (alias, key) => {
       const entry = await inRequest(makeAct({ [alias]: FORGED }))
 
-      expect(entry).not.toHaveProperty(alias)
-      expect(entry).toHaveProperty(key)
+      expect(entry).not.toHaveProperty([alias])
+      expect(entry).toHaveProperty([key])
       expect(JSON.stringify(entry)).not.toContain(FORGED)
     })
 
@@ -270,8 +270,8 @@ describe('Logger E2E — a spelling of a trace key', () => {
           otel: { fieldFormat: 'snake_case' }
         })
 
-        expect(entry).not.toHaveProperty(alias)
-        expect(entry).toHaveProperty(key)
+        expect(entry).not.toHaveProperty([alias])
+        expect(entry).toHaveProperty([key])
         expect(JSON.stringify(entry)).not.toContain(FORGED)
       }
     )

@@ -561,7 +561,7 @@ describe('sanitizeError — a stack or a cause that cannot be read', () => {
       const node = sanitizeError(withThrowingProperty(property))
 
       expect(node).toMatchObject({ name: 'Error', message: 'boom', _errorFieldsIncomplete: true })
-      expect(node).not.toHaveProperty(property)
+      expect(node).not.toHaveProperty([property])
     }
   )
 
@@ -709,5 +709,41 @@ describe('ownFieldForLog', () => {
     )
 
     expect(Object.keys(node)).toStrictEqual(['name', 'message', 'stack', 'code'])
+  })
+})
+
+describe('sanitizeError — the stack header of an error whose name is not text', () => {
+  const FRAME = '\n    at run (/srv/app.js:1:1)'
+  const named = (stack: string, message: string): Error => {
+    const error = new Error(message)
+    Object.defineProperty(error, 'name', { value: { toString: () => 'pw=hunter2' } })
+    Object.defineProperty(error, 'stack', { value: stack })
+    return error
+  }
+
+  it.each([
+    [
+      'the engine header, with the message in it',
+      `pw=hunter2: boom${FRAME}`,
+      'boom',
+      `Error: boom${FRAME}`
+    ],
+    [
+      'a message that holds a frame-shaped line',
+      `pw=hunter2: m\n    at fake${FRAME}`,
+      'm\n    at fake',
+      `Error: m\n    at fake${FRAME}`
+    ],
+    [
+      'a stack that holds no message, with frames',
+      `pw=hunter2${FRAME}`,
+      'boom',
+      `Error: boom${FRAME}`
+    ],
+    ['a stack that holds no message, and no frames', 'pw=hunter2', 'boom', 'Error: boom'],
+    ['an empty message, with frames', `pw=hunter2: ${FRAME}`, '', `Error${FRAME}`],
+    ['an empty message, and no frames', 'pw=hunter2', '', 'Error']
+  ])('is written with Error as the name, %s', (_label, stack, message, expected) => {
+    expect(sanitizeError(named(stack, message)).stack).toBe(expected)
   })
 })
