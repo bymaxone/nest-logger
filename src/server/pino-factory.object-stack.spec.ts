@@ -67,6 +67,17 @@ describe('the stack of a plain-object message that has a message of its own', ()
     expect(JSON.stringify([repeated, several])).not.toContain(SECRET)
   })
 
+  it('hides a message that holds a line shaped like a frame', () => {
+    const message = `x\n    at ${SECRET}`
+    const line = lineOf(
+      (s) => s.warn({ message, stack: `Error: ${message}\n    at run (/srv/a.js:1:1)` }),
+      { redactPaths: ['message'] }
+    )
+
+    expect(line['stack']).toBe('Error: [REDACTED]\n    at run (/srv/a.js:1:1)')
+    expect(JSON.stringify(line)).not.toContain(SECRET)
+  })
+
   it('is left as it was written when message is not a name to hide', () => {
     const line = lineOf((s) => s.warn({ message: SECRET, stack: STACK }), {
       redactPaths: ['password']

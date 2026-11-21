@@ -26,6 +26,12 @@ describe('hideMessageInStack', () => {
     expect(hideMessageInStack('Error: SEC', 'SEC', '[R]')).toBe('Error: [R]')
   })
 
+  it('replaces a message that holds a line shaped like a frame', () => {
+    expect(
+      hideMessageInStack('Error: x\n    at SECRET\n    at f (g:1)', 'x\n    at SECRET', '[R]')
+    ).toBe('Error: [R]\n    at f (g:1)')
+  })
+
   it('leaves a frame that holds the message alone', () => {
     expect(hideMessageInStack('Error: head\n  at SEC (f)', 'SEC', '[R]')).toBe(
       'Error: head\n  at SEC (f)'
