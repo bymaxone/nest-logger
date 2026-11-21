@@ -30,6 +30,8 @@ function failureTable(message: string): Int32Array {
  * message is. Occurrences that overlap are one span, so a message that overlaps itself is hidden whole.
  */
 function occurrences(stack: string, message: string): Span[] {
+  // No table for a message longer than the stack: it is not in it.
+  if (message.length > stack.length) return []
   const table = failureTable(message)
   const spans: Array<[number, number]> = []
   // Stryker disable next-line EqualityOperator: equivalent: at `i === stack.length` there is no character, so `matched` can only fall, or pass the length of the message when the last character ended an occurrence, and a count past that length is not a match: no span is added.
@@ -67,8 +69,7 @@ export function hideMessagesInStack(
   limit: number
 ): string {
   const spans = messages
-    // Stryker disable next-line ConditionalExpression: equivalent in output: a message that does not fit in the stack is not found in it; the test only spares the table, which is as long as the message.
-    .filter((message) => message !== '' && message.length <= stack.length)
+    .filter((message) => message !== '')
     .flatMap((message) => occurrences(stack, message))
     .sort((a, b) => a[0] - b[0])
   let result = ''
