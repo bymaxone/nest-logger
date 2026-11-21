@@ -52,6 +52,16 @@ describe('the stack of an object message at the root of an entry', () => {
     }
   )
 
+  it('hides the message in a stack key only, not in another field that holds the same text', () => {
+    const line = lineOf(
+      { message: SECRET, Stack: STACK, note: `see ${SECRET}` },
+      { redactPaths: ['message'] }
+    )
+
+    expect(line).toContain(`see ${SECRET}`)
+    expect(line).not.toContain(`Error: ${SECRET}`)
+  })
+
   it('keeps the text when message is not a name to hide', () => {
     expect(lineOf({ message: SECRET, Stack: STACK })).toContain(SECRET)
   })
@@ -73,5 +83,44 @@ describe('an own property of an Error that spells stack', () => {
     })
 
     expect(lineOf({ err })).toContain('Error: kept')
+  })
+})
+
+describe('the stack of a plain object that is very long or very dense', () => {
+  /** The stack of an object under `meta`, as a log line. */
+  const lineFor = (message: string, stack: string): string =>
+    lineOf({ meta: { message, stack } }, { redactPaths: ['message'] })
+
+  /**
+   * Given a stack of a million characters of one kind and a message of four of them
+   * When the entry is written
+   * Then it takes little time and little memory, whatever the stack holds
+   */
+  it('is written in bounded time and memory for a dense stack of a million characters', () => {
+    const stack = `Error: ${'a'.repeat(1_000_000)}`
+    const before = process.memoryUsage().rss
+    const started = Date.now()
+
+    const line = lineFor('aaaa', stack)
+
+    expect(Date.now() - started).toBeLessThan(3_000)
+    expect(process.memoryUsage().rss - before).toBeLessThan(300_000_000)
+    expect(line).not.toContain('aaaa')
+  })
+
+  /**
+   * Given a message longer than the text limit that a stack repeats
+   * When the entry is written
+   * Then the stack is the censor, and the message is not searched for in a million characters
+   */
+  it('is written as the censor when the message is longer than the text limit', () => {
+    const message = 'k'.repeat(1_000_000)
+    const started = Date.now()
+
+    const line = lineFor(message, `Error: ${message}\n${'k'.repeat(1_000_000)}`)
+
+    expect(Date.now() - started).toBeLessThan(3_000)
+    expect(line).not.toContain('kkkkkkkkkk')
+    expect(line).toContain('[REDACTED]')
   })
 })

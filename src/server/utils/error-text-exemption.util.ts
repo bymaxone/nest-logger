@@ -5,7 +5,7 @@
  *
  * Layer: server/utils. Pure.
  */
-import { cutIfText } from './bounded-text.util'
+import { cutIfText, MAX_TEXT_LENGTH } from './bounded-text.util'
 import { foldKey, matchesFolded, matchesKey } from './fold-key.util'
 import { hideMessagesInStack } from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
@@ -147,8 +147,12 @@ export function headerMessage(
     const named: unknown = keys.includes('message') ? undefined : Reflect.get(source, 'message')
     if (typeof named === 'string') texts.set('message', named)
   }
+  // A message longer than the text limit is never searched for: the part of the stack read is bounded by
+  // the limit and not by the message, so a stack that may repeat it is written as the censor.
   const overflow =
-    stacks.length > MAX_STACK_ALIASES || new Set(texts.values()).size > MAX_STACK_ALIASES
+    stacks.length > MAX_STACK_ALIASES ||
+    new Set(texts.values()).size > MAX_STACK_ALIASES ||
+    [...texts.values()].some((text) => text.length > MAX_TEXT_LENGTH)
   return { texts, stackKeys: new Set(stacks), overflow }
 }
 

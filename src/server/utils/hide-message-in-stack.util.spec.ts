@@ -3,7 +3,7 @@
  *
  * Layer: server/utils, tests. Pure.
  */
-import { hideMessageInStack, hideMessagesInStack } from './hide-message-in-stack.util'
+import { hideMessageInStack, hideMessagesInStack, occurrences } from './hide-message-in-stack.util'
 
 describe('hideMessageInStack', () => {
   /*
@@ -221,5 +221,44 @@ describe('hideMessagesInStack', () => {
     const stack = `${'ABC'.repeat(30)}tail`
 
     expect(hideMessagesInStack(stack, ['ABC'], '#', 10)).toBe('####')
+  })
+})
+
+describe('occurrences', () => {
+  /**
+   * Given a run of one character and a message of four of them
+   * When the occurrences are listed
+   * Then they are one span, not one for each place the message fits
+   */
+  it('lists a dense run as one span', () => {
+    expect(occurrences('a'.repeat(50), 'aaaa')).toEqual([[0, 50]])
+  })
+
+  /**
+   * Given a message that overlaps itself, one that touches itself and one that is apart from itself
+   * When the occurrences are listed
+   * Then overlapping ones are one span, and touching or separate ones are two
+   */
+  it.each([
+    ['ababa', 'aba', [[0, 5]]],
+    [
+      'abab',
+      'ab',
+      [
+        [0, 2],
+        [2, 4]
+      ]
+    ],
+    [
+      'abXab',
+      'ab',
+      [
+        [0, 2],
+        [3, 5]
+      ]
+    ],
+    ['abc', 'abcd', []]
+  ] as const)('lists %j for %j', (stack, message, spans) => {
+    expect(occurrences(stack, message)).toEqual(spans)
   })
 })

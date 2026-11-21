@@ -27,10 +27,12 @@ function failureTable(message: string): Int32Array {
 
 /**
  * The spans where `message` occurs in `stack`, in order, in one pass over the stack whatever the
- * message is. Occurrences that overlap are listed as they are: {@link hideMessagesInStack} reads
- * overlapping spans as one, so a message that overlaps itself is hidden whole.
+ * message is. Occurrences that overlap are one span, so a message that overlaps itself is hidden whole
+ * and a dense run of one character holds one span, not one for each of its characters.
+ *
+ * @internal Exported for its tests only.
  */
-function occurrences(stack: string, message: string): Span[] {
+export function occurrences(stack: string, message: string): Span[] {
   // No table for a message longer than the stack: it is not in it.
   // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (a message longer than the stack is not found in it, so the table that guard spares changes nothing); the true mutant is killed by the rows of hide-message-in-stack.util.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
   if (message.length > stack.length) return []
@@ -41,7 +43,10 @@ function occurrences(stack: string, message: string): Span[] {
     while (matched > 0 && stack[i] !== message[matched]) matched = table[matched - 1] as number
     if (stack[i] === message[matched]) matched += 1
     if (matched === message.length) {
-      spans.push([i + 1 - message.length, i + 1])
+      const start = i + 1 - message.length
+      const last = spans[spans.length - 1]
+      if (last !== undefined && start < last[1]) last[1] = i + 1
+      else spans.push([start, i + 1])
     }
   }
   return spans
