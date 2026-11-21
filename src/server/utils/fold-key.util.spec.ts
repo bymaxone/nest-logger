@@ -254,6 +254,18 @@ describe('matchesFolded, the work for one key', () => {
     expect(matchesFolded(many, 'f\u04bbeld1234')).toBe(false)
   })
 
+  it('groups a large set of names in a time that is linear in them', () => {
+    const large = new Set(
+      Array.from({ length: 40_000 }, (_, i) => `field${String(i).padStart(6, '0')}`)
+    )
+    const started = Date.now()
+
+    const hidden = matchesFolded(large, 'f\u04bbeld123456')
+
+    expect(hidden).toBe(true)
+    expect(Date.now() - started).toBeLessThan(1_000)
+  })
+
   it('walks a key against a few candidates and tells them apart', () => {
     const few = new Set(['token', 'tokens', 'toke'])
 

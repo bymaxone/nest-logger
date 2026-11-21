@@ -178,7 +178,9 @@ function groupsOf(names: ReadonlySet<string>): Grouped {
     let longest = 0
     for (const name of names) {
       const size = [...name].length
-      built.set(size, [...(built.get(size) ?? []), name])
+      const same = built.get(size)
+      if (same === undefined) built.set(size, [name])
+      else same.push(name)
       longest = Math.max(longest, size)
     }
     groups = { byLength: built, longest }
@@ -212,18 +214,15 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   if (ascii === 0 || ascii * MIN_ASCII_SHARE < letters.length) return false
   const { byLength, longest } = groupsOf(names)
   if (letters.length > longest) return false
-  const candidates: string[] = []
-  for (
-    let length = letters.length;
-    length <= letters.length + letters.length - ascii;
-    length += 1
-  ) {
-    candidates.push(...(byLength.get(length) ?? []))
-  }
+  const lengths = Array.from(
+    { length: letters.length - ascii + 1 },
+    (_, extra) => byLength.get(letters.length + extra) ?? []
+  )
   // More names of a compatible length than a key is walked against: the value is hidden, since the work
-  // for a key of any length and any set of names is bounded and a hidden value is the safe answer.
-  if (candidates.length > MAX_CANDIDATES) return true
-  return candidates.some((name) => matchesName(letters, [...name]))
+  // for a key of any length and any set of names is bounded and a hidden value is the safe answer. The
+  // names are counted before they are gathered.
+  if (lengths.reduce((count, same) => count + same.length, 0) > MAX_CANDIDATES) return true
+  return lengths.some((same) => same.some((name) => matchesName(letters, [...name])))
 }
 
 /**
