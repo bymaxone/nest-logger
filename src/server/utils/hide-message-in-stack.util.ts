@@ -27,7 +27,8 @@ function failureTable(message: string): Int32Array {
 
 /**
  * The spans where `message` occurs in `stack`, in order, in one pass over the stack whatever the
- * message is. Occurrences that overlap are one span, so a message that overlaps itself is hidden whole.
+ * message is. Occurrences that overlap are listed as they are: {@link hideMessagesInStack} reads
+ * overlapping spans as one, so a message that overlaps itself is hidden whole.
  */
 function occurrences(stack: string, message: string): Span[] {
   // No table for a message longer than the stack: it is not in it.
@@ -40,10 +41,7 @@ function occurrences(stack: string, message: string): Span[] {
     while (matched > 0 && stack[i] !== message[matched]) matched = table[matched - 1] as number
     if (stack[i] === message[matched]) matched += 1
     if (matched === message.length) {
-      const start = i + 1 - message.length
-      const last = spans[spans.length - 1]
-      if (last !== undefined && start < last[1]) last[1] = i + 1
-      else spans.push([start, i + 1])
+      spans.push([i + 1 - message.length, i + 1])
     }
   }
   return spans
