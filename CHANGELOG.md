@@ -29,6 +29,16 @@ heading here.
   place a dense run matched cost memory out of proportion to the stack. A message longer than the text limit is no longer searched for:
   the stack is written as the censor, as it is for more than eight messages, and a run of overlapping
   matches is one span again.
+- **A symbol that is not ASCII stands for a letter in a key.** A copyright sign, a sound recording sign,
+  a multiplication sign or any other symbol of the categories `So`, `Sm` and `Sk` was dropped as
+  punctuation, so `℗assword`, `©ookie` and `tok℮n` kept their value in clear. Each now stands for nothing,
+  one or two characters of a name, where a value is hidden, which hides the value of those keys and of a
+  short key that holds such a symbol (over-hiding is the price, as for a letter of another script). Dashes
+  and spaces are still dropped, and the keys the entry owns are still compared exactly.
+- **An own enumerable `stack` of an `Error` is written as a stack.** The message the options hide is hidden
+  in it like in any key that spells `stack`.
+- **The stack keys at the root of an entry are capped like those below it,** and the positional stack of
+  `error(object, stack)` has the message hidden: it was attached after the message was hidden.
 - **A `redactPaths` entry is at most 256 characters.** A longer one is refused at startup by the name
   of the option and its index, without echoing it: the name is compared with every key, so its length bounds that work.
 

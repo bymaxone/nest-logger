@@ -6,7 +6,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
-import { generate } from './generate-glyph-letters.mjs'
+import { createHash } from 'node:crypto'
+import { generate, SOURCE } from './generate-glyph-letters.mjs'
 
 const names = readFileSync(new URL('./unicode/latin-letter-names.txt', import.meta.url), 'utf8')
 const generated = readFileSync(
@@ -15,6 +16,12 @@ const generated = readFileSync(
 )
 
 describe('the glyph letter table', () => {
+  it('is made from the checked-in input that the pinned digest names', () => {
+    assert.equal(createHash('sha256').update(names).digest('hex'), SOURCE.inputSha256)
+    assert.match(SOURCE.url, new RegExp(`/Public/${SOURCE.version}/ucd/UnicodeData.txt$`))
+    assert.match(generated, new RegExp(`Unicode ${SOURCE.version}, ${SOURCE.url}`))
+  })
+
   it('is what the generator makes of the checked-in names, byte for byte', () => {
     assert.equal(generated, generate(names))
   })

@@ -20,6 +20,13 @@ import { GLYPH_LETTER_RUNS } from './glyph-letters.generated'
  */
 const NOT_NAME = /[^\p{L}\p{N}]|[\u115f\u1160\u3164\uffa0]/gu
 
+/** A symbol that is not ASCII (`So`, `Sm`, `Sk`) is read, where a value is hidden, as this stand-in for nothing, one or two characters of a name. */
+const SYMBOL_STAND_IN = '\ufffc'
+const NON_ASCII_SYMBOL = /(?=[^\0-\x7f])[\p{So}\p{Sm}\p{Sk}]/gu
+
+/** What is not part of a name where a value is hidden: the same, except the stand-in for a symbol. */
+const NOT_NAME_STRICT = /[^\p{L}\p{N}\ufffc]|[\u115f\u1160\u3164\uffa0]/gu
+
 /** The symbols drawn as a Latin letter that Unicode gives no decomposition for, by the letter, from {@link GLYPH_LETTER_RUNS}. */
 const GLYPH_LETTERS: ReadonlyMap<string, string> = new Map(
   GLYPH_LETTER_RUNS.flatMap(([first, letters]) =>
@@ -126,7 +133,9 @@ function foldStrict(key: string): string {
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
   if (PLAIN.test(key)) return key.replace(NOT_ASCII_NAME, '').toLowerCase()
   return withLookalikes(
-    readGlyphs(key.normalize('NFKD').toLowerCase()).replace(NOT_NAME, ''),
+    readGlyphs(key.normalize('NFKD').toLowerCase())
+      .replace(NON_ASCII_SYMBOL, SYMBOL_STAND_IN)
+      .replace(NOT_NAME_STRICT, ''),
     false
   )
 }
@@ -227,12 +236,13 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   if (!NON_ASCII.test(folded)) return false
   const letters = [...folded]
   const wide = letters.filter((letter) => !isAscii(letter)).length
+  const stands = letters.filter((letter) => letter === SYMBOL_STAND_IN).length
   const { byLength, longest } = groupsOf(names)
   // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (no name is as long as the key, so the walk finds none and answers the same), and the true mutant is killed by the rows of fold-key.util.spec.ts; this disable also hides it from the report because Stryker cannot disable one mutant of a line.
-  if (letters.length > longest) return false
+  if (letters.length - stands > longest) return false
   const lengths = Array.from(
-    { length: wide + 1 },
-    (_, extra) => byLength.get(letters.length + extra) ?? []
+    { length: wide + stands + 1 },
+    (_, extra) => byLength.get(letters.length - stands + extra) ?? []
   )
   // More names of a compatible length than a key is walked against: the value is hidden, since the work
   // for a key of any length and any set of names is bounded and a hidden value is the safe answer. The
@@ -253,6 +263,12 @@ function matchesName(letters: readonly string[], name: readonly string[]): boole
   for (const letter of letters) {
     const next = new Set<number>()
     for (const position of at) {
+      if (letter === SYMBOL_STAND_IN) {
+        next.add(position)
+        next.add(position + 1)
+        next.add(position + 2)
+        continue
+      }
       if (isAscii(letter)) {
         if (name[position] === letter) next.add(position + 1)
         continue

@@ -24,10 +24,10 @@ import {
   LOGGER_REDACTOR_TOKEN
 } from '../constants/injection-tokens.constants'
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
-import { cutText } from '../utils/bounded-text.util'
+import { cutText, MAX_TEXT_LENGTH } from '../utils/bounded-text.util'
 import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-text-finisher.util'
 import type { EntryTextCut, EntryTextFinisher } from '../utils/entry-text-finisher.util'
-import { isStackKey } from '../utils/error-text-exemption.util'
+import { isStackKey, MAX_STACK_ALIASES } from '../utils/error-text-exemption.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { foldKey } from '../utils/fold-key.util'
 import { hideMessageInStack } from '../utils/hide-message-in-stack.util'
@@ -204,21 +204,30 @@ function objectMessageText(fields: Record<string, unknown>): ObjectMessageText |
  * @param payload - The fields of the entry, whose `stack` is replaced.
  * @param text - The text of the message and the member it came from.
  * @param censor - Censors a text as the `message` of an entry is.
+ * @param positional - The stack the caller passed beside the message, which is not a field yet.
+ * @returns The positional stack, with the message hidden in it.
  */
 function hideStackMessage(
   payload: Record<string, unknown>,
   text: ObjectMessageText | undefined,
-  censor: (message: string) => string
-): void {
-  if (text?.key !== 'message') return
+  censor: (message: string) => string,
+  positional?: string
+): string | undefined {
+  if (text?.key !== 'message') return positional
   const censored = censor(text.text)
-  if (censored === text.text) return
-  for (const key of Object.keys(payload).filter(isStackKey)) {
+  if (censored === text.text) return positional
+  const keys = Object.keys(payload).filter(isStackKey)
+  // Past the caps of the walk below the root, every stack is the censor.
+  const overflow =
+    keys.length + (positional === undefined ? 0 : 1) > MAX_STACK_ALIASES ||
+    text.text.length > MAX_TEXT_LENGTH
+  const hide = (stack: string): string =>
+    overflow ? censored : hideMessageInStack(stack, text.text, censored)
+  for (const key of keys) {
     const stack = Reflect.get(payload, key) as unknown
-    if (typeof stack === 'string') {
-      Reflect.set(payload, key, hideMessageInStack(stack, text.text, censored))
-    }
+    if (typeof stack === 'string') Reflect.set(payload, key, hide(stack))
   }
+  return positional === undefined ? undefined : hide(positional)
 }
 
 /** A message read as the fields of an entry, with its text and the member the text came from. */
@@ -412,9 +421,15 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const context = typeof optionalParams[1] === 'string' ? optionalParams[1] : this.context
     // A plain-object message is the entry's fields, as in `emitNestStyle`.
     const { fields, text, payload } = readObjectMessage(message)
-    hideStackMessage(payload, text, (message) => this.censorText({ key: 'message', text: message }))
+    // Hidden before it is attached: the field is written once.
+    const positional = hideStackMessage(
+      payload,
+      text,
+      (message) => this.censorText({ key: 'message', text: message }),
+      stack === undefined ? undefined : cutText(stack)
+    )
     assignIfDefined(payload, 'context', context)
-    assignIfDefined(payload, 'stack', stack === undefined ? stack : cutText(stack))
+    assignIfDefined(payload, 'stack', positional)
     // An `Error` in the tail is attached as `err`, the same field the
     // leading-`Error` branch above writes, so `logger.error(msg, err)` and
     // `logger.error(err)` produce the same queryable shape. `stack` stays the

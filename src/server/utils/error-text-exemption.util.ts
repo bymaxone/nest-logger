@@ -118,8 +118,8 @@ const NO_STACK: HeaderText = { texts: new Map(), stackKeys: new Set(), overflow:
  * @param source - The object being walked.
  * @param keys - Its own enumerable keys.
  * @param isError - Whether it is an `Error`.
- * @returns The plan: nothing to write for an object with no stack key; for an `Error`, the plan of the keys
- *   that only spell `stack`, and `undefined` when it has none.
+ * @returns The plan: nothing to write for an object with no stack key; for an `Error`, the plan of its own
+ *   enumerable keys that spell `stack`, and `undefined` when it has none.
  */
 export function headerMessage(
   rules: RedactRules,
@@ -129,9 +129,8 @@ export function headerMessage(
 ): HeaderText | undefined {
   const keysOf = (names: ReadonlySet<string>): string[] =>
     keys.filter((candidate) => matchesKey(names, candidate))
-  // The `stack` of an `Error` is written by the serializer; a key that only spells it is a field like
-  // any other, whose text is a copy of the message.
-  const stacks = keysOf(STACK_NAMES).filter((key) => !isError || key !== 'stack')
+  // An own key of an `Error` that spells `stack`, `stack` itself included, is a copy of the message.
+  const stacks = keysOf(STACK_NAMES)
   if (stacks.length === 0) return isError ? undefined : NO_STACK
   const hides =
     rules.sensitive.has('message') &&

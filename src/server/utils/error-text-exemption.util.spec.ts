@@ -69,7 +69,7 @@ describe('headerMessage', () => {
     })
   })
 
-  it('reads no message when the options do not hide it, and nothing of an error', () => {
+  it('reads no message when the options do not hide it, and a plan of an error only for a key that spells stack', () => {
     const source = { message: SECRET, stack: 'x' }
 
     expect(headerMessage(rules(['token']), source, ['message', 'stack'], false)).toEqual({
@@ -77,7 +77,14 @@ describe('headerMessage', () => {
       stackKeys: new Set(['stack']),
       texts: new Map()
     })
-    expect(headerMessage(rules(), source, ['message', 'stack'], true)).toBeUndefined()
+    // An Error that has no key spelling `stack` has no plan; one with an own enumerable `stack` has the
+    // plan of that key, whose text is a copy of its message.
+    expect(headerMessage(rules(), { message: SECRET }, ['message'], true)).toBeUndefined()
+    expect(headerMessage(rules(), source, ['message', 'stack'], true)).toEqual({
+      overflow: false,
+      stackKeys: new Set(['stack']),
+      texts: new Map([['message', SECRET]])
+    })
   })
 })
 

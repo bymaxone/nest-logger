@@ -451,3 +451,40 @@ describe('matchesFolded, what it counts', () => {
     expect(matchesFolded(new Set(['abc']), 'ab\u007f')).toBe(false)
   })
 })
+
+describe('a symbol that is not ASCII, where a value is hidden', () => {
+  /**
+   * Given a key with a symbol that is no letter, and names it may be a drawing of
+   * When the key is folded and compared
+   * Then the symbol stands for nothing, one or two characters of a name, and nothing else is read
+   */
+  it.each([
+    ['\u2117assword', 'password', true],
+    ['tok\u212en', 'token', true],
+    ['ab\u00a9', 'ab', true],
+    ['ab\u00a9', 'abc', true],
+    ['ab\u00a9', 'abcd', true],
+    ['ab\u00a9', 'abcde', false],
+    ['\u00a9\u00a9\u00a9', 'a', true],
+    ['\u00a9\u00a9\u00a9', 'abcdef', true],
+    ['\u00a9\u00a9\u00a9', 'abcdefg', false],
+    ['api\u2212key', 'apikey', true],
+    ['api\u2212kez', 'apikey', false],
+    ['x\u00d7y', 'xy', true],
+    ['a\u2192b', 'ab', true]
+  ])('reads %j as a spelling of %j: %s', (key, name, expected) => {
+    expect(matchesFolded(new Set([name]), foldName(key))).toBe(expected)
+  })
+
+  it('keeps the symbol as one stand-in, and drops a dash, a space and an ASCII symbol', () => {
+    expect(foldName('a\u00a9b')).toBe('a\ufffcb')
+    expect(foldName('a\u2010b')).toBe('ab')
+    expect(foldName('a\u00a0b')).toBe('ab')
+    expect(foldName('a+b<c')).toBe('abc')
+    expect(foldName('a\u00d7+b')).toBe('a\ufffcb')
+  })
+
+  it('leaves the symbols alone where a field is dropped', () => {
+    expect(foldKey('trace\u00a9Id')).toBe('traceid')
+  })
+})
