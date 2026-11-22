@@ -477,6 +477,18 @@ describe('a symbol that is not ASCII, where a value is hidden', () => {
   })
 
   /**
+   * Given a set of no names, and a set of one short name
+   * When a key holding a symbol is compared
+   * Then an empty set matches nothing, and the short name hides only the keys that can spell it
+   */
+  it('hides no key for a set of no names, and bounds the symbols by the longest name of the set', () => {
+    expect(matchesFolded(foldedNames([]), foldName('a\u00b0'))).toBe(false)
+    expect(matchesFolded(foldedNames([]), foldName('\u00b0'.repeat(3)))).toBe(false)
+    expect(matchesFolded(foldedNames(['ab']), foldName('z\u00b0'))).toBe(false)
+    expect(matchesFolded(foldedNames(['ab']), foldName('a\u00b0'))).toBe(true)
+  })
+
+  /**
    * Given a key with more stand-ins than the longest name has characters
    * When it is compared
    * Then it is hidden without being walked, in bounded time, and a key with as many as the longest name

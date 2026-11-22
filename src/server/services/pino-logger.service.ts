@@ -421,13 +421,20 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const context = typeof optionalParams[1] === 'string' ? optionalParams[1] : this.context
     // A plain-object message is the entry's fields, as in `emitNestStyle`.
     const { fields, text, payload } = readObjectMessage(message)
-    // Hidden before it is attached: the field is written once.
-    const positional = hideStackMessage(
+    // Hidden before it is cut and before it is attached: a copy of the message that straddles the cut
+    // is hidden whole, and the field is written once. The part read reaches as far past the cut as the
+    // message is long, as for the stack of a plain object.
+    const read = stack?.slice(
+      0,
+      MAX_TEXT_LENGTH + Math.min(text?.text.length ?? 0, MAX_TEXT_LENGTH)
+    )
+    const hidden = hideStackMessage(
       payload,
       text,
       (message) => this.censorText({ key: 'message', text: message }),
-      stack === undefined ? undefined : cutText(stack)
+      read
     )
+    const positional = hidden && cutText(hidden, (stack?.length ?? 0) > (read?.length ?? 0))
     assignIfDefined(payload, 'context', context)
     assignIfDefined(payload, 'stack', positional)
     // An `Error` in the tail is attached as `err`, the same field the

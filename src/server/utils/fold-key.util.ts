@@ -240,6 +240,7 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   const { byLength, longest } = groupsOf(names)
   // More stand-ins than the longest name has characters: the key is hidden without being walked, since
   // the walk is quadratic in them and a key made of symbols is the safe way to be wrong.
+  if (longest === 0) return false
   if (stands > longest) return true
   // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (no name is as long as the key, so the walk finds none and answers the same), and the true mutant is killed by the rows of fold-key.util.spec.ts; this disable also hides it from the report because Stryker cannot disable one mutant of a line.
   if (letters.length - stands > longest) return false

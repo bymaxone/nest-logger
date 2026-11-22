@@ -300,3 +300,41 @@ describe('the caps on the stack keys and on the message at the root of an entry'
     )
   })
 })
+
+describe('the message in a stack passed beside it, at the cut', () => {
+  const MESSAGE = `LEAKMARK${'q'.repeat(22)}`
+
+  /** The stack written for `error({ message }, stack)` when the options hide `message`. */
+  function written(stack: string): string {
+    const lines: string[] = []
+    const options = applyDefaults({
+      service: { name: 'app', version: '1.0.0' },
+      redactPaths: ['message']
+    })
+    const sink = { name: 'sink', write: (line: unknown) => lines.push(String(line)) }
+    const pino = buildPinoInstance(
+      options,
+      new LogContextService(),
+      [sink as never],
+      new DestinationHealth()
+    )
+    new PinoLoggerService(pino).error({ message: MESSAGE }, stack)
+    return (JSON.parse(lines[0] ?? '{}') as { stack: string }).stack
+  }
+
+  /**
+   * Given a copy of the message that starts before the text limit and ends after it
+   * When the stack is passed beside the message
+   * Then no part of the copy is written, whatever the offset of the cut inside it
+   */
+  it.each(Array.from({ length: 20 }, (_, i) => i + 1))(
+    'hides a copy that starts %i characters before the cut',
+    (before) => {
+      const head = `Error: ${'p'.repeat(MAX_TEXT_LENGTH - before - 7)}`
+      const out = written(`${head}${MESSAGE}\n    at f (/app/x.js:1:1)`)
+
+      expect(out).not.toContain('LEAKM')
+      expect(out).not.toContain('qqq')
+    }
+  )
+})
