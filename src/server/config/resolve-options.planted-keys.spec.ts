@@ -1,0 +1,183 @@
+/**
+ * Verifies that a key planted on `Object.prototype` is no option the consumer set: the options read
+ * the same with it as without it, so default redaction stays on, the censor stays the censor and
+ * every other option keeps its default. A key that only a realm root holds is skipped; one a class
+ * prototype defines (a getter) still counts, and so does one an object has itself.
+ *
+ * Layer: server/config, tests. Driven through the options and the real factory.
+ */
+import { runInNewContext } from 'node:vm'
+
+import { resolveOptions } from './resolve-options'
+import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
+import { buildPinoInstance } from '../pino-factory'
+import { DestinationHealth } from '../services/destination-health.service'
+import { LogContextService } from '../services/log-context.service'
+import { PinoLoggerService } from '../services/pino-logger.service'
+
+/** Every option of the module and of its groups. */
+const KEYS = [
+  'service',
+  'level',
+  'isGlobal',
+  'shouldUseAsNestLogger',
+  'redactPaths',
+  'redactStrategy',
+  'resourceFormat',
+  'eventNameField',
+  'errorFormat',
+  'redactCensor',
+  'shouldDisableDefaultRedact',
+  'destinations',
+  'http',
+  'otel',
+  'maxEntrySizeBytes',
+  'maxStringLength',
+  'destinationHookTimeoutMs',
+  'shutdown',
+  'destinationQueue',
+  'errorOwnFields',
+  'errorOwnFieldNames',
+  'serializers',
+  'timestamp',
+  'isEnabled',
+  'shouldCaptureExceptions',
+  'shouldGenerateRequestId',
+  'excludePaths',
+  'secretPathSegments',
+  'tenantIdHeader',
+  'tenantIdResolver',
+  'shouldAutoInjectTraceContext',
+  'fieldFormat',
+  'traceIdField',
+  'spanIdField',
+  'traceFlagsField',
+  'timeoutMs',
+  'drainTimeoutMs',
+  'maxBytes',
+  'environment',
+  'name',
+  'version'
+]
+
+/** What a planted key may hold: a value of the type that passes the check of the option, and one that does not. */
+const PLANTED: unknown[] = [true, false, 'S1', 'silent', 'flat', ['password'], {}, 1, () => 'S1']
+
+const SERVICE = { name: 'app', version: '1.0.0' }
+
+/** The lines written for a record that carries ten secrets, with the time left out. */
+function linesFor(given: BymaxLoggerModuleOptions): string[] {
+  const lines: string[] = []
+  const options = resolveOptions(given)
+  const sink = { name: 'sink', write: (line: unknown) => lines.push(String(line)) }
+  const log = new PinoLoggerService(
+    buildPinoInstance(options, new LogContextService(), [sink as never], new DestinationHealth())
+  )
+  log.warn({
+    event: 'E',
+    password: 'S1',
+    authorization: 'S2',
+    token: 'S3',
+    custom: 'S4',
+    meta: { apiKey: 'S5', nested: { secret: 'S7' } },
+    headers: { cookie: 'S8' }
+  } as never)
+  log.error({ message: 'S9', stack: 'Error: S9\n    at f (/a.js:1:1)' } as never, 'S10')
+  return lines.map((line) => line.replace(/"time":"[^"]*"/, '"time":"T"'))
+}
+
+/** Plant `value` under `key` on `Object.prototype` while `read` runs. */
+function planted<T>(key: string, value: unknown, read: () => T): T {
+  Object.defineProperty(Object.prototype, key, { value, configurable: true, writable: true })
+  try {
+    return read()
+  } finally {
+    Reflect.deleteProperty(Object.prototype, key)
+  }
+}
+
+describe('a key planted on Object.prototype', () => {
+  const baseline = linesFor({ service: SERVICE, redactPaths: ['custom'] })
+
+  /**
+   * Given the record of ten secrets written without a planted key, and the same with one planted
+   * When the options are the same
+   * Then the lines are the same, so no secret that was hidden is written
+   */
+  it.each(KEYS)('changes nothing when %s is planted', (key) => {
+    for (const value of PLANTED) {
+      const lines = planted(key, value, () =>
+        linesFor({ service: SERVICE, redactPaths: ['custom'] })
+      )
+
+      expect(lines).toEqual(baseline)
+    }
+  })
+
+  /**
+   * Given the two plants that weakened redaction: the switch that turns the default paths off and a censor
+   * that is one of the secrets
+   * When options with neither are resolved
+   * Then the defaults stand and none of the ten secrets is written
+   */
+  it('keeps default redaction on and the censor the default', () => {
+    const resolved = planted('shouldDisableDefaultRedact', true, () =>
+      resolveOptions({ service: SERVICE })
+    )
+    const censor = planted('redactCensor', 'S1', () => resolveOptions({ service: SERVICE }))
+    const lines = planted('shouldDisableDefaultRedact', true, () =>
+      linesFor({ service: SERVICE })
+    ).join('')
+
+    expect(resolved.shouldDisableDefaultRedact).toBe(false)
+    expect(censor.redactCensor).toBe('[REDACTED]')
+    for (const secret of ['S1', 'S2', 'S3', 'S5', 'S7', 'S8'])
+      expect(lines).not.toMatch(new RegExp(`${secret}(?!\\d)`))
+  })
+
+  /**
+   * Given options an object from another realm holds, with the `Object.prototype` of that realm planted
+   * When they are resolved
+   * Then the planted key is skipped as it is for this realm, and the key the object has itself counts
+   */
+  it('skips a key planted on the Object.prototype of another realm, and keeps one the object owns', () => {
+    const foreign = runInNewContext(
+      '({ service: { name: "app", version: "1.0.0" }, redactCensor: "OWN" })'
+    ) as BymaxLoggerModuleOptions
+    const root = runInNewContext('Object.prototype') as object
+    Object.defineProperty(root, 'shouldDisableDefaultRedact', {
+      value: true,
+      configurable: true,
+      writable: true
+    })
+    try {
+      const resolved = resolveOptions(foreign)
+
+      expect(resolved.shouldDisableDefaultRedact).toBe(false)
+      expect(resolved.redactCensor).toBe('OWN')
+    } finally {
+      Reflect.deleteProperty(root, 'shouldDisableDefaultRedact')
+    }
+  })
+
+  /**
+   * Given a class that defines an option as a getter on its prototype
+   * When an instance is resolved
+   * Then the getter counts, as it did, and a planted key beside it does not
+   */
+  it('still reads a getter a class prototype defines', () => {
+    class Options {
+      readonly service = SERVICE
+      get redactCensor(): string {
+        return 'GETTER'
+      }
+    }
+
+    const resolved = planted('shouldDisableDefaultRedact', true, () =>
+      resolveOptions(new Options() as BymaxLoggerModuleOptions)
+    )
+
+    expect(resolved.redactCensor).toBe('GETTER')
+    expect(resolved.shouldDisableDefaultRedact).toBe(false)
+  })
+})

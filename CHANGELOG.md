@@ -14,6 +14,13 @@ heading here.
 
 ### Fixed
 
+- **A key planted on `Object.prototype` is no option.** The options were read by property access through
+  the prototype chain, so a `shouldDisableDefaultRedact: true` planted on `Object.prototype` (by a
+  dependency with a prototype-pollution flaw) turned the default redact paths off, and `redactCensor`,
+  `level` and the rest were read the same way. A value that only the root of a prototype chain (the
+  `Object.prototype` of any realm) holds is now skipped, the options and their groups are kept in objects
+  with no prototype, and so is the `service` metadata; a key the object has itself, and a getter a class
+  prototype defines, still count.
 - **A name spelled with symbol glyphs is read as the name.** The negative circled letters
   (`U+1F150`..), the negative squared letters (`U+1F170`..) and the regional indicators (`U+1F1E6`..)
   have no compatibility form, so the fold dropped them as punctuation and `🆃🅾🅺🅴🅽` folded to nothing

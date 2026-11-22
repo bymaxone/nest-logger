@@ -77,10 +77,27 @@ const GROUP_NAMES = Object.keys(GROUP_KEYS) as ReadonlyArray<keyof typeof GROUP_
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-/** The keys of `source` that are set, each read by property access. */
+/** Whether `key` is only on a realm root (`Object.prototype`), so a planted key is no option. */
+function plantedOnRealmRoot(source: object, key: string): boolean {
+  for (
+    let at: object | null = source;
+    at !== null;
+    at = Object.getPrototypeOf(at) as object | null
+  ) {
+    if (Object.hasOwn(at, key)) {
+      return (
+        at !== source && Object.getPrototypeOf(at) === null && Object.hasOwn(at, 'hasOwnProperty')
+      )
+    }
+  }
+  return false
+}
+
+/** The keys of `source` that are set, in an object with no prototype. */
 function readSet(source: object, keys: readonly string[]): Record<string, unknown> {
-  const set: Record<string, unknown> = {}
+  const set = Object.create(null) as Record<string, unknown>
   for (const key of keys) {
+    if (plantedOnRealmRoot(source, key)) continue
     // `Reflect` reads through a getter like a property access and keeps the dynamic key off the
     // object-injection sink list.
     const value = Reflect.get(source, key) as unknown

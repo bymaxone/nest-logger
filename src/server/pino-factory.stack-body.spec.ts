@@ -12,6 +12,8 @@ import { buildPinoInstance } from './pino-factory'
 import { DestinationHealth } from './services/destination-health.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
+import * as hideModule from './utils/hide-message-in-stack.util'
+import { MAX_STACK_SCAN } from './utils/sanitize-error.util'
 
 const SECRET = 'SEC_9f3a'
 const FRAME = '    at run (/srv/app.js:1:1)'
@@ -176,11 +178,18 @@ describe('a payload with many keys that spell message or stack', () => {
   const alias = (index: number): string => spelled('message', index)
   const stackOf = (line: string): string =>
     (JSON.parse(line) as { deep: { stack: string } }).deep.stack
-  /** The milliseconds `lineOf` takes for `deep`, with its line. */
-  const timed = (deep: Record<string, string>): { ms: number; line: string } => {
-    const started = Date.now()
-    const line = lineOf((s) => s.info('KEY', 'text', undefined, { deep }))
-    return { ms: Date.now() - started, line }
+  /**
+   * The searches `lineOf` makes of a stack for `deep`, as the length of the text each reads, with its
+   * line: the work is counted, not timed, so what a machine runs beside it cannot fail the row.
+   */
+  const searched = (deep: Record<string, string>): { reads: number[]; line: string } => {
+    const search = jest.spyOn(hideModule, 'hideMessagesInStack')
+    try {
+      const line = lineOf((s) => s.info('KEY', 'text', undefined, { deep }))
+      return { reads: search.mock.calls.map(([text]) => text.length), line }
+    } finally {
+      search.mockRestore()
+    }
   }
 
   it('costs about what the cap costs, and hides the stack whole, for 5,000 message aliases', () => {
@@ -190,11 +199,13 @@ describe('a payload with many keys that spell message or stack', () => {
       for (let i = 0; i < count; i += 1) deep[alias(i)] = `secret${String(i)}`
       return deep
     }
-    const cap = timed(make(8))
+    const cap = searched(make(8))
 
-    const many = timed(make(5_000))
+    const many = searched(make(5_000))
 
-    expect(many.ms).toBeLessThan(cap.ms * 10 + 500)
+    // Past the cap the stack is the censor and nothing is searched: the work is the work of the cap, not
+    // of the aliases.
+    expect(many.reads.length).toBeLessThanOrEqual(cap.reads.length)
     expect(stackOf(many.line)).toBe('[REDACTED]')
     expect(many.line).not.toContain('secret4999')
   })
@@ -207,13 +218,15 @@ describe('a payload with many keys that spell message or stack', () => {
       }
       return deep
     }
-    const cap = timed(make(8))
+    const cap = searched(make(8))
 
-    const many = timed(make(5_000))
+    const many = searched(make(5_000))
 
-    // A quadratic walk over 5,000 keys of 60,000 characters takes minutes; the margin is wide so a machine
-    // that runs other work does not fail the gate.
-    expect(many.ms).toBeLessThan(cap.ms * 10 + 2_000)
+    // Each stack is read once, up to the bound: the work grows with the number of keys and is never
+    // more than the bound for each, where a walk that compared every key with every other would not.
+    expect(many.reads.length).toBeLessThanOrEqual(5_000)
+    expect(Math.max(...many.reads)).toBeLessThanOrEqual(MAX_STACK_SCAN)
+    expect(cap.reads.length).toBeLessThanOrEqual(8)
     expect(many.line).not.toContain('zzzz')
   })
 
