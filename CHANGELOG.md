@@ -25,6 +25,10 @@ heading here.
   build one at startup). Out of scope, because Node and Pino read them off objects this library does
   not build: keys such as `write`, `message` and `toJSON`, which the multistream write, the emit and
   `JSON.stringify` read.
+  A key planted by plain assignment, so that it is enumerable, under the name of a getter of a Pino
+  instance (`level`, `levels`, `msgPrefix`) makes Pino throw while it sets its levels, since it assigns
+  every key a `for...in` finds to the instance; no option can shadow that, and a plant that is not
+  enumerable changes nothing.
 - **A name spelled with symbol glyphs is read as the name.** The negative circled letters
   (`U+1F150`..), the negative squared letters (`U+1F170`..) and the regional indicators (`U+1F1E6`..)
   have no compatibility form, so the fold dropped them as punctuation and `🆃🅾🅺🅴🅽` folded to nothing
