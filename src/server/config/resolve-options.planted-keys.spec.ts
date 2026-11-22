@@ -264,12 +264,20 @@ describe('a key planted on Object.prototype', () => {
    * Given a key planted enumerably under the name of a getter of Pino's own instances, and the same key
    * planted without being enumerable
    * When the options are resolved and the logger built
-   * Then the first makes Pino throw while it sets its levels, which no option can prevent, and the second
+   * Then the first makes Pino throw while the logger is built, which no option can prevent, and the second
    * changes nothing
    */
   it.each(PINO_ITERATED)('is a limit of Pino when %s is planted enumerably', (name) => {
+    // Building the logger is what throws, before any call is made on it.
     expect(() =>
-      planted(name, 'X', () => linesFor({ service: SERVICE, redactPaths: ['custom'] }))
+      planted(name, 'X', () =>
+        buildPinoInstance(
+          resolveOptions({ service: SERVICE }),
+          new LogContextService(),
+          [{ name: 'sink', write: () => undefined } as never],
+          new DestinationHealth()
+        )
+      )
     ).toThrow()
 
     Object.defineProperty(Object.prototype, name, {
