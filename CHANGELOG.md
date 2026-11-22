@@ -45,7 +45,7 @@ heading here.
 - **A `redactPaths` entry is at most 256 characters.** A longer one is refused at startup by the name
   of the option and its index (`options.redactPaths[i] must be at most 256 characters`), without echoing
   it, where earlier releases accepted it and the application started. This holds for every strategy.
-  The name is compared with every key, so its length bounds that work. **Apply to a consumer:** an
+  **Apply to a consumer:** an
   entry over 256 characters now refuses boot; shorten it.
 
 ## [1.4.29] - 2026-11-21
