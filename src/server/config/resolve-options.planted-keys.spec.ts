@@ -112,6 +112,7 @@ const PLANTED: unknown[] = [
   {},
   1,
   100,
+  Number.NaN,
   () => 'S1'
 ]
 
@@ -406,34 +407,69 @@ describe('a key planted on Object.prototype', () => {
    * Given options a Proxy answers through its `get` trap, with a key of the same name planted on
    * `Object.prototype`
    * When they are resolved
-   * Then the answer of the trap counts, and a planted accessor is never called
+   * Then the answer of the trap counts
    */
   it('keeps what a Proxy answers for a key that is also planted', () => {
-    const answers: Record<string, unknown> = {
+    const answers = Object.assign(Object.create(null) as object, {
       service: SERVICE,
       redactPaths: ['customSecret'],
       redactCensor: 'PROXY'
-    }
+    })
     const proxy = new Proxy(
       {},
       { get: (_target, key) => Reflect.get(answers, key) }
     ) as BymaxLoggerModuleOptions
+
+    const resolved = planted('redactPaths', [], () => resolveOptions(proxy))
+
+    expect(resolved.redactPaths).toEqual(['customSecret'])
+    expect(resolved.redactCensor).toBe('PROXY')
+  })
+
+  /**
+   * Given plain options and an accessor planted on `Object.prototype` under the name of an option
+   * When they are resolved
+   * Then the accessor is not called and the default applies
+   */
+  it('does not call an accessor planted under the name of an option', () => {
     let called = false
-    Object.defineProperty(Object.prototype, 'level', {
+    Object.defineProperty(Object.prototype, 'redactCensor', {
       get: () => {
         called = true
-        return 'fatal'
+        return 'ROOT'
       },
       configurable: true
     })
     try {
-      const resolved = planted('redactPaths', [], () => resolveOptions(proxy))
-
-      expect(resolved.redactPaths).toEqual(['customSecret'])
-      expect(resolved.redactCensor).toBe('PROXY')
+      expect(resolveOptions({ service: SERVICE }).redactCensor).toBe('[REDACTED]')
       expect(called).toBe(false)
     } finally {
-      Reflect.deleteProperty(Object.prototype, 'level')
+      Reflect.deleteProperty(Object.prototype, 'redactCensor')
+    }
+  })
+
+  /**
+   * Given options a Proxy answers through its `get` trap, with an accessor planted on `Object.prototype`
+   * under the name the trap answers for
+   * When they are resolved
+   * Then the answer of the trap counts
+   */
+  it('keeps what a Proxy answers for a key under which an accessor is planted', () => {
+    const proxy = new Proxy(
+      { service: SERVICE },
+      {
+        get: (target, key, receiver) =>
+          key === 'redactCensor' ? 'OWN' : Reflect.get(target, key, receiver)
+      }
+    ) as BymaxLoggerModuleOptions
+    Object.defineProperty(Object.prototype, 'redactCensor', {
+      get: () => 'ROOT',
+      configurable: true
+    })
+    try {
+      expect(resolveOptions(proxy).redactCensor).toBe('OWN')
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'redactCensor')
     }
   })
 })

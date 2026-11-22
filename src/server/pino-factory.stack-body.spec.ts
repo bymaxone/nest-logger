@@ -13,6 +13,7 @@ import { DestinationHealth } from './services/destination-health.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
 import * as hideModule from './utils/hide-message-in-stack.util'
+import * as sanitizeModule from './utils/sanitize-error.util'
 import { MAX_STACK_SCAN } from './utils/sanitize-error.util'
 
 const SECRET = 'SEC_9f3a'
@@ -205,12 +206,12 @@ describe('a payload with many keys that spell message or stack', () => {
 
     // Past the cap the stack is the censor and nothing is searched: the work is the work of the cap, not
     // of the aliases.
-    expect(many.reads.length).toBeLessThanOrEqual(cap.reads.length)
+    expect(many.reads).toEqual([])
     expect(stackOf(many.line)).toBe('[REDACTED]')
     expect(many.line).not.toContain('secret4999')
   })
 
-  it('searches each stack once, up to the bound, for 5,000 keys that spell stack', () => {
+  it('scrubs no stack when 5,000 keys spell stack, past the cap of eight', () => {
     const make = (count: number): Record<string, string> => {
       const deep: Record<string, string> = {}
       for (let i = 0; i < count; i += 1) {
@@ -218,15 +219,24 @@ describe('a payload with many keys that spell message or stack', () => {
       }
       return deep
     }
-    const cap = searched(make(8))
+    const scrubbed = (deep: Record<string, string>): { reads: number[]; line: string } => {
+      const scrub = jest.spyOn(sanitizeModule, 'scrubStack')
+      try {
+        const line = lineOf((s) => s.info('KEY', 'text', undefined, { deep }))
+        return { reads: scrub.mock.calls.map(([text]) => text.length), line }
+      } finally {
+        scrub.mockRestore()
+      }
+    }
+    const cap = scrubbed(make(8))
 
-    const many = searched(make(5_000))
+    const many = scrubbed(make(5_000))
 
-    // Each stack is searched at most once and never past the bound; the row counts those searches and no
-    // other work.
-    expect(many.reads.length).toBeLessThanOrEqual(5_000)
-    expect(Math.max(...many.reads)).toBeLessThanOrEqual(MAX_STACK_SCAN)
-    expect(cap.reads.length).toBeLessThanOrEqual(8)
+    // Eight keys are the cap and each is scrubbed over no more than the bound; past it every stack is
+    // the censor and none is scrubbed. The row counts those scrubs and no other work.
+    expect(cap.reads).toHaveLength(8)
+    expect(Math.max(...cap.reads)).toBeLessThanOrEqual(MAX_STACK_SCAN)
+    expect(many.reads).toEqual([])
     expect(many.line).not.toContain('zzzz')
   })
 

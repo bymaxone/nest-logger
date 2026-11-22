@@ -7,6 +7,8 @@
  * the spread that merges the two. Each KNOWN key is read by property access, not by `Object.entries` or a spread, so a
  * getter on the prototype of a class instance counts as the value it returns.
  */
+import { types } from 'node:util'
+
 import { refuse } from './options-refusal.util'
 import type {
   BymaxLoggerModuleOptions,
@@ -106,11 +108,12 @@ function readSet(source: object, keys: readonly string[]): Record<string, unknow
   for (const key of keys) {
     const root = rootHolding(source, key)
     const planted = root && Object.getOwnPropertyDescriptor(root, key)
-    if (planted?.get) continue
+    // A Proxy answers for itself: a planted accessor does not decide for it.
+    if (planted?.get && !types.isProxy(source)) continue
     // `Reflect` reads through a getter like a property access and keeps the dynamic key off the
     // object-injection sink list.
     const value = Reflect.get(source, key) as unknown
-    if (planted && value === planted.value) continue
+    if (planted && !planted.get && Object.is(value, planted.value)) continue
     if (value !== undefined && value !== null) Reflect.set(set, key, value)
   }
   return set
