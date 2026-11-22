@@ -565,7 +565,10 @@ function buildTraceMixin(
  * `levelVal` planted on `Object.prototype` would give every entry that level, and a `write` would make
  * the entry itself the stream.
  */
-const UNSET_ENTRY_NAMES = { levelVal: undefined, write: undefined } as unknown as object
+const UNSET_ENTRY_NAMES: Readonly<Record<string, undefined>> = {
+  levelVal: undefined,
+  write: undefined
+}
 
 /**
  * One multistream entry for each destination, each behind its bounded queue.
@@ -694,9 +697,10 @@ function buildFormatters(
 /**
  * An own value for each name Pino reads that this library does not set, so a key planted on
  * `Object.prototype` is not read in its place (a planted `transport` would be built at startup).
- * Pino tests each value for truth, and the types of `transport` have no `undefined`.
+ * Pino tests each value for truth. The names are typed as a record, not as the options of Pino, whose
+ * types have no `undefined` for `transport`.
  */
-export const UNSET_PINO_NAMES = {
+export const UNSET_PINO_NAMES: Readonly<Record<string, false | undefined>> = {
   transport: undefined,
   crlf: false,
   msgPrefix: undefined,
@@ -705,7 +709,7 @@ export const UNSET_PINO_NAMES = {
   _writableState: undefined,
   prettyPrint: undefined,
   onChild: undefined
-} as unknown as Pick<LoggerOptions, 'transport' | 'crlf' | 'msgPrefix' | 'name' | 'onChild'>
+}
 
 /**
  * Build a configured Pino instance from a resolved options snapshot.

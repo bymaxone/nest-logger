@@ -78,29 +78,39 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
 /**
- * Whether the first holder of `key` is a prototype with no prototype of its own: the root of a chain, as
- * the `Object.prototype` of any realm is. No property of the holder is read to tell, so a root whose own
- * properties were overwritten is still one; a prototype of that shape the consumer built is skipped too.
+ * The first holder of `key` when it is a prototype with no prototype of its own and not `source`: the
+ * root of a chain, as the `Object.prototype` of any realm is. No property of the holder is read to tell,
+ * so a root whose own properties were overwritten is still one; a prototype of that shape the consumer
+ * built is taken for one too.
  */
-function plantedOnRealmRoot(source: object, key: string): boolean {
+function rootHolding(source: object, key: string): object | undefined {
   for (
     let at: object | null = source;
     at !== null;
     at = Object.getPrototypeOf(at) as object | null
   ) {
-    if (Object.hasOwn(at, key)) return at !== source && Object.getPrototypeOf(at) === null
+    if (Object.hasOwn(at, key)) {
+      return at !== source && Object.getPrototypeOf(at) === null ? at : undefined
+    }
   }
-  return false
+  return undefined
 }
 
-/** The keys of `source` that are set, in an object with no prototype. */
+/**
+ * The keys of `source` that are set, in an object with no prototype. A value a root holds is no option:
+ * an accessor planted there is not called, and a value is skipped unless the source answers something
+ * else, as a Proxy does through its `get` trap.
+ */
 function readSet(source: object, keys: readonly string[]): Record<string, unknown> {
   const set = Object.create(null) as Record<string, unknown>
   for (const key of keys) {
-    if (plantedOnRealmRoot(source, key)) continue
+    const root = rootHolding(source, key)
+    const planted = root && Object.getOwnPropertyDescriptor(root, key)
+    if (planted?.get) continue
     // `Reflect` reads through a getter like a property access and keeps the dynamic key off the
     // object-injection sink list.
     const value = Reflect.get(source, key) as unknown
+    if (planted && value === planted.value) continue
     if (value !== undefined && value !== null) Reflect.set(set, key, value)
   }
   return set

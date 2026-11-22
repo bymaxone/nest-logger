@@ -192,7 +192,7 @@ describe('a payload with many keys that spell message or stack', () => {
     }
   }
 
-  it('costs about what the cap costs, and hides the stack whole, for 5,000 message aliases', () => {
+  it('searches no stack and hides it whole when 5,000 aliases of the message are past the cap', () => {
     const stack = `Error: x\n${'z'.repeat(131_000)}`
     const make = (count: number): Record<string, string> => {
       const deep: Record<string, string> = { stack }
@@ -210,7 +210,7 @@ describe('a payload with many keys that spell message or stack', () => {
     expect(many.line).not.toContain('secret4999')
   })
 
-  it('costs about what the cap costs, for 5,000 keys that spell stack', () => {
+  it('searches each stack once, up to the bound, for 5,000 keys that spell stack', () => {
     const make = (count: number): Record<string, string> => {
       const deep: Record<string, string> = {}
       for (let i = 0; i < count; i += 1) {
@@ -222,8 +222,8 @@ describe('a payload with many keys that spell message or stack', () => {
 
     const many = searched(make(5_000))
 
-    // Each stack is read once, up to the bound: the work grows with the number of keys and is never
-    // more than the bound for each, where a walk that compared every key with every other would not.
+    // Each stack is searched at most once and never past the bound; the row counts those searches and no
+    // other work.
     expect(many.reads.length).toBeLessThanOrEqual(5_000)
     expect(Math.max(...many.reads)).toBeLessThanOrEqual(MAX_STACK_SCAN)
     expect(cap.reads.length).toBeLessThanOrEqual(8)

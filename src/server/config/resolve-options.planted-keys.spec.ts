@@ -8,7 +8,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { runInNewContext } from 'node:vm'
+import { createContext, runInContext } from 'node:vm'
 
 import { resolveOptions } from './resolve-options'
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
@@ -118,10 +118,12 @@ const PLANTED: unknown[] = [
 const SERVICE = { name: 'app', version: '1.0.0' }
 
 /**
- * The names of properties Pino's own instances have, which its level setup assigns. Pino sets its levels with a `for...in`
- * over its own table of levels and assigns each key it finds to the instance, so a key planted
- * enumerably under one of these names throws, when the logger is built or at the first call (`THROWS_AT`): no option can shadow that. It is
- * a limit of Pino, stated in the changelog, and a row below holds it.
+ * The names a plant under which Pino itself does not survive, whatever the options hold. Pino sets its
+ * levels with a `for...in` over its own table of levels and assigns each key it finds to the instance, so a
+ * key planted enumerably under `level`, `levels`, `msgPrefix` or `levelVal` throws, and `hasOwnProperty`
+ * is a method Pino calls on its bindings. It throws when the logger is built or at the first call
+ * (`THROWS_AT`): no option can shadow that. It is a limit of Pino, stated in the changelog and the
+ * README, and a row below holds it.
  */
 const PINO_ITERATED = ['level', 'levels', 'msgPrefix', 'levelVal', 'hasOwnProperty']
 
@@ -227,10 +229,14 @@ describe('a key planted on Object.prototype', () => {
    * Then the planted key is skipped as it is for this realm, and the key the object has itself counts
    */
   it('skips a key planted on the Object.prototype of another realm, and keeps one the object owns', () => {
-    const foreign = runInNewContext(
-      '({ service: { name: "app", version: "1.0.0" }, redactCensor: "OWN" })'
+    // One context for both, so the root is the prototype of the options.
+    const context = createContext({})
+    const foreign = runInContext(
+      '({ service: { name: "app", version: "1.0.0" }, redactCensor: "OWN" })',
+      context
     ) as BymaxLoggerModuleOptions
-    const root = runInNewContext('Object.prototype') as object
+    const root = Object.getPrototypeOf(foreign) as object
+    expect(root).not.toBe(Object.prototype)
     Object.defineProperty(root, 'shouldDisableDefaultRedact', {
       value: true,
       configurable: true,
@@ -249,7 +255,7 @@ describe('a key planted on Object.prototype', () => {
   /**
    * Given a class that defines an option as a getter on its prototype
    * When an instance is resolved
-   * Then the getter counts, as it did, and a planted key beside it does not
+   * Then the getter counts, and a planted key beside it does not
    */
   it('still reads a getter a class prototype defines', () => {
     class Options {
@@ -334,36 +340,39 @@ describe('a key planted on Object.prototype', () => {
    * Then the planted switch is skipped all the same: the check reads no property of the root
    */
   it.each([
-    ['this realm', (): object => Object.prototype],
-    ['another realm', (): object => runInNewContext('Object.prototype') as object]
-  ])('skips a key planted on a root whose properties were overwritten, in %s', (_realm, root) => {
-    const object = root()
-    const plant = (key: string, value: unknown): PropertyDescriptor | undefined => {
-      const before = Object.getOwnPropertyDescriptor(object, key)
-      Object.defineProperty(object, key, { value, configurable: true, writable: true })
-      return before
-    }
-    const saved = ['constructor', 'isPrototypeOf'].map((key) => [key, plant(key, 'X')] as const)
-    const owned = Object.getOwnPropertyDescriptor(object, 'hasOwnProperty')
-    Reflect.deleteProperty(object, 'hasOwnProperty')
-    plant('shouldDisableDefaultRedact', true)
-    try {
-      const own = runInNewContext(
-        '({ service: { name: "app", version: "1.0.0" } })'
+    ['this realm', false],
+    ['another realm', true]
+  ])(
+    'skips a key planted on a root whose properties were overwritten, in %s',
+    (_realm, foreign) => {
+      // For another realm the options and the root come from one context, so the root is their prototype.
+      const options = (
+        foreign
+          ? runInContext('({ service: { name: "app", version: "1.0.0" } })', createContext({}))
+          : { service: SERVICE }
       ) as BymaxLoggerModuleOptions
-      const here = { service: SERVICE } as BymaxLoggerModuleOptions
-
-      expect(resolveOptions(here).shouldDisableDefaultRedact).toBe(false)
-      if (object !== Object.prototype)
-        expect(resolveOptions(own).shouldDisableDefaultRedact).toBe(false)
-    } finally {
-      Reflect.deleteProperty(object, 'shouldDisableDefaultRedact')
-      for (const [key, before] of saved) {
-        if (before) Object.defineProperty(object, key, before)
+      const object = foreign ? (Object.getPrototypeOf(options) as object) : Object.prototype
+      expect(object === Object.prototype).toBe(!foreign)
+      const plant = (key: string, value: unknown): PropertyDescriptor | undefined => {
+        const before = Object.getOwnPropertyDescriptor(object, key)
+        Object.defineProperty(object, key, { value, configurable: true, writable: true })
+        return before
       }
-      if (owned) Object.defineProperty(object, 'hasOwnProperty', owned)
+      const saved = ['constructor', 'isPrototypeOf'].map((key) => [key, plant(key, 'X')] as const)
+      const owned = Object.getOwnPropertyDescriptor(object, 'hasOwnProperty')
+      Reflect.deleteProperty(object, 'hasOwnProperty')
+      plant('shouldDisableDefaultRedact', true)
+      try {
+        expect(resolveOptions(options).shouldDisableDefaultRedact).toBe(false)
+      } finally {
+        Reflect.deleteProperty(object, 'shouldDisableDefaultRedact')
+        for (const [key, before] of saved) {
+          if (before) Object.defineProperty(object, key, before)
+        }
+        if (owned) Object.defineProperty(object, 'hasOwnProperty', owned)
+      }
     }
-  })
+  )
 
   /**
    * Given options held by a prototype that has a prototype of its own, and options an object owns, even
@@ -391,5 +400,40 @@ describe('a key planted on Object.prototype', () => {
     expect(resolveOptions(skipped as BymaxLoggerModuleOptions).redactCensor).toBe('[REDACTED]')
     expect(resolveOptions(named as BymaxLoggerModuleOptions).redactCensor).toBe('NAMED')
     expect(resolveOptions(bare as BymaxLoggerModuleOptions).redactCensor).toBe('OWN')
+  })
+
+  /**
+   * Given options a Proxy answers through its `get` trap, with a key of the same name planted on
+   * `Object.prototype`
+   * When they are resolved
+   * Then the answer of the trap counts, and a planted accessor is never called
+   */
+  it('keeps what a Proxy answers for a key that is also planted', () => {
+    const answers: Record<string, unknown> = {
+      service: SERVICE,
+      redactPaths: ['customSecret'],
+      redactCensor: 'PROXY'
+    }
+    const proxy = new Proxy(
+      {},
+      { get: (_target, key) => Reflect.get(answers, key) }
+    ) as BymaxLoggerModuleOptions
+    let called = false
+    Object.defineProperty(Object.prototype, 'level', {
+      get: () => {
+        called = true
+        return 'fatal'
+      },
+      configurable: true
+    })
+    try {
+      const resolved = planted('redactPaths', [], () => resolveOptions(proxy))
+
+      expect(resolved.redactPaths).toEqual(['customSecret'])
+      expect(resolved.redactCensor).toBe('PROXY')
+      expect(called).toBe(false)
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'level')
+    }
   })
 })
