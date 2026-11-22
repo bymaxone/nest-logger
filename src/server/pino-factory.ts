@@ -688,7 +688,7 @@ function buildFormatters(
  * `Object.prototype` is not read in its place (a planted `transport` would be built at startup).
  * Pino tests each value for truth, and the types of `transport` have no `undefined`.
  */
-const UNSET_PINO_NAMES = {
+export const UNSET_PINO_NAMES = {
   transport: undefined,
   crlf: false,
   msgPrefix: undefined,
