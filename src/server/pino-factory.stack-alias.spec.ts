@@ -11,7 +11,8 @@ import { buildPinoInstance } from './pino-factory'
 import { DestinationHealth } from './services/destination-health.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
-import { MAX_TEXT_LENGTH } from './utils/bounded-text.util'
+import { MAX_TEXT_LENGTH, TEXT_TRUNCATED } from './utils/bounded-text.util'
+import * as hideModule from './utils/hide-message-in-stack.util'
 import { MAX_STACK_SCAN } from './utils/sanitize-error.util'
 
 const SECRET = 'SEC_9f3a'
@@ -337,4 +338,34 @@ describe('the message in a stack passed beside it, at the cut', () => {
       expect(out).not.toContain('qqq')
     }
   )
+
+  /**
+   * Given a stack far longer than the text limit, and a message of three characters
+   * When the stack is passed beside the message
+   * Then the search reads the text limit plus the length of the message and no more, and what is kept
+   * is the text limit followed by the marker
+   */
+  it('hands the search the text limit plus the message, and keeps the text limit', () => {
+    const search = jest.spyOn(hideModule, 'hideMessageInStack')
+    const lines: string[] = []
+    const options = applyDefaults({
+      service: { name: 'app', version: '1.0.0' },
+      redactPaths: ['message']
+    })
+    const sink = { name: 'sink', write: (line: unknown) => lines.push(String(line)) }
+    const pino = buildPinoInstance(
+      options,
+      new LogContextService(),
+      [sink as never],
+      new DestinationHealth()
+    )
+
+    new PinoLoggerService(pino).error({ message: 'abc' }, 'x'.repeat(MAX_TEXT_LENGTH * 3))
+
+    const kept = (JSON.parse(lines[0] ?? '{}') as { stack: string }).stack
+    expect(search).toHaveBeenCalledTimes(1)
+    expect(search.mock.calls[0]?.[0]).toHaveLength(MAX_TEXT_LENGTH + 3)
+    expect(kept).toHaveLength(MAX_TEXT_LENGTH + TEXT_TRUNCATED.length)
+    search.mockRestore()
+  })
 })

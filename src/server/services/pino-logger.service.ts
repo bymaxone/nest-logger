@@ -434,7 +434,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
       (message) => this.censorText({ key: 'message', text: message }),
       read
     )
-    const positional = hidden && cutText(hidden, (stack?.length ?? 0) > (read?.length ?? 0))
+    const positional = hidden && cutText(hidden, read !== stack)
     assignIfDefined(payload, 'context', context)
     assignIfDefined(payload, 'stack', positional)
     // An `Error` in the tail is attached as `err`, the same field the
