@@ -368,4 +368,39 @@ describe('the message in a stack passed beside it, at the cut', () => {
     expect(kept).toHaveLength(MAX_TEXT_LENGTH + TEXT_TRUNCATED.length)
     search.mockRestore()
   })
+
+  /**
+   * Given a stack key of a million copies of the message, under the key stack and under an alias
+   * When the entry is written at the root
+   * Then the search reads the text limit plus the message and no more, and what is kept is the text
+   * limit followed by the marker
+   */
+  it.each(['stack', 'Stack'])('bounds the search of a long stack under the key %s', (key) => {
+    const search = jest.spyOn(hideModule, 'hideMessageInStack')
+    const message = 'SECRET_42'
+    const lines: string[] = []
+    const options = applyDefaults({
+      service: { name: 'app', version: '1.0.0' },
+      redactPaths: ['message']
+    })
+    const sink = { name: 'sink', write: (line: unknown) => lines.push(String(line)) }
+    const pino = buildPinoInstance(
+      options,
+      new LogContextService(),
+      [sink as never],
+      new DestinationHealth()
+    )
+
+    new PinoLoggerService(pino).warn({
+      event: 'E',
+      message,
+      [key]: `${message}\n`.repeat(1_000_000)
+    })
+
+    const kept = (JSON.parse(lines[0] ?? '{}') as Record<string, string>)[key] ?? ''
+    expect(search.mock.calls[0]?.[0]).toHaveLength(MAX_TEXT_LENGTH + message.length)
+    expect(kept).toHaveLength(MAX_TEXT_LENGTH + TEXT_TRUNCATED.length)
+    expect(kept).not.toContain(message)
+    search.mockRestore()
+  })
 })

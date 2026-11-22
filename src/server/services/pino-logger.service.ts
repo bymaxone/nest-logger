@@ -213,16 +213,22 @@ function hideStackMessage(
   censor: (message: string) => string,
   positional?: string
 ): string | undefined {
-  if (text?.key !== 'message') return positional
+  const kept = positional === undefined ? undefined : cutText(positional)
+  if (text?.key !== 'message') return kept
   const censored = censor(text.text)
-  if (censored === text.text) return positional
+  if (censored === text.text) return kept
   const keys = Object.keys(payload).filter(isStackKey)
   // Past the caps of the walk below the root, every stack is the censor.
   const overflow =
     keys.length + (positional === undefined ? 0 : 1) > MAX_STACK_ALIASES ||
     text.text.length > MAX_TEXT_LENGTH
-  const hide = (stack: string): string =>
-    overflow ? censored : hideMessageInStack(stack, text.text, censored)
+  // The part searched reaches as far past the cut as the message is long, so a copy that starts before
+  // the cut is hidden whole; a stack of any length costs no more than the limit.
+  const hide = (stack: string): string => {
+    if (overflow) return censored
+    const read = stack.slice(0, MAX_TEXT_LENGTH + text.text.length)
+    return cutText(hideMessageInStack(read, text.text, censored), read !== stack)
+  }
   for (const key of keys) {
     const stack = Reflect.get(payload, key) as unknown
     if (typeof stack === 'string') Reflect.set(payload, key, hide(stack))
@@ -421,20 +427,13 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const context = typeof optionalParams[1] === 'string' ? optionalParams[1] : this.context
     // A plain-object message is the entry's fields, as in `emitNestStyle`.
     const { fields, text, payload } = readObjectMessage(message)
-    // Hidden before it is cut and before it is attached: a copy of the message that straddles the cut
-    // is hidden whole, and the field is written once. The part read reaches as far past the cut as the
-    // message is long, as for the stack of a plain object.
-    const read = stack?.slice(
-      0,
-      MAX_TEXT_LENGTH + Math.min(text?.text.length ?? 0, MAX_TEXT_LENGTH)
-    )
-    const hidden = hideStackMessage(
+    // Hidden before it is attached: the field is written once.
+    const positional = hideStackMessage(
       payload,
       text,
       (message) => this.censorText({ key: 'message', text: message }),
-      read
+      stack
     )
-    const positional = hidden && cutText(hidden, read !== stack)
     assignIfDefined(payload, 'context', context)
     assignIfDefined(payload, 'stack', positional)
     // An `Error` in the tail is attached as `err`, the same field the

@@ -39,8 +39,14 @@ heading here.
   in it like in any key that spells `stack`.
 - **The stack keys at the root of an entry are capped like those below it,** and the positional stack of
   `error(object, stack)` has the message hidden: it was attached after the message was hidden.
+
+### Breaking
+
 - **A `redactPaths` entry is at most 256 characters.** A longer one is refused at startup by the name
-  of the option and its index, without echoing it: the name is compared with every key, so its length bounds that work.
+  of the option and its index (`options.redactPaths[i] must be at most 256 characters`), without echoing
+  it, where earlier releases accepted it and the application started. This holds for every strategy.
+  The name is compared with every key, so its length bounds that work. To migrate, shorten the entry
+  to 256 characters or fewer.
 
 ## [1.4.29] - 2026-11-21
 

@@ -18,8 +18,8 @@ const generated = readFileSync(
 describe('the glyph letter table', () => {
   it('is made from the checked-in input that the pinned digest names', () => {
     assert.equal(createHash('sha256').update(names).digest('hex'), SOURCE.inputSha256)
-    assert.match(SOURCE.url, new RegExp(`/Public/${SOURCE.version}/ucd/UnicodeData.txt$`))
-    assert.match(generated, new RegExp(`Unicode ${SOURCE.version}, ${SOURCE.url}`))
+    assert.ok(SOURCE.url.endsWith(`/Public/${SOURCE.version}/ucd/UnicodeData.txt`))
+    assert.ok(generated.includes(`Unicode ${SOURCE.version}, ${SOURCE.url}`))
   })
 
   it('is what the generator makes of the checked-in names, byte for byte', () => {
@@ -31,7 +31,7 @@ describe('the glyph letter table', () => {
     for (const first of ['0x1f150', '0x1f170', '0x1f1e6']) assert.match(table, new RegExp(first))
   })
 
-  it('leaves out a symbol that decomposes, a letter and a mark', () => {
+  it('leaves out a symbol that decomposes and a tag letter', () => {
     const table = generate(names)
     assert.doesNotMatch(table, /0x24b6/)
     assert.doesNotMatch(table, /0xe0041/)

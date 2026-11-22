@@ -185,7 +185,11 @@ export function foldName(key: string): string {
  * @returns The set the keys of a record are looked up in.
  */
 export function foldedNames(names: Iterable<string>): Set<string> {
-  return new Set(Array.from(names, foldName).filter((name) => name !== ''))
+  return new Set(
+    Array.from(names, (name) => foldName(name).replaceAll(SYMBOL_STAND_IN, '')).filter(
+      (name) => name !== ''
+    )
+  )
 }
 
 /** How many names of a compatible length a key is walked against before it is taken for one of them. */

@@ -477,6 +477,20 @@ describe('a symbol that is not ASCII, where a value is hidden', () => {
   })
 
   /**
+   * Given a configured name that holds a symbol
+   * When a key spelled without the symbol, and one spelled with it, are compared
+   * Then both are the name, as the symbol is dropped from the name as it is from a key
+   */
+  it('reads a configured name with a symbol in it as the name without the symbol', () => {
+    const names = foldedNames(['secret\u00a9Code', '\u00a9\u00a9'])
+
+    expect(matchesKey(names, 'secretCode')).toBe(true)
+    expect(matchesKey(names, 'SECRET_CODE')).toBe(true)
+    expect(matchesKey(names, 'secret\u00a9Code')).toBe(true)
+    expect(names.has('')).toBe(false)
+  })
+
+  /**
    * Given a set of no names, and a set of one short name
    * When a key holding a symbol is compared
    * Then an empty set matches nothing, and the short name hides only the keys that can spell it
