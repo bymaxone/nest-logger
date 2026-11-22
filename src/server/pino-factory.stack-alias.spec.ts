@@ -403,4 +403,35 @@ describe('the message in a stack passed beside it, at the cut', () => {
     expect(kept).not.toContain(message)
     search.mockRestore()
   })
+
+  /**
+   * Given a stack longer than the part searched, whose copies of the message shrink it below the text limit
+   * When the entry is written at the root
+   * Then the text still ends with the marker, since the stack was cut
+   */
+  it('marks a long stack as cut even when hiding leaves it under the text limit', () => {
+    const message = 'm'.repeat(100)
+    const lines: string[] = []
+    const options = applyDefaults({
+      service: { name: 'app', version: '1.0.0' },
+      redactPaths: ['message']
+    })
+    const sink = { name: 'sink', write: (line: unknown) => lines.push(String(line)) }
+    const pino = buildPinoInstance(
+      options,
+      new LogContextService(),
+      [sink as never],
+      new DestinationHealth()
+    )
+
+    new PinoLoggerService(pino).warn({ event: 'E', message, stack: `${message}\n`.repeat(1_000) })
+
+    const kept = (JSON.parse(lines[0] ?? '{}') as { stack: string }).stack
+    expect(kept.length).toBeLessThan(MAX_TEXT_LENGTH)
+    expect(kept.endsWith(TEXT_TRUNCATED)).toBe(true)
+    expect(kept).not.toContain('mmmm')
+    // 163 whole copies and 21 characters of the next are read; the censored copies are 11 characters each,
+    // and as many characters as a copy has but one are dropped from the end.
+    expect(kept).toHaveLength(163 * 11 + 21 - 99 + TEXT_TRUNCATED.length)
+  })
 })

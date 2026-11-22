@@ -227,7 +227,10 @@ function hideStackMessage(
   const hide = (stack: string): string => {
     if (overflow) return censored
     const read = stack.slice(0, MAX_TEXT_LENGTH + text.text.length)
-    return cutText(hideMessageInStack(read, text.text, censored), read !== stack)
+    const hidden = hideMessageInStack(read, text.text, censored)
+    const cut = read !== stack
+    // What the read part ends with may be the start of a copy that goes on past it: it is dropped.
+    return cutText(hidden.slice(0, hidden.length - (cut ? text.text.length - 1 : 0)), cut)
   }
   for (const key of keys) {
     const stack = Reflect.get(payload, key) as unknown
