@@ -98,6 +98,9 @@ function checkGroup(path: string, value: unknown): Record<string, unknown> | und
   return value
 }
 
+/** The longest a `redactPaths` entry may be: a name is compared against every key, so its length bounds that work. */
+const MAX_REDACT_PATH_LENGTH = 256
+
 /** The largest delay a timer holds; a larger one fires at once. */
 const MAX_TIMER_MS = 2_147_483_647
 
@@ -278,6 +281,13 @@ function validateCustomization(options: BymaxLoggerModuleOptions): void {
     paths.forEach((entry: unknown, index) => {
       if (!isNonEmptyString(entry)) {
         reject(`redactPaths[${String(index)}]`, 'must be a non-empty string', entry, true)
+      }
+      if (entry.length > MAX_REDACT_PATH_LENGTH) {
+        reject(
+          `redactPaths[${String(index)}]`,
+          `must be at most ${String(MAX_REDACT_PATH_LENGTH)} characters`,
+          entry
+        )
       }
     })
   }

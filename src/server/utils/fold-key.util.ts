@@ -10,6 +10,8 @@
  * like a Latin one.
  */
 
+import { GLYPH_LETTER_RUNS } from './glyph-letters.generated'
+
 /**
  * What is not part of a name: everything that is not a letter or a digit (the separators and the rest
  * of the punctuation, white space, control and format characters, the combining marks, which include
@@ -17,6 +19,28 @@
  * that print as nothing.
  */
 const NOT_NAME = /[^\p{L}\p{N}]|[\u115f\u1160\u3164\uffa0]/gu
+
+/** A symbol that is not ASCII (`So`, `Sm`, `Sk`) is read, where a value is hidden, as this stand-in for nothing, one or two characters of a name. */
+const SYMBOL_STAND_IN = '\ufffc'
+const NON_ASCII_SYMBOL = /(?=[^\0-\x7f])[\p{So}\p{Sm}\p{Sk}]/gu
+
+/** What is not part of a name where a value is hidden: the same, except the stand-in for a symbol. */
+const NOT_NAME_STRICT = /[^\p{L}\p{N}\ufffc]|[\u115f\u1160\u3164\uffa0]/gu
+
+/** The symbols drawn as a Latin letter that Unicode gives no decomposition for, by the letter, from {@link GLYPH_LETTER_RUNS}. */
+const GLYPH_LETTERS: ReadonlyMap<string, string> = new Map(
+  GLYPH_LETTER_RUNS.flatMap(([first, letters]) =>
+    [...letters].map((letter, index): [string, string] => [
+      String.fromCodePoint(first + index),
+      letter
+    ])
+  )
+)
+
+/** `text` with each symbol drawn as a Latin letter read as the letter, before the symbols are dropped as punctuation. */
+function readGlyphs(text: string): string {
+  return Array.from(text, (glyph) => GLYPH_LETTERS.get(glyph) ?? glyph).join('')
+}
 
 /** The same without the separators: what prints as nothing, white space and the combining marks. */
 const INVISIBLE = /[\s\p{Cc}\p{Cf}\p{M}\u115f\u1160\u2800\u3164\uffa0]/gu
@@ -92,13 +116,13 @@ export function foldKey(key: string, keepSeparators = false): string {
     // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
     if (PLAIN.test(key)) return key.toLowerCase()
     return withLookalikes(
-      key.normalize('NFKD').toLowerCase().replace(DOTS, '.').replace(INVISIBLE, ''),
+      readGlyphs(key.normalize('NFKD').toLowerCase()).replace(DOTS, '.').replace(INVISIBLE, ''),
       true
     )
   }
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
   if (PLAIN.test(key)) return key.replace(NOT_ASCII_NAME, '').toLowerCase()
-  return withLookalikes(key.normalize('NFKD').toLowerCase().replace(NOT_NAME, ''), true)
+  return withLookalikes(readGlyphs(key.normalize('NFKD').toLowerCase()).replace(NOT_NAME, ''), true)
 }
 
 /**
@@ -108,7 +132,12 @@ export function foldKey(key: string, keepSeparators = false): string {
 function foldStrict(key: string): string {
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
   if (PLAIN.test(key)) return key.replace(NOT_ASCII_NAME, '').toLowerCase()
-  return withLookalikes(key.normalize('NFKD').toLowerCase().replace(NOT_NAME, ''), false)
+  return withLookalikes(
+    readGlyphs(key.normalize('NFKD').toLowerCase())
+      .replace(NON_ASCII_SYMBOL, SYMBOL_STAND_IN)
+      .replace(NOT_NAME_STRICT, ''),
+    false
+  )
 }
 
 /** `folded` with the look-alikes read as the Latin letters, and the i-like ones too when `all` is set. */
@@ -156,7 +185,11 @@ export function foldName(key: string): string {
  * @returns The set the keys of a record are looked up in.
  */
 export function foldedNames(names: Iterable<string>): Set<string> {
-  return new Set(Array.from(names, foldName).filter((name) => name !== ''))
+  return new Set(
+    Array.from(names, (name) => foldName(name).replaceAll(SYMBOL_STAND_IN, '')).filter(
+      (name) => name !== ''
+    )
+  )
 }
 
 /** How many names of a compatible length a key is walked against before it is taken for one of them. */
@@ -207,12 +240,17 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   if (!NON_ASCII.test(folded)) return false
   const letters = [...folded]
   const wide = letters.filter((letter) => !isAscii(letter)).length
+  const stands = letters.filter((letter) => letter === SYMBOL_STAND_IN).length
   const { byLength, longest } = groupsOf(names)
+  // More stand-ins than the longest name has characters: the key is hidden without being walked, since
+  // the walk is quadratic in them and a key made of symbols is the safe way to be wrong.
+  if (longest === 0) return false
+  if (stands > longest) return true
   // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (no name is as long as the key, so the walk finds none and answers the same), and the true mutant is killed by the rows of fold-key.util.spec.ts; this disable also hides it from the report because Stryker cannot disable one mutant of a line.
-  if (letters.length > longest) return false
+  if (letters.length - stands > longest) return false
   const lengths = Array.from(
-    { length: wide + 1 },
-    (_, extra) => byLength.get(letters.length + extra) ?? []
+    { length: wide + stands + 1 },
+    (_, extra) => byLength.get(letters.length - stands + extra) ?? []
   )
   // More names of a compatible length than a key is walked against: the value is hidden, since the work
   // for a key of any length and any set of names is bounded and a hidden value is the safe answer. The
@@ -233,6 +271,12 @@ function matchesName(letters: readonly string[], name: readonly string[]): boole
   for (const letter of letters) {
     const next = new Set<number>()
     for (const position of at) {
+      if (letter === SYMBOL_STAND_IN) {
+        next.add(position)
+        next.add(position + 1)
+        next.add(position + 2)
+        continue
+      }
       if (isAscii(letter)) {
         if (name[position] === letter) next.add(position + 1)
         continue

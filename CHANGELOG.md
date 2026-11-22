@@ -12,6 +12,42 @@ heading here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A name spelled with symbol glyphs is read as the name.** The negative circled letters
+  (`U+1F150`..), the negative squared letters (`U+1F170`..) and the regional indicators (`U+1F1E6`..)
+  have no compatibility form, so the fold dropped them as punctuation and `🆃🅾🅺🅴🅽` folded to nothing
+  and kept its value in clear, at every depth, in a flat header array and as a property of an `Error`.
+  Each is now read as the Latin letter its Unicode name ends in. The table is generated from the
+  Unicode Character Database names (`scripts/generate-glyph-letters.mjs`, with a test that holds the
+  generated file to its input).
+- **A key that only spells `stack` is written as a stack at the root of an entry too.** The message the
+  options hide is hidden in the header of a `Stack`, `STACK` or zero-width spelling of the stack of an
+  object message, as it is below the root, and in the same kind of own property of an `Error`.
+- **The stack of a plain object is bounded whatever its message.** A message longer than the text limit
+  made the part of the stack that is searched as long as the message, and buffering one span for every
+  place a dense run matched cost memory out of proportion to the stack. A message longer than the text limit is no longer searched for:
+  the stack is written as the censor, as it is for more than eight messages, and a run of overlapping
+  matches is one span again.
+- **A symbol that is not ASCII stands for a letter in a key.** A copyright sign, a sound recording sign,
+  a multiplication sign or any other symbol of the categories `So`, `Sm` and `Sk` was dropped as
+  punctuation, so `℗assword`, `©ookie` and `tok℮n` kept their value in clear. Each now stands for nothing,
+  one or two characters of a name, where a value is hidden, which hides the value of those keys and of a
+  short key that holds such a symbol (over-hiding is the price, as for a letter of another script). Dashes
+  and spaces are still dropped, and the keys the entry owns are still compared exactly.
+- **An own enumerable `stack` of an `Error` is written as a stack.** The message the options hide is hidden
+  in it like in any key that spells `stack`.
+- **The stack keys at the root of an entry are capped like those below it,** and the positional stack of
+  `error(object, stack)` has the message hidden: it was attached after the message was hidden.
+
+### Changed
+
+- **A `redactPaths` entry is at most 256 characters.** A longer one is refused at startup by the name
+  of the option and its index (`options.redactPaths[i] must be at most 256 characters`), without echoing
+  it, where earlier releases accepted it and the application started. This holds for every strategy.
+  **Apply to a consumer:** an
+  entry over 256 characters now refuses boot; shorten it.
+
 ## [1.4.29] - 2026-11-21
 
 ### Fixed

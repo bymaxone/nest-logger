@@ -81,7 +81,7 @@
     "check:suppressions": "node scripts/check-suppressions-baseline.mjs",
     "clean": "rm -rf dist coverage",
     "check:socket-gate": "node scripts/check-socket-gate.mjs",
-    "lint": "eslint src scripts test bench '*.config.ts' '*.config.mjs' '*.config.cjs' && pnpm check:socket-gate && pnpm check:spec-headers && node --test scripts/check-spec-headers.test.mjs && node --test scripts/check-suppressions-baseline.test.mjs && pnpm check:property-path && node --test scripts/check-have-property-path.test.mjs",
+    "lint": "eslint src scripts test bench '*.config.ts' '*.config.mjs' '*.config.cjs' && pnpm check:socket-gate && pnpm check:spec-headers && node --test scripts/check-spec-headers.test.mjs && node --test scripts/check-suppressions-baseline.test.mjs && pnpm check:property-path && node --test scripts/check-have-property-path.test.mjs && node --test scripts/generate-glyph-letters.test.mjs",
     "lint:fix": "eslint src scripts test bench '*.config.ts' '*.config.mjs' '*.config.cjs' --fix",
     "mutation": "stryker run",
     "mutation:full": "node -e \"require('node:fs').rmSync('reports/stryker-incremental.json',{force:true,recursive:true})\" && stryker run",

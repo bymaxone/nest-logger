@@ -33,6 +33,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-21 — server: 46,813 B real -> 46,830 B budget (45.73 KiB), as approved by the project manager.
+//     The audit fixes of 1.4.30: a non-ASCII symbol stands for a letter in a key, an own `stack` of an Error and
+//     the stack keys at the root of an entry are read by their spelling, and the positional stack is hidden.
+//   - 2026-11-21 — server: 46,654 B real -> 46,670 B budget (45.58 KiB), as approved by the project manager. The 1.4.30 fixes: a generated table of the symbols drawn as a Latin letter, the stack
+//     keys of an object message and of an Error read by their spelling, and the length cap on a
+//     configured name.
 //   - 2026-11-21 — server: 46,417 B real -> 45.35 KiB budget (46,438 B), approved by the project manager
 //     at 46,440 B. A bounded answer cache per set of names, so a key that every record repeats is
 //     compared once instead of folded at each hide site (throughput retention C/B ~0.24 against 0.20).
@@ -355,7 +361,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 45.35 * 1024 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 46_830 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',

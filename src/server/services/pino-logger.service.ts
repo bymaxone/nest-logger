@@ -24,12 +24,13 @@ import {
   LOGGER_REDACTOR_TOKEN
 } from '../constants/injection-tokens.constants'
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
-import { cutText } from '../utils/bounded-text.util'
+import { cutText, MAX_TEXT_LENGTH } from '../utils/bounded-text.util'
 import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-text-finisher.util'
 import type { EntryTextCut, EntryTextFinisher } from '../utils/entry-text-finisher.util'
+import { isStackKey, MAX_STACK_ALIASES } from '../utils/error-text-exemption.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { foldKey } from '../utils/fold-key.util'
-import { hideMessageInStack } from '../utils/hide-message-in-stack.util'
+import { hideMessagesInStack } from '../utils/hide-message-in-stack.util'
 import { isPlainRecord } from '../utils/is-plain-record.util'
 import type { Redactor } from '../utils/redact-by-name.util'
 import { isErrorLike } from '../utils/sanitize-error.util'
@@ -203,17 +204,43 @@ function objectMessageText(fields: Record<string, unknown>): ObjectMessageText |
  * @param payload - The fields of the entry, whose `stack` is replaced.
  * @param text - The text of the message and the member it came from.
  * @param censor - Censors a text as the `message` of an entry is.
+ * @param positional - The stack the caller passed beside the message, which is not a field yet.
+ * @returns The positional stack, with the message hidden in it.
  */
 function hideStackMessage(
   payload: Record<string, unknown>,
   text: ObjectMessageText | undefined,
-  censor: (message: string) => string
-): void {
-  const stack = Reflect.get(payload, 'stack') as unknown
-  if (text?.key !== 'message' || typeof stack !== 'string') return
+  censor: (message: string) => string,
+  positional?: string
+): string | undefined {
+  const kept = positional === undefined ? undefined : cutText(positional)
+  if (text?.key !== 'message') return kept
   const censored = censor(text.text)
-  if (censored === text.text) return
-  Reflect.set(payload, 'stack', hideMessageInStack(stack, text.text, censored))
+  if (censored === text.text) return kept
+  const keys = Object.keys(payload).filter(isStackKey)
+  // Past the caps of the walk below the root, every stack is the censor.
+  const overflow =
+    keys.length + (positional === undefined ? 0 : 1) > MAX_STACK_ALIASES ||
+    text.text.length > MAX_TEXT_LENGTH
+  // The part searched reaches as far past the cut as the message is long, so a copy that starts before
+  // the cut is hidden whole and none is left at the end; a stack of any length costs no more than the limit.
+  const hide = (stack: string): string =>
+    overflow
+      ? censored
+      : cutText(
+          hideMessagesInStack(
+            stack.slice(0, MAX_TEXT_LENGTH + text.text.length),
+            [text.text],
+            censored,
+            MAX_TEXT_LENGTH
+          ),
+          stack.length > MAX_TEXT_LENGTH
+        )
+  for (const key of keys) {
+    const stack = Reflect.get(payload, key) as unknown
+    if (typeof stack === 'string') Reflect.set(payload, key, hide(stack))
+  }
+  return positional === undefined ? undefined : hide(positional)
 }
 
 /** A message read as the fields of an entry, with its text and the member the text came from. */
@@ -407,9 +434,15 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     const context = typeof optionalParams[1] === 'string' ? optionalParams[1] : this.context
     // A plain-object message is the entry's fields, as in `emitNestStyle`.
     const { fields, text, payload } = readObjectMessage(message)
-    hideStackMessage(payload, text, (message) => this.censorText({ key: 'message', text: message }))
+    // Hidden before it is attached: the field is written once.
+    const positional = hideStackMessage(
+      payload,
+      text,
+      (message) => this.censorText({ key: 'message', text: message }),
+      stack
+    )
     assignIfDefined(payload, 'context', context)
-    assignIfDefined(payload, 'stack', stack === undefined ? stack : cutText(stack))
+    assignIfDefined(payload, 'stack', positional)
     // An `Error` in the tail is attached as `err`, the same field the
     // leading-`Error` branch above writes, so `logger.error(msg, err)` and
     // `logger.error(err)` produce the same queryable shape. `stack` stays the

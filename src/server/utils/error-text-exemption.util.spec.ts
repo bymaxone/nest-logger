@@ -13,6 +13,7 @@ import {
   isCensored,
   readField
 } from './error-text-exemption.util'
+import * as hideModule from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
 import { MAX_STACK_SCAN } from './sanitize-error.util'
 
@@ -68,7 +69,7 @@ describe('headerMessage', () => {
     })
   })
 
-  it('reads no message when the options do not hide it, and nothing of an error', () => {
+  it('reads no message when the options do not hide it, and a plan of an error only for a key that spells stack', () => {
     const source = { message: SECRET, stack: 'x' }
 
     expect(headerMessage(rules(['token']), source, ['message', 'stack'], false)).toEqual({
@@ -76,7 +77,14 @@ describe('headerMessage', () => {
       stackKeys: new Set(['stack']),
       texts: new Map()
     })
-    expect(headerMessage(rules(), source, ['message', 'stack'], true)).toBeUndefined()
+    // An Error that has no key spelling `stack` has no plan; one with an own enumerable `stack` has the
+    // plan of that key, whose text is a copy of its message.
+    expect(headerMessage(rules(), { message: SECRET }, ['message'], true)).toBeUndefined()
+    expect(headerMessage(rules(), source, ['message', 'stack'], true)).toEqual({
+      overflow: false,
+      stackKeys: new Set(['stack']),
+      texts: new Map([['message', SECRET]])
+    })
   })
 })
 
@@ -421,5 +429,33 @@ describe('isCensored, the exemption of the message under err', () => {
     expect(isCensored(exempt, 'message', SECRET)).toBe(false)
     expect(isCensored(exempt, 'message', { text: SECRET })).toBe(true)
     expect(isCensored(rules(), 'message', SECRET)).toBe(true)
+  })
+})
+
+describe('errorTextField, how much of a stack is searched', () => {
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  /**
+   * Given a stack far longer than the scan bound and two messages of different lengths
+   * When the stack of an object that is no Error is written
+   * Then the search reads the bound plus the longest message and no more, whatever the stack holds
+   */
+  it('hands the search the bound plus the longest message, and no more', () => {
+    const search = jest.spyOn(hideModule, 'hideMessagesInStack')
+    const stack = 'x'.repeat(MAX_STACK_SCAN * 3)
+
+    errorTextField(rules(), 'stack', stack, false, {
+      overflow: false,
+      stackKeys: new Set(['stack']),
+      texts: new Map([
+        ['message', 'abc'],
+        ['Message', 'abcdefg']
+      ])
+    })
+
+    expect(search).toHaveBeenCalledTimes(1)
+    expect(search.mock.calls[0]?.[0]).toHaveLength(MAX_STACK_SCAN + 7)
   })
 })
