@@ -21,10 +21,10 @@ heading here.
   `Object.prototype` of any realm, told apart without reading a property of it) holds is now skipped, the options and their groups are kept in objects
   with no prototype, and so is the `service` metadata; a key the object has itself, and a getter a class
   prototype defines, still count. Pino got the same: it is handed an own value for each option it reads
-  and the library does not set, so a planted one is never seen (a planted `transport` would have made it
-  build one at startup). Out of scope, because Node and Pino read them off objects this library does
-  not build: keys such as `write`, `message` and `toJSON`, which the multistream write, the emit and
-  `JSON.stringify` read.
+  and the library does not set, and so is each entry handed to its multistream, so a planted one is never
+  seen (a planted `transport` would have made it build one at startup, and a `levelVal` of 100 would
+  have silenced every log). Out of scope, because Node and Pino read them off objects this library does
+  not build: keys such as `message` and `toJSON`, which the emit and `JSON.stringify` read.
   A key planted by plain assignment, so that it is enumerable, under the name of a property of a Pino
   instance makes Pino throw, since it assigns every key a `for...in` over its level values finds,
   inherited ones included, to the instance; no option can shadow that, and a plant that is not

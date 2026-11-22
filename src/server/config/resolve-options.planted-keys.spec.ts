@@ -77,6 +77,10 @@ const KEYS = [
   'useOnlyCustomLevels',
   'depthLimit',
   'edgeLimit',
+  'levelVal',
+  'write',
+  'id',
+  'hasOwnProperty',
   'streamLevels',
   'lastLevel',
   'lastTime',
@@ -98,7 +102,18 @@ const KEYS = [
 ]
 
 /** What a planted key may hold: a value of the type that passes the check of the option, and one that does not. */
-const PLANTED: unknown[] = [true, false, 'S1', 'silent', 'flat', ['password'], {}, 1, () => 'S1']
+const PLANTED: unknown[] = [
+  true,
+  false,
+  'S1',
+  'silent',
+  'flat',
+  ['password'],
+  {},
+  1,
+  100,
+  () => 'S1'
+]
 
 const SERVICE = { name: 'app', version: '1.0.0' }
 
@@ -108,14 +123,19 @@ const SERVICE = { name: 'app', version: '1.0.0' }
  * enumerably under one of these names throws, when the logger is built or at the first call (`THROWS_AT`): no option can shadow that. It is
  * a limit of Pino, stated in the changelog, and a row below holds it.
  */
-const PINO_ITERATED = ['level', 'levels', 'msgPrefix']
+const PINO_ITERATED = ['level', 'levels', 'msgPrefix', 'levelVal', 'hasOwnProperty']
 
 /** Where each throws: while the logger is built, or at the first call of the Nest-style methods. */
-const THROWS_AT: Record<string, 'build' | 'call'> = {
-  level: 'build',
-  levels: 'call',
-  msgPrefix: 'build'
-}
+const THROWS_AT = new Map<string, 'build' | 'call'>([
+  ['level', 'build'],
+  ['levels', 'call'],
+  ['msgPrefix', 'build'],
+  ['levelVal', 'build'],
+  ['hasOwnProperty', 'build']
+])
+
+/** The names that change nothing when the plant is not enumerable; for the others a plant replaces a method that Pino or Node calls. */
+const QUIET_WHEN_HIDDEN = ['level', 'levels', 'msgPrefix', 'levelVal']
 
 /** The lines written for a record that carries ten secrets, with the time left out. */
 function linesFor(given: BymaxLoggerModuleOptions): string[] {
@@ -139,13 +159,18 @@ function linesFor(given: BymaxLoggerModuleOptions): string[] {
 }
 
 /** Plant `value` under `key` on `Object.prototype` while `read` runs. */
-function planted<T>(key: string, value: unknown, read: () => T): T {
-  // Plain assignment, as a pollution does it: the key is enumerable, so a `for...in` sees it.
-  Reflect.set(Object.prototype, key, value)
+function planted<T>(key: string, value: unknown, read: () => T, enumerable = true): T {
+  const before = Object.getOwnPropertyDescriptor(Object.prototype, key)
+  // Plain assignment, as a pollution does it: the key is enumerable, so a `for...in` sees it. One
+  // that is not enumerable is a plant made with `defineProperty`.
+  if (enumerable) Reflect.set(Object.prototype, key, value)
+  else Object.defineProperty(Object.prototype, key, { value, configurable: true, writable: true })
   try {
     return read()
   } finally {
     Reflect.deleteProperty(Object.prototype, key)
+    // A name the root has itself (`hasOwnProperty`) is put back as it was.
+    if (before) Object.defineProperty(Object.prototype, key, before)
   }
 }
 
@@ -157,18 +182,23 @@ describe('a key planted on Object.prototype', () => {
    * When the options are the same
    * Then the lines are the same, so no secret that was hidden is written
    */
-  it.each(KEYS.filter((key) => !PINO_ITERATED.includes(key)))(
-    'changes nothing when %s is planted',
-    (key) => {
-      for (const value of PLANTED) {
-        const lines = planted(key, value, () =>
-          linesFor({ service: SERVICE, redactPaths: ['custom'] })
-        )
+  it.each([
+    ...KEYS.filter((key) => !PINO_ITERATED.includes(key)).map((key) => [key, true] as const),
+    ...KEYS.map((key) => [key, false] as const).filter(
+      ([key]) => !PINO_ITERATED.includes(key) || QUIET_WHEN_HIDDEN.includes(key)
+    )
+  ])('changes nothing when %s is planted, enumerable: %s', (key, enumerable) => {
+    for (const value of PLANTED) {
+      const lines = planted(
+        key,
+        value,
+        () => linesFor({ service: SERVICE, redactPaths: ['custom'] }),
+        enumerable
+      )
 
-        expect(lines).toEqual(baseline)
-      }
+      expect(lines).toEqual(baseline)
     }
-  )
+  })
 
   /**
    * Given the two plants that weakened redaction: the switch that turns the default paths off and a censor
@@ -284,21 +314,16 @@ describe('a key planted on Object.prototype', () => {
           new DestinationHealth()
         )
       )
-    if (THROWS_AT[name] === 'build') {
+    if (THROWS_AT.get(name) === 'build') {
       expect(() => planted(name, 'X', build)).toThrow()
     } else {
       expect(() => planted(name, 'X', () => build().warn({ event: 'E' } as never))).toThrow()
     }
 
-    Object.defineProperty(Object.prototype, name, {
-      value: 'X',
-      configurable: true,
-      writable: true
-    })
-    try {
-      expect(linesFor({ service: SERVICE, redactPaths: ['custom'] })).toEqual(baseline)
-    } finally {
-      Reflect.deleteProperty(Object.prototype, name)
+    if (QUIET_WHEN_HIDDEN.includes(name)) {
+      expect(
+        planted(name, 'X', () => linesFor({ service: SERVICE, redactPaths: ['custom'] }), false)
+      ).toEqual(baseline)
     }
   })
 

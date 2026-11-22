@@ -561,6 +561,13 @@ function buildTraceMixin(
 }
 
 /**
+ * An own value for each name the multistream reads off an entry that this library does not set: a
+ * `levelVal` planted on `Object.prototype` would give every entry that level, and a `write` would make
+ * the entry itself the stream.
+ */
+const UNSET_ENTRY_NAMES = { levelVal: undefined, write: undefined } as unknown as object
+
+/**
  * One multistream entry for each destination, each behind its bounded queue.
  *
  * @param options - Fully-defaulted module options.
@@ -584,6 +591,7 @@ function buildStreams(
     // The registry drains this buffer before it tells the destination to shut down.
     health.registerStream(destination, stream)
     return {
+      ...UNSET_ENTRY_NAMES,
       // Guarded: this runs at provider construction, BEFORE any lifecycle hook, so a
       // consumer implementing `minLevel` as a throwing getter would fail the factory
       // and the application would never start — earlier than any fail-soft path can
