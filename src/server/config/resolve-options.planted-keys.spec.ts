@@ -103,9 +103,9 @@ const PLANTED: unknown[] = [true, false, 'S1', 'silent', 'flat', ['password'], {
 const SERVICE = { name: 'app', version: '1.0.0' }
 
 /**
- * The names of properties Pino's own instances have as getters. Pino sets its levels with a `for...in`
+ * The names of properties Pino's own instances have, which its level setup assigns. Pino sets its levels with a `for...in`
  * over its own table of levels and assigns each key it finds to the instance, so a key planted
- * enumerably under one of these names throws while the logger is built: no option can shadow that. It is
+ * enumerably under one of these names throws, when the logger is built or at the first call (`THROWS_AT`): no option can shadow that. It is
  * a limit of Pino, stated in the changelog, and a row below holds it.
  */
 const PINO_ITERATED = ['level', 'levels', 'msgPrefix']
@@ -268,7 +268,7 @@ describe('a key planted on Object.prototype', () => {
   })
 
   /**
-   * Given a key planted enumerably under the name of a getter of Pino's own instances, and the same key
+   * Given a key planted enumerably under the name of a property of Pino's own instances, and the same key
    * planted without being enumerable
    * When the options are resolved and the logger built
    * Then the first makes Pino throw, while it is built or at the first call, which no option can prevent, and

@@ -25,7 +25,7 @@ heading here.
   build one at startup). Out of scope, because Node and Pino read them off objects this library does
   not build: keys such as `write`, `message` and `toJSON`, which the multistream write, the emit and
   `JSON.stringify` read.
-  A key planted by plain assignment, so that it is enumerable, under the name of a getter of a Pino
+  A key planted by plain assignment, so that it is enumerable, under the name of a property of a Pino
   instance (`level`, `levels`, `msgPrefix`) makes Pino throw: `level` and `msgPrefix` while the logger is
   built, at startup, and `levels` at the first call of the Nest-style methods, since Pino assigns every key a
   `for...in` over its level values finds, inherited ones included, to the instance; no option can shadow that, and a plant that is not enumerable changes
