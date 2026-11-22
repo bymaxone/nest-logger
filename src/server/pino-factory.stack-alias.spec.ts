@@ -248,6 +248,10 @@ describe('the caps on the stack keys and on the message at the root of an entry'
     return JSON.parse(lines[0] ?? '{}') as Record<string, unknown>
   }
 
+  /** What the record holds under the first `count` keys. */
+  const writtenBy = (record: Record<string, unknown>, count: number): unknown[] =>
+    KEYS.slice(0, count).map((key) => record[key])
+
   const stacksOf = (count: number): Record<string, string> =>
     Object.fromEntries(KEYS.slice(0, count).map((key) => [key, `Error: ${SECRET}${FRAME}`]))
 
@@ -260,8 +264,8 @@ describe('the caps on the stack keys and on the message at the root of an entry'
     const eight = recordOf({ message: SECRET, ...stacksOf(8) })
     const nine = recordOf({ message: SECRET, ...stacksOf(9) })
 
-    expect(eight.stack).toBe(`Error: [REDACTED]${FRAME}`)
-    expect(nine.stack).toBe('[REDACTED]')
+    expect(writtenBy(eight, 8)).toEqual(Array(8).fill(`Error: [REDACTED]${FRAME}`))
+    expect(writtenBy(nine, 9)).toEqual(Array(9).fill('[REDACTED]'))
   })
 
   /**
@@ -273,7 +277,9 @@ describe('the caps on the stack keys and on the message at the root of an entry'
     const eight = recordOf({ message: SECRET, ...stacksOf(7) }, `Error: ${SECRET}${FRAME}`)
     const nine = recordOf({ message: SECRET, ...stacksOf(8) }, `Error: ${SECRET}${FRAME}`)
 
+    expect(writtenBy(eight, 7)).toEqual(Array(7).fill(`Error: [REDACTED]${FRAME}`))
     expect(eight.stack).toBe(`Error: [REDACTED]${FRAME}`)
+    expect(writtenBy(nine, 8)).toEqual(Array(8).fill('[REDACTED]'))
     expect(nine.stack).toBe('[REDACTED]')
   })
 
