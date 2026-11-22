@@ -182,31 +182,67 @@ describe('a key planted on Object.prototype', () => {
   })
 
   /**
-   * Given options held by an object with no prototype that is no realm root, and options an object with no
-   * prototype owns, even when it owns a key named `hasOwnProperty`
-   * When they are resolved
-   * Then the values count: only a root, a prototype with no prototype that holds `hasOwnProperty`, is
-   * skipped, and only when the key is not the object's own
+   * Given a root whose own `constructor` and `isPrototypeOf` were overwritten and whose `hasOwnProperty` was deleted, in this
+   * realm and in another, with the switch that turns default redaction off planted beside them
+   * When options are resolved
+   * Then the planted switch is skipped all the same: the check reads no property of the root
    */
-  it('keeps what a prototype with no prototype of its own holds, and what a bare object owns', () => {
+  it.each([
+    ['this realm', (): object => Object.prototype],
+    ['another realm', (): object => runInNewContext('Object.prototype') as object]
+  ])('skips a key planted on a root whose properties were overwritten, in %s', (_realm, root) => {
+    const object = root()
+    const plant = (key: string, value: unknown): PropertyDescriptor | undefined => {
+      const before = Object.getOwnPropertyDescriptor(object, key)
+      Object.defineProperty(object, key, { value, configurable: true, writable: true })
+      return before
+    }
+    const saved = ['constructor', 'isPrototypeOf'].map((key) => [key, plant(key, 'X')] as const)
+    const owned = Object.getOwnPropertyDescriptor(object, 'hasOwnProperty')
+    Reflect.deleteProperty(object, 'hasOwnProperty')
+    plant('shouldDisableDefaultRedact', true)
+    try {
+      const own = runInNewContext(
+        '({ service: { name: "app", version: "1.0.0" } })'
+      ) as BymaxLoggerModuleOptions
+      const here = { service: SERVICE } as BymaxLoggerModuleOptions
+
+      expect(resolveOptions(here).shouldDisableDefaultRedact).toBe(false)
+      if (object !== Object.prototype)
+        expect(resolveOptions(own).shouldDisableDefaultRedact).toBe(false)
+    } finally {
+      Reflect.deleteProperty(object, 'shouldDisableDefaultRedact')
+      for (const [key, before] of saved) {
+        if (before) Object.defineProperty(object, key, before)
+      }
+      if (owned) Object.defineProperty(object, 'hasOwnProperty', owned)
+    }
+  })
+
+  /**
+   * Given options held by a prototype that has a prototype of its own, and options an object owns, even
+   * when it owns a key named `hasOwnProperty`
+   * When they are resolved
+   * Then the values count; a prototype with no prototype of its own is a root and is skipped
+   */
+  it('keeps what a prototype with a prototype holds, and what a bare object owns', () => {
     const base = Object.create(null, {
       redactCensor: { value: 'BASE', enumerable: true }
     }) as object
-    const inherited = Object.assign(Object.create(base) as object, { service: SERVICE })
-    const bare = Object.assign(Object.create(null) as object, {
-      service: SERVICE,
-      redactCensor: 'OWN',
-      hasOwnProperty: () => true
-    })
-
+    const skipped = Object.assign(Object.create(base) as object, { service: SERVICE })
     const named = Object.assign(
       Object.create({ redactCensor: 'NAMED', hasOwnProperty: () => true }),
       {
         service: SERVICE
       }
     ) as object
+    const bare = Object.assign(Object.create(null) as object, {
+      service: SERVICE,
+      redactCensor: 'OWN',
+      hasOwnProperty: () => true
+    })
 
-    expect(resolveOptions(inherited as BymaxLoggerModuleOptions).redactCensor).toBe('BASE')
+    expect(resolveOptions(skipped as BymaxLoggerModuleOptions).redactCensor).toBe('[REDACTED]')
     expect(resolveOptions(named as BymaxLoggerModuleOptions).redactCensor).toBe('NAMED')
     expect(resolveOptions(bare as BymaxLoggerModuleOptions).redactCensor).toBe('OWN')
   })

@@ -77,18 +77,18 @@ const GROUP_NAMES = Object.keys(GROUP_KEYS) as ReadonlyArray<keyof typeof GROUP_
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-/** Whether `key` is only on a realm root (`Object.prototype`), so a planted key is no option. */
+/**
+ * Whether the first holder of `key` is a prototype with no prototype of its own: the root of a chain, as
+ * the `Object.prototype` of any realm is. No property of the holder is read to tell, so a root whose own
+ * properties were overwritten is still one; a prototype of that shape the consumer built is skipped too.
+ */
 function plantedOnRealmRoot(source: object, key: string): boolean {
   for (
     let at: object | null = source;
     at !== null;
     at = Object.getPrototypeOf(at) as object | null
   ) {
-    if (Object.hasOwn(at, key)) {
-      return (
-        at !== source && Object.getPrototypeOf(at) === null && Object.hasOwn(at, 'hasOwnProperty')
-      )
-    }
+    if (Object.hasOwn(at, key)) return at !== source && Object.getPrototypeOf(at) === null
   }
   return false
 }

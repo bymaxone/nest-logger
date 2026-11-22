@@ -17,8 +17,8 @@ heading here.
 - **A key planted on `Object.prototype` is no option.** The options were read by property access through
   the prototype chain, so a `shouldDisableDefaultRedact: true` planted on `Object.prototype` (by a
   dependency with a prototype-pollution flaw) turned the default redact paths off, and `redactCensor`,
-  `level` and the rest were read the same way. A value that only the root of a prototype chain (the
-  `Object.prototype` of any realm) holds is now skipped, the options and their groups are kept in objects
+  `level` and the rest were read the same way. A value that only a prototype with no prototype of its own (the
+  `Object.prototype` of any realm, told apart without reading a property of it) holds is now skipped, the options and their groups are kept in objects
   with no prototype, and so is the `service` metadata; a key the object has itself, and a getter a class
   prototype defines, still count.
 - **A name spelled with symbol glyphs is read as the name.** The negative circled letters
