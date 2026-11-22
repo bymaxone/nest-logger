@@ -110,6 +110,13 @@ const SERVICE = { name: 'app', version: '1.0.0' }
  */
 const PINO_ITERATED = ['level', 'levels', 'msgPrefix']
 
+/** Where each throws: while the logger is built, or at the first call of the Nest-style methods. */
+const THROWS_AT: Record<string, 'build' | 'call'> = {
+  level: 'build',
+  levels: 'call',
+  msgPrefix: 'build'
+}
+
 /** The lines written for a record that carries ten secrets, with the time left out. */
 function linesFor(given: BymaxLoggerModuleOptions): string[] {
   const lines: string[] = []
@@ -264,13 +271,12 @@ describe('a key planted on Object.prototype', () => {
    * Given a key planted enumerably under the name of a getter of Pino's own instances, and the same key
    * planted without being enumerable
    * When the options are resolved and the logger built
-   * Then the first makes Pino throw while the logger is built, which no option can prevent, and the second
-   * changes nothing
+   * Then the first makes Pino throw, while it is built or at the first call, which no option can prevent, and
+   * the second changes nothing
    */
   it.each(PINO_ITERATED)('is a limit of Pino when %s is planted enumerably', (name) => {
-    // Building the logger is what throws, before any call is made on it.
-    expect(() =>
-      planted(name, 'X', () =>
+    const build = (): PinoLoggerService =>
+      new PinoLoggerService(
         buildPinoInstance(
           resolveOptions({ service: SERVICE }),
           new LogContextService(),
@@ -278,7 +284,11 @@ describe('a key planted on Object.prototype', () => {
           new DestinationHealth()
         )
       )
-    ).toThrow()
+    if (THROWS_AT[name] === 'build') {
+      expect(() => planted(name, 'X', build)).toThrow()
+    } else {
+      expect(() => planted(name, 'X', () => build().warn({ event: 'E' } as never))).toThrow()
+    }
 
     Object.defineProperty(Object.prototype, name, {
       value: 'X',
