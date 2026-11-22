@@ -213,3 +213,84 @@ describe('the length of the message a plain-object stack is searched for', () =>
     expect(written).toContain('p[REDACTED]')
   })
 })
+
+describe('the caps on the stack keys and on the message at the root of an entry', () => {
+  const KEYS = [
+    'stack',
+    'Stack',
+    'STACK',
+    'st\u200back',
+    '\uff33tack',
+    'sta ck',
+    'st-ack',
+    'sTack',
+    'stAck'
+  ]
+  const FRAME = '\n    at f (/app/x.js:1:1)'
+
+  /** The record written for an object message at the root, with the positional stack when one is given. */
+  function recordOf(fields: Record<string, unknown>, positional?: string): Record<string, unknown> {
+    const lines: string[] = []
+    const options = applyDefaults({
+      service: { name: 'app', version: '1.0.0' },
+      redactPaths: ['message']
+    })
+    const sink = { name: 'sink', write: (line: unknown) => lines.push(String(line)) }
+    const pino = buildPinoInstance(
+      options,
+      new LogContextService(),
+      [sink as never],
+      new DestinationHealth()
+    )
+    const logger = new PinoLoggerService(pino)
+    if (positional === undefined) logger.warn({ event: 'E', ...fields })
+    else logger.error(fields, positional)
+    return JSON.parse(lines[0] ?? '{}') as Record<string, unknown>
+  }
+
+  const stacksOf = (count: number): Record<string, string> =>
+    Object.fromEntries(KEYS.slice(0, count).map((key) => [key, `Error: ${SECRET}${FRAME}`]))
+
+  /**
+   * Given a message and as many stack keys as the cap allows, and then one more
+   * When the entry is written
+   * Then each stack keeps its frames with the message hidden, and past the cap each is the censor
+   */
+  it('searches the stacks of eight keys and gives up on nine', () => {
+    const eight = recordOf({ message: SECRET, ...stacksOf(8) })
+    const nine = recordOf({ message: SECRET, ...stacksOf(9) })
+
+    expect(eight.stack).toBe(`Error: [REDACTED]${FRAME}`)
+    expect(nine.stack).toBe('[REDACTED]')
+  })
+
+  /**
+   * Given a stack passed beside the message, which counts as one of the stacks
+   * When the keys and the positional stack make eight, and then nine
+   * Then eight are searched and nine are the censor
+   */
+  it('counts the stack passed beside the message among the stacks', () => {
+    const eight = recordOf({ message: SECRET, ...stacksOf(7) }, `Error: ${SECRET}${FRAME}`)
+    const nine = recordOf({ message: SECRET, ...stacksOf(8) }, `Error: ${SECRET}${FRAME}`)
+
+    expect(eight.stack).toBe(`Error: [REDACTED]${FRAME}`)
+    expect(nine.stack).toBe('[REDACTED]')
+  })
+
+  /**
+   * Given a message of exactly the text limit and one a character longer, each repeated by a stack
+   * When the entry is written at the root
+   * Then the first is hidden where the stack repeats it and the second makes the stack the censor
+   */
+  it('searches a message of the text limit at the root and gives up on one a character longer', () => {
+    const exact = 'e'.repeat(MAX_TEXT_LENGTH)
+    const longer = 'e'.repeat(MAX_TEXT_LENGTH + 1)
+
+    expect(recordOf({ message: exact, stack: `Error: ${exact}${FRAME}` }).stack).toBe(
+      `Error: [REDACTED]${FRAME}`
+    )
+    expect(recordOf({ message: longer, stack: `Error: ${longer}${FRAME}` }).stack).toBe(
+      '[REDACTED]'
+    )
+  })
+})
