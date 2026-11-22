@@ -180,4 +180,34 @@ describe('a key planted on Object.prototype', () => {
     expect(resolved.redactCensor).toBe('GETTER')
     expect(resolved.shouldDisableDefaultRedact).toBe(false)
   })
+
+  /**
+   * Given options held by an object with no prototype that is no realm root, and options an object with no
+   * prototype owns, even when it owns a key named `hasOwnProperty`
+   * When they are resolved
+   * Then the values count: only a root, a prototype with no prototype that holds `hasOwnProperty`, is
+   * skipped, and only when the key is not the object's own
+   */
+  it('keeps what a prototype with no prototype of its own holds, and what a bare object owns', () => {
+    const base = Object.create(null, {
+      redactCensor: { value: 'BASE', enumerable: true }
+    }) as object
+    const inherited = Object.assign(Object.create(base) as object, { service: SERVICE })
+    const bare = Object.assign(Object.create(null) as object, {
+      service: SERVICE,
+      redactCensor: 'OWN',
+      hasOwnProperty: () => true
+    })
+
+    const named = Object.assign(
+      Object.create({ redactCensor: 'NAMED', hasOwnProperty: () => true }),
+      {
+        service: SERVICE
+      }
+    ) as object
+
+    expect(resolveOptions(inherited as BymaxLoggerModuleOptions).redactCensor).toBe('BASE')
+    expect(resolveOptions(named as BymaxLoggerModuleOptions).redactCensor).toBe('NAMED')
+    expect(resolveOptions(bare as BymaxLoggerModuleOptions).redactCensor).toBe('OWN')
+  })
 })
