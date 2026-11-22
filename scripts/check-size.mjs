@@ -33,6 +33,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-22 — server: 46,877 B real -> 46,907 B budget (45.80 KiB), as approved by the project manager.
+//     The options read as the consumer set them: a key that only the root of a prototype chain holds is
+//     skipped, and the option sets and the service metadata are objects with no prototype.
 //   - 2026-11-21 — server: 46,813 B real -> 46,830 B budget (45.73 KiB), as approved by the project manager.
 //     The audit fixes of 1.4.30: a non-ASCII symbol stands for a letter in a key, an own `stack` of an Error and
 //     the stack keys at the root of an entry are read by their spelling, and the positional stack is hidden.
@@ -361,7 +364,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 46_830 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 46_907 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',
