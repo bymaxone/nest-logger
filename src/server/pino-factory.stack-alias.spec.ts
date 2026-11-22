@@ -287,14 +287,15 @@ describe('the caps on the stack keys and on the message at the root of an entry'
   /**
    * Given a message of exactly the text limit and one a character longer, each repeated by a stack
    * When the entry is written at the root
-   * Then the first is hidden where the stack repeats it and the second makes the stack the censor
+   * Then the first is hidden where the stack repeats it, and the text ends with the copy, which crosses
+   * the limit; the second makes the stack the censor
    */
   it('searches a message of the text limit at the root and gives up on one a character longer', () => {
     const exact = 'e'.repeat(MAX_TEXT_LENGTH)
     const longer = 'e'.repeat(MAX_TEXT_LENGTH + 1)
 
     expect(recordOf({ message: exact, stack: `Error: ${exact}${FRAME}` }).stack).toBe(
-      `Error: [REDACTED]${FRAME}`
+      `Error: [REDACTED]${TEXT_TRUNCATED}`
     )
     expect(recordOf({ message: longer, stack: `Error: ${longer}${FRAME}` }).stack).toBe(
       '[REDACTED]'
@@ -346,7 +347,7 @@ describe('the message in a stack passed beside it, at the cut', () => {
    * is the text limit followed by the marker
    */
   it('hands the search the text limit plus the message, and keeps the text limit', () => {
-    const search = jest.spyOn(hideModule, 'hideMessageInStack')
+    const search = jest.spyOn(hideModule, 'hideMessagesInStack')
     const lines: string[] = []
     const options = applyDefaults({
       service: { name: 'app', version: '1.0.0' },
@@ -363,8 +364,7 @@ describe('the message in a stack passed beside it, at the cut', () => {
     new PinoLoggerService(pino).error({ message: 'abc' }, 'x'.repeat(MAX_TEXT_LENGTH * 3))
 
     const kept = (JSON.parse(lines[0] ?? '{}') as { stack: string }).stack
-    expect(search).toHaveBeenCalledTimes(1)
-    expect(search.mock.calls[0]?.[0]).toHaveLength(MAX_TEXT_LENGTH + 3)
+    expect(search.mock.calls.map(([stack]) => stack.length)).toContain(MAX_TEXT_LENGTH + 3)
     expect(kept).toHaveLength(MAX_TEXT_LENGTH + TEXT_TRUNCATED.length)
     search.mockRestore()
   })
@@ -376,7 +376,7 @@ describe('the message in a stack passed beside it, at the cut', () => {
    * limit followed by the marker
    */
   it.each(['stack', 'Stack'])('bounds the search of a long stack under the key %s', (key) => {
-    const search = jest.spyOn(hideModule, 'hideMessageInStack')
+    const search = jest.spyOn(hideModule, 'hideMessagesInStack')
     const message = 'SECRET_42'
     const lines: string[] = []
     const options = applyDefaults({
@@ -430,8 +430,43 @@ describe('the message in a stack passed beside it, at the cut', () => {
     expect(kept.length).toBeLessThan(MAX_TEXT_LENGTH)
     expect(kept.endsWith(TEXT_TRUNCATED)).toBe(true)
     expect(kept).not.toContain('mmmm')
-    // 163 whole copies and 21 characters of the next are read; the censored copies are 11 characters each,
-    // and as many characters as a copy has but one are dropped from the end.
-    expect(kept).toHaveLength(163 * 11 + 21 - 99 + TEXT_TRUNCATED.length)
+    // 163 copies start before the limit and are hidden whole (10 characters each, a line feed between
+    // them); the 21 characters of the next are not read.
+    expect(kept).toHaveLength(163 * 10 + 162 + TEXT_TRUNCATED.length)
+  })
+
+  /**
+   * Given a message of ten thousand characters that a stack repeats three times, and one a stack opens
+   * with and goes on after in ordinary text
+   * When the entry is written at the root
+   * Then no part of the copy that crosses the read part is left, and ordinary text is kept up to the limit
+   */
+  it('leaves no part of a long message at the end, and keeps ordinary text up to the limit', () => {
+    const stackOf = (message: string, stack: string): string => {
+      const lines: string[] = []
+      const options = applyDefaults({
+        service: { name: 'app', version: '1.0.0' },
+        redactPaths: ['message']
+      })
+      const sink = { name: 'sink', write: (line: unknown) => lines.push(String(line)) }
+      const pino = buildPinoInstance(
+        options,
+        new LogContextService(),
+        [sink as never],
+        new DestinationHealth()
+      )
+      new PinoLoggerService(pino).warn({ event: 'E', message, stack })
+      return (JSON.parse(lines[0] ?? '{}') as { stack: string }).stack
+    }
+    const long = 'abcdefghij'.repeat(1_000)
+    const short = 'm'.repeat(100)
+
+    expect(stackOf(long, long + long + long)).not.toContain(long.slice(0, 50))
+    expect(stackOf(short, short + 'x'.repeat(MAX_TEXT_LENGTH - 100))).toBe(
+      `[REDACTED]${'x'.repeat(MAX_TEXT_LENGTH - 100)}`
+    )
+    expect(stackOf(short, short + 'x'.repeat(20_000))).toBe(
+      `[REDACTED]${'x'.repeat(MAX_TEXT_LENGTH - 100)}${TEXT_TRUNCATED}`
+    )
   })
 })

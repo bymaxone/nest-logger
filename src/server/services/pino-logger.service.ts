@@ -30,7 +30,7 @@ import type { EntryTextCut, EntryTextFinisher } from '../utils/entry-text-finish
 import { isStackKey, MAX_STACK_ALIASES } from '../utils/error-text-exemption.util'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { foldKey } from '../utils/fold-key.util'
-import { hideMessageInStack } from '../utils/hide-message-in-stack.util'
+import { hideMessagesInStack } from '../utils/hide-message-in-stack.util'
 import { isPlainRecord } from '../utils/is-plain-record.util'
 import type { Redactor } from '../utils/redact-by-name.util'
 import { isErrorLike } from '../utils/sanitize-error.util'
@@ -223,15 +223,19 @@ function hideStackMessage(
     keys.length + (positional === undefined ? 0 : 1) > MAX_STACK_ALIASES ||
     text.text.length > MAX_TEXT_LENGTH
   // The part searched reaches as far past the cut as the message is long, so a copy that starts before
-  // the cut is hidden whole; a stack of any length costs no more than the limit.
-  const hide = (stack: string): string => {
-    if (overflow) return censored
-    const read = stack.slice(0, MAX_TEXT_LENGTH + text.text.length)
-    const hidden = hideMessageInStack(read, text.text, censored)
-    const cut = read !== stack
-    // What the read part ends with may be the start of a copy that goes on past it: it is dropped.
-    return cutText(hidden.slice(0, hidden.length - (cut ? text.text.length - 1 : 0)), cut)
-  }
+  // the cut is hidden whole and none is left at the end; a stack of any length costs no more than the limit.
+  const hide = (stack: string): string =>
+    overflow
+      ? censored
+      : cutText(
+          hideMessagesInStack(
+            stack.slice(0, MAX_TEXT_LENGTH + text.text.length),
+            [text.text],
+            censored,
+            MAX_TEXT_LENGTH
+          ),
+          stack.length > MAX_TEXT_LENGTH
+        )
   for (const key of keys) {
     const stack = Reflect.get(payload, key) as unknown
     if (typeof stack === 'string') Reflect.set(payload, key, hide(stack))
