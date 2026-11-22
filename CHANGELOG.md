@@ -20,11 +20,11 @@ heading here.
   `level` and the rest were read the same way. A value that only a prototype with no prototype of its own (the
   `Object.prototype` of any realm, told apart without reading a property of it) holds is now skipped, the options and their groups are kept in objects
   with no prototype, and so is the `service` metadata; a key the object has itself, and a getter a class
-  prototype defines, still count. Pino got the same: it is handed an own value for each name it reads and
-  the library does not set (`transport`, which a planted value would have made it build at startup,
-  `crlf`, `msgPrefix`, `name` and `redact.remove`). Out of scope, because Node and Pino read them off
-  objects this library does not build: `write` and `message` planted on `Object.prototype` break the
-  multistream write and emit, and `toJSON` is read by `JSON.stringify`.
+  prototype defines, still count. Pino got the same: it is handed an own value for each option it reads
+  and the library does not set, so a planted one is never seen (a planted `transport` would have made it
+  build one at startup). Out of scope, because Node and Pino read them off objects this library does
+  not build: keys such as `write`, `message` and `toJSON`, which the multistream write, the emit and
+  `JSON.stringify` read.
 - **A name spelled with symbol glyphs is read as the name.** The negative circled letters
   (`U+1F150`..), the negative squared letters (`U+1F170`..) and the regional indicators (`U+1F1E6`..)
   have no compatibility form, so the fold dropped them as punctuation and `🆃🅾🅺🅴🅽` folded to nothing
