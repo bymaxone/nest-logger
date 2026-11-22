@@ -6,6 +6,8 @@
  *
  * Layer: server/config, tests. Driven through the options and the real factory.
  */
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
 
 import { resolveOptions } from './resolve-options'
@@ -206,6 +208,36 @@ describe('a key planted on Object.prototype', () => {
 
     expect(resolved.redactCensor).toBe('GETTER')
     expect(resolved.shouldDisableDefaultRedact).toBe(false)
+  })
+
+  /**
+   * Given every name the installed Pino reads off the options it is handed, found in its own source: the
+   * names it takes out of them in one destructuring and those its argument normalizer tests
+   * When each is planted on `Object.prototype`
+   * Then the lines are the baseline's, so a Pino that starts reading another name fails here
+   */
+  it('changes nothing for any name the installed Pino reads off its options', () => {
+    const lib = createRequire(__filename)
+      .resolve('pino')
+      .replace(/pino\.js$/, '')
+    const main = readFileSync(`${lib}pino.js`, 'utf8')
+    const tools = readFileSync(`${lib}lib/tools.js`, 'utf8')
+    const taken = /const \{([^}]+)\} = opts\b/.exec(main)?.[1] ?? ''
+    const names = new Set([
+      ...taken.split(',').map((name) => name.trim()),
+      ...[...tools.matchAll(/\bopts\.(\w+)/g)].map((match) => match[1] ?? '')
+    ])
+    names.delete('')
+
+    expect(names.size).toBeGreaterThan(20)
+    expect(names).toContain('transport')
+    for (const name of names) {
+      const lines = planted(name, true, () =>
+        linesFor({ service: SERVICE, redactPaths: ['custom'] })
+      )
+
+      expect({ name, lines }).toEqual({ name, lines: baseline })
+    }
   })
 
   /**
