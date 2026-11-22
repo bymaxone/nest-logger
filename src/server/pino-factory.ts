@@ -692,8 +692,12 @@ const UNSET_PINO_NAMES = {
   transport: undefined,
   crlf: false,
   msgPrefix: undefined,
-  name: undefined
-} as unknown as Pick<LoggerOptions, 'transport' | 'crlf' | 'msgPrefix' | 'name'>
+  name: undefined,
+  writable: false,
+  _writableState: undefined,
+  prettyPrint: undefined,
+  onChild: undefined
+} as unknown as Pick<LoggerOptions, 'transport' | 'crlf' | 'msgPrefix' | 'name' | 'onChild'>
 
 /**
  * Build a configured Pino instance from a resolved options snapshot.
