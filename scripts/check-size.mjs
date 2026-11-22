@@ -33,6 +33,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-22 — server: 46,919 B real -> 46,949 B budget (45.85 KiB), as approved by the project manager.
+//     An own value for each name Pino reads and the library does not set (`transport`, `crlf`, `msgPrefix`,
+//     `name` and `redact.remove`), so a key planted on `Object.prototype` is not read in its place.
 //   - 2026-11-22 — server: 46,877 B real -> 46,907 B budget (45.80 KiB), as approved by the project manager.
 //     The options read as the consumer set them: a key that only the root of a prototype chain holds is
 //     skipped, and the option sets and the service metadata are objects with no prototype.
@@ -364,7 +367,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 46_907 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 46_949 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',

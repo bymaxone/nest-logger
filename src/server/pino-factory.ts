@@ -684,6 +684,18 @@ function buildFormatters(
 }
 
 /**
+ * An own value for each name Pino reads that this library does not set, so a key planted on
+ * `Object.prototype` is not read in its place (a planted `transport` would be built at startup).
+ * Pino tests each value for truth, and the types of `transport` have no `undefined`.
+ */
+const UNSET_PINO_NAMES = {
+  transport: undefined,
+  crlf: false,
+  msgPrefix: undefined,
+  name: undefined
+} as unknown as Pick<LoggerOptions, 'transport' | 'crlf' | 'msgPrefix' | 'name'>
+
+/**
  * Build a configured Pino instance from a resolved options snapshot.
  *
  * Each destination becomes one entry in a `pino.multistream` fan-out. A
@@ -730,10 +742,10 @@ export function buildPinoInstance(
   const onTruncate: TruncationSink = (reason) => health.recordTruncation(reason)
   const pinoOptions: LoggerOptions = {
     level: options.level,
-    ...(redactOption === undefined ? {} : { redact: redactOption }),
-    // Resource identity, resolved ONCE here rather than per entry: Pino
-    // pre-serializes `base` into the instance's chindings, so the cost of the
-    // extra attributes is one string built at construction, not work per log.
+    ...(redactOption === undefined ? {} : { redact: { ...redactOption, remove: false } }),
+    ...UNSET_PINO_NAMES,
+    // Resource identity, resolved ONCE here rather than per entry: Pino pre-serializes `base` into
+    // the instance's chindings, so the extra attributes cost one string at construction.
     base: buildResourceBindings(
       resolveServiceMetadata(options.service),
       options.resourceFormat,

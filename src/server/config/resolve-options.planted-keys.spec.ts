@@ -57,7 +57,30 @@ const KEYS = [
   'maxBytes',
   'environment',
   'name',
-  'version'
+  'version',
+  // What pino reads from the options this library hands it, and from its own `redact` group.
+  'enabled',
+  'safe',
+  'messageKey',
+  'errorKey',
+  'nestedKey',
+  'base',
+  'formatters',
+  'hooks',
+  'mixin',
+  'mixinMergeStrategy',
+  'redact',
+  'transport',
+  'customLevels',
+  'useOnlyCustomLevels',
+  'depthLimit',
+  'edgeLimit',
+  'crlf',
+  'msgPrefix',
+  'levelKey',
+  'paths',
+  'censor',
+  'remove'
 ]
 
 /** What a planted key may hold: a value of the type that passes the check of the option, and one that does not. */
