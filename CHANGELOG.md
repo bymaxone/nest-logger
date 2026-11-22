@@ -27,8 +27,7 @@ heading here.
   not build: keys such as `message` and `toJSON`, which the emit and `JSON.stringify` read.
   A key planted by plain assignment, so that it is enumerable, under the name of a property of a Pino
   instance makes Pino throw, since it assigns every key a `for...in` over its level values finds,
-  inherited ones included, to the instance; no option can shadow that, and a plant that is not
-  enumerable changes nothing (the README, under redaction, names the keys and says when each throws).
+  inherited ones included, to the instance; no option can shadow that (the README, under redaction, names the keys and says when each throws).
 - **A name spelled with symbol glyphs is read as the name.** The negative circled letters
   (`U+1F150`..), the negative squared letters (`U+1F170`..) and the regional indicators (`U+1F1E6`..)
   have no compatibility form, so the fold dropped them as punctuation and `🆃🅾🅺🅴🅽` folded to nothing
