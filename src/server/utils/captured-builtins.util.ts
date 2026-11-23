@@ -178,7 +178,11 @@ export const GUARDED_BUILTINS: ReadonlyArray<readonly [object, ReadonlyArray<Mem
   [Map.prototype, ['clear', 'get', 'has', 'set', Symbol.iterator]],
   [Set.prototype, ['add', 'delete', 'has', 'values', Symbol.iterator]],
   [RegExp.prototype, ['exec', 'test', Symbol.replace]],
-  [Object, ['create', 'defineProperty', 'entries', 'fromEntries', 'getOwnPropertyDescriptor']],
+  [
+    Object,
+    ['assign', 'create', 'defineProperty', 'entries', 'fromEntries', 'getOwnPropertyDescriptor']
+  ],
+  [Function.prototype, ['call']],
   [Object, ['getOwnPropertyDescriptors', 'getPrototypeOf', 'hasOwn', 'keys']],
   [
     Reflect,

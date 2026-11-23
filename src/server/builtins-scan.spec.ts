@@ -61,6 +61,7 @@ const NOT_BUILT_INS: Readonly<Record<string, string>> = {
 
 /** Members of the table no call of those files reaches, each with why it is guarded. */
 const GUARDED_FOR_OTHER_READERS: Readonly<Record<string, string>> = {
+  assign: 'Pino reads it to build the record of each log call',
   shift: 'Pino reads it for each log call',
   forEach: 'Pino reads it when it builds its fan-out',
   values: 'read for the iteration of a set the error code walks',

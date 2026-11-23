@@ -240,6 +240,24 @@ describe('a built-in replaced after the logger is imported', () => {
     }
   })
 
+  /**
+   * Given `Object.assign`, or `Function.prototype.call`, which Pino itself calls to build a record,
+   * replaced by one that answers nothing, around a logger built before it
+   * When a record is written
+   * Then the log call does not throw into the host: the record is dropped
+   */
+  it.each([
+    ['Object.assign', Object, 'assign'],
+    ['Function.prototype.call', Function.prototype, 'call']
+  ] as const)('drops the record without throwing when %s is replaced', (_name, holder, key) => {
+    const prebuilt = build()
+
+    const { lines, threw } = writtenWith(holder, key, prebuilt)
+
+    expect(threw).toBe(false)
+    expect(lines).toHaveLength(0)
+  })
+
   it('has secrets in the record to hide, which the baseline hides', () => {
     expect(pinoBuiltinsIntact()).toBe(true)
     expect(baseline.lines.length).toBeGreaterThan(1)

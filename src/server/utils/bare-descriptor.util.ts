@@ -6,6 +6,9 @@
  * `value`; a copy of its own keys in an object with no prototype does not.
  */
 
+/** `Object.assign`, as it was when the module loaded: one replaced afterwards must not break a write. */
+const assign = Object.assign
+
 /**
  * The own keys of `descriptor` in an object that has no prototype.
  *
@@ -14,5 +17,5 @@
  * @returns The same descriptor, with nothing inherited.
  */
 export function bareDescriptor(descriptor: PropertyDescriptor): PropertyDescriptor {
-  return Object.assign(Object.create(null) as PropertyDescriptor, descriptor)
+  return assign(Object.create(null) as PropertyDescriptor, descriptor)
 }
