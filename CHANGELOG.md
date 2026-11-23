@@ -17,21 +17,21 @@ heading here.
 - **A key planted on `Object.prototype` is no option.** The options were read by property access through
   the prototype chain, so a `shouldDisableDefaultRedact: true` planted on `Object.prototype` (by a
   dependency with a prototype-pollution flaw) turned the default redact paths off, and `redactCensor`,
-  `level` and the rest were read the same way. A value that only a prototype with no prototype of its own (the
-  `Object.prototype` of any realm, told apart without reading a property of it) holds is now skipped, the options and their groups are kept in objects
+  `level` and the rest were read the same way. A value that only a root prototype (one with no prototype of its own, such as the
+  `Object.prototype` of any realm) holds is now skipped, the options and their groups are kept in objects
   with no prototype, and so is the `service` metadata; a key the object has itself, and a getter a class
   prototype defines, still count. The built-in methods the redaction and the routing decide with are captured when the module loads, so one
-  replaced after the import changes neither what is hidden nor where a log goes. Two methods inside Pino itself
+  replaced after the import changes neither what is hidden nor where a log goes. Methods Pino reads for itself
   (`Array.prototype.shift` in its log method, and `forEach` in its multistream) cannot be captured by this library,
   so it compares them with the ones it loaded with before each record: a record is dropped when either was replaced. A `get` or a `set` planted there no longer reaches a descriptor the logger
   defines, and options read through a Proxy under a planted accessor of the same name are refused. The logger is not built while `Object.prototype` holds a getter or a setter other than its native `__proto__`: Pino merges its options onto a plain object, where one would discard the `formatters` of the library and answer with its own, so a secret reached the destination in clear. Such an accessor is a startup refusal that names the key. Pino got the same: it is handed an own value for each option it reads
   and the library does not set, and so is each entry handed to its multistream, so a planted one is never
-  seen (a planted `transport` would have made it build one at startup, and a `levelVal` of 100 would
-  have silenced every log). Out of scope, because Node and Pino read them off objects this library does
+  seen. Out of scope, because Node and Pino read them off objects this library does
   not build: keys such as `message` and `toJSON`, which the emit and `JSON.stringify` read.
-  A key planted by plain assignment, so that it is enumerable, under the name of a property of a Pino
-  instance makes Pino throw, since it assigns every key a `for...in` over its level values finds,
-  inherited ones included, to the instance; no option can shadow that.
+  A key planted by plain assignment, so that it is enumerable, under `level`, `msgPrefix` or `levelVal`
+  makes Pino throw while the logger is built, and under `levels` at the first Nest-style log call, since
+  Pino assigns to its instance every key a `for...in` over its level table finds, inherited ones included;
+  no option can shadow that.
 - **A name spelled with symbol glyphs is read as the name.** The negative circled letters
   (`U+1F150`..), the negative squared letters (`U+1F170`..) and the regional indicators (`U+1F1E6`..)
   have no compatibility form, so the fold dropped them as punctuation and `🆃🅾🅺🅴🅽` folded to nothing
