@@ -19,12 +19,20 @@ const FILES = [
   'utils/normalize-url.util.ts',
   'utils/matches-exclude-path.util.ts',
   'utils/sanitize-error.util.ts',
+  'utils/redact-by-name.util.ts',
+  'utils/error-text-exemption.util.ts',
+  'utils/redact-error-parts.util.ts',
+  'utils/merge-mixin-safely.util.ts',
+  'utils/truncate-large-entries.ts',
+  'utils/bounded-text.util.ts',
   'pino-factory.ts'
 ]
 
 /** Globals whose members are called as `Receiver.member(...)`: the holder is the global itself. */
 const STATIC_HOLDERS: Readonly<Record<string, object>> = {
   Array,
+  ArrayBuffer,
+  Buffer,
   Math,
   Number,
   Object,
