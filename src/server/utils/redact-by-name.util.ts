@@ -57,8 +57,6 @@
  *
  * @see {@link createNameRedactor}
  */
-import { types } from 'node:util'
-
 import { cutIfText } from './bounded-text.util'
 import { capturedSet, setAdd, setHas } from './captured-builtins.util'
 import { censorRawHeaders } from './censor-raw-headers.util'
@@ -76,6 +74,7 @@ import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
 import { addErrorParts, defineOwn, type ErrorPartsHost } from './redact-error-parts.util'
+import { resolveToJson, type ResolvedToJson } from './resolve-to-json.util'
 import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
@@ -148,51 +147,6 @@ export interface RedactionFailedEnvelope {
   _redactionFailed: true
   /** Reserved log key so aggregators can detect and alert on the condition. */
   _logKey: typeof RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
-}
-
-/** A `toJSON` resolved off a value. */
-interface ResolvedToJson {
-  /** The callable method, or `undefined` when the value has none. */
-  method: (() => unknown) | undefined
-  /**
-   * Whether a later read may answer differently than this one: the method sits behind an
-   * accessor, or the value or something on its prototype chain is a Proxy, which can answer as it
-   * likes.
-   */
-  volatile: boolean
-}
-
-/**
- * Resolve `toJSON` along the prototype chain, reading it exactly ONCE. A plain `value.toJSON`
- * read twice invokes a getter twice per value, and a getter can answer differently each time.
- *
- * @param value - A non-null object.
- * @param viaGet - Read with one `[[Get]]` through any Proxy trap, as `JSON.stringify` does.
- * @returns The callable method, or `undefined` when the value has none, and whether the answer can
- *   change.
- */
-function resolveToJson(value: object, viaGet = false): ResolvedToJson {
-  // Under 'safe' the read is the one `JSON.stringify` makes, a single `[[Get]]` through any Proxy
-  // trap, which is not the descriptor walk below.
-  let candidate: unknown = viaGet ? Reflect.get(value, 'toJSON') : undefined
-  let accessor = false
-  let proxied = false
-  let current: object | null = viaGet ? null : value
-  while (current !== null) {
-    proxied = proxied || types.isProxy(current)
-    const descriptor = Object.getOwnPropertyDescriptor(current, 'toJSON')
-    if (descriptor !== undefined) {
-      accessor = descriptor.get !== undefined
-      candidate = descriptor.get === undefined ? descriptor.value : descriptor.get.call(value)
-      break
-    }
-    const next: unknown = Object.getPrototypeOf(current) // a non-object ends the walk
-    current = typeof next === 'object' ? next : null
-  }
-  return {
-    method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined,
-    volatile: accessor || proxied
-  }
 }
 
 /**
@@ -462,6 +416,7 @@ function walkObject(
     return withBinaryAsSize(value)
   }
   const resolved = resolveToJson(value, rules.ownFields.safe)
+  if (resolved.hostile) return rules.censor
 
   setAdd(ancestors, value)
   try {
