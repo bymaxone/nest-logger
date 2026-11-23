@@ -1,8 +1,8 @@
 /**
  * Resolves the `toJSON` of a value along its prototype chain, with a bound on the walk.
  *
- * Layer: server/utils. Pure; reads descriptors and never calls a method of the value except an accessor
- * it must read once.
+ * Layer: server/utils. Reads descriptors, and calls the one accessor a `toJSON` is defined by, once;
+ * that accessor is the value's own code and may have effects.
  */
 import { types } from 'node:util'
 
