@@ -20,9 +20,8 @@ heading here.
   `level` and the rest were read the same way. A value that only a prototype with no prototype of its own (the
   `Object.prototype` of any realm, told apart without reading a property of it) holds is now skipped, the options and their groups are kept in objects
   with no prototype, and so is the `service` metadata; a key the object has itself, and a getter a class
-  prototype defines, still count. The methods the redaction and the routing decide with (`Set.prototype.has` and `add`,
-  `String.prototype.toLowerCase` and `replaceAll`) are captured when the module loads, so one replaced after
-  the import changes neither what is hidden nor where a log goes. Two methods inside Pino itself
+  prototype defines, still count. The built-in methods the redaction and the routing decide with are captured when the module loads, so one
+  replaced after the import changes neither what is hidden nor where a log goes. Two methods inside Pino itself
   (`Array.prototype.shift` in its log method, and `forEach` in its multistream) cannot be captured by this library,
   so it compares them with the ones it loaded with before each record: a record is dropped when either was replaced. A `get` or a `set` planted there no longer reaches a descriptor the logger
   defines, and options read through a Proxy under a planted accessor of the same name are refused. Pino got the same: it is handed an own value for each option it reads
