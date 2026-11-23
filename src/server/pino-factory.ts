@@ -28,6 +28,7 @@ import type { LogContextService } from './services/log-context.service'
 import {
   capturedSet,
   lowerCase,
+  allMatches,
   matchesPattern,
   replaceAllText
 } from './utils/captured-builtins.util'
@@ -109,7 +110,7 @@ const INDEX_SEGMENT = /^\d+$/
  */
 export function leafNameOf(path: string): string | undefined {
   let leaf: string | undefined
-  for (const match of path.matchAll(PATH_SEGMENT)) {
+  for (const match of allMatches(PATH_SEGMENT, path)) {
     const quoted = match[1]
     const name =
       quoted ??

@@ -8,6 +8,7 @@
  * Layer: server, tests. Driven through the real factory, in one process, with the method put back.
  */
 import { resolveOptions } from './config/resolve-options'
+import { allMatches, replaceAllText } from './utils/captured-builtins.util'
 import { buildPinoInstance } from './pino-factory'
 import { DestinationHealth } from './services/destination-health.service'
 import { LogContextService } from './services/log-context.service'
@@ -67,8 +68,13 @@ function writtenWith(
   prebuilt: Built | undefined,
   replacement: (this: unknown, ...args: unknown[]) => unknown = () => undefined
 ): { lines: string[]; threw: boolean } {
-  const original = Object.getOwnPropertyDescriptor(holder, key) as PropertyDescriptor
-  Object.defineProperty(holder, key, { ...original, value: replacement })
+  const original = Object.getOwnPropertyDescriptor(holder, key)
+  Object.defineProperty(holder, key, {
+    value: replacement,
+    writable: true,
+    configurable: true,
+    enumerable: original?.enumerable ?? false
+  })
   try {
     const built = prebuilt ?? build()
     write(built.logger)
@@ -76,7 +82,8 @@ function writtenWith(
   } catch {
     return { lines: [], threw: true }
   } finally {
-    Object.defineProperty(holder, key, original)
+    if (original === undefined) Reflect.deleteProperty(holder, key)
+    else Object.defineProperty(holder, key, original)
   }
 }
 
@@ -119,6 +126,27 @@ const FOLDING: ReadonlyArray<
     RegExp.prototype,
     Symbol.replace,
     identity,
+    true
+  ],
+  [
+    'String.prototype[Symbol.replace] as the identity',
+    String.prototype,
+    Symbol.replace,
+    identity,
+    true
+  ],
+  [
+    'String.prototype[Symbol.replace] as empty',
+    String.prototype,
+    Symbol.replace,
+    function* () {},
+    true
+  ],
+  [
+    'RegExp.prototype[Symbol.matchAll] as empty',
+    RegExp.prototype,
+    Symbol.matchAll,
+    function* () {},
     true
   ],
   [
@@ -228,5 +256,42 @@ describe('a built-in replaced after the logger is imported', () => {
   it('has secrets in the record to hide, which the baseline hides', () => {
     expect(baseline.lines.length).toBeGreaterThan(1)
     expect(baseline.lines.join('\n')).not.toMatch(/sEcReT\d+xyz/)
+  })
+})
+
+/**
+ * Given a global pattern, a text and a pattern that can match nothing
+ * When every match is read
+ * Then they come in order, the position is left at the start, and an empty match ends the walk
+ */
+describe('allMatches', () => {
+  it('reads every match in order and leaves the position at the start', () => {
+    const pattern = /[a-z]+/g
+
+    const found = allMatches(pattern, 'ab.cd')
+
+    expect(found.map((match) => match[0])).toEqual(['ab', 'cd'])
+    expect(pattern.lastIndex).toBe(0)
+  })
+
+  it('stops at an empty match instead of walking forever', () => {
+    expect(allMatches(/x*/g, 'ab')).toEqual([])
+  })
+})
+
+/**
+ * Given a plain search that occurs several times, once and not at all
+ * When it is replaced
+ * Then every occurrence is replaced, a `$` in the replacement stays as written, and an empty search changes nothing
+ */
+describe('replaceAllText', () => {
+  it('replaces every occurrence of a plain search', () => {
+    expect(replaceAllText('a_b_c', '_', '.')).toBe('a.b.c')
+    expect(replaceAllText('abc', 'b', '$&')).toBe('a$&c')
+    expect(replaceAllText('abc', 'x', '.')).toBe('abc')
+  })
+
+  it('leaves the text alone for an empty search', () => {
+    expect(replaceAllText('abc', '', '.')).toBe('abc')
   })
 })

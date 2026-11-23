@@ -33,6 +33,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-23 — server: 47,779 B real -> 47,809 B budget (46.69 KiB), as approved by the project manager (measured + 30).
+//     A plain text is replaced by a loop over the captured indexOf and slice, which ask no pattern for a method.
+//   - 2026-11-23 — server: 47,726 B real -> 47,756 B budget (46.64 KiB), as approved by the project manager (measured + 30).
+//     The names a path is read for are found by the captured exec, not by the matching method of the pattern.
 //   - 2026-11-23 — server: 47,653 B real -> 47,683 B budget (46.57 KiB), as approved by the project manager (measured + 30).
 //     The regex and replace methods the fold decides with are captured, and a record is dropped when a method
 //     the error-stack code reads (slice, the string iterator, own descriptors, own keys) was replaced.
@@ -381,7 +385,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 47_683 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 47_809 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',

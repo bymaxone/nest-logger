@@ -26,12 +26,37 @@ export const setAdd = call.bind(Set.prototype.add) as (
 /** `String.prototype.toLowerCase`, as it was when the module loaded. */
 export const lowerCase = call.bind(String.prototype.toLowerCase) as (text: string) => string
 
-/** `String.prototype.replaceAll`, as it was when the module loaded. */
-export const replaceAllText = call.bind(String.prototype.replaceAll) as (
+const indexOfText = call.bind(String.prototype.indexOf) as (
   text: string,
   search: string,
-  replacement: string
+  from: number
+) => number
+const sliceText = call.bind(String.prototype.slice) as (
+  text: string,
+  from: number,
+  to?: number
 ) => string
+
+/**
+ * Replaces every occurrence of a plain `search` in `text` with `replacement`, read as it is (no `$`
+ * pattern). `String.prototype.replaceAll` asks a string pattern for `Symbol.replace` on
+ * `String.prototype`, so one planted there after the load would change what the fold reads.
+ *
+ * @param text - The text to read.
+ * @param search - What to replace; an empty one replaces nothing.
+ * @param replacement - What takes its place.
+ * @returns The text with every occurrence replaced.
+ */
+export function replaceAllText(text: string, search: string, replacement: string): string {
+  if (search === '') return text
+  let result = ''
+  let from = 0
+  for (let at = indexOfText(text, search, 0); at !== -1; at = indexOfText(text, search, from)) {
+    result += sliceText(text, from, at) + replacement
+    from = at + search.length
+  }
+  return result + sliceText(text, from)
+}
 
 /** `String.prototype.normalize`, as it was when the module loaded. */
 export const normalizeText = call.bind(String.prototype.normalize) as (
@@ -51,15 +76,34 @@ const regExpReplace = call.bind(RegExp.prototype[Symbol.replace]) as (
 
 /**
  * Whether `pattern` matches in `text`, by the `exec` captured at load: `RegExp.prototype.test` reads
- * `exec` from the pattern, and one replaced after the load would answer for the names to hide. The
- * pattern must not be global or sticky, which keep a position.
+ * `exec` from the pattern, and one replaced after the load would answer for the names to hide.
  *
- * @param pattern - A pattern with neither flag.
+ * @param pattern - The pattern to look for.
  * @param text - What it is matched against.
  * @returns `true` when it matches.
  */
 export function matchesPattern(pattern: RegExp, text: string): boolean {
   return regExpExec(pattern, text) !== null
+}
+
+/**
+ * Every match of a global `pattern` in `text`, by the `exec` captured at load: `String.prototype.matchAll`
+ * reads `Symbol.matchAll` from the pattern's prototype, and one replaced after the load would yield no
+ * match for the names to hide. A match that is empty ends the walk.
+ *
+ * @param pattern - A global pattern.
+ * @param text - What it is matched against.
+ * @returns The matches in order.
+ */
+export function allMatches(pattern: RegExp, text: string): RegExpExecArray[] {
+  const found: RegExpExecArray[] = []
+  pattern.lastIndex = 0
+  for (let match = regExpExec(pattern, text); match !== null; match = regExpExec(pattern, text)) {
+    if (match[0] === '') break
+    found[found.length] = match
+  }
+  pattern.lastIndex = 0
+  return found
 }
 
 /**
