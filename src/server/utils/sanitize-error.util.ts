@@ -15,6 +15,7 @@
  * stack scrubbing.
  */
 
+import { bareDescriptor } from './bare-descriptor.util'
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
 import { splitCensoredHeader } from './censor-stack-header.util'
 import { escapeControlCharacters } from './escape-log-text.util'
@@ -425,7 +426,7 @@ function defineErrorField(target: Record<string, unknown>, key: string, value: u
   // writes to a node after this loop, so no test can tell the minimal descriptor from a fuller
   // one. If a future change ever needs to rewrite a field in place, it has to add `writable`
   // back, because a silent assignment would throw under the module's strict mode.
-  Object.defineProperty(target, key, { value, enumerable: true })
+  Object.defineProperty(target, key, bareDescriptor({ value, enumerable: true }))
 }
 
 /**
@@ -496,7 +497,11 @@ export function assignOwnErrorFields(
  * @param target - The node being built; mutated in place.
  */
 function markIncomplete(target: Record<string, unknown>): void {
-  Reflect.defineProperty(target, '_errorFieldsIncomplete', { value: true, enumerable: true })
+  Reflect.defineProperty(
+    target,
+    '_errorFieldsIncomplete',
+    bareDescriptor({ value: true, enumerable: true })
+  )
 }
 
 /**

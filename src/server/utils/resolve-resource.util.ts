@@ -31,6 +31,7 @@
  * `deployment.environment` is **Deprecated** and is never emitted here.
  * `deployment.id` / `.name` / `.status` are **Development** and are out of scope.
  */
+import { bareDescriptor } from './bare-descriptor.util'
 import type {
   ResolvedServiceMetadata,
   ServiceMetadata
@@ -102,7 +103,11 @@ export function parseResourceAttributes(raw: string | undefined): Readonly<Recor
     // booting" contract this parser exists to keep. Last occurrence wins, which
     // matches how an operator reading left-to-right would expect an override to
     // behave.
-    Object.defineProperty(parsed, key, { value, enumerable: true, configurable: true })
+    Object.defineProperty(
+      parsed,
+      key,
+      bareDescriptor({ value, enumerable: true, configurable: true })
+    )
   }
   return parsed
 }

@@ -24,6 +24,7 @@ import {
   LOGGER_REDACTOR_TOKEN
 } from '../constants/injection-tokens.constants'
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
+import { bareDescriptor } from '../utils/bare-descriptor.util'
 import { cutText, MAX_TEXT_LENGTH } from '../utils/bounded-text.util'
 import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-text-finisher.util'
 import type { EntryTextCut, EntryTextFinisher } from '../utils/entry-text-finisher.util'
@@ -342,7 +343,7 @@ function assignIfDefined(payload: Record<string, unknown>, key: string, value: u
     // `redact-by-name.util.ts`. The payload goes straight to Pino, each reserved
     // key is written at most once, and nothing downstream re-assigns or deletes
     // it, so the remaining descriptor defaults are unobservable.
-    Reflect.defineProperty(payload, key, { value, enumerable: true })
+    Reflect.defineProperty(payload, key, bareDescriptor({ value, enumerable: true }))
   }
 }
 

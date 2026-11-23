@@ -6,6 +6,7 @@
  * goes, and how an own field of an `Error` is read. It does not import the walk: the walk hands
  * over what it needs as an {@link ErrorPartsHost}.
  */
+import { bareDescriptor } from './bare-descriptor.util'
 import { cutText } from './bounded-text.util'
 import {
   createDepthMarker,
@@ -55,7 +56,7 @@ export function defineOwn(target: Record<string, unknown>, key: string, value: u
   // descriptors `cloneError` relaxes precisely so a censor always lands.
   // `Reflect.defineProperty` reports failure by returning `false`, not by throwing, so a check
   // of the result would be a branch no input can take: untested code claiming a guarantee.
-  Reflect.defineProperty(target, key, { value, enumerable: true, writable: true })
+  Reflect.defineProperty(target, key, bareDescriptor({ value, enumerable: true, writable: true }))
 }
 
 /** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */

@@ -13,6 +13,7 @@ import { createContext, runInContext } from 'node:vm'
 import { resolveOptions } from './resolve-options'
 import type { BymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { buildPinoInstance } from '../pino-factory'
+import { parseResourceAttributes } from '../utils/resolve-resource.util'
 import { DestinationHealth } from '../services/destination-health.service'
 import { LogContextService } from '../services/log-context.service'
 import { PinoLoggerService } from '../services/pino-logger.service'
@@ -81,6 +82,12 @@ const KEYS = [
   'write',
   'id',
   'hasOwnProperty',
+  'get',
+  'set',
+  'value',
+  'writable',
+  'enumerable',
+  'configurable',
   'streamLevels',
   'lastLevel',
   'lastTime',
@@ -121,12 +128,12 @@ const SERVICE = { name: 'app', version: '1.0.0' }
 /**
  * The names a plant under which Pino itself does not survive, whatever the options hold. Pino sets its
  * levels with a `for...in` over its own table of levels and assigns each key it finds to the instance, so a
- * key planted enumerably under `level`, `levels`, `msgPrefix` or `levelVal` throws, and `hasOwnProperty`
- * is a method Pino calls on its bindings. It throws when the logger is built or at the first call
+ * key planted enumerably under `level`, `levels`, `msgPrefix` or `levelVal` throws, `hasOwnProperty`
+ * is a method Pino calls on its bindings, and a `get` or a `set` makes Pino refuse its own descriptors. It throws when the logger is built or at the first call
  * (`THROWS_AT`): no option can shadow that. It is a limit of Pino, stated in the changelog and the
  * README, and a row below holds it.
  */
-const PINO_ITERATED = ['level', 'levels', 'msgPrefix', 'levelVal', 'hasOwnProperty']
+const PINO_ITERATED = ['level', 'levels', 'msgPrefix', 'levelVal', 'hasOwnProperty', 'get', 'set']
 
 /** Where each throws: while the logger is built, or at the first call of the Nest-style methods. */
 const THROWS_AT = new Map<string, 'build' | 'call'>([
@@ -134,7 +141,9 @@ const THROWS_AT = new Map<string, 'build' | 'call'>([
   ['levels', 'call'],
   ['msgPrefix', 'build'],
   ['levelVal', 'build'],
-  ['hasOwnProperty', 'build']
+  ['hasOwnProperty', 'build'],
+  ['get', 'build'],
+  ['set', 'build']
 ])
 
 /** The names that change nothing when the plant is not enumerable; for the others a plant replaces a method that Pino or Node calls. */
@@ -142,12 +151,27 @@ const QUIET_WHEN_HIDDEN = ['level', 'levels', 'msgPrefix', 'levelVal']
 
 /** The lines written for a record that carries ten secrets, with the time left out. */
 function linesFor(given: BymaxLoggerModuleOptions): string[] {
+  const { logger, lines } = loggerFor(given)
+  writeRecords(logger)
+  return normalized(lines)
+}
+
+/** A logger built from `given` and the lines it writes. */
+function loggerFor(given: BymaxLoggerModuleOptions): {
+  logger: PinoLoggerService
+  lines: string[]
+} {
   const lines: string[] = []
   const options = resolveOptions(given)
   const sink = { name: 'sink', write: (line: unknown) => lines.push(String(line)) }
-  const log = new PinoLoggerService(
+  const logger = new PinoLoggerService(
     buildPinoInstance(options, new LogContextService(), [sink as never], new DestinationHealth())
   )
+  return { logger, lines }
+}
+
+/** The record of ten secrets, an `Error` and an object with a stack. */
+function writeRecords(log: PinoLoggerService): void {
   log.warn({
     event: 'E',
     password: 'S1',
@@ -157,9 +181,13 @@ function linesFor(given: BymaxLoggerModuleOptions): string[] {
     meta: { apiKey: 'S5', nested: { secret: 'S7' } },
     headers: { cookie: 'S8' }
   } as never)
+  log.error(new Error('S6 boom'), 'ctx')
   log.error({ message: 'S9', stack: 'Error: S9\n    at f (/a.js:1:1)' } as never, 'S10')
-  return lines.map((line) => line.replace(/"time":"[^"]*"/, '"time":"T"'))
 }
+
+/** The lines with the time left out. */
+const normalized = (lines: string[]): string[] =>
+  lines.map((line) => line.replace(/"time":"[^"]*"/, '"time":"T"'))
 
 /** Plant `value` under `key` on `Object.prototype` while `read` runs. */
 function planted<T>(key: string, value: unknown, read: () => T, enumerable = true): T {
@@ -449,27 +477,107 @@ describe('a key planted on Object.prototype', () => {
   })
 
   /**
-   * Given options a Proxy answers through its `get` trap, with an accessor planted on `Object.prototype`
-   * under the name the trap answers for
+   * Given options read through a Proxy, with an accessor planted on `Object.prototype` under the name of
+   * an option, and the Proxy either forwarding to its target or answering for the key itself
    * When they are resolved
-   * Then the answer of the trap counts
+   * Then they are refused by the name of the option: an answer cannot be told from a forward to the
+   * accessor, which would decide (the switch of default redaction among them)
    */
-  it('keeps what a Proxy answers for a key under which an accessor is planted', () => {
-    const proxy = new Proxy(
-      { service: SERVICE },
+  it.each([
+    ['forwards', {}],
+    [
+      'answers',
       {
-        get: (target, key, receiver) =>
-          key === 'redactCensor' ? 'OWN' : Reflect.get(target, key, receiver)
+        get: (target: object, key: string | symbol, receiver: unknown) =>
+          key === 'shouldDisableDefaultRedact' ? false : Reflect.get(target, key, receiver)
       }
-    ) as BymaxLoggerModuleOptions
-    Object.defineProperty(Object.prototype, 'redactCensor', {
-      get: () => 'ROOT',
+    ]
+  ])('refuses a Proxy that %s under a planted accessor', (_how, handler) => {
+    const proxy = new Proxy({ service: SERVICE }, handler) as BymaxLoggerModuleOptions
+    Object.defineProperty(Object.prototype, 'shouldDisableDefaultRedact', {
+      get: () => true,
       configurable: true
     })
     try {
-      expect(resolveOptions(proxy).redactCensor).toBe('OWN')
+      expect(() => resolveOptions(proxy)).toThrow(
+        '[BymaxLoggerModule] options.shouldDisableDefaultRedact is read through a Proxy'
+      )
     } finally {
-      Reflect.deleteProperty(Object.prototype, 'redactCensor')
+      Reflect.deleteProperty(Object.prototype, 'shouldDisableDefaultRedact')
     }
+  })
+
+  /**
+   * Given a logger that is built, and then a `get` or a `set` planted on `Object.prototype`
+   * When it writes the record of ten secrets, an error and an object with a stack
+   * Then the lines are the baseline's: the descriptors the logger defines hold no inherited accessor
+   */
+  it.each(['get', 'set'])(
+    'changes nothing when %s is planted after the logger is built',
+    (name) => {
+      const { logger, lines } = loggerFor({ service: SERVICE, redactPaths: ['custom'] })
+
+      planted(
+        name,
+        () => 'X',
+        () => writeRecords(logger)
+      )
+
+      expect(normalized(lines)).toEqual(baseline)
+    }
+  )
+
+  /**
+   * Given errors with an own field, with a getter that throws and nested under a field, and a resource
+   * attribute string
+   * When a `get` or a `set` is planted after the logger is built
+   * Then the lines and the attributes are what they are without it, so each descriptor the logger defines
+   * holds no inherited accessor
+   */
+  it.each(['get', 'set'])('defines no descriptor that %s planted on the root can reach', (name) => {
+    const calls: Array<(logger: PinoLoggerService) => void> = [
+      (logger) => logger.error(Object.assign(new Error('S6 boom'), { code: 'E_X' })),
+      (logger) => {
+        const hostile = new Error('S6 hostile')
+        Object.defineProperty(hostile, 'cause', {
+          get: () => {
+            throw new Error('unreadable')
+          }
+        })
+        logger.error(hostile)
+      },
+      (logger) => logger.warn({ event: 'E', meta: { boom: new Error('S6 nested') } } as never)
+    ]
+    // One logger for each call, built before anything is planted (Pino refuses to be built with a
+    // planted `get` or `set`): a logger does not write the same event twice in a row.
+    const loggers = (): Array<{ logger: PinoLoggerService; lines: string[] }> =>
+      calls.map(() => loggerFor({ service: SERVICE, redactPaths: ['message'] }))
+    const written = (built: ReturnType<typeof loggers>): string[] =>
+      built.flatMap(({ logger, lines }, index) => {
+        calls[index]?.(logger)
+        return lines
+      })
+    const without = written(loggers())
+    const prepared = loggers()
+    let withPlant: string[] = []
+    const attributes = planted(
+      name,
+      () => 'X',
+      () => {
+        withPlant = written(prepared)
+        return parseResourceAttributes('a=b,c=d,a=e')
+      }
+    )
+
+    // The frames name the line that called, which differs between the two.
+    const bare = (lines: string[]): string[] =>
+      normalized(lines).map((line) =>
+        JSON.stringify(JSON.parse(line), (key, value: unknown) =>
+          key === 'stack' ? undefined : value
+        )
+      )
+    expect(bare(withPlant)).toEqual(bare(without))
+    expect(withPlant).toHaveLength(3)
+    expect(attributes).toEqual({ a: 'e', c: 'd' })
   })
 })

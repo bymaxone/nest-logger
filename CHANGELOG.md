@@ -20,7 +20,8 @@ heading here.
   `level` and the rest were read the same way. A value that only a prototype with no prototype of its own (the
   `Object.prototype` of any realm, told apart without reading a property of it) holds is now skipped, the options and their groups are kept in objects
   with no prototype, and so is the `service` metadata; a key the object has itself, and a getter a class
-  prototype defines, still count. Pino got the same: it is handed an own value for each option it reads
+  prototype defines, still count. A `get` or a `set` planted there no longer reaches a descriptor the logger
+  defines, and options read through a Proxy under a planted accessor of the same name are refused. Pino got the same: it is handed an own value for each option it reads
   and the library does not set, and so is each entry handed to its multistream, so a planted one is never
   seen (a planted `transport` would have made it build one at startup, and a `levelVal` of 100 would
   have silenced every log). Out of scope, because Node and Pino read them off objects this library does

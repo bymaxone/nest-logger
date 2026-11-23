@@ -100,16 +100,23 @@ function rootHolding(source: object, key: string): object | undefined {
 
 /**
  * The keys of `source` that are set, in an object with no prototype. A value a root holds is no option:
- * an accessor planted there is not called, and a value is skipped unless the source answers something
- * else, as a Proxy does through its `get` trap.
+ * an accessor planted there is not called (a Proxy source is refused, since its answer cannot be told from
+ * a forward to the accessor), and a value is skipped unless the source answers something else, as a Proxy
+ * does through its `get` trap.
  */
 function readSet(source: object, keys: readonly string[]): Record<string, unknown> {
   const set = Object.create(null) as Record<string, unknown>
   for (const key of keys) {
     const root = rootHolding(source, key)
     const planted = root && Object.getOwnPropertyDescriptor(root, key)
-    // A Proxy answers for itself: a planted accessor does not decide for it.
-    if (planted?.get && !types.isProxy(source)) continue
+    if (planted?.get) {
+      // An answer of a Proxy cannot be told from a forward to the planted accessor, which would decide.
+      if (types.isProxy(source))
+        refuse(
+          `[BymaxLoggerModule] options.${key} is read through a Proxy while an accessor of that name is planted on Object.prototype`
+        )
+      continue
+    }
     // `Reflect` reads through a getter like a property access and keeps the dynamic key off the
     // object-injection sink list.
     const value = Reflect.get(source, key) as unknown
