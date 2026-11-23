@@ -22,10 +22,9 @@ heading here.
   with no prototype, and so is the `service` metadata; a key the object has itself, and a getter a class
   prototype defines, still count. The methods the redaction and the routing decide with (`Set.prototype.has` and `add`,
   `String.prototype.toLowerCase` and `replaceAll`) are captured when the module loads, so one replaced after
-  the import changes neither what is hidden nor where a log goes; a sweep that replaced each of 767 built-in
-  functions in turn found those four, and left only two inside Pino itself (`Array.prototype.shift` in its
-  log method, and `forEach` in its multistream), which this library cannot capture and compares with the ones it
-  loaded with before each record: a record is dropped when either was replaced, for about 2 ns a call. A `get` or a `set` planted there no longer reaches a descriptor the logger
+  the import changes neither what is hidden nor where a log goes. Two methods inside Pino itself
+  (`Array.prototype.shift` in its log method, and `forEach` in its multistream) cannot be captured by this library,
+  so it compares them with the ones it loaded with before each record: a record is dropped when either was replaced. A `get` or a `set` planted there no longer reaches a descriptor the logger
   defines, and options read through a Proxy under a planted accessor of the same name are refused. Pino got the same: it is handed an own value for each option it reads
   and the library does not set, and so is each entry handed to its multistream, so a planted one is never
   seen (a planted `transport` would have made it build one at startup, and a `levelVal` of 100 would
