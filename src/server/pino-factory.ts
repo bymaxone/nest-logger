@@ -25,7 +25,12 @@ import type { TruncationReason } from './interfaces/logger-observability.interfa
 import { createTraceContextMixin } from './mixins/trace-context.mixin'
 import type { DestinationHealth } from './services/destination-health.service'
 import type { LogContextService } from './services/log-context.service'
-import { capturedSet, lowerCase, replaceAllText } from './utils/captured-builtins.util'
+import {
+  capturedSet,
+  lowerCase,
+  matchesPattern,
+  replaceAllText
+} from './utils/captured-builtins.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
@@ -107,7 +112,8 @@ export function leafNameOf(path: string): string | undefined {
   for (const match of path.matchAll(PATH_SEGMENT)) {
     const quoted = match[1]
     const name =
-      quoted ?? (match[2] !== undefined && INDEX_SEGMENT.test(match[2]) ? undefined : match[2])
+      quoted ??
+      (match[2] !== undefined && matchesPattern(INDEX_SEGMENT, match[2]) ? undefined : match[2])
     // Stryker disable next-line ConditionalExpression: NOT equivalent, and not a coverage gap — the suite kills this mutant, verified by applying it by hand and watching three tests turn red (`leafNameOf yields no leaf for *`, `for *.*`, and the pass-through case in `resolveNameRedactor`). Stryker fails to attribute the killing tests to it under `perTest` coverage analysis, the same way it already does for `otel-detector.ts`. Recorded as what it is rather than mislabelled equivalent.
     if (name !== undefined && name !== '*') {
       leaf = name

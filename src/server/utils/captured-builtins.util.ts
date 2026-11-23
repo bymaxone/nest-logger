@@ -33,6 +33,52 @@ export const replaceAllText = call.bind(String.prototype.replaceAll) as (
   replacement: string
 ) => string
 
+/** `String.prototype.normalize`, as it was when the module loaded. */
+export const normalizeText = call.bind(String.prototype.normalize) as (
+  text: string,
+  form: 'NFKD'
+) => string
+
+const regExpExec = call.bind(RegExp.prototype.exec) as (
+  pattern: RegExp,
+  text: string
+) => RegExpExecArray | null
+const regExpReplace = call.bind(RegExp.prototype[Symbol.replace]) as (
+  pattern: RegExp,
+  text: string,
+  replacement: string
+) => string
+
+/**
+ * Whether `pattern` matches in `text`, by the `exec` captured at load: `RegExp.prototype.test` reads
+ * `exec` from the pattern, and one replaced after the load would answer for the names to hide. The
+ * pattern must not be global or sticky, which keep a position.
+ *
+ * @param pattern - A pattern with neither flag.
+ * @param text - What it is matched against.
+ * @returns `true` when it matches.
+ */
+export function matchesPattern(pattern: RegExp, text: string): boolean {
+  return regExpExec(pattern, text) !== null
+}
+
+/**
+ * A global pattern that replaces by the `exec` captured at load: `String.prototype.replace` reads the
+ * replacing method from the pattern's prototype, and that method reads `exec` from the pattern. The
+ * pattern gets its own `exec`, and the text is replaced through the replacing method captured at load.
+ *
+ * @param pattern - A global pattern.
+ * @returns A function that replaces every match in a text with a string.
+ */
+export function replacer(pattern: RegExp): (text: string, replacement: string) => string {
+  defineProperty(
+    pattern,
+    'exec',
+    bareDescriptor({ value: (text: string) => regExpExec(pattern, text) })
+  )
+  return (text, replacement) => regExpReplace(pattern, text, replacement)
+}
+
 /**
  * A set whose `has` and `add` are its own, bound to the methods captured at load, so a call on the set
  * does not read `Set.prototype`. The values go in through the captured `add`, which the `Set`
@@ -42,6 +88,7 @@ export const replaceAllText = call.bind(String.prototype.replaceAll) as (
  * @returns The set.
  */
 export function capturedSet<T>(values: Iterable<T> = []): Set<T> {
+  // An array is walked by index: a `for...of` reads `Array.prototype[Symbol.iterator]`, which a program may replace.
   const set = new Set<T>()
   const has = (value: T): boolean => setHas(set, value)
   const add = (value: T): Set<T> => {
@@ -50,20 +97,34 @@ export function capturedSet<T>(values: Iterable<T> = []): Set<T> {
   }
   defineProperty(set, 'has', bareDescriptor({ value: has }))
   defineProperty(set, 'add', bareDescriptor({ value: add }))
-  for (const value of values) add(value)
+  if (Array.isArray(values)) for (let at = 0; at < values.length; at++) add(values[at] as T)
+  else for (const value of values) add(value)
   return set
 }
 
 const shift = Array.prototype.shift
 const forEach = Array.prototype.forEach
+const slice = String.prototype.slice
+const stringIterator = String.prototype[Symbol.iterator]
+const getOwnPropertyDescriptors = Object.getOwnPropertyDescriptors
+const ownKeys = Reflect.ownKeys
 
 /**
- * Whether the two built-in methods Pino calls for each log call and when it builds its fan-out are the
- * ones the module loaded with. Pino reads them from the prototype where this library cannot capture
- * them, and one that answers nothing makes it write an `Error` unredacted, or drop every log.
+ * Whether the built-in methods this library cannot capture are the ones the module loaded with. Pino
+ * reads `shift` for each log call and `forEach` when it builds its fan-out, and the code that hides the
+ * message in an error stack reads `slice`, the string iterator, `getOwnPropertyDescriptors` and
+ * `ownKeys`. One that answers wrongly makes Pino write an `Error` unredacted, or drop every log, and
+ * leaves the message in the first line of a stack: a record is dropped instead, whole.
  *
- * @returns `false` when either was replaced after the module loaded.
+ * @returns `false` when any of them was replaced after the module loaded.
  */
 export function pinoBuiltinsIntact(): boolean {
-  return Array.prototype.shift === shift && Array.prototype.forEach === forEach
+  return (
+    Array.prototype.shift === shift &&
+    Array.prototype.forEach === forEach &&
+    String.prototype.slice === slice &&
+    String.prototype[Symbol.iterator] === stringIterator &&
+    Object.getOwnPropertyDescriptors === getOwnPropertyDescriptors &&
+    Reflect.ownKeys === ownKeys
+  )
 }

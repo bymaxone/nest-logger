@@ -17,7 +17,7 @@
 
 import { bareDescriptor } from './bare-descriptor.util'
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
-import { capturedSet, lowerCase } from './captured-builtins.util'
+import { capturedSet, lowerCase, matchesPattern } from './captured-builtins.util'
 import { splitCensoredHeader } from './censor-stack-header.util'
 import { escapeControlCharacters } from './escape-log-text.util'
 import { hideMessagesInStack } from './hide-message-in-stack.util'
@@ -356,7 +356,7 @@ export const OMIT_OWN_FIELD: unique symbol = Symbol('omit-own-field')
  */
 function isDatabaseError(source: object): boolean {
   const code: unknown = Object.getOwnPropertyDescriptor(source, 'code')?.value
-  return typeof code === 'string' && SQLSTATE.test(code)
+  return typeof code === 'string' && matchesPattern(SQLSTATE, code)
 }
 
 /**
@@ -617,7 +617,7 @@ export function censorName(
   censorMessage: ((text: string) => string) | undefined
 ): string {
   if (censorMessage === undefined || name === '') return name
-  if (name.length <= MAX_PLAIN_NAME && PLAIN_NAME.test(name)) return name
+  if (name.length <= MAX_PLAIN_NAME && matchesPattern(PLAIN_NAME, name)) return name
   try {
     return censorMessage(name)
   } catch {
