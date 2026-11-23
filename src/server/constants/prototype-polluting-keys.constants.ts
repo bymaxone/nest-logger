@@ -10,6 +10,7 @@
  * field was silently dropped and the copy's prototype was swapped. Keeping the
  * list in one place is what stops the two guards drifting again.
  */
+import { capturedSet } from '../utils/captured-builtins.util'
 
 /**
  * Own keys that must never be copied onto a fresh object.
@@ -21,7 +22,7 @@
  * A key here is DROPPED rather than escaped: these names have no legitimate use
  * as a log field, and dropping is the behaviour the ALS path already had.
  */
-export const PROTOTYPE_POLLUTING_KEYS: ReadonlySet<string> = new Set([
+export const PROTOTYPE_POLLUTING_KEYS: ReadonlySet<string> = capturedSet([
   '__proto__',
   'constructor',
   'prototype'

@@ -8,6 +8,7 @@
  */
 import { bareDescriptor } from './bare-descriptor.util'
 import { cutText } from './bounded-text.util'
+import { capturedSet } from './captured-builtins.util'
 import {
   createDepthMarker,
   createWidthMarker,
@@ -63,7 +64,7 @@ export function defineOwn(target: Record<string, unknown>, key: string, value: u
 const linkDepths = new WeakMap<object, number>()
 
 /** The own fields of an `Error` that hold text the logger copies and bounds like a message. */
-export const ERROR_TEXT_FIELDS: ReadonlySet<string> = new Set(['name', 'message', 'stack'])
+export const ERROR_TEXT_FIELDS: ReadonlySet<string> = capturedSet(['name', 'message', 'stack'])
 
 /** The marker key of a node that lost a part while it was being written. */
 const INCOMPLETE_KEY = '_errorFieldsIncomplete'
@@ -154,7 +155,7 @@ export function addErrorParts(
   host: ErrorPartsHost,
   depth: number
 ): void {
-  const taken = new Set(ownKeys)
+  const taken = capturedSet(ownKeys)
   const level = linkDepths.get(error) ?? 0
   let incomplete = false
   const add = (

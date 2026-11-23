@@ -32,6 +32,7 @@
  * `deployment.id` / `.name` / `.status` are **Development** and are out of scope.
  */
 import { bareDescriptor } from './bare-descriptor.util'
+import { capturedSet } from './captured-builtins.util'
 import type {
   ResolvedServiceMetadata,
   ServiceMetadata
@@ -279,7 +280,7 @@ export function buildResourceBindings(
 }
 
 /** Keys the resolver owns; anything else on `service` is consumer metadata. */
-const OWNED_SERVICE_KEYS: ReadonlySet<string> = new Set([
+const OWNED_SERVICE_KEYS: ReadonlySet<string> = capturedSet([
   'name',
   'version',
   'namespace',

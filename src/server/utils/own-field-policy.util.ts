@@ -6,6 +6,7 @@
  */
 import { types } from 'node:util'
 
+import { capturedSet } from './captured-builtins.util'
 import type { ErrorOwnFieldsMode } from '../interfaces/logger-module-options.interface'
 
 /**
@@ -40,7 +41,7 @@ export const DEFAULT_SAFE_ERROR_FIELDS: readonly string[] = [
  * crossing a worker boundary becomes) carries them as ordinary own keys, and copying them would
  * emit the same value twice: once derived (scrubbed, in the case of `stack`) and once raw.
  */
-export const DERIVED_ERROR_FIELDS: ReadonlySet<string> = new Set([
+export const DERIVED_ERROR_FIELDS: ReadonlySet<string> = capturedSet([
   'name',
   'message',
   'stack',
@@ -57,7 +58,7 @@ export interface OwnFieldPolicy {
 }
 
 /** The policy of `errorOwnFields: 'all'`: every own field is written. */
-export const ALL_OWN_FIELDS: OwnFieldPolicy = { safe: false, names: new Set<string>() }
+export const ALL_OWN_FIELDS: OwnFieldPolicy = { safe: false, names: capturedSet<string>() }
 
 /**
  * Resolve the policy for the configured mode.
@@ -71,7 +72,7 @@ export function createOwnFieldPolicy(
   extraNames: readonly string[]
 ): OwnFieldPolicy {
   if (mode === 'all') return ALL_OWN_FIELDS
-  return { safe: true, names: new Set([...DEFAULT_SAFE_ERROR_FIELDS, ...extraNames]) }
+  return { safe: true, names: capturedSet([...DEFAULT_SAFE_ERROR_FIELDS, ...extraNames]) }
 }
 
 /**

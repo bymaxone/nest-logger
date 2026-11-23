@@ -26,6 +26,7 @@ import {
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
 import { bareDescriptor } from '../utils/bare-descriptor.util'
 import { cutText, MAX_TEXT_LENGTH } from '../utils/bounded-text.util'
+import { capturedSet, lowerCase } from '../utils/captured-builtins.util'
 import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-text-finisher.util'
 import type { EntryTextCut, EntryTextFinisher } from '../utils/entry-text-finisher.util'
 import { isStackKey, MAX_STACK_ALIASES } from '../utils/error-text-exemption.util'
@@ -79,7 +80,7 @@ const RESOURCE_KEYS: readonly string[] = [
  * The owned keys by their folded form (see {@link foldKey}), so a spelling of one (`Level`,
  * `log_key`, `USERID`) is dropped like the key itself.
  */
-const OWNED_KEY_SPELLINGS: ReadonlySet<string> = new Set(
+const OWNED_KEY_SPELLINGS: ReadonlySet<string> = capturedSet(
   [...OWNED_PAYLOAD_KEYS, ...ENTRY_STRUCTURE_KEYS, ...RESOURCE_KEYS].map((key) => foldKey(key))
 )
 
@@ -88,7 +89,7 @@ const OWNED_KEY_SPELLINGS: ReadonlySet<string> = new Set(
  * look ({@link foldKey} with the separators kept) and not folded further: `exceptionType` is a name a
  * caller may use for a field of its own. `event.name` is not among them: a call with no log key may supply it.
  */
-const DERIVED_KEYS: ReadonlySet<string> = new Set([
+const DERIVED_KEYS: ReadonlySet<string> = capturedSet([
   'exception.type',
   'exception.message',
   'exception.stacktrace',
@@ -97,7 +98,7 @@ const DERIVED_KEYS: ReadonlySet<string> = new Set([
 
 /** Whether `key` is an owned key or a spelling of one, or one of the dotted resource keys. */
 const isOwnedKey = (key: string): boolean => {
-  const lower = key.toLowerCase()
+  const lower = lowerCase(key)
   return (
     OWNED_KEY_SPELLINGS.has(foldKey(key)) ||
     DERIVED_KEYS.has(foldKey(key, true)) ||

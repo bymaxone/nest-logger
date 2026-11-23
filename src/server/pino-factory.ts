@@ -25,6 +25,7 @@ import type { TruncationReason } from './interfaces/logger-observability.interfa
 import { createTraceContextMixin } from './mixins/trace-context.mixin'
 import type { DestinationHealth } from './services/destination-health.service'
 import type { LogContextService } from './services/log-context.service'
+import { capturedSet, lowerCase, replaceAllText } from './utils/captured-builtins.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
@@ -214,7 +215,7 @@ export function serializeErrorValue(
  * @returns The derived, lowercase dot-separated event name.
  */
 function toEventName(logKey: string): string {
-  return logKey.toLowerCase().replaceAll('_', '.')
+  return replaceAllText(lowerCase(logKey), '_', '.')
 }
 
 /**
@@ -315,7 +316,7 @@ function resolveRecordRedactor(options: ResolvedBymaxLoggerModuleOptions): Redac
  * @returns The set of root keys.
  */
 function wholeRootKeys(options: ResolvedBymaxLoggerModuleOptions): ReadonlySet<string> {
-  return new Set(['logKey', 'err', ...Object.keys(options.serializers)])
+  return capturedSet(['logKey', 'err', ...Object.keys(options.serializers)])
 }
 
 /** The own-field policy the configuration resolves to. */
@@ -440,7 +441,7 @@ export function resolveRedactOption(
   const paths =
     options.redactStrategy === 'paths'
       ? compileRedactPaths(options.redactPaths, options.shouldDisableDefaultRedact)
-      : [...new Set(options.redactPaths)]
+      : [...capturedSet(options.redactPaths)]
   if (paths.length === 0) {
     return undefined
   }

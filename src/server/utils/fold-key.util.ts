@@ -10,6 +10,7 @@
  * like a Latin one.
  */
 
+import { capturedSet, lowerCase, replaceAllText, setAdd, setHas } from './captured-builtins.util'
 import { GLYPH_LETTER_RUNS } from './glyph-letters.generated'
 
 /**
@@ -114,15 +115,17 @@ const I_LIKE: ReadonlyMap<string, string> = new Map(
 export function foldKey(key: string, keepSeparators = false): string {
   if (keepSeparators) {
     // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
-    if (PLAIN.test(key)) return key.toLowerCase()
+    if (PLAIN.test(key)) return lowerCase(key)
     return withLookalikes(
-      readGlyphs(key.normalize('NFKD').toLowerCase()).replace(DOTS, '.').replace(INVISIBLE, ''),
+      readGlyphs(lowerCase(key.normalize('NFKD')))
+        .replace(DOTS, '.')
+        .replace(INVISIBLE, ''),
       true
     )
   }
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
-  if (PLAIN.test(key)) return key.replace(NOT_ASCII_NAME, '').toLowerCase()
-  return withLookalikes(readGlyphs(key.normalize('NFKD').toLowerCase()).replace(NOT_NAME, ''), true)
+  if (PLAIN.test(key)) return lowerCase(key.replace(NOT_ASCII_NAME, ''))
+  return withLookalikes(readGlyphs(lowerCase(key.normalize('NFKD'))).replace(NOT_NAME, ''), true)
 }
 
 /**
@@ -131,9 +134,9 @@ export function foldKey(key: string, keepSeparators = false): string {
  */
 function foldStrict(key: string): string {
   // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
-  if (PLAIN.test(key)) return key.replace(NOT_ASCII_NAME, '').toLowerCase()
+  if (PLAIN.test(key)) return lowerCase(key.replace(NOT_ASCII_NAME, ''))
   return withLookalikes(
-    readGlyphs(key.normalize('NFKD').toLowerCase())
+    readGlyphs(lowerCase(key.normalize('NFKD')))
       .replace(NON_ASCII_SYMBOL, SYMBOL_STAND_IN)
       .replace(NOT_NAME_STRICT, ''),
     false
@@ -143,8 +146,8 @@ function foldStrict(key: string): string {
 /** `folded` with the look-alikes read as the Latin letters, and the i-like ones too when `all` is set. */
 function withLookalikes(folded: string, all: boolean): string {
   let read = folded
-  for (const [letter, latin] of LOOKALIKES) read = read.replaceAll(letter, latin)
-  if (all) for (const [letter, latin] of I_LIKE) read = read.replaceAll(letter, latin)
+  for (const [letter, latin] of LOOKALIKES) read = replaceAllText(read, letter, latin)
+  if (all) for (const [letter, latin] of I_LIKE) read = replaceAllText(read, letter, latin)
   return read
 }
 
@@ -154,7 +157,7 @@ const ALNUM = /^[A-Za-z0-9]*$/
 /** A field name folded for hiding. */
 function formOf(key: string): string {
   // Stryker disable next-line ConditionalExpression: false is equivalent (foldStrict lower-cases an ASCII alphanumeric key too); true is killed by the foldName rows, and one disable covers both mutants
-  return ALNUM.test(key) ? key.toLowerCase() : foldStrict(key)
+  return ALNUM.test(key) ? lowerCase(key) : foldStrict(key)
 }
 
 /** What each set of names answered for the short keys it was asked about; a set is fixed once built. */
@@ -185,8 +188,8 @@ export function foldName(key: string): string {
  * @returns The set the keys of a record are looked up in.
  */
 export function foldedNames(names: Iterable<string>): Set<string> {
-  return new Set(
-    Array.from(names, (name) => foldName(name).replaceAll(SYMBOL_STAND_IN, '')).filter(
+  return capturedSet(
+    Array.from(names, (name) => replaceAllText(foldName(name), SYMBOL_STAND_IN, '')).filter(
       (name) => name !== ''
     )
   )
@@ -267,26 +270,28 @@ const isAscii = (letter: string): boolean => letter < '\x80'
  * other letter is one or two characters of the name (`ß` is two, a capital drawn like an `l` is one).
  */
 function matchesName(letters: readonly string[], name: readonly string[]): boolean {
-  let at = new Set([0])
+  const initial = new Set<number>()
+  setAdd(initial, 0)
+  let at = initial
   for (const letter of letters) {
     const next = new Set<number>()
     for (const position of at) {
       if (letter === SYMBOL_STAND_IN) {
-        next.add(position)
-        next.add(position + 1)
-        next.add(position + 2)
+        setAdd(next, position)
+        setAdd(next, position + 1)
+        setAdd(next, position + 2)
         continue
       }
       if (isAscii(letter)) {
-        if (name[position] === letter) next.add(position + 1)
+        if (name[position] === letter) setAdd(next, position + 1)
         continue
       }
-      next.add(position + 1)
-      next.add(position + 2)
+      setAdd(next, position + 1)
+      setAdd(next, position + 2)
     }
     at = next
   }
-  return at.has(name.length)
+  return setHas(at, name.length)
 }
 
 /**

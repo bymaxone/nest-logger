@@ -6,6 +6,7 @@
  * Layer: server/utils. Pure.
  */
 import { cutIfText, MAX_TEXT_LENGTH } from './bounded-text.util'
+import { capturedSet } from './captured-builtins.util'
 import { foldKey, matchesFolded, matchesKey } from './fold-key.util'
 import { hideMessagesInStack } from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
@@ -13,7 +14,7 @@ import { ERROR_TEXT_FIELDS } from './redact-error-parts.util'
 import { censorName, MAX_STACK_SCAN, scrubStack } from './sanitize-error.util'
 
 /** The name `message`, which the serializer of `err` censors: the stack header is built from it. */
-const ERROR_TEXT_KEYS: ReadonlySet<string> = new Set(['message'])
+const ERROR_TEXT_KEYS: ReadonlySet<string> = capturedSet(['message'])
 
 /**
  * Whether the value under `key` is not a list, for the serializer of `err`. A value that holds no keys
@@ -87,8 +88,8 @@ export function messageCensor(rules: RedactRules): (text: string) => string {
 export const isStackKey = (key: string): boolean => matchesKey(STACK_NAMES, key)
 
 /** The folded names the stack and the message of an object are looked for under. */
-const STACK_NAMES: ReadonlySet<string> = new Set(['stack'])
-const MESSAGE_NAMES: ReadonlySet<string> = new Set(['message'])
+const STACK_NAMES: ReadonlySet<string> = capturedSet(['stack'])
+const MESSAGE_NAMES: ReadonlySet<string> = capturedSet(['message'])
 
 /** The most distinct messages, and the most keys that spell `stack`, one object may make the walk search for. */
 export const MAX_STACK_ALIASES = 8
@@ -104,7 +105,7 @@ export interface HeaderText {
 }
 
 /** What an object with no stack key has: nothing to write as a stack. */
-const NO_STACK: HeaderText = { texts: new Map(), stackKeys: new Set(), overflow: false }
+const NO_STACK: HeaderText = { texts: new Map(), stackKeys: capturedSet(), overflow: false }
 
 /**
  * What the walk needs to write the stack keys of an object that is no `Error` and carries one: the
@@ -150,9 +151,9 @@ export function headerMessage(
   // the limit and not by the message, so a stack that may repeat it is written as the censor.
   const overflow =
     stacks.length > MAX_STACK_ALIASES ||
-    new Set(texts.values()).size > MAX_STACK_ALIASES ||
+    capturedSet(texts.values()).size > MAX_STACK_ALIASES ||
     [...texts.values()].some((text) => text.length > MAX_TEXT_LENGTH)
-  return { texts, stackKeys: new Set(stacks), overflow }
+  return { texts, stackKeys: capturedSet(stacks), overflow }
 }
 
 /**
@@ -198,7 +199,7 @@ function scrubPlainStack(
   stack: string,
   header: HeaderText | undefined
 ): string {
-  const texts = [...new Set(header?.texts.values())]
+  const texts = [...capturedSet(header?.texts.values())]
   const longest = texts.reduce((most, text) => Math.max(most, text.length), 0)
   // The part searched reaches as far past the bound as the longest message is long, so a message that
   // starts before the bound is found whole: what is kept after the messages are hidden and the dependency

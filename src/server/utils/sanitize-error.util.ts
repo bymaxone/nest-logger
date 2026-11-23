@@ -17,6 +17,7 @@
 
 import { bareDescriptor } from './bare-descriptor.util'
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
+import { capturedSet, lowerCase } from './captured-builtins.util'
 import { splitCensoredHeader } from './censor-stack-header.util'
 import { escapeControlCharacters } from './escape-log-text.util'
 import { hideMessagesInStack } from './hide-message-in-stack.util'
@@ -329,10 +330,10 @@ function toSanitizedError(
 }
 
 /** Own error fields that hold the arguments of the call that failed, such as a query's `parameters`. */
-const ARGUMENT_FIELDS: ReadonlySet<string> = new Set(['args', 'parameters'])
+const ARGUMENT_FIELDS: ReadonlySet<string> = capturedSet(['args', 'parameters'])
 
 /** Fields of a database error that quote the row or the statement: names are kept, these are not. */
-const DATABASE_VALUE_FIELDS: ReadonlySet<string> = new Set(['detail', 'where', 'internalQuery'])
+const DATABASE_VALUE_FIELDS: ReadonlySet<string> = capturedSet(['detail', 'where', 'internalQuery'])
 
 /**
  * The shape of a SQLSTATE that is not an operating-system error code: five characters of
@@ -383,7 +384,7 @@ export function ownFieldForLog(
   policy: OwnFieldPolicy = ALL_OWN_FIELDS
 ): unknown {
   if (!allowsOwnField(policy, key)) return OMIT_OWN_FIELD
-  if (ARGUMENT_FIELDS.has(key.toLowerCase())) return OMIT_OWN_FIELD
+  if (ARGUMENT_FIELDS.has(lowerCase(key))) return OMIT_OWN_FIELD
   if (DATABASE_VALUE_FIELDS.has(key) && isDatabaseError(source)) return OMIT_OWN_FIELD
   if (key !== 'command' || typeof value !== 'object' || value === null) {
     return withBinaryAsSize(value)

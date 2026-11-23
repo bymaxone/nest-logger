@@ -60,6 +60,7 @@
 import { types } from 'node:util'
 
 import { cutIfText } from './bounded-text.util'
+import { capturedSet, setAdd, setHas } from './captured-builtins.util'
 import { censorRawHeaders } from './censor-raw-headers.util'
 import {
   censorAnyName,
@@ -79,7 +80,7 @@ import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
 
 /** The keys of a message that hold headers as a flat `[name, value, ...]` array. */
-const RAW_HEADER_KEYS: ReadonlySet<string> = new Set(['rawheaders', 'rawtrailers'])
+const RAW_HEADER_KEYS: ReadonlySet<string> = capturedSet(['rawheaders', 'rawtrailers'])
 
 /**
  * The walked value of a field, with the value beside each sensitive name censored when the field is a
@@ -369,7 +370,7 @@ function walk(
   if (++rules.visits.count > rules.maxVisits) {
     return REDACT_BUDGET_EXCEEDED
   }
-  if (ancestors.has(value)) {
+  if (setHas(ancestors, value)) {
     return REDACT_CIRCULAR
   }
   // An Error is the one value whose unreadable parts are isolated: it degrades on its own and
@@ -461,7 +462,7 @@ function walkObject(
   }
   const resolved = resolveToJson(value, rules.ownFields.safe)
 
-  ancestors.add(value)
+  setAdd(ancestors, value)
   try {
     return walkForm(value, resolved, rules, depth, ancestors, honorToJson, inSerialized)
   } finally {
@@ -640,7 +641,7 @@ function walkProperties(
     const hook = honorToJson && key === 'toJSON' && typeof current === 'function'
     if (current === OMIT_OWN_FIELD || hook) {
       // Neither copy carries the key: the clone starts with no enumerable key, the data form has none.
-      omitted.add(key)
+      setAdd(omitted, key)
       continue
     }
     // The clone's shadow already holds the `toJSON` slot, which would keep the key first. Deleting
@@ -680,7 +681,7 @@ function walkProperties(
  * @returns The keys that are written.
  */
 function without(keys: readonly string[], omitted: ReadonlySet<string>): string[] {
-  return keys.filter((key) => !omitted.has(key))
+  return keys.filter((key) => !setHas(omitted, key))
 }
 
 /**
@@ -768,7 +769,7 @@ export function createNameRedactor(
     sensitive: foldedNames(fieldNames),
     headerNames: foldedNames(headerNames ?? fieldNames),
     censor,
-    serializedKeys: new Set(serializedKeys),
+    serializedKeys: capturedSet(serializedKeys),
     errorsAsData: serializedKeys !== undefined,
     errorTextToSerializer,
     maxVisits,
