@@ -53,3 +53,17 @@ export function capturedSet<T>(values: Iterable<T> = []): Set<T> {
   for (const value of values) add(value)
   return set
 }
+
+const shift = Array.prototype.shift
+const forEach = Array.prototype.forEach
+
+/**
+ * Whether the two built-in methods Pino calls for each log call and when it builds its fan-out are the
+ * ones the module loaded with. Pino reads them from the prototype where this library cannot capture
+ * them, and one that answers nothing makes it write an `Error` unredacted, or drop every log.
+ *
+ * @returns `false` when either was replaced after the module loaded.
+ */
+export function pinoBuiltinsIntact(): boolean {
+  return Array.prototype.shift === shift && Array.prototype.forEach === forEach
+}

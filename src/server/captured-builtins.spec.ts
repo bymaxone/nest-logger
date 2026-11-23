@@ -92,6 +92,24 @@ describe('a built-in replaced after the logger is imported', () => {
     }
   })
 
+  /**
+   * Given a built-in Pino calls for each log call, or when it builds its fan-out, replaced by one that
+   * answers nothing, which makes Pino write an `Error` unredacted or drop every log
+   * When a logger built before it, and a logger built inside it, write the record of secrets
+   * Then no secret is written: the record is dropped, since a lost log is better than a secret in one
+   */
+  it.each([
+    ['Array.prototype.shift', Array.prototype, 'shift'],
+    ['Array.prototype.forEach', Array.prototype, 'forEach']
+  ] as const)('%s is not trusted to Pino: the record is dropped', (_name, holder, key) => {
+    for (const prebuilt of [build(), undefined]) {
+      const { lines } = writtenWith(holder, key, prebuilt)
+
+      expect(lines.join('\n')).not.toMatch(/sEcReT\dxyz/)
+      expect(lines).toHaveLength(0)
+    }
+  })
+
   it('has secrets in the record to hide, which the baseline hides', () => {
     expect(baseline.lines.length).toBeGreaterThan(1)
     expect(baseline.lines.join('\n')).not.toMatch(/sEcReT\dxyz/)

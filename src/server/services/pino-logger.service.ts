@@ -26,7 +26,7 @@ import {
 import { PROTOTYPE_POLLUTING_KEYS } from '../constants/prototype-polluting-keys.constants'
 import { bareDescriptor } from '../utils/bare-descriptor.util'
 import { cutText, MAX_TEXT_LENGTH } from '../utils/bounded-text.util'
-import { capturedSet, lowerCase } from '../utils/captured-builtins.util'
+import { capturedSet, lowerCase, pinoBuiltinsIntact } from '../utils/captured-builtins.util'
 import { createEntryTextFinisher, ENTRY_TEXT_FINISHER } from '../utils/entry-text-finisher.util'
 import type { EntryTextCut, EntryTextFinisher } from '../utils/entry-text-finisher.util'
 import { isStackKey, MAX_STACK_ALIASES } from '../utils/error-text-exemption.util'
@@ -425,7 +425,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     if (isErrorLike(message)) {
       const payload: Record<string, unknown> = { err: message }
       assignIfDefined(payload, 'context', this.resolveContext(optionalParams))
-      this.pino.error(payload, this.errorText(message))
+      this.out('error', payload, this.errorText(message))
       return
     }
     // NestJS variadic contract is `error(message, stack?, context?)`: the stack
@@ -451,7 +451,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     // string case: the `err` serializer derives the stack from the Error itself,
     // so writing both would emit the same trace under two names.
     assignIfDefined(payload, 'err', findErrorParam(optionalParams))
-    this.pino.error(payload, this.nestStyleMessage('error', undefined, fields, text, message))
+    this.out('error', payload, this.nestStyleMessage('error', undefined, fields, text, message))
   }
 
   /**
@@ -558,7 +558,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     }
     assignIfDefined(payload, 'userId', userId)
     assignIfDefined(payload, 'context', this.context)
-    this.pino.error(payload, this.errorText(error))
+    this.out('error', payload, this.errorText(error))
   }
 
   // ─── Helpers / escape hatches ─────────────────────────────────────────────
@@ -644,9 +644,9 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     assignIfDefined(payload, 'context', this.context)
     const line = toBoundedMessage(message)
     if (level === 'info') {
-      this.pino.info(payload, line)
+      this.out('info', payload, line)
     } else {
-      this.pino.warn(payload, line)
+      this.out('warn', payload, line)
     }
   }
 
@@ -726,22 +726,22 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
     // A leading `Error` becomes the message, matching what `error(err)` emits —
     // `String(error)` would have produced the `"Error: …"` prefix instead.
     const msg = this.nestStyleMessage(level, leading, fields, text, message)
-    switch (level) {
-      case 'info':
-        this.pino.info(payload, msg)
-        break
-      case 'warn':
-        this.pino.warn(payload, msg)
-        break
-      case 'debug':
-        this.pino.debug(payload, msg)
-        break
-      case 'trace':
-        this.pino.trace(payload, msg)
-        break
-      case 'fatal':
-        this.pino.fatal(payload, msg)
-        break
-    }
+    this.out(level, payload, msg)
+  }
+
+  /**
+   * Hand a record to Pino, unless a built-in method Pino calls for each log call is no longer the one
+   * the module loaded with: a record is then dropped, since a lost log is better than a secret in one.
+   *
+   * @param level - The Pino method.
+   * @param payload - The fields of the entry.
+   * @param msg - The message.
+   */
+  private out(
+    level: PinoLevelMethod | 'error',
+    payload: Record<string, unknown>,
+    msg: string
+  ): void {
+    if (pinoBuiltinsIntact()) this.pino[level](payload, msg)
   }
 }
