@@ -2,7 +2,7 @@
  * The built-in methods the redaction and the routing of the logger decide with, captured when the module
  * loads.
  *
- * Layer: server/utils. Pure. A method a program replaces after the logger is imported (`Set.prototype.has`
+ * Layer: server/utils. A method a program replaces after the logger is imported (`Set.prototype.has`
  * that answers `undefined`, `String.prototype.toLowerCase`) would otherwise answer for the names to hide
  * and the destinations to write to; a call through the function captured here does not read the property.
  */
