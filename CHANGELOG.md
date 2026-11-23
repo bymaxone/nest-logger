@@ -24,7 +24,7 @@ heading here.
   replaced after the import changes neither what is hidden nor where a log goes. Two methods inside Pino itself
   (`Array.prototype.shift` in its log method, and `forEach` in its multistream) cannot be captured by this library,
   so it compares them with the ones it loaded with before each record: a record is dropped when either was replaced. A `get` or a `set` planted there no longer reaches a descriptor the logger
-  defines, and options read through a Proxy under a planted accessor of the same name are refused. Pino got the same: it is handed an own value for each option it reads
+  defines, and options read through a Proxy under a planted accessor of the same name are refused. The logger is not built while `Object.prototype` holds a getter or a setter other than its native `__proto__`: Pino merges its options onto a plain object, where one would discard the `formatters` of the library and answer with its own, so a secret reached the destination in clear. Such an accessor is a startup refusal that names the key. Pino got the same: it is handed an own value for each option it reads
   and the library does not set, and so is each entry handed to its multistream, so a planted one is never
   seen (a planted `transport` would have made it build one at startup, and a `levelVal` of 100 would
   have silenced every log). Out of scope, because Node and Pino read them off objects this library does

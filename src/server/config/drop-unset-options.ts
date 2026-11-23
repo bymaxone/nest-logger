@@ -183,7 +183,8 @@ export function dropUnsetOptions(options: BymaxLoggerModuleOptions): BymaxLogger
   const service = Reflect.get(set, 'service') as unknown
   // The metadata and the serializers are copied as the defaults copy them, own enumerable keys, so
   // each is read here once.
-  if (isRecord(service)) Reflect.set(set, 'service', { ...service })
+  if (isRecord(service))
+    Reflect.set(set, 'service', Object.assign(Object.create(null) as object, service))
   const serializers = Reflect.get(set, 'serializers') as unknown
   if (isRecord(serializers)) Reflect.set(set, 'serializers', { ...serializers })
   copyLists(set, LIST_OPTIONS, '')

@@ -40,6 +40,7 @@ import {
   type OwnFieldPolicy,
   ALL_OWN_FIELDS
 } from './utils/own-field-policy.util'
+import { refusePlantedAccessors } from './utils/planted-accessors.util'
 import { createNameRedactor, markErrorOutput } from './utils/redact-by-name.util'
 import type { Redactor } from './utils/redact-by-name.util'
 import { safeMinLevel } from './utils/report-destination-failure.util'
@@ -695,6 +696,12 @@ function buildFormatters(
   }
 }
 
+/** The options, handed to Pino only while no accessor is planted on `Object.prototype`. */
+function refusingPlanted(pinoOptions: LoggerOptions): LoggerOptions {
+  refusePlantedAccessors()
+  return pinoOptions
+}
+
 /**
  * An own value for each name Pino reads that this library does not set, so a key planted on
  * `Object.prototype` is not read in its place (a planted `transport` would be built at startup).
@@ -780,5 +787,5 @@ export function buildPinoInstance(
   }
 
   const streams = pino.multistream(buildStreams(options, destinations, health))
-  return withEntryTextFinisher(pino(pinoOptions, streams), options, onTruncate)
+  return withEntryTextFinisher(pino(refusingPlanted(pinoOptions), streams), options, onTruncate)
 }
