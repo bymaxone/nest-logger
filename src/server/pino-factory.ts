@@ -30,6 +30,7 @@ import {
   lowerCase,
   allMatches,
   matchesPattern,
+  pinoBuiltinsIntact,
   replaceAllText
 } from './utils/captured-builtins.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
@@ -720,6 +721,18 @@ export const UNSET_PINO_NAMES: Readonly<Record<string, false | undefined>> = {
 }
 
 /**
+ * Refuses what the options must not carry into a logger: a built-in the names are read with that was
+ * replaced (a logger built then would carry the answer for good), and a censor beyond the string limit.
+ * A derived backend can build resolved options without `validateOptions`, so the rule holds here too.
+ */
+function refuseUnsafeOptions(options: ResolvedBymaxLoggerModuleOptions): void {
+  if (!pinoBuiltinsIntact()) throw new Error('LOGGER_BUILTINS_REPLACED')
+  if (options.maxStringLength !== undefined) {
+    refuseCensorBeyondLimit(options.redactCensor, options.maxStringLength)
+  }
+}
+
+/**
  * Build a configured Pino instance from a resolved options snapshot.
  *
  * Each destination becomes one entry in a `pino.multistream` fan-out. A
@@ -745,11 +758,7 @@ export function buildPinoInstance(
   destinations: readonly ILogDestination[],
   health: DestinationHealth
 ): PinoLogger {
-  // `validateOptions` is not the only way to resolved options: a derived backend can build them and
-  // call this factory, so the rule that holds for the options holds here too.
-  if (options.maxStringLength !== undefined) {
-    refuseCensorBeyondLimit(options.redactCensor, options.maxStringLength)
-  }
+  refuseUnsafeOptions(options)
   // TWO redactors, deliberately, because they answer to different owners.
   //   - `redactRecord` honours `redactStrategy`: the caller's record is the
   //     caller's payload, and `'paths'` is their documented escape hatch (an e2e

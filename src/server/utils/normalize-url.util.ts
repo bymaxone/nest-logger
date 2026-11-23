@@ -8,6 +8,7 @@
  * (Datadog, Loki, Elastic), making per-route dashboards unusable.
  */
 
+import { pinoBuiltinsIntact } from './captured-builtins.util'
 import { matchesExcludePath } from './matches-exclude-path.util'
 
 // Each fixed-length pattern ends with a negative lookahead asserting the next
@@ -29,6 +30,8 @@ const ID_PLACEHOLDER = '/:id'
 
 /** Placeholder substituted for a path segment that looks like a credential. */
 const SECRET_PLACEHOLDER = ':redacted'
+/** What a path becomes when a built-in the scan reads was replaced: no segment of it is trusted. */
+const WHOLE_PATH_PLACEHOLDER = `/${SECRET_PLACEHOLDER}`
 /** Hex digest or token: 32 or more hex digits (a 128-bit value, SHA-256, a session id). */
 const HEX_SECRET_REGEX = /^[0-9a-f]{32,}$/i
 /** JWT: three base64url parts, the first being the encoded `{"` header every JWT starts with. */
@@ -110,6 +113,7 @@ function looksLikeToken(value: string): boolean {
  * @returns The segments as the request wrote them, in order, without repeats.
  */
 export function secretPathSegments(url: string, extra: readonly RegExp[] = []): string[] {
+  if (!pinoBuiltinsIntact()) return [url]
   const found = new Set<string>()
   for (const segment of stripQueryString(url).split('/')) {
     if (isSecretSegment(segment, extra)) found.add(segment)
@@ -131,6 +135,7 @@ export function secretPathSegments(url: string, extra: readonly RegExp[] = []): 
  *   scrubSecretSegments('/auth/reset/a3f1c9d2b7e4086f5a1c3d9e7b2f4a6c') // → '/auth/reset/:redacted'
  */
 export function scrubSecretSegments(path: string, extra: readonly RegExp[] = []): string {
+  if (!pinoBuiltinsIntact()) return WHOLE_PATH_PLACEHOLDER
   return path
     .split('/')
     .map((segment) => (isSecretSegment(segment, extra) ? SECRET_PLACEHOLDER : segment))
@@ -218,6 +223,7 @@ export function withoutRequestSecrets(
   extra: readonly RegExp[],
   ...urls: Array<string | undefined>
 ): string {
+  if (!pinoBuiltinsIntact()) return SECRET_PLACEHOLDER
   let result = text
   const segments = new Set<string>()
   for (const url of urls) {

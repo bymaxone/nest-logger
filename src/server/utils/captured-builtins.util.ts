@@ -146,29 +146,79 @@ export function capturedSet<T>(values: Iterable<T> = []): Set<T> {
   return set
 }
 
-const shift = Array.prototype.shift
-const forEach = Array.prototype.forEach
-const slice = String.prototype.slice
-const stringIterator = String.prototype[Symbol.iterator]
-const getOwnPropertyDescriptors = Object.getOwnPropertyDescriptors
-const ownKeys = Reflect.ownKeys
+type Member = string | symbol
+
+/** The prototype of an iterator, which holds the `next` a spread or a `for...of` calls on each step. */
+function nextOf(iterator: unknown): object {
+  return Object.getPrototypeOf(iterator) as object
+}
 
 /**
- * Whether the built-in methods this library cannot capture are the ones the module loaded with. Pino
- * reads `shift` for each log call and `forEach` when it builds its fan-out, and the code that hides the
- * message in an error stack reads `slice`, the string iterator, `getOwnPropertyDescriptors` and
- * `ownKeys`. One that answers wrongly makes Pino write an `Error` unredacted, or drop every log, and
- * leaves the message in the first line of a stack: a record is dropped instead, whole.
+ * Every built-in the redaction of a record reads, by holder and member: the files that decide what to
+ * hide (`fold-key`, `normalize-url`, `matches-exclude-path`, `sanitize-error`, the name paths of
+ * `pino-factory`) call these, and Pino and the code that hides a message in an error stack call the
+ * rest. A spec scans those files and fails for a built-in member a call reaches that is not here.
+ */
+export const GUARDED_BUILTINS: ReadonlyArray<readonly [object, ReadonlyArray<Member>]> = [
+  [Array, ['from', 'isArray']],
+  [
+    Array.prototype,
+    ['at', 'filter', 'flatMap', 'forEach', 'join', 'map', 'push', 'reduce', 'shift', 'some', 'sort']
+  ],
+  [Array.prototype, [Symbol.iterator]],
+  [String, ['fromCodePoint']],
+  [
+    String.prototype,
+    ['includes', 'indexOf', 'lastIndexOf', 'normalize', 'replace', 'search', 'slice', 'split']
+  ],
+  [String.prototype, ['startsWith', 'toLowerCase', Symbol.iterator, Symbol.replace]],
+  [Map.prototype, ['clear', 'get', 'has', 'set', Symbol.iterator]],
+  [Set.prototype, ['add', 'has', 'values', Symbol.iterator]],
+  [RegExp.prototype, ['exec', 'test', Symbol.replace]],
+  [Object, ['create', 'defineProperty', 'entries', 'fromEntries', 'getOwnPropertyDescriptor']],
+  [Object, ['getOwnPropertyDescriptors', 'getPrototypeOf', 'hasOwn', 'keys']],
+  [
+    Reflect,
+    ['defineProperty', 'deleteProperty', 'get', 'getOwnPropertyDescriptor', 'ownKeys', 'set']
+  ],
+  [Math, ['max']],
+  [Number, ['isInteger']],
+  [nextOf([][Symbol.iterator]()), ['next']],
+  [nextOf(''[Symbol.iterator]()), ['next']],
+  [nextOf(new Map()[Symbol.iterator]()), ['next']],
+  [nextOf(new Set()[Symbol.iterator]()), ['next']],
+  [nextOf(/(?:)/[Symbol.matchAll]('')), ['next']]
+]
+
+const guardedHolders: object[] = []
+const guardedMembers: Member[] = []
+const guardedValues: unknown[] = []
+for (let at = 0; at < GUARDED_BUILTINS.length; at++) {
+  const entry = GUARDED_BUILTINS[at] as readonly [object, ReadonlyArray<Member>]
+  for (let member = 0; member < entry[1].length; member++) {
+    const name = entry[1][member] as Member
+    guardedHolders[guardedHolders.length] = entry[0]
+    guardedMembers[guardedMembers.length] = name
+    guardedValues[guardedValues.length] = (entry[0] as Record<Member, unknown>)[name]
+  }
+}
+
+/**
+ * Whether every built-in member of {@link GUARDED_BUILTINS} is the one the module loaded with. A method
+ * the logger cannot capture, because Pino or the language reads it (`Array.prototype.shift`, the `next`
+ * of a string iterator), would answer for the names to hide: one that was replaced makes a record be
+ * dropped, whole, and a URL path be redacted whole.
  *
  * @returns `false` when any of them was replaced after the module loaded.
  */
 export function pinoBuiltinsIntact(): boolean {
-  return (
-    Array.prototype.shift === shift &&
-    Array.prototype.forEach === forEach &&
-    String.prototype.slice === slice &&
-    String.prototype[Symbol.iterator] === stringIterator &&
-    Object.getOwnPropertyDescriptors === getOwnPropertyDescriptors &&
-    Reflect.ownKeys === ownKeys
-  )
+  for (let at = 0; at < guardedHolders.length; at++) {
+    if (
+      (guardedHolders[at] as Record<Member, unknown>)[guardedMembers[at] as Member] !==
+      guardedValues[at]
+    ) {
+      return false
+    }
+  }
+  return true
 }

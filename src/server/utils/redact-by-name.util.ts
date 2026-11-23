@@ -186,7 +186,8 @@ function resolveToJson(value: object, viaGet = false): ResolvedToJson {
       candidate = descriptor.get === undefined ? descriptor.value : descriptor.get.call(value)
       break
     }
-    current = Object.getPrototypeOf(current)
+    const next: unknown = Object.getPrototypeOf(current) // a non-object ends the walk
+    current = typeof next === 'object' ? next : null
   }
   return {
     method: typeof candidate === 'function' ? (candidate as () => unknown) : undefined,

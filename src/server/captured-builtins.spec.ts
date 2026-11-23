@@ -1,18 +1,34 @@
 /**
- * Verifies that the built-in methods the redaction and the routing decide with are the ones captured when
- * the logger was imported: a method replaced afterwards (`Set.prototype.has` that answers `undefined`, a
- * `toLowerCase` that does nothing, an `add` that adds nothing) changes neither what is hidden nor where a
- * log goes. Each replacement is made around a logger built and used inside it, and around one built
- * before it.
+ * Verifies that the built-ins the redaction reads are the ones the logger was imported with: one replaced
+ * afterwards (`Set.prototype.has` that answers `undefined`, a `toLowerCase` that does nothing, the `next`
+ * of a string iterator that is always done) makes a record be dropped and a URL path be redacted whole,
+ * and never lets a secret through. Each replacement is made around a logger built and used inside it,
+ * and around one built before it.
  *
- * Layer: server, tests. Driven through the real factory, in one process, with the method put back.
+ * Layer: server, tests. Driven through the real factory, in one process, with the member put back.
  */
 import { resolveOptions } from './config/resolve-options'
-import { allMatches, replaceAllText } from './utils/captured-builtins.util'
+import {
+  GUARDED_BUILTINS,
+  allMatches,
+  pinoBuiltinsIntact,
+  replaceAllText
+} from './utils/captured-builtins.util'
+import {
+  normalizeUrl,
+  scrubSecretSegments,
+  secretPathSegments,
+  withoutRequestSecrets
+} from './utils/normalize-url.util'
 import { buildPinoInstance } from './pino-factory'
 import { DestinationHealth } from './services/destination-health.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
+
+// Held here, because the member being replaced may be the one the harness would restore it with.
+const define = Object.defineProperty
+const describeMember = Object.getOwnPropertyDescriptor
+const remove = Reflect.deleteProperty
 
 const TOKENS = [
   'sEcReT1xyz',
@@ -25,6 +41,7 @@ const TOKENS = [
   'sEcReT8xyz',
   'sEcReT9xyz'
 ]
+const LEAK = /sEcReT\d+xyz/
 
 interface Built {
   readonly logger: PinoLoggerService
@@ -56,20 +73,22 @@ function write(logger: PinoLoggerService): void {
     // Spellings of the configured name `customKey`, which are folded to be compared: ASCII, then not.
     custom_key: TOKENS[6],
     'CUSTOM-KEY': TOKENS[7],
-    'custom\u200bKey': TOKENS[8]
+    'custom​Key': TOKENS[8]
   } as never)
   logger.error(new Error(`${TOKENS[5] ?? ''} boom`), 'ctx')
 }
 
-/** What the logger writes while `holder[key]` is replaced by `replacement`, which answers nothing unless it is given. */
+type Replacement = (this: unknown, ...args: unknown[]) => unknown
+
+/** What the logger writes while `holder[key]` is replaced by `replacement`, which answers nothing. */
 function writtenWith(
   holder: object,
   key: string | symbol,
   prebuilt: Built | undefined,
-  replacement: (this: unknown, ...args: unknown[]) => unknown = () => undefined
+  replacement: Replacement = () => undefined
 ): { lines: string[]; threw: boolean } {
-  const original = Object.getOwnPropertyDescriptor(holder, key)
-  Object.defineProperty(holder, key, {
+  const original = describeMember(holder, key)
+  define(holder, key, {
     value: replacement,
     writable: true,
     configurable: true,
@@ -82,180 +101,179 @@ function writtenWith(
   } catch {
     return { lines: [], threw: true }
   } finally {
-    if (original === undefined) Reflect.deleteProperty(holder, key)
-    else Object.defineProperty(holder, key, original)
+    if (original === undefined) remove(holder, key)
+    else define(holder, key, original)
   }
 }
 
-/** The built-ins this library decides with, and the holder of each. */
-const REPLACED: ReadonlyArray<readonly [string, object, string]> = [
-  ['Set.prototype.has', Set.prototype, 'has'],
-  ['Set.prototype.add', Set.prototype, 'add'],
-  ['String.prototype.toLowerCase', String.prototype, 'toLowerCase'],
-  ['String.prototype.replaceAll', String.prototype, 'replaceAll']
-]
-
-const identity = function (this: unknown): unknown {
-  return String(this)
+/** What `holder[key]` is replaced by in a case: an iterator step that is always done, or a method that answers nothing. */
+function replacementFor(key: string | symbol, kind: 'empty' | 'identity'): Replacement {
+  if (key === 'next') return () => ({ done: true, value: undefined })
+  if (kind === 'identity') {
+    return function (this: unknown): unknown {
+      return String(this)
+    }
+  }
+  return () => undefined
 }
-const yes = (): unknown => true
-const none = (): unknown => null
 
-/**
- * The built-ins the folding of a name decides with, each replaced by an identity, a constant true or no
- * match. The last item is whether a logger can also be built inside the replacement: Pino itself reads
- * `RegExp.prototype.exec` when it compiles the redaction paths, and the options are read through the
- * iterator of an array, so a logger built inside those two fails loudly, which writes nothing.
- */
-const FOLDING: ReadonlyArray<
-  readonly [
-    string,
-    object,
-    string | symbol,
-    (this: unknown, ...args: unknown[]) => unknown,
-    boolean
-  ]
-> = [
-  ['String.prototype.replace as the identity', String.prototype, 'replace', identity, true],
-  ['String.prototype.normalize as the identity', String.prototype, 'normalize', identity, true],
-  ['RegExp.prototype.test as true', RegExp.prototype, 'test', yes, true],
-  ['RegExp.prototype.test as false', RegExp.prototype, 'test', () => false, true],
-  ['RegExp.prototype.exec as no match', RegExp.prototype, 'exec', none, false],
-  [
-    'RegExp.prototype[Symbol.replace] as the identity',
-    RegExp.prototype,
-    Symbol.replace,
-    identity,
-    true
-  ],
-  [
-    'String.prototype[Symbol.replace] as the identity',
-    String.prototype,
-    Symbol.replace,
-    identity,
-    true
-  ],
-  [
-    'String.prototype[Symbol.replace] as empty',
-    String.prototype,
-    Symbol.replace,
-    function* () {},
-    true
-  ],
-  [
-    'RegExp.prototype[Symbol.matchAll] as empty',
-    RegExp.prototype,
-    Symbol.matchAll,
-    function* () {},
-    true
-  ],
-  [
-    'Array.prototype[Symbol.iterator] as empty',
-    Array.prototype,
-    Symbol.iterator,
-    function* () {},
-    false
-  ],
-  [
-    'Map.prototype[Symbol.iterator] as empty',
-    Map.prototype,
-    Symbol.iterator,
-    function* () {},
-    true
-  ],
-  ['Set.prototype[Symbol.iterator] as empty', Set.prototype, Symbol.iterator, function* () {}, true]
-]
-
-/** The built-ins the code that hides the message in an error stack reads, each replaced by one that leaves it whole. */
-const STACK_BUILTINS: ReadonlyArray<
-  readonly [string, object, string | symbol, (this: unknown, ...args: unknown[]) => unknown]
-> = [
-  ['String.prototype.slice as the identity', String.prototype, 'slice', identity],
-  [
-    'String.prototype[Symbol.iterator] as empty',
-    String.prototype,
-    Symbol.iterator,
-    function* () {}
-  ],
-  ['Object.getOwnPropertyDescriptors as empty', Object, 'getOwnPropertyDescriptors', () => ({})],
-  ['Reflect.ownKeys as empty', Reflect, 'ownKeys', () => []]
-]
+/** One case for each member of the table, replaced by each kind of answer. */
+const MEMBERS = GUARDED_BUILTINS.flatMap(([holder, members], entry) =>
+  members.flatMap((member) =>
+    (['empty', 'identity'] as const).map(
+      (kind) => [`${entry}:${String(member)} (${kind})`, holder, member, kind] as const
+    )
+  )
+)
 
 describe('a built-in replaced after the logger is imported', () => {
   const baseline = build()
   write(baseline.logger)
 
   /**
-   * Given a built-in the redaction decides with, replaced by one that answers nothing
+   * Given any built-in member the redaction of a record reads, replaced by one that answers nothing or
+   * by one that returns the text it was given
    * When a logger built before it, and a logger built inside it, write the record of secrets
-   * Then no secret is written, and the lines are the baseline's
+   * Then no secret is written: the record is dropped, or the logger is not built
    */
-  it.each(REPLACED)('%s does not weaken what is hidden', (_name, holder, key) => {
+  it.each(MEMBERS)('%s writes no secret and no record', (_name, holder, member, kind) => {
     for (const prebuilt of [build(), undefined]) {
-      const { lines, threw } = writtenWith(holder, key, prebuilt)
+      const { lines } = writtenWith(holder, member, prebuilt, replacementFor(member, kind))
+
+      expect(lines.join('\n')).not.toMatch(LEAK)
+      expect(lines).toHaveLength(0)
+    }
+  })
+
+  /**
+   * Given a built-in that this library no longer reads (the `matchAll` of a pattern, the `replaceAll` of
+   * a string), replaced by one that answers nothing
+   * When a logger built before it, and a logger built inside it, write the record of secrets
+   * Then the lines are the baseline's, since nothing the redaction decides with was touched
+   */
+  it.each([
+    ['RegExp.prototype[Symbol.matchAll]', RegExp.prototype, Symbol.matchAll],
+    ['String.prototype.replaceAll', String.prototype, 'replaceAll']
+  ] as const)('%s is not read, so the record is written and hidden', (_name, holder, key) => {
+    for (const prebuilt of [build(), undefined]) {
+      const { lines, threw } = writtenWith(holder, key, prebuilt, function* () {})
 
       expect(threw).toBe(false)
-      expect(lines.join('\n')).not.toMatch(/sEcReT\d+xyz/)
+      expect(lines.join('\n')).not.toMatch(LEAK)
       expect(lines).toHaveLength(baseline.lines.length)
     }
   })
 
   /**
-   * Given a built-in Pino calls for each log call, or when it builds its fan-out, replaced by one that
-   * answers nothing, which makes Pino write an `Error` unredacted or drop every log
+   * Given a member of the table put back as the very function it was
    * When a logger built before it, and a logger built inside it, write the record of secrets
-   * Then no secret is written: the record is dropped, since a lost log is better than a secret in one
+   * Then nothing is dropped: only a replacement is refused
    */
-  it.each([
-    ['Array.prototype.shift', Array.prototype, 'shift'],
-    ['Array.prototype.forEach', Array.prototype, 'forEach']
-  ] as const)('%s is not trusted to Pino: the record is dropped', (_name, holder, key) => {
+  it('drops nothing for a member that is assigned the function it already was', () => {
     for (const prebuilt of [build(), undefined]) {
-      const { lines } = writtenWith(holder, key, prebuilt)
+      const { lines, threw } = writtenWith(
+        Array.prototype,
+        'map',
+        prebuilt,
+        Array.prototype.map as Replacement
+      )
 
-      expect(lines.join('\n')).not.toMatch(/sEcReT\d+xyz/)
-      expect(lines).toHaveLength(0)
+      expect(threw).toBe(false)
+      expect(lines).toHaveLength(baseline.lines.length)
+      expect(lines.join('\n')).not.toMatch(LEAK)
     }
   })
 
   /**
-   * Given a built-in the folding of a name decides with, replaced by one that answers what a replacement
-   * that does nothing answers (the text it was given), or `true`, or no match
-   * When a logger built before it, and a logger built inside it, write the record of secrets, which
-   * has the variant spellings of a configured name
-   * Then no secret is written, and the lines are the baseline's
+   * Given built-ins a host replaces by design (a wrapped `then`, fake timers and a fake `Date`)
+   * When a logger built before them, and one built inside them, write the record of secrets
+   * Then nothing is dropped: they are not read by the redaction
    */
-  it.each(FOLDING)(
-    '%s does not weaken what is hidden',
-    (_name, holder, key, replacement, inside) => {
-      for (const prebuilt of inside ? [build(), undefined] : [build()]) {
-        const { lines, threw } = writtenWith(holder, key, prebuilt, replacement)
-
-        expect(threw).toBe(false)
-        expect(lines.join('\n')).not.toMatch(/sEcReT\d+xyz/)
-        expect(lines).toHaveLength(baseline.lines.length)
-      }
-    }
-  )
-
-  /**
-   * Given a built-in the code that hides the message in an error stack reads, replaced by one that
-   * answers what a stack header needs to be left whole (the text, nothing, or no keys)
-   * When a logger built before it, and a logger built inside it, write the record of secrets
-   * Then no secret is written: the record is dropped, or the logger is not built
-   */
-  it.each(STACK_BUILTINS)('%s leaves no message in a stack', (_name, holder, key, replacement) => {
+  it('drops nothing while a host wraps Promise.then or fakes Date and the timers', () => {
+    const wrapped = Promise.prototype.then
+    const clock = Date.now
+    const timer = globalThis.setTimeout
     for (const prebuilt of [build(), undefined]) {
-      const { lines } = writtenWith(holder, key, prebuilt, replacement)
+      const { lines, threw } = writtenWith(
+        Promise.prototype,
+        'then',
+        prebuilt,
+        function (this: unknown, ...args: unknown[]) {
+          return Reflect.apply(wrapped, this, args)
+        }
+      )
+      const faked = writtenWith(Date, 'now', undefined, () => 0)
+      const timed = writtenWith(
+        globalThis,
+        'setTimeout',
+        undefined,
+        timer as unknown as Replacement
+      )
 
-      expect(lines.join('\n')).not.toMatch(/sEcReT\d+xyz/)
-      expect(lines).toHaveLength(0)
+      expect(threw).toBe(false)
+      expect(lines).toHaveLength(baseline.lines.length)
+      expect(faked.lines).toHaveLength(baseline.lines.length)
+      expect(timed.lines).toHaveLength(baseline.lines.length)
     }
+    expect(Date.now).toBe(clock)
   })
 
   it('has secrets in the record to hide, which the baseline hides', () => {
+    expect(pinoBuiltinsIntact()).toBe(true)
     expect(baseline.lines.length).toBeGreaterThan(1)
-    expect(baseline.lines.join('\n')).not.toMatch(/sEcReT\d+xyz/)
+    expect(baseline.lines.join('\n')).not.toMatch(LEAK)
+  })
+})
+
+/**
+ * Given a URL path with a credential in it, and a built-in the scan of the path reads that was replaced
+ * When the path is scrubbed, normalized, and read for its credential segments, and a message is cleaned
+ * Then the whole path, or text, is redacted, and nothing of it is returned
+ */
+describe('a URL path read while a built-in was replaced', () => {
+  const jwt =
+    'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk'
+  const url = `/reset/${jwt}/done`
+
+  function whileReplaced<T>(holder: object, key: string, read: () => T): T {
+    const original = describeMember(holder, key) as PropertyDescriptor
+    define(holder, key, { ...original, value: () => false })
+    try {
+      return read()
+    } finally {
+      define(holder, key, original)
+    }
+  }
+
+  it('reads the path as it is while nothing is replaced', () => {
+    expect(scrubSecretSegments(url)).toBe('/reset/:redacted/done')
+    expect(normalizeUrl(url)).toBe('/reset/:redacted/done')
+    expect(secretPathSegments(url)).toEqual([jwt])
+    expect(withoutRequestSecrets(`GET ${url}`, [], url)).toBe('GET /reset/:redacted/done')
+  })
+
+  it('redacts the whole path when RegExp.prototype.test says nothing is a credential', () => {
+    const read = (): string[] => [
+      scrubSecretSegments(url),
+      normalizeUrl(url),
+      withoutRequestSecrets(`GET ${url}`, [], url)
+    ]
+
+    const results = whileReplaced(RegExp.prototype, 'test', read)
+
+    expect(results.join('\n')).not.toContain(jwt)
+    expect(results.slice(0, 2)).toEqual(['/:redacted', '/:redacted'])
+    // What is to be cut out of a text is the whole path, since no segment of it is trusted.
+    expect(whileReplaced(RegExp.prototype, 'test', () => secretPathSegments(url))).toEqual([url])
+  })
+
+  it('redacts the whole path when the pattern of the host would be skipped', () => {
+    const results = whileReplaced(Array.prototype, 'some', () => [
+      scrubSecretSegments(url, [/reset/]),
+      withoutRequestSecrets(`token ${jwt}`, [/./], url)
+    ])
+
+    expect(results.join('\n')).not.toContain(jwt)
   })
 })
 
