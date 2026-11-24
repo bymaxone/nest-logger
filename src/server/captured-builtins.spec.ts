@@ -11,6 +11,7 @@ import { resolveOptions } from './config/resolve-options'
 import {
   GUARDED_BUILTINS,
   allMatches,
+  capturedSet,
   pinoBuiltinsIntact,
   replaceAllText
 } from './utils/captured-builtins.util'
@@ -218,6 +219,27 @@ describe('a built-in replaced after the logger is imported', () => {
     expect(Date.now).toBe(clock)
   })
 
+  /**
+   * Given options resolved while the built-ins were intact (a derived backend skips `resolveOptions`)
+   * When a built-in is replaced and the factory builds a logger from them
+   * Then the factory refuses, since a logger built then would carry the answer for good
+   */
+  it('refuses to build from resolved options while a built-in is replaced', () => {
+    const resolved = resolveOptions({ service: { name: 'app', version: '1.0.0' } })
+    const health = new DestinationHealth()
+    const context = new LogContextService()
+    const sink = { name: 'sink', write: () => undefined }
+    const original = describeMember(Set.prototype, 'has') as PropertyDescriptor
+    define(Set.prototype, 'has', { ...original, value: () => undefined })
+    try {
+      expect(() => buildPinoInstance(resolved, context, [sink as never], health)).toThrow(
+        'LOGGER_BUILTINS_REPLACED'
+      )
+    } finally {
+      define(Set.prototype, 'has', original)
+    }
+  })
+
   it('has secrets in the record to hide, which the baseline hides', () => {
     expect(pinoBuiltinsIntact()).toBe(true)
     expect(baseline.lines.length).toBeGreaterThan(1)
@@ -311,5 +333,48 @@ describe('replaceAllText', () => {
 
   it('leaves the text alone for an empty search', () => {
     expect(replaceAllText('abc', '', '.')).toBe('abc')
+  })
+})
+
+/**
+ * Given a set made by `capturedSet`, and `Set.prototype.has` and `add` replaced afterwards
+ * When the set is read and added to
+ * Then its own `has` and `add` answer as the real ones did, so a call on it does not read the prototype
+ */
+describe('capturedSet', () => {
+  it('answers through its own has and add, not through Set.prototype', () => {
+    const set = capturedSet<string>(['a'])
+    expect(Object.hasOwn(set, 'has')).toBe(true)
+    expect(Object.hasOwn(set, 'add')).toBe(true)
+    const hasOriginal = describeMember(Set.prototype, 'has') as PropertyDescriptor
+    const addOriginal = describeMember(Set.prototype, 'add') as PropertyDescriptor
+    define(Set.prototype, 'has', { ...hasOriginal, value: () => false })
+    define(Set.prototype, 'add', { ...addOriginal, value: () => undefined })
+    try {
+      set.add('b')
+      expect([set.has('a'), set.has('b'), set.has('c')]).toEqual([true, true, false])
+    } finally {
+      define(Set.prototype, 'has', hasOriginal)
+      define(Set.prototype, 'add', addOriginal)
+    }
+  })
+})
+
+/**
+ * Given a built-in the options are read with, replaced
+ * When options are resolved
+ * Then resolving refuses with the named error, before anything is read
+ */
+describe('resolveOptions while a built-in is replaced', () => {
+  it('refuses with LOGGER_BUILTINS_REPLACED', () => {
+    const original = describeMember(Set.prototype, 'has') as PropertyDescriptor
+    define(Set.prototype, 'has', { ...original, value: () => undefined })
+    try {
+      expect(() => resolveOptions({ service: { name: 'app', version: '1.0.0' } })).toThrow(
+        'LOGGER_BUILTINS_REPLACED'
+      )
+    } finally {
+      define(Set.prototype, 'has', original)
+    }
   })
 })
