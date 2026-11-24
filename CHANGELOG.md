@@ -46,7 +46,7 @@ heading here.
   work's own settlement cannot be seen afterwards, and a dependency that reads a static inside itself is code
   aimed at that dependency, not at the logger. These guards are best-effort hardening, not a security
   boundary: code running inside the host process is trusted (SECURITY.md, "Threat model: same-process
-  code"). A descriptor read by these guards, and by the `toJSON` lookup and the options filter, is read for
+  code"). A descriptor read by these guards, and by the `toJSON` lookup outside `errorOwnFields: 'safe'` and the options filter, is read for
   its own `get` and `value` only, so a field planted on `Object.prototype` is not taken for one.
 - **A key planted on `Object.prototype` is no option.** The options were read by property access through
   the prototype chain, so a `shouldDisableDefaultRedact: true` planted on `Object.prototype` (by a
