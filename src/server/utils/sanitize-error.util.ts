@@ -348,6 +348,18 @@ const SQLSTATE = /^[0-9A-DF-Z][0-9A-Z]{4}$/
 export const OMIT_OWN_FIELD: unique symbol = Symbol('omit-own-field')
 
 /**
+ * The value of an own data property, read from its descriptor so no getter runs. An accessor
+ * descriptor has no `value` of its own, and a plain read of it would find one planted on
+ * `Object.prototype`, so only a descriptor that owns `value` answers.
+ */
+function ownDataValue(source: object, key: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(source, key)
+  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
+    ? descriptor.value
+    : undefined
+}
+
+/**
  * Whether an error carries a SQLSTATE `code` as its own string data. The protocol guarantees that
  * field on every error a PostgreSQL server sends, and it is the same code across servers that speak
  * the protocol. `routine` and the position fields are optional on the wire, and a client library or
@@ -355,7 +367,7 @@ export const OMIT_OWN_FIELD: unique symbol = Symbol('omit-own-field')
  * getter runs.
  */
 function isDatabaseError(source: object): boolean {
-  const code: unknown = Object.getOwnPropertyDescriptor(source, 'code')?.value
+  const code = ownDataValue(source, 'code')
   return typeof code === 'string' && matchesPattern(SQLSTATE, code)
 }
 
@@ -389,7 +401,7 @@ export function ownFieldForLog(
   if (key !== 'command' || typeof value !== 'object' || value === null) {
     return withBinaryAsSize(value)
   }
-  const name: unknown = Object.getOwnPropertyDescriptor(value, 'name')?.value
+  const name = ownDataValue(value, 'name')
   return typeof name === 'string' ? { name } : OMIT_OWN_FIELD
 }
 
