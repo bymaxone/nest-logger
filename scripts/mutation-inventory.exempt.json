@@ -34,5 +34,13 @@
   {
     "file": "src/readme.exports.spec.ts",
     "reason": "Reads the text of README.md and package.json and the barrels through the TypeScript compiler, and imports nothing from src/, so it covers no published code and judges no mutant."
+  },
+  {
+    "file": "src/server/builtins-scan.spec.ts",
+    "reason": "Reads the text of five source files for the calls they make and executes none of the code it reads, so it judges no mutant. The mutation sandbox holds instrumented copies that add calls of their own (`cover.apply`), so its scan fails the dry run; `pnpm test` runs it against the real source."
+  },
+  {
+    "file": "src/server/promise-scan.spec.ts",
+    "reason": "Reads the text of the production source, comments removed, for Promise statics and methods and executes none of the code it reads, so it judges no mutant. It is left out of the Stryker run in jest.stryker.config.ts, and `pnpm test` runs it against the real source."
   }
 ]
