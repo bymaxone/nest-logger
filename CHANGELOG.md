@@ -20,6 +20,9 @@ heading here.
   frozen, so code that adds or changes a field on the result that `check()` resolves to throws a `TypeError` in strict
   mode (and drops the write silently in sloppy mode). Migration: copy before you mutate, for example
   `const verdict = { ...result, details: { ...result.details } }`, and change the copy.
+  The result also has no prototype, so `result.hasOwnProperty(...)` and a template string of it throw
+  a `TypeError`, and `assert.deepStrictEqual` against a plain object fails; the same spread copy is a
+  plain object, so compare or call methods on the copy. `details` is an ordinary frozen object.
 
 ### Fixed
 

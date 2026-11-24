@@ -27,7 +27,7 @@ A useful report contains:
 
 - A clear description of the vulnerability and its impact (CIA triad — confidentiality, integrity, availability)
 - Step-by-step reproduction against the latest `1.x` release
-- The affected subpath (`.` or `./shared`)
+- The affected subpath (`.`, `./shared` or `./observability`)
 - A suggested fix or mitigation, if you have one
 - Whether you would like to be credited in the published advisory (and how — name, handle, affiliation)
 
