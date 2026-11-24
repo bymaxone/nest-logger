@@ -7,12 +7,14 @@
  * that failed) is therefore built from the intrinsic constructor, awaited with no static of `Promise`,
  * and refused when the baseline that makes that sound no longer holds.
  */
+import { types } from 'node:util'
 
 /** The intrinsic `Promise`, taken from an async function so a `globalThis.Promise` set before the load is not it. */
 export const IntrinsicPromise = Object.getPrototypeOf((async (): Promise<void> => undefined)())
   .constructor as PromiseConstructor
 
 const hasOwn = Object.hasOwn
+const isNativePromise = types.isPromise
 const define = Object.defineProperty
 const remove = Reflect.deleteProperty
 const ownDescriptor = Reflect.getOwnPropertyDescriptor
@@ -76,7 +78,7 @@ export interface Outcome {
  * Waits for `pending` and drops how it ended, so a rejection of it is not left to the process. Nothing
  * is decided from the wait, which is why it is not refused when the baseline does not hold.
  *
- * While the handlers are attached, `pending` is given an own `constructor`, the intrinsic one, so that
+ * While the handlers are attached, a native `pending` is given an own `constructor`, the intrinsic one, so that
  * they and an `await` read that slot and not the `constructor` of `Promise.prototype`, which a program
  * may have replaced with one whose species throws. The slot is removed again at once, so a value the
  * caller owns is left as it was; one that cannot take it (a frozen object) or already has its own keeps
@@ -137,9 +139,13 @@ function setOwnConstructor(target: unknown, temporary: boolean): boolean {
   }
 }
 
-/** Gives an object with no own `constructor` the intrinsic one; `false` when nothing was written. */
+/**
+ * Gives a native promise with no own `constructor` the intrinsic one; `false` when nothing was written.
+ * Only a native promise reads a species, so a Proxy, which can accept the write and refuse its removal,
+ * is never written.
+ */
 function pin(target: unknown): boolean {
-  if (typeof target !== 'object' || target === null || hasOwn(target, 'constructor')) return false
+  if (!isNativePromise(target) || hasOwn(target, 'constructor')) return false
   return setOwnConstructor(target, true)
 }
 

@@ -480,6 +480,26 @@ describe('Promise.resolve replaced after the library loaded', () => {
   })
 
   /**
+   * Given a Proxy that accepts a defined property and refuses its removal
+   * When it is absorbed
+   * Then nothing is written to it, so a value the caller owns is left as it was
+   */
+  it('does not write to a proxy that refuses the removal', () => {
+    const value = new Proxy(
+      {},
+      {
+        defineProperty: (target, key, descriptor) =>
+          Reflect.defineProperty(target, key, descriptor),
+        deleteProperty: () => false
+      }
+    )
+
+    absorb(value)
+
+    expect(Object.hasOwn(value, 'constructor')).toBe(false)
+  })
+
+  /**
    * Given a clearTimeout that throws, and a hook that settles
    * When it runs under `withTimeout`
    * Then the call is settled, and nothing is left to the process
