@@ -79,6 +79,9 @@ const GROUP_NAMES = Object.keys(GROUP_KEYS) as ReadonlyArray<keyof typeof GROUP_
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+/** How many prototypes a chain of options may have before it is taken not to end. */
+const MAX_PROTOTYPE_HOPS = 256
+
 /**
  * The first holder of `key` when it is a prototype with no prototype of its own and not `source`: the
  * root of a chain, as the `Object.prototype` of any realm is. No property of the holder is read to tell,
@@ -86,11 +89,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * built is taken for one too.
  */
 function rootHolding(source: object, key: string): object | undefined {
+  let hops = 0
   for (
     let at: object | null = source;
     at !== null;
     at = Object.getPrototypeOf(at) as object | null
   ) {
+    if (hops++ > MAX_PROTOTYPE_HOPS) {
+      refuse(
+        `[BymaxLoggerModule] options.${key} holds more than ${String(MAX_PROTOTYPE_HOPS)} prototypes`
+      )
+    }
     if (Object.hasOwn(at, key)) {
       return at !== source && Object.getPrototypeOf(at) === null ? at : undefined
     }

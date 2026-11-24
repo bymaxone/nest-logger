@@ -1,53 +1,53 @@
 /**
  * Verifies that a value whose prototype chain never ends cannot hang a log call: the walk that looks for
- * a `toJSON` has a bound, and a value past it is redacted whole. A loop cannot be timed out from inside
- * the process it blocks, so each case runs in a child with a deadline.
+ * a `toJSON` has a bound, and a value past it is redacted whole. A trap that counts its calls and throws
+ * past a ceiling turns an unbounded walk into a failure the test can see, in process.
  *
- * Layer: server, tests. One child process per case; the redactor is the real one.
+ * Layer: server, tests. In process; the redactor is the real one.
  */
-import { spawnSync } from 'node:child_process'
-import { join } from 'node:path'
+import { createNameRedactor } from './utils/redact-by-name.util'
 
-const TSX = join(__dirname, '../../node_modules/.bin/tsx')
-const MODULE = join(__dirname, 'utils/redact-by-name.util.ts')
+/** Far more calls than one redaction of a bounded chain makes, and few enough for an endless walk to reach it at once. */
+const CEILING = 1_000_000
 
-/** Runs `body` in a child that has the redactor as `redact`, and answers what it printed. */
-function inChild(body: string): { out: string; timedOut: boolean } {
-  const script = `import { createNameRedactor } from ${JSON.stringify(MODULE)}
-const redact = createNameRedactor(['password'], '[REDACTED]')
-${body}`
-  const result = spawnSync(TSX, ['--eval', script], { encoding: 'utf8', timeout: 20_000 })
-  return { out: String(result.stdout), timedOut: result.error !== undefined }
+/** A pair of Proxies whose prototype answers each other, and the count of the calls made on them. */
+function cycle(): { held: object; calls: () => number } {
+  let calls = 0
+  const step = (next: () => object) => (): object => {
+    if (++calls > CEILING) throw new Error('the walk did not stop')
+    return next()
+  }
+  const first: object = new Proxy({}, { getPrototypeOf: step(() => second) })
+  const second: object = new Proxy({}, { getPrototypeOf: step(() => first) })
+  return { held: first, calls: () => calls }
 }
 
 describe('a prototype chain that never ends', () => {
   /**
    * Given a Proxy whose getPrototypeOf trap answers a cycle of two Proxies
    * When a log payload that holds it is redacted
-   * Then the call returns, and the value is the censor
+   * Then the call returns before the ceiling, and the value is the censor
    */
   it('is redacted whole instead of hanging the call', () => {
-    const { out, timedOut } = inChild(`
-const a: object = new Proxy({}, { getPrototypeOf: () => b })
-const b: object = new Proxy({}, { getPrototypeOf: () => a })
-console.log(JSON.stringify(redact({ hostile: a, password: 'x' })))`)
+    const { held, calls } = cycle()
+    const redact = createNameRedactor(['password'], '[REDACTED]')
 
-    expect(timedOut).toBe(false)
-    expect(out.trim()).toBe('{"hostile":"[REDACTED]","password":"[REDACTED]"}')
+    const result = redact({ hostile: held, password: 'x' })
+
+    expect(result).toEqual({ hostile: '[REDACTED]', password: '[REDACTED]' })
+    expect(calls()).toBeLessThan(CEILING)
   })
 
   /**
    * Given a Proxy whose getPrototypeOf trap answers a plain object that has a toJSON
    * When a log payload that holds it is redacted
-   * Then the chain is walked as before and the method is honoured
+   * Then the method of that prototype is honoured
    */
-  it('walks a short chain as before', () => {
-    const { out, timedOut } = inChild(`
-const proto = { toJSON: () => ({ ok: true }) }
-const value = new Proxy({}, { getPrototypeOf: () => proto })
-console.log(JSON.stringify(redact({ value })))`)
+  it('honours the toJSON of a short Proxy-provided chain', () => {
+    const proto = { toJSON: () => ({ ok: true }) }
+    const value = new Proxy({}, { getPrototypeOf: () => proto })
+    const redact = createNameRedactor(['password'], '[REDACTED]')
 
-    expect(timedOut).toBe(false)
-    expect(out.trim()).toBe('{"value":{"ok":true}}')
+    expect(JSON.stringify(redact({ value }))).toBe('{"value":{"ok":true}}')
   })
 })
