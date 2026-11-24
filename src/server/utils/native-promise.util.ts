@@ -13,6 +13,7 @@ export const IntrinsicPromise = Object.getPrototypeOf((async (): Promise<void> =
   .constructor as PromiseConstructor
 
 const hasOwn = Object.hasOwn
+const ownDescriptor = Reflect.getOwnPropertyDescriptor
 const nativeThen = Function.prototype.call.bind(IntrinsicPromise.prototype.then) as (
   promise: unknown,
   onFulfilled: () => void,
@@ -38,7 +39,9 @@ export class PromiseTamperedError extends Error {
  * @returns `false` when the baseline was changed.
  */
 export function promiseIntact(): boolean {
-  if ((promisePrototype as { constructor: unknown }).constructor !== IntrinsicPromise) return false
+  // The descriptor, not a read: an accessor would answer the intrinsic here and a stand-in at the await.
+  const own = ownDescriptor(promisePrototype, 'constructor')
+  if (own === undefined || !hasOwn(own, 'value') || own.value !== IntrinsicPromise) return false
   for (let at = 0; at < roots.length; at++) {
     if (hasOwn(roots[at] as object, 'then')) return false
   }
@@ -68,8 +71,9 @@ export interface Outcome {
  * Waits for `pending` and drops how it ended, so a rejection of it is not left to the process. Nothing
  * is decided from the wait, which is why it is not refused when the baseline does not hold.
  *
- * A promise is given its handlers by the `then` captured at load, which reads neither the `constructor`
- * nor the `then` of `pending`; any other value is awaited.
+ * A promise is given its handlers by the `then` captured at load, which does not read the `then` of
+ * `pending` but does read its `constructor` and species; a value that is not a promise, or one whose
+ * species throws, is awaited instead, and the rejection of it is absorbed either way.
  *
  * @param pending - A value that may be a promise nobody else will read.
  */
@@ -97,14 +101,19 @@ export function absorb(pending: unknown): void {
  *
  * @param work - Produces the value to wait for; called after the baseline was checked.
  * @param finish - Called once, synchronously, with how the wait ended.
+ * @param held - A value the caller already holds that `work` will return; absorbed when the wait is
+ *   refused at entry, because `work` is not called then and nothing else would read it.
  * @returns A promise nothing reads.
  */
 export async function awaitOutcome(
   work: () => unknown,
-  finish: (outcome: Outcome) => void
+  finish: (outcome: Outcome) => void,
+  held?: unknown
 ): Promise<void> {
-  if (!promiseIntact())
+  if (!promiseIntact()) {
+    if (held !== undefined) absorb(held)
     return finish({ __proto__: null, ok: false, cause: new PromiseTamperedError() } as Outcome)
+  }
   let pending: unknown
   try {
     pending = work()

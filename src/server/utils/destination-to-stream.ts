@@ -313,7 +313,8 @@ export function destinationToStream(
               health.markWriteSettled(destination)
               if (outcome.ok) callback()
               else onFailure(outcome.cause)
-            }
+            },
+            result
           )
         }
       } catch (cause) {

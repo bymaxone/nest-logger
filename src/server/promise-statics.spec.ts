@@ -15,7 +15,7 @@ import { applyDefaults } from './config/default-options'
 import { LogContextService } from './services/log-context.service'
 import { DestinationHealth } from './services/destination-health.service'
 import { destinationToStream } from './utils/destination-to-stream'
-import { PromiseTamperedError } from './utils/native-promise.util'
+import { intactOr, PromiseTamperedError } from './utils/native-promise.util'
 import { withTimeout } from './utils/with-timeout.util'
 
 import type { LoggableRequest, LoggableResponse } from './interfaces/http-context.interface'
@@ -244,5 +244,108 @@ describe('Promise.resolve replaced after the library loaded', () => {
     } finally {
       stderr.mockRestore()
     }
+  })
+
+  /**
+   * Given a `then` planted on Object.prototype, and a hook awaited the way the registry awaits it
+   * When the wait is refused before anything reads the promise `withTimeout` returned
+   * Then the refusal is reported to the caller and no rejection is left to the process
+   */
+  it('leaves no unhandled rejection when a refused wait is never read', async () => {
+    const unhandled = jest.fn()
+    process.on('unhandledRejection', unhandled)
+    const root = Object.prototype as unknown as { then?: unknown }
+    Object.defineProperty(root, 'then', { value: undefined, configurable: true })
+
+    let refusal: unknown
+    try {
+      try {
+        intactOr(withTimeout(() => undefined, 1000))
+      } catch (cause) {
+        refusal = cause
+      }
+    } finally {
+      delete root.then
+    }
+    await tick()
+    await tick()
+    process.off('unhandledRejection', unhandled)
+
+    expect(refusal).toBeInstanceOf(PromiseTamperedError)
+    expect(unhandled).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Given a `then` planted on Object.prototype and a write that answers a promise that later rejects
+   * When a chunk is written to its stream and the write is refused at entry
+   * Then the failure is recorded once and the rejection of the answered promise is not left to the process
+   */
+  it('absorbs the promise a refused write already holds', async () => {
+    const unhandled = jest.fn()
+    process.on('unhandledRejection', unhandled)
+    const health = new DestinationHealth()
+    const destination: ILogDestination = {
+      name: 'sink',
+      write: () => Promise.reject(new Error('write failed'))
+    }
+    const stream = destinationToStream(destination, health)
+    const stderr = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+    const root = Object.prototype as unknown as { then?: unknown }
+    Object.defineProperty(root, 'then', { value: undefined, configurable: true })
+
+    try {
+      stream.write('entry\n')
+    } finally {
+      delete root.then
+    }
+    await tick()
+    await tick()
+    stderr.mockRestore()
+    process.off('unhandledRejection', unhandled)
+
+    expect(health.failedWriteTotal(destination)).toBe(1)
+    expect(unhandled).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Given a hook that rejects and makes `Promise.prototype.constructor` an accessor that answers the
+   * intrinsic on its first read and a stand-in on the next, with a `then` that puts the data property back
+   * When the hook runs under `withTimeout`
+   * Then the call is refused and never settles as fulfilled
+   */
+  it('refuses a constructor that is an accessor', async () => {
+    const prototype = Promise.prototype as unknown as { constructor: unknown; then: unknown }
+    const realConstructor = prototype.constructor
+    const realThen = prototype.then
+    const restore = (): void => {
+      Object.defineProperty(prototype, 'constructor', {
+        value: realConstructor,
+        writable: true,
+        configurable: true,
+        enumerable: false
+      })
+      prototype.then = realThen
+    }
+    const work = (): Promise<never> => {
+      let reads = 0
+      Object.defineProperty(prototype, 'constructor', {
+        configurable: true,
+        get: () => (++reads === 1 ? realConstructor : function Stand() {})
+      })
+      prototype.then = (ok: (value: unknown) => void): void => {
+        restore()
+        ok(undefined)
+      }
+      return Promise.reject(new Error('hook failed'))
+    }
+
+    let outcome: Promise<void>
+    try {
+      outcome = withTimeout(work, 1000)
+    } finally {
+      restore()
+    }
+
+    await expect(outcome).rejects.toBeInstanceOf(PromiseTamperedError)
   })
 })
