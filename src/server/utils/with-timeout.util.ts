@@ -33,10 +33,14 @@ export function withTimeout(work: () => unknown, ms: number): Promise<void> {
     const timer = setTimeout(() => {
       reject(new HookTimeoutError(ms))
     }, ms)
-    void awaitOutcome(work, (outcome) => {
-      clearTimeout(timer)
+    awaitOutcome(work, (outcome) => {
       if (outcome.ok) resolve()
       else reject(outcome.cause)
+      try {
+        clearTimeout(timer)
+      } catch {
+        // The wait is settled; a timer left armed rejects a settled promise and does nothing.
+      }
     })
   })
   // A refusal rejects at once, and a caller that refuses first never reads this promise.

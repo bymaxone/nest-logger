@@ -306,7 +306,7 @@ export function destinationToStream(
           // readiness can be computed before that, so a pending write has to read as UNPROVEN, or a
           // buffering sink discards its copy moments before this one rejects.
           health.markWritePending(destination)
-          void awaitOutcome(
+          awaitOutcome(
             () => result,
             (outcome) => {
               health.markWriteSettled(destination)

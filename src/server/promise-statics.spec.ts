@@ -456,4 +456,52 @@ describe('Promise.resolve replaced after the library loaded', () => {
     expect(settled).toBeUndefined()
     expect(reads).not.toHaveBeenCalled()
   })
+
+  /**
+   * Given an object with no constructor of its own, an instance of a Promise subclass and an object
+   * that has a constructor of its own
+   * When each is absorbed
+   * Then each is left as it was, so a value the caller owns is not changed
+   */
+  it('leaves what it absorbs as it was', () => {
+    class Mine extends Promise<void> {}
+    const plain = new (class User {})()
+    const subclass = Mine.reject(new Error('dropped'))
+    const own = { constructor: 'mine' }
+
+    absorb(plain)
+    absorb(subclass)
+    absorb(own)
+
+    expect(Object.hasOwn(plain, 'constructor')).toBe(false)
+    expect(Object.hasOwn(subclass, 'constructor')).toBe(false)
+    expect(subclass.constructor).toBe(Mine)
+    expect(own.constructor).toBe('mine')
+  })
+
+  /**
+   * Given a clearTimeout that throws, and a hook that settles
+   * When it runs under `withTimeout`
+   * Then the call is settled, and nothing is left to the process
+   */
+  it('settles and leaves nothing unhandled when clearTimeout throws', async () => {
+    const unhandled = jest.fn()
+    process.on('unhandledRejection', unhandled)
+    const clear = jest.spyOn(global, 'clearTimeout').mockImplementation(() => {
+      throw new Error('clear')
+    })
+
+    let settled: unknown = 'pending'
+    try {
+      settled = await withTimeout(() => undefined, 50)
+    } finally {
+      clear.mockRestore()
+    }
+    await tick()
+    await tick()
+    process.off('unhandledRejection', unhandled)
+
+    expect(settled).toBeUndefined()
+    expect(unhandled).not.toHaveBeenCalled()
+  })
 })

@@ -14,6 +14,7 @@ export const IntrinsicPromise = Object.getPrototypeOf((async (): Promise<void> =
 
 const hasOwn = Object.hasOwn
 const define = Object.defineProperty
+const remove = Reflect.deleteProperty
 const ownDescriptor = Reflect.getOwnPropertyDescriptor
 const nativeThen = Function.prototype.call.bind(IntrinsicPromise.prototype.then) as (
   promise: unknown,
@@ -72,56 +73,86 @@ export interface Outcome {
  * Waits for `pending` and drops how it ended, so a rejection of it is not left to the process. Nothing
  * is decided from the wait, which is why it is not refused when the baseline does not hold.
  *
- * `pending` is first given an own `constructor`, the intrinsic one, so that the handlers and an `await`
- * read that slot and not the `constructor` of `Promise.prototype`, which a program may have replaced
- * with one whose species throws; an object that cannot take it (a frozen one) keeps what it has. A
- * promise is then given its handlers by the `then` captured at load, which does not read the `then` of
- * `pending`; a value that is not a promise is awaited instead.
+ * While the handlers are attached, `pending` is given an own `constructor`, the intrinsic one, so that
+ * they and an `await` read that slot and not the `constructor` of `Promise.prototype`, which a program
+ * may have replaced with one whose species throws. The slot is removed again at once, so a value the
+ * caller owns is left as it was; one that cannot take it (a frozen object) or already has its own keeps
+ * what it has, and a frozen promise under a replaced constructor whose species throws is therefore not covered. A promise is given its handlers by the
+ * `then` captured at load, which does not read the `then` of `pending`; a value that is not a promise
+ * is awaited instead.
  *
  * @param pending - A value that may be a promise nobody else will read.
  */
 export function absorb(pending: unknown): void {
   const drop = (): void => undefined
+  const pinned = pin(pending)
   try {
-    define(pending as object, 'constructor', {
+    try {
+      nativeThen(pending, drop, drop)
+      return
+    } catch {
+      // Not a native promise: awaited below.
+    }
+    void (async (): Promise<void> => {
+      try {
+        await pending
+      } catch {
+        // The failure of a value nobody reads is of no use to anyone.
+      }
+    })()
+  } finally {
+    if (pinned) unpin(pending)
+  }
+}
+
+/** Gives an object with no own `constructor` the intrinsic one; `false` when nothing was written. */
+function pin(target: unknown): boolean {
+  try {
+    if (typeof target !== 'object' || target === null || hasOwn(target, 'constructor')) return false
+    define(target, 'constructor', {
       __proto__: null,
       value: IntrinsicPromise,
       writable: true,
       configurable: true
     } as PropertyDescriptor)
+    return true
   } catch {
-    // A primitive or a frozen object: it keeps the constructor it has.
+    // A frozen object, or a Proxy that refuses: it keeps what it has.
+    return false
   }
+}
+
+/** Takes back what {@link pin} wrote. */
+function unpin(target: unknown): void {
   try {
-    nativeThen(pending, drop, drop)
-    return
+    remove(target as object, 'constructor')
   } catch {
-    // Not a native promise: awaited below.
+    // A Proxy that refuses the delete: nothing more can be done.
   }
-  void (async (): Promise<void> => {
-    try {
-      await pending
-    } catch {
-      // The failure of a value nobody reads is of no use to anyone.
-    }
-  })()
 }
 
 /**
  * Calls `work`, waits for what it returned, and hands `finish` how that ended. A throw, a rejection and
- * a baseline that does not hold end as `ok: false`; none of them rejects the promise returned, which
- * resolves with nothing and is meant to be dropped.
+ * a baseline that does not hold end as `ok: false`, and a throw of `finish` itself is dropped.
  *
  * @param work - Produces the value to wait for; called after the baseline was checked.
  * @param finish - Called once, synchronously, with how the wait ended.
  * @param held - A value the caller already holds that `work` will return; absorbed when the wait is
  *   refused at entry, because `work` is not called then and nothing else would read it.
- * @returns A promise nothing reads.
  */
-export async function awaitOutcome(
+export function awaitOutcome(
   work: () => unknown,
   finish: (outcome: Outcome) => void,
   held?: unknown
+): void {
+  // Whatever `finish` throws would reject the promise of the run, which nothing reads.
+  absorb(run(work, finish, held))
+}
+
+async function run(
+  work: () => unknown,
+  finish: (outcome: Outcome) => void,
+  held: unknown
 ): Promise<void> {
   if (!promiseIntact()) {
     if (held !== undefined) absorb(held)
