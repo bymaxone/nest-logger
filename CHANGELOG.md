@@ -44,7 +44,10 @@ heading here.
   `constructor` of the promise can stay if a species getter makes it non-configurable inside that window;
   code running concurrently that plants a `then` and erases it again between the check and the
   work's own settlement cannot be seen afterwards, and a dependency that reads a static inside itself is code
-  aimed at that dependency, not at the logger.
+  aimed at that dependency, not at the logger. These guards are best-effort hardening, not a security
+  boundary: code running inside the host process is trusted (SECURITY.md, "Threat model: same-process
+  code"). A descriptor read by these guards, and by the `toJSON` lookup and the options filter, is read for
+  its own `get` and `value` only, so a field planted on `Object.prototype` is not taken for one.
 - **A key planted on `Object.prototype` is no option.** The options were read by property access through
   the prototype chain, so a `shouldDisableDefaultRedact: true` planted on `Object.prototype` (by a
   dependency with a prototype-pollution flaw) turned the default redact paths off, and `redactCensor`,
@@ -53,7 +56,7 @@ heading here.
   with no prototype, and so is the `service` metadata; a key the object has itself, and a getter a class
   prototype defines, still count. A built-in that the redaction reads and a program replaces after the import drops the record and redacts a URL path whole: each one in the table (`GUARDED_BUILTINS` in `src/server/utils/captured-builtins.util.ts`, held by a spec to the calls of five files: `fold-key`, `normalize-url`, `matches-exclude-path`, `sanitize-error` and `pino-factory`) is compared with the one the module loaded with. What `redact-by-name`, the error-text exemption, `redact-error-parts`, the mixin merge, the truncation and `bounded-text` call is outside the table. A value whose prototype chain does not end within the bound in `resolve-to-json.util.ts` is written as the censor. What was replaced before the import is outside this. A `get` or `set` installed with `Object.defineProperty` (an accessor, which plain assignment cannot make) is outside what this guards. A `get` or a `set` planted there no longer reaches a descriptor the logger
   defines, and options read through a Proxy under a planted accessor of the same name are refused. Pino got the same: it is handed an own value for each option it reads
-  and the library does not set, and so is each entry handed to its multistream, so a planted one is never
+  and the library does not set, and so is each entry handed to its multistream, so a planted one is not
   seen. Out of scope, because Node and Pino read them off objects this library does
   not build: keys such as `message` and `toJSON`, which the emit and `JSON.stringify` read.
   A key planted by plain assignment, so that it is enumerable, under `level`, `msgPrefix` or `levelVal`
