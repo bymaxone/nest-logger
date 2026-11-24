@@ -55,6 +55,10 @@ The following classes are explicitly in scope:
 - **Bundle supply-chain integrity** — compromised dependency, malicious typosquat, tampered release artifact
 - **CodeQL `security-extended` alerts** — anything the automated scan surfaces in the Security tab
 
+## Threat model: same-process code
+
+Code that runs inside the host process is trusted, as in Node's own threat model: it can replace builtins, prototypes, `Promise` and the logger's own modules, and nothing in a library can stop it. The in-process guards of this package (the promise baseline, the captured built-ins, the options read past `Object.prototype`, the own-field reads of descriptors) are best-effort hardening against prototype pollution and accidental replacement. They are not a security boundary, and a report that needs hostile code already running in the process is out of scope. Known limits, in one line: a frozen or sealed native promise under a replaced `Promise.prototype.constructor`, a species getter that makes a temporary slot non-configurable, a `then` planted and erased between a check and the wait, and built-ins the capture table does not list.
+
 ## Out of scope
 
 These are not vulnerabilities in `@bymax-one/nest-logger` itself:
@@ -64,6 +68,7 @@ These are not vulnerabilities in `@bymax-one/nest-logger` itself:
 - Issues in optional peer dependencies (`pino-pretty`, `@opentelemetry/api`) when the upstream maintainer has already accepted them or when the dependency is not exercised by the library
 - Self-XSS, social engineering, denial of service via legitimate authenticated load
 - Theoretical attacks without a practical demonstration
+- Attacks that need hostile code already running in the host process (see the threat model above)
 
 ## Security best practices for consumers
 

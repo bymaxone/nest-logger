@@ -4,6 +4,7 @@
  * not logged twice, and that an aborted request is logged as ABORTED with its correlation id.
  * Layer: e2e.
  */
+import type { Server } from 'node:http'
 import net from 'node:net'
 
 import type { CanActivate, INestApplication, MiddlewareConsumer, NestModule } from '@nestjs/common'
@@ -22,6 +23,39 @@ import { applyRequestIdMiddleware, BymaxLoggerModule } from '@bymax-one/nest-log
 
 import { parseLogEntries } from './fixtures/parse-log-entries'
 import { listeningServer } from './support/listening-server'
+
+/**
+ * The handler of `/slow` waits here until the test lets it finish. A timer would race the
+ * hang-up: when the event loop is starved the timer and the client's destroy fall due in the same
+ * turn, the handler writes before the server has seen the socket close, and the response reads as
+ * delivered.
+ */
+const slowGate = { release: (): void => undefined, started: (): void => undefined }
+
+/** Sends `/slow`, hangs up once the handler runs, and lets it finish only after the server saw the close. */
+async function abortSlowRequest(server: Server, port: number): Promise<void> {
+  const started = new Promise<void>((resolve) => {
+    slowGate.started = resolve
+  })
+  const closed = new Promise<void>((resolve) => {
+    server.once('connection', (serverSide) => serverSide.once('close', () => resolve()))
+  })
+  const socket = net.connect(port, '127.0.0.1', () => {
+    socket.write('GET /slow HTTP/1.1\r\nHost: localhost\r\n\r\n')
+  })
+  socket.on('error', () => undefined)
+  await started
+  socket.destroy()
+  await closed
+  slowGate.release()
+}
+
+/** Polls until `done` holds, so a test waits for an effect and not for a guess at its duration. */
+async function until(done: () => boolean): Promise<void> {
+  for (let waited = 0; !done() && waited < 5000; waited += 10) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
 
 /** Rejects every request, standing in for any real authentication guard. */
 @Injectable()
@@ -51,7 +85,10 @@ class CoverageController {
    */
   @Get('slow')
   async slow(): Promise<string> {
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await new Promise<void>((resolve) => {
+      slowGate.release = resolve
+      slowGate.started()
+    })
     return 'late'
   }
 }
@@ -272,17 +309,10 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
    * status, and `writableFinished` is what separates them.
    */
   it('logs an aborted request as ABORTED rather than a success', async () => {
-    await new Promise<void>((resolve) => {
-      const socket = net.connect(port, '127.0.0.1', () => {
-        socket.write('GET /slow HTTP/1.1\r\nHost: localhost\r\n\r\n')
-        setTimeout(() => {
-          socket.destroy()
-          resolve()
-        }, 20)
-      })
-      socket.on('error', () => resolve())
-    })
-    await new Promise((r) => setTimeout(r, 400))
+    await abortSlowRequest(app.getHttpServer() as Server, port)
+    await until(
+      () => keys().includes('HTTP_REQUEST_ABORTED') || keys().includes('HTTP_REQUEST_SUCCESS')
+    )
 
     const emitted = keys()
     expect(emitted).toContain('HTTP_REQUEST_ABORTED')
@@ -295,6 +325,32 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
   })
 
   /*
+   * The other side of the same ordering. A handler that finishes in the turn the client hangs up,
+   * before the server has read the close, has written its whole response to a socket that still
+   * looked open: the server cannot tell that from a delivery, and logs the success it produced.
+   * The ABORTED row above is deterministic only because it waits for the server to see the close.
+   */
+  it('logs a success when the handler finishes before the server sees the hang-up', async () => {
+    const started = new Promise<void>((resolve) => {
+      slowGate.started = resolve
+    })
+    const socket = net.connect(port, '127.0.0.1', () => {
+      socket.write('GET /slow HTTP/1.1\r\nHost: localhost\r\n\r\n')
+    })
+    socket.on('error', () => undefined)
+    await started
+
+    socket.destroy()
+    slowGate.release()
+    await until(
+      () => keys().includes('HTTP_REQUEST_ABORTED') || keys().includes('HTTP_REQUEST_SUCCESS')
+    )
+
+    expect(keys()).toContain('HTTP_REQUEST_SUCCESS')
+    expect(keys()).not.toContain('HTTP_REQUEST_ABORTED')
+  })
+
+  /*
    * The terminal entry is emitted from a `'close'` listener, which Node may run
    * in a different execution context than the one active at registration. Without
    * `AsyncResource.bind` the AsyncLocalStorage store is undefined there — measured
@@ -302,17 +358,10 @@ describe('Logger E2E — coverage of requests the interceptor never sees', () =>
    * correlation id, in the case where correlation matters most.
    */
   it('keeps the correlation id on the terminal entry of an aborted request', async () => {
-    await new Promise<void>((resolve) => {
-      const socket = net.connect(port, '127.0.0.1', () => {
-        socket.write('GET /slow HTTP/1.1\r\nHost: localhost\r\n\r\n')
-        setTimeout(() => {
-          socket.destroy()
-          resolve()
-        }, 20)
-      })
-      socket.on('error', () => resolve())
-    })
-    await new Promise((r) => setTimeout(r, 400))
+    await abortSlowRequest(app.getHttpServer() as Server, port)
+    await until(
+      () => keys().includes('HTTP_REQUEST_ABORTED') || keys().includes('HTTP_REQUEST_SUCCESS')
+    )
 
     const entries = parseLogEntries(stdoutSpy)
     const start = entries.find((e) => e['logKey'] === 'HTTP_REQUEST_START')

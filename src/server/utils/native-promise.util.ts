@@ -24,10 +24,16 @@ const nativeThen = Function.prototype.call.bind(IntrinsicPromise.prototype.then)
   onRejected: () => void
 ) => unknown
 const promisePrototype = IntrinsicPromise.prototype as object
-const speciesGetter = ownDescriptor(IntrinsicPromise, Symbol.species)?.get
+const speciesGetter = ownSpeciesGetter()
 const objectRoot = Object.prototype
 const arrayRoot = Array.prototype
 const functionRoot = Function.prototype
+
+/** The species getter, as an own field: a data species would answer with a `get` planted on `Object.prototype`. */
+function ownSpeciesGetter(): (() => unknown) | undefined {
+  const descriptor = ownDescriptor(IntrinsicPromise, Symbol.species)
+  return descriptor !== undefined && hasOwn(descriptor, 'get') ? descriptor.get : undefined
+}
 
 /** The error a verdict is refused with when the promise baseline no longer holds. */
 export class PromiseTamperedError extends Error {
@@ -37,6 +43,8 @@ export class PromiseTamperedError extends Error {
     )
   }
 }
+
+if (speciesGetter === undefined) throw new PromiseTamperedError()
 
 /**
  * Whether an `await` still reads what it read at load: `Promise.prototype.constructor` is the intrinsic
@@ -50,7 +58,7 @@ export function promiseIntact(): boolean {
   const own = ownDescriptor(promisePrototype, 'constructor')
   if (own === undefined || !hasOwn(own, 'value') || own.value !== IntrinsicPromise) return false
   // The species the captured `then` reads: a getter that throws would orphan the rejection it attaches to.
-  if (ownDescriptor(IntrinsicPromise, Symbol.species)?.get !== speciesGetter) return false
+  if (ownSpeciesGetter() !== speciesGetter) return false
   return !hasOwn(objectRoot, 'then') && !hasOwn(arrayRoot, 'then') && !hasOwn(functionRoot, 'then')
 }
 

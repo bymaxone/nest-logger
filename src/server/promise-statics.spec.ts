@@ -639,6 +639,54 @@ describe('Promise.resolve replaced after the library loaded', () => {
   })
 
   /**
+   * Given the species of the intrinsic Promise replaced by a data property, and the original getter
+   * planted as `get` on Object.prototype, so a descriptor with no own `get` reads it back
+   * When `withTimeout` is called
+   * Then it is refused with a PromiseTamperedError, because a descriptor with no own `get` is not the
+   * accessor captured at load
+   */
+  it('refuses a data species whose get is inherited from Object.prototype', async () => {
+    const original = Object.getOwnPropertyDescriptor(Promise, Symbol.species) as PropertyDescriptor
+    class Fake {
+      constructor(executor: ConstructorParameters<PromiseConstructor>[0]) {
+        return new Promise(executor)
+      }
+    }
+    Object.defineProperty(Promise, Symbol.species, { value: Fake, configurable: true })
+    Object.defineProperty(Object.prototype, 'get', {
+      value: original.get,
+      configurable: true,
+      writable: true
+    })
+    let answer: Promise<void>
+    try {
+      answer = withTimeout(() => undefined, 50)
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'get')
+      Object.defineProperty(Promise, Symbol.species, original)
+    }
+
+    await expect(answer).rejects.toBeInstanceOf(PromiseTamperedError)
+  })
+
+  /**
+   * Given the species of the intrinsic Promise already a data property when the module loads
+   * When the module is loaded
+   * Then the load fails, because there is no accessor to take as the baseline
+   */
+  it('refuses to load when the species is not an own accessor', () => {
+    const original = Object.getOwnPropertyDescriptor(Promise, Symbol.species) as PropertyDescriptor
+    Object.defineProperty(Promise, Symbol.species, { value: Promise, configurable: true })
+    try {
+      jest.isolateModules(() => {
+        expect(() => require('./utils/native-promise.util')).toThrow(/promise baseline/)
+      })
+    } finally {
+      Object.defineProperty(Promise, Symbol.species, original)
+    }
+  })
+
+  /**
    * Given the promise `check()` returns
    * When a program tries to redefine its constructor, or to change the verdict it carries
    * Then neither is possible

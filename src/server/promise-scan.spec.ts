@@ -44,10 +44,8 @@ const EXEMPT: Readonly<Record<string, string>> = {
     'captured: a comparison with the intrinsic, no promise is awaited',
   'server/utils/native-promise.util.ts|the captured intrinsic|value: IntrinsicPromise,':
     'captured: the own constructor given to a promise that is dropped',
-  'server/utils/native-promise.util.ts|the captured intrinsic|const speciesGetter = ownDescriptor(IntrinsicPromise, Symbol.species)?.get':
-    'captured: the species getter at load, which the baseline compares against',
-  'server/utils/native-promise.util.ts|the captured intrinsic|if (ownDescriptor(IntrinsicPromise, Symbol.species)?.get !== speciesGetter) return false':
-    'captured: the baseline reads the descriptor of the intrinsic, not a value of it',
+  'server/utils/native-promise.util.ts|the captured intrinsic|const descriptor = ownDescriptor(IntrinsicPromise, Symbol.species)':
+    'captured: the species descriptor of the intrinsic, read as an own accessor, at load and at every check',
   'observability/logger-health.indicator.ts|the captured intrinsic|const IntrinsicPromise = Object.getPrototypeOf((async (): Promise<void> => undefined)())':
     'captured: the capture itself, from an async function',
   'observability/logger-health.indicator.ts|the captured intrinsic|const answer = new IntrinsicPromise<HealthIndicatorResult>((resolve) => {':
