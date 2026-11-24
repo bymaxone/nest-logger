@@ -97,7 +97,9 @@ export function applyDefaults(given: BymaxLoggerModuleOptions): ResolvedBymaxLog
   )
 
   const merged: ResolvedBymaxLoggerModuleOptions = {
-    service: Object.freeze({ ...options.service }),
+    service: Object.freeze(
+      Object.assign(Object.create(null) as typeof options.service, options.service)
+    ),
     level: options.level ?? (isProduction ? 'info' : 'debug'),
     isGlobal: options.isGlobal ?? true,
     shouldUseAsNestLogger: options.shouldUseAsNestLogger ?? true,

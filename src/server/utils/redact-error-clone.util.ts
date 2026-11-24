@@ -6,6 +6,8 @@
  * Layer: server/utils — a helper of {@link createNameRedactor}; it reads no rule of the walk.
  */
 
+import { bareDescriptor } from './bare-descriptor.util'
+
 /**
  * Give an object a `toJSON` of `undefined`, which the stringifier does not run. It is defined and
  * not deleted, because deleting would leave a `toJSON` method further up the prototype chain to
@@ -18,7 +20,7 @@
  * @param target - The copy that must not run a hook.
  */
 function shadowHook(target: object): void {
-  Reflect.defineProperty(target, 'toJSON', { value: undefined, configurable: true })
+  Reflect.defineProperty(target, 'toJSON', bareDescriptor({ value: undefined, configurable: true }))
 }
 
 /**
@@ -36,6 +38,26 @@ function withoutEnumerableKeys(clone: object): void {
 /** The setter of a clone's accessor that had none: the write is dropped, never thrown. */
 function discardWrite(): void {
   // Nothing to keep: the clone is read once and discarded.
+}
+
+/**
+ * The descriptors of an `Error` relaxed as {@link cloneError} needs them, each in an object with no
+ * prototype, in a map with none: `in` and a read of `get`, `set` or `value` then see only what the
+ * descriptor has, and not what a key planted on `Object.prototype` adds.
+ *
+ * @param descriptors - What `Object.getOwnPropertyDescriptors` returned.
+ * @returns The map for `Object.create`.
+ */
+function relaxedDescriptors(descriptors: PropertyDescriptorMap): PropertyDescriptorMap {
+  const relaxed = Object.create(null) as PropertyDescriptorMap
+  for (const key of Reflect.ownKeys(descriptors)) {
+    const descriptor = bareDescriptor(Reflect.get(descriptors, key) as PropertyDescriptor)
+    descriptor.configurable = true
+    if (Object.hasOwn(descriptor, 'value')) descriptor.writable = true
+    else descriptor.set ??= discardWrite
+    Reflect.set(relaxed, key, descriptor)
+  }
+  return relaxed
 }
 
 /**
@@ -70,13 +92,10 @@ export function cloneError(error: Error): Error {
   // is relaxed on data properties too, so that an assignment into the clone, in strict mode, lands
   // whatever the original froze. An accessor has no `writable`; one with no setter throws on an
   // assignment, so it is given a setter that discards the write.
-  const descriptors = Object.getOwnPropertyDescriptors(error)
-  for (const descriptor of Object.values(descriptors)) {
-    descriptor.configurable = true
-    if ('value' in descriptor) descriptor.writable = true
-    else descriptor.set ??= discardWrite
-  }
-  const clone = Object.create(Object.getPrototypeOf(error) as object, descriptors) as Error
+  const clone = Object.create(
+    Object.getPrototypeOf(error) as object,
+    relaxedDescriptors(Object.getOwnPropertyDescriptors(error))
+  ) as Error
   // V8 exposes `stack` as an own ACCESSOR bound to the original error's internal
   // state, so copying the descriptor hands the clone a getter that resolves to a
   // near-empty string. Pin the already-resolved trace as a plain data property —
@@ -88,7 +107,11 @@ export function cloneError(error: Error): Error {
     // enumerable would push the whole trace into `JSON.stringify` output for every
     // redacted error. `writable` is stated for the reason given above; `configurable` is left at
     // its `false` default: nothing downstream deletes a stack.
-    Reflect.defineProperty(clone, 'stack', { value: stack, enumerable: false, writable: true })
+    Reflect.defineProperty(
+      clone,
+      'stack',
+      bareDescriptor({ value: stack, enumerable: false, writable: true })
+    )
   }
   // The clone carries every descriptor of the original, read after the walk's own read, so it can
   // hold an enumerable value the walk never saw and a `toJSON` that answers a hook later.

@@ -33,6 +33,32 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-23 — server: 48,276 B real -> 48,306 B budget (47.17 KiB), as approved by the project manager (measured + 30).
+//     The table of guarded built-ins (about 85 members, by holder) and the guard at the entry of each path that reads them.
+//   - 2026-11-23 — server: 47,779 B real -> 47,809 B budget (46.69 KiB), as approved by the project manager (measured + 30).
+//     A plain text is replaced by a loop over the captured indexOf and slice, which ask no pattern for a method.
+//   - 2026-11-23 — server: 47,726 B real -> 47,756 B budget (46.64 KiB), as approved by the project manager (measured + 30).
+//     The names a path is read for are found by the captured exec, not by the matching method of the pattern.
+//   - 2026-11-23 — server: 47,653 B real -> 47,683 B budget (46.57 KiB), as approved by the project manager (measured + 30).
+//     The regex and replace methods the fold decides with are captured, and a record is dropped when a method
+//     the error-stack code reads (slice, the string iterator, own descriptors, own keys) was replaced.
+//   - 2026-11-23 — server: 47,446 B real -> 47,476 B budget (46.36 KiB), as approved by the project manager (measured + 30).
+//     The methods the redaction and the routing decide with are captured when the module loads, the name sets
+//     keep their own `has` and `add`, and a record is dropped when a method Pino calls for itself was replaced.
+//   - 2026-11-23 — server: 47,143 B real -> 47,173 B budget (46.07 KiB), as approved by the project manager (measured + 30).
+//     A Proxy source under a planted accessor is refused, and the descriptors the logger defines are built
+//     with no prototype (`bareDescriptor`), so a `get` or a `set` planted on the root does not reach them.
+//   - 2026-11-22 — server: 47,012 B real -> 47,042 B budget (45.94 KiB), as approved by the project manager (measured + 30).
+//     An option that a Proxy answers through its `get` trap counts even when a key of the same name is
+//     planted on the root, and a planted accessor is not called.
+//   - 2026-11-22 — server: 46,941 B real -> 46,971 B budget (45.87 KiB), by the rule of measured + 30 the project manager set.
+//     Pino also reads `writable`, `_writableState`, `prettyPrint` and `onChild` off the options: an own value each.
+//   - 2026-11-22 — server: 46,919 B real -> 46,949 B budget (45.85 KiB), as approved by the project manager.
+//     An own value for each name Pino reads and the library does not set (`transport`, `crlf`, `msgPrefix`,
+//     `name` and `redact.remove`), so a key planted on `Object.prototype` is not read in its place.
+//   - 2026-11-22 — server: 46,877 B real -> 46,907 B budget (45.80 KiB), as approved by the project manager.
+//     The options read as the consumer set them: a key that only the root of a prototype chain holds is
+//     skipped, and the option sets and the service metadata are objects with no prototype.
 //   - 2026-11-21 — server: 46,813 B real -> 46,830 B budget (45.73 KiB), as approved by the project manager.
 //     The audit fixes of 1.4.30: a non-ASCII symbol stands for a letter in a key, an own `stack` of an Error and
 //     the stack keys at the root of an entry are read by their spelling, and the positional stack is hidden.
@@ -361,7 +387,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 46_830 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 48_306 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',

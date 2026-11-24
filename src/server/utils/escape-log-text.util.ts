@@ -21,6 +21,7 @@
  * only the destination this library happens to ship.
  */
 import { cutText } from './bounded-text.util'
+import { capturedSet } from './captured-builtins.util'
 
 /**
  * Characters a terminal treats as "start a new line": the two JavaScript line
@@ -29,7 +30,7 @@ import { cutText } from './bounded-text.util'
  * escaping does to LF and CR. The other three are NOT escaped by JSON, which is
  * precisely why the raw NDJSON line needed this too.
  */
-const LINE_TERMINATORS = new Set(['\r', '\n', '\u0085', '\u2028', '\u2029'])
+const LINE_TERMINATORS = capturedSet(['\r', '\n', '\u0085', '\u2028', '\u2029'])
 
 /**
  * Every character unsafe in single-line text: C0 controls except TAB, DEL, the

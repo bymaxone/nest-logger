@@ -12,6 +12,9 @@ import { buildPinoInstance } from './pino-factory'
 import { DestinationHealth } from './services/destination-health.service'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
+import * as hideModule from './utils/hide-message-in-stack.util'
+import * as sanitizeModule from './utils/sanitize-error.util'
+import { MAX_STACK_SCAN } from './utils/sanitize-error.util'
 
 const SECRET = 'SEC_9f3a'
 const FRAME = '    at run (/srv/app.js:1:1)'
@@ -176,30 +179,39 @@ describe('a payload with many keys that spell message or stack', () => {
   const alias = (index: number): string => spelled('message', index)
   const stackOf = (line: string): string =>
     (JSON.parse(line) as { deep: { stack: string } }).deep.stack
-  /** The milliseconds `lineOf` takes for `deep`, with its line. */
-  const timed = (deep: Record<string, string>): { ms: number; line: string } => {
-    const started = Date.now()
-    const line = lineOf((s) => s.info('KEY', 'text', undefined, { deep }))
-    return { ms: Date.now() - started, line }
+  /**
+   * The searches `lineOf` makes of a stack for `deep`, as the length of the text each reads, with its
+   * line: the work is counted, not timed, so what a machine runs beside it cannot fail the row.
+   */
+  const searched = (deep: Record<string, string>): { reads: number[]; line: string } => {
+    const search = jest.spyOn(hideModule, 'hideMessagesInStack')
+    try {
+      const line = lineOf((s) => s.info('KEY', 'text', undefined, { deep }))
+      return { reads: search.mock.calls.map(([text]) => text.length), line }
+    } finally {
+      search.mockRestore()
+    }
   }
 
-  it('costs about what the cap costs, and hides the stack whole, for 5,000 message aliases', () => {
+  it('searches no stack and hides it whole when 5,000 aliases of the message are past the cap', () => {
     const stack = `Error: x\n${'z'.repeat(131_000)}`
     const make = (count: number): Record<string, string> => {
       const deep: Record<string, string> = { stack }
       for (let i = 0; i < count; i += 1) deep[alias(i)] = `secret${String(i)}`
       return deep
     }
-    const cap = timed(make(8))
+    const cap = searched(make(8))
 
-    const many = timed(make(5_000))
+    const many = searched(make(5_000))
 
-    expect(many.ms).toBeLessThan(cap.ms * 10 + 500)
+    // Past the cap the stack is the censor and nothing is searched: the work is the work of the cap, not
+    // of the aliases.
+    expect(many.reads).toEqual([])
     expect(stackOf(many.line)).toBe('[REDACTED]')
     expect(many.line).not.toContain('secret4999')
   })
 
-  it('costs about what the cap costs, for 5,000 keys that spell stack', () => {
+  it('scrubs no stack when 5,000 keys spell stack, past the cap of eight', () => {
     const make = (count: number): Record<string, string> => {
       const deep: Record<string, string> = {}
       for (let i = 0; i < count; i += 1) {
@@ -207,13 +219,24 @@ describe('a payload with many keys that spell message or stack', () => {
       }
       return deep
     }
-    const cap = timed(make(8))
+    const scrubbed = (deep: Record<string, string>): { reads: number[]; line: string } => {
+      const scrub = jest.spyOn(sanitizeModule, 'scrubStack')
+      try {
+        const line = lineOf((s) => s.info('KEY', 'text', undefined, { deep }))
+        return { reads: scrub.mock.calls.map(([text]) => text.length), line }
+      } finally {
+        scrub.mockRestore()
+      }
+    }
+    const cap = scrubbed(make(8))
 
-    const many = timed(make(5_000))
+    const many = scrubbed(make(5_000))
 
-    // A quadratic walk over 5,000 keys of 60,000 characters takes minutes; the margin is wide so a machine
-    // that runs other work does not fail the gate.
-    expect(many.ms).toBeLessThan(cap.ms * 10 + 2_000)
+    // Eight keys are the cap and each is scrubbed over no more than the bound; past it every stack is
+    // the censor and none is scrubbed. The row counts those scrubs and no other work.
+    expect(cap.reads).toHaveLength(8)
+    expect(Math.max(...cap.reads)).toBeLessThanOrEqual(MAX_STACK_SCAN)
+    expect(many.reads).toEqual([])
     expect(many.line).not.toContain('zzzz')
   })
 

@@ -25,6 +25,14 @@ import type { TruncationReason } from './interfaces/logger-observability.interfa
 import { createTraceContextMixin } from './mixins/trace-context.mixin'
 import type { DestinationHealth } from './services/destination-health.service'
 import type { LogContextService } from './services/log-context.service'
+import {
+  capturedSet,
+  lowerCase,
+  allMatches,
+  matchesPattern,
+  pinoBuiltinsIntact,
+  replaceAllText
+} from './utils/captured-builtins.util'
 import { compileRedactPaths } from './utils/compile-redact-paths.util'
 import { cutStrings } from './utils/cut-strings.util'
 import { destinationToStream } from './utils/destination-to-stream'
@@ -103,10 +111,11 @@ const INDEX_SEGMENT = /^\d+$/
  */
 export function leafNameOf(path: string): string | undefined {
   let leaf: string | undefined
-  for (const match of path.matchAll(PATH_SEGMENT)) {
+  for (const match of allMatches(PATH_SEGMENT, path)) {
     const quoted = match[1]
     const name =
-      quoted ?? (match[2] !== undefined && INDEX_SEGMENT.test(match[2]) ? undefined : match[2])
+      quoted ??
+      (match[2] !== undefined && matchesPattern(INDEX_SEGMENT, match[2]) ? undefined : match[2])
     // Stryker disable next-line ConditionalExpression: NOT equivalent, and not a coverage gap — the suite kills this mutant, verified by applying it by hand and watching three tests turn red (`leafNameOf yields no leaf for *`, `for *.*`, and the pass-through case in `resolveNameRedactor`). Stryker fails to attribute the killing tests to it under `perTest` coverage analysis, the same way it already does for `otel-detector.ts`. Recorded as what it is rather than mislabelled equivalent.
     if (name !== undefined && name !== '*') {
       leaf = name
@@ -214,7 +223,7 @@ export function serializeErrorValue(
  * @returns The derived, lowercase dot-separated event name.
  */
 function toEventName(logKey: string): string {
-  return logKey.toLowerCase().replaceAll('_', '.')
+  return replaceAllText(lowerCase(logKey), '_', '.')
 }
 
 /**
@@ -315,7 +324,7 @@ function resolveRecordRedactor(options: ResolvedBymaxLoggerModuleOptions): Redac
  * @returns The set of root keys.
  */
 function wholeRootKeys(options: ResolvedBymaxLoggerModuleOptions): ReadonlySet<string> {
-  return new Set(['logKey', 'err', ...Object.keys(options.serializers)])
+  return capturedSet(['logKey', 'err', ...Object.keys(options.serializers)])
 }
 
 /** The own-field policy the configuration resolves to. */
@@ -440,7 +449,7 @@ export function resolveRedactOption(
   const paths =
     options.redactStrategy === 'paths'
       ? compileRedactPaths(options.redactPaths, options.shouldDisableDefaultRedact)
-      : [...new Set(options.redactPaths)]
+      : [...capturedSet(options.redactPaths)]
   if (paths.length === 0) {
     return undefined
   }
@@ -561,6 +570,16 @@ function buildTraceMixin(
 }
 
 /**
+ * An own value for each name the multistream reads off an entry that this library does not set: a
+ * `levelVal` planted on `Object.prototype` would give every entry that level, and a `write` would make
+ * the entry itself the stream.
+ */
+const UNSET_ENTRY_NAMES: Readonly<Record<string, undefined>> = {
+  levelVal: undefined,
+  write: undefined
+}
+
+/**
  * One multistream entry for each destination, each behind its bounded queue.
  *
  * @param options - Fully-defaulted module options.
@@ -584,6 +603,7 @@ function buildStreams(
     // The registry drains this buffer before it tells the destination to shut down.
     health.registerStream(destination, stream)
     return {
+      ...UNSET_ENTRY_NAMES,
       // Guarded: this runs at provider construction, BEFORE any lifecycle hook, so a
       // consumer implementing `minLevel` as a throwing getter would fail the factory
       // and the application would never start — earlier than any fail-soft path can
@@ -684,6 +704,35 @@ function buildFormatters(
 }
 
 /**
+ * An own value for each name Pino reads that this library does not set, so a key planted on
+ * `Object.prototype` is not read in its place (a planted `transport` would be built at startup).
+ * Pino tests each value for truth. The names are typed as a record, not as the options of Pino, whose
+ * types have no `undefined` for `transport`.
+ */
+export const UNSET_PINO_NAMES: Readonly<Record<string, false | undefined>> = {
+  transport: undefined,
+  crlf: false,
+  msgPrefix: undefined,
+  name: undefined,
+  writable: false,
+  _writableState: undefined,
+  prettyPrint: undefined,
+  onChild: undefined
+}
+
+/**
+ * Refuses what the options must not carry into a logger: a built-in the names are read with that was
+ * replaced (a logger built then would carry the answer for good), and a censor beyond the string limit.
+ * A derived backend can build resolved options without `validateOptions`, so the rule holds here too.
+ */
+function refuseUnsafeOptions(options: ResolvedBymaxLoggerModuleOptions): void {
+  if (!pinoBuiltinsIntact()) throw new Error('LOGGER_BUILTINS_REPLACED')
+  if (options.maxStringLength !== undefined) {
+    refuseCensorBeyondLimit(options.redactCensor, options.maxStringLength)
+  }
+}
+
+/**
  * Build a configured Pino instance from a resolved options snapshot.
  *
  * Each destination becomes one entry in a `pino.multistream` fan-out. A
@@ -709,11 +758,7 @@ export function buildPinoInstance(
   destinations: readonly ILogDestination[],
   health: DestinationHealth
 ): PinoLogger {
-  // `validateOptions` is not the only way to resolved options: a derived backend can build them and
-  // call this factory, so the rule that holds for the options holds here too.
-  if (options.maxStringLength !== undefined) {
-    refuseCensorBeyondLimit(options.redactCensor, options.maxStringLength)
-  }
+  refuseUnsafeOptions(options)
   // TWO redactors, deliberately, because they answer to different owners.
   //   - `redactRecord` honours `redactStrategy`: the caller's record is the
   //     caller's payload, and `'paths'` is their documented escape hatch (an e2e
@@ -730,10 +775,10 @@ export function buildPinoInstance(
   const onTruncate: TruncationSink = (reason) => health.recordTruncation(reason)
   const pinoOptions: LoggerOptions = {
     level: options.level,
-    ...(redactOption === undefined ? {} : { redact: redactOption }),
-    // Resource identity, resolved ONCE here rather than per entry: Pino
-    // pre-serializes `base` into the instance's chindings, so the cost of the
-    // extra attributes is one string built at construction, not work per log.
+    ...(redactOption === undefined ? {} : { redact: { ...redactOption, remove: false } }),
+    ...UNSET_PINO_NAMES,
+    // Resource identity, resolved ONCE here rather than per entry: Pino pre-serializes `base` into
+    // the instance's chindings, so the extra attributes cost one string at construction.
     base: buildResourceBindings(
       resolveServiceMetadata(options.service),
       options.resourceFormat,

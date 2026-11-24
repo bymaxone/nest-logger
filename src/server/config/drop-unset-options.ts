@@ -7,6 +7,8 @@
  * the spread that merges the two. Each KNOWN key is read by property access, not by `Object.entries` or a spread, so a
  * getter on the prototype of a class instance counts as the value it returns.
  */
+import { types } from 'node:util'
+
 import { refuse } from './options-refusal.util'
 import type {
   BymaxLoggerModuleOptions,
@@ -77,13 +79,57 @@ const GROUP_NAMES = Object.keys(GROUP_KEYS) as ReadonlyArray<keyof typeof GROUP_
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-/** The keys of `source` that are set, each read by property access. */
+/** How many prototypes a chain of options may have before it is taken not to end. */
+const MAX_PROTOTYPE_HOPS = 256
+
+/**
+ * The first holder of `key` when it is a prototype with no prototype of its own and not `source`: the
+ * root of a chain, as the `Object.prototype` of any realm is. No property of the holder is read to tell,
+ * so a root whose own properties were overwritten is still one; a prototype of that shape the consumer
+ * built is taken for one too.
+ */
+function rootHolding(source: object, key: string): object | undefined {
+  let hops = 0
+  for (
+    let at: object | null = source;
+    at !== null;
+    at = Object.getPrototypeOf(at) as object | null
+  ) {
+    if (hops++ > MAX_PROTOTYPE_HOPS) {
+      refuse(
+        `[BymaxLoggerModule] options.${key} holds more than ${String(MAX_PROTOTYPE_HOPS)} prototypes`
+      )
+    }
+    if (Object.hasOwn(at, key)) {
+      return at !== source && Object.getPrototypeOf(at) === null ? at : undefined
+    }
+  }
+  return undefined
+}
+
+/**
+ * The keys of `source` that are set, in an object with no prototype. A value a root holds is no option:
+ * an accessor planted there is not called (a Proxy source is refused, since its answer cannot be told from
+ * a forward to the accessor), and a value is skipped unless the source answers something else, as a Proxy
+ * does through its `get` trap.
+ */
 function readSet(source: object, keys: readonly string[]): Record<string, unknown> {
-  const set: Record<string, unknown> = {}
+  const set = Object.create(null) as Record<string, unknown>
   for (const key of keys) {
+    const root = rootHolding(source, key)
+    const planted = root && Object.getOwnPropertyDescriptor(root, key)
+    if (planted?.get) {
+      // An answer of a Proxy cannot be told from a forward to the planted accessor, which would decide.
+      if (types.isProxy(source))
+        refuse(
+          `[BymaxLoggerModule] options.${key} is read through a Proxy while an accessor of that name is planted on Object.prototype`
+        )
+      continue
+    }
     // `Reflect` reads through a getter like a property access and keeps the dynamic key off the
     // object-injection sink list.
     const value = Reflect.get(source, key) as unknown
+    if (planted && !planted.get && Object.is(value, planted.value)) continue
     if (value !== undefined && value !== null) Reflect.set(set, key, value)
   }
   return set
@@ -146,7 +192,8 @@ export function dropUnsetOptions(options: BymaxLoggerModuleOptions): BymaxLogger
   const service = Reflect.get(set, 'service') as unknown
   // The metadata and the serializers are copied as the defaults copy them, own enumerable keys, so
   // each is read here once.
-  if (isRecord(service)) Reflect.set(set, 'service', { ...service })
+  if (isRecord(service))
+    Reflect.set(set, 'service', Object.assign(Object.create(null) as object, service))
   const serializers = Reflect.get(set, 'serializers') as unknown
   if (isRecord(serializers)) Reflect.set(set, 'serializers', { ...serializers })
   copyLists(set, LIST_OPTIONS, '')

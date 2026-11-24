@@ -6,7 +6,9 @@
  * goes, and how an own field of an `Error` is read. It does not import the walk: the walk hands
  * over what it needs as an {@link ErrorPartsHost}.
  */
+import { bareDescriptor } from './bare-descriptor.util'
 import { cutText } from './bounded-text.util'
+import { capturedSet } from './captured-builtins.util'
 import {
   createDepthMarker,
   createWidthMarker,
@@ -55,14 +57,14 @@ export function defineOwn(target: Record<string, unknown>, key: string, value: u
   // descriptors `cloneError` relaxes precisely so a censor always lands.
   // `Reflect.defineProperty` reports failure by returning `false`, not by throwing, so a check
   // of the result would be a branch no input can take: untested code claiming a guarantee.
-  Reflect.defineProperty(target, key, { value, enumerable: true, writable: true })
+  Reflect.defineProperty(target, key, bareDescriptor({ value, enumerable: true, writable: true }))
 }
 
 /** The chain level of an `Error` while it is walked as a `cause` or `errors` link. */
 const linkDepths = new WeakMap<object, number>()
 
 /** The own fields of an `Error` that hold text the logger copies and bounds like a message. */
-export const ERROR_TEXT_FIELDS: ReadonlySet<string> = new Set(['name', 'message', 'stack'])
+export const ERROR_TEXT_FIELDS: ReadonlySet<string> = capturedSet(['name', 'message', 'stack'])
 
 /** The marker key of a node that lost a part while it was being written. */
 const INCOMPLETE_KEY = '_errorFieldsIncomplete'
@@ -153,7 +155,7 @@ export function addErrorParts(
   host: ErrorPartsHost,
   depth: number
 ): void {
-  const taken = new Set(ownKeys)
+  const taken = capturedSet(ownKeys)
   const level = linkDepths.get(error) ?? 0
   let incomplete = false
   const add = (

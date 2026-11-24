@@ -6,6 +6,7 @@
  * factory. Deduplication is mandatory because `fast-redact` throws on duplicate
  * paths.
  */
+import { capturedSet } from './captured-builtins.util'
 import { DEFAULT_REDACT_PATHS } from '../constants/default-redact-paths.constants'
 
 /**
@@ -31,5 +32,5 @@ export function compileRedactPaths(
   shouldSkipDefaults: boolean
 ): string[] {
   const sources = shouldSkipDefaults ? [extraPaths] : [DEFAULT_REDACT_PATHS, extraPaths]
-  return Array.from(new Set(sources.flat()))
+  return Array.from(capturedSet(sources.flat()))
 }

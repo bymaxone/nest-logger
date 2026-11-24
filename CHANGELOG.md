@@ -14,6 +14,21 @@ heading here.
 
 ### Fixed
 
+- **A key planted on `Object.prototype` is no option.** The options were read by property access through
+  the prototype chain, so a `shouldDisableDefaultRedact: true` planted on `Object.prototype` (by a
+  dependency with a prototype-pollution flaw) turned the default redact paths off, and `redactCensor`,
+  `level` and the rest were read the same way. A value that only a root prototype (one with no prototype of its own, such as the
+  `Object.prototype` of any realm) holds is now skipped, the options and their groups are kept in objects
+  with no prototype, and so is the `service` metadata; a key the object has itself, and a getter a class
+  prototype defines, still count. A built-in that the redaction reads and a program replaces after the import drops the record and redacts a URL path whole: each one in the table (`GUARDED_BUILTINS` in `src/server/utils/captured-builtins.util.ts`, held by a spec to the calls of five files: `fold-key`, `normalize-url`, `matches-exclude-path`, `sanitize-error` and `pino-factory`) is compared with the one the module loaded with. What `redact-by-name`, the error-text exemption, `redact-error-parts`, the mixin merge, the truncation and `bounded-text` call is outside the table. A value whose prototype chain does not end within the bound in `resolve-to-json.util.ts` is written as the censor. What was replaced before the import is outside this. A `get` or `set` installed with `Object.defineProperty` (an accessor, which plain assignment cannot make) is outside what this guards. A `get` or a `set` planted there no longer reaches a descriptor the logger
+  defines, and options read through a Proxy under a planted accessor of the same name are refused. Pino got the same: it is handed an own value for each option it reads
+  and the library does not set, and so is each entry handed to its multistream, so a planted one is never
+  seen. Out of scope, because Node and Pino read them off objects this library does
+  not build: keys such as `message` and `toJSON`, which the emit and `JSON.stringify` read.
+  A key planted by plain assignment, so that it is enumerable, under `level`, `msgPrefix` or `levelVal`
+  makes Pino throw while the logger is built, and under `levels` at the first Nest-style log call, since
+  Pino assigns to its instance every key a `for...in` over its level table finds, inherited ones included;
+  no option can shadow that.
 - **A name spelled with symbol glyphs is read as the name.** The negative circled letters
   (`U+1F150`..), the negative squared letters (`U+1F170`..) and the regional indicators (`U+1F1E6`..)
   have no compatibility form, so the fold dropped them as punctuation and `🆃🅾🅺🅴🅽` folded to nothing

@@ -27,6 +27,7 @@ import type {
   ILoggerObservability,
   TruncationReason
 } from '../interfaces/logger-observability.interface'
+import { capturedSet } from '../utils/captured-builtins.util'
 
 /**
  * Tracks which destinations initialized, and which one speaks when none did.
@@ -79,7 +80,7 @@ export class DestinationHealth implements ILoggerObservability {
   private stringLengthTruncations = 0
 
   /** Destinations whose `onInit()` rejected. Identity-keyed, not name-keyed. */
-  private readonly failed = new Set<ILogDestination>()
+  private readonly failed = capturedSet<ILogDestination>()
 
   /**
    * Destinations that initialized, each with its effective level as an index into
@@ -107,7 +108,7 @@ export class DestinationHealth implements ILoggerObservability {
    * for the whole window — coarser than per-entry tracking, and wrong only in the
    * direction that duplicates rather than loses.
    */
-  private readonly writeFailed = new Set<ILogDestination>()
+  private readonly writeFailed = capturedSet<ILogDestination>()
 
   /**
    * In-flight asynchronous writes per destination.

@@ -13,6 +13,7 @@ import type {
   BymaxLoggerModuleOptions,
   ResolvedBymaxLoggerModuleOptions
 } from '../interfaces/logger-module-options.interface'
+import { pinoBuiltinsIntact } from '../utils/captured-builtins.util'
 
 /**
  * Read the options once into a plain snapshot, validate that snapshot and apply the defaults to it.
@@ -24,6 +25,8 @@ import type {
  * @throws Error When an option fails validation or cannot be read.
  */
 export function resolveOptions(given: BymaxLoggerModuleOptions): ResolvedBymaxLoggerModuleOptions {
+  // The options are read with built-in methods; one replaced would answer for them.
+  if (!pinoBuiltinsIntact()) throw new Error('LOGGER_BUILTINS_REPLACED')
   return guardOptions(() => {
     const snapshot = dropUnsetOptions(given)
     validateOptions(snapshot)
