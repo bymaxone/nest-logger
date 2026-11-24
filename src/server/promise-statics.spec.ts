@@ -15,7 +15,7 @@ import { applyDefaults } from './config/default-options'
 import { LogContextService } from './services/log-context.service'
 import { DestinationHealth } from './services/destination-health.service'
 import { destinationToStream } from './utils/destination-to-stream'
-import { intactOr, PromiseTamperedError } from './utils/native-promise.util'
+import { absorb, intactOr, PromiseTamperedError } from './utils/native-promise.util'
 import { withTimeout } from './utils/with-timeout.util'
 
 import type { LoggableRequest, LoggableResponse } from './interfaces/http-context.interface'
@@ -347,5 +347,82 @@ describe('Promise.resolve replaced after the library loaded', () => {
     }
 
     await expect(outcome).rejects.toBeInstanceOf(PromiseTamperedError)
+  })
+
+  /**
+   * Given a `Promise.prototype.constructor` whose species throws, left in place while microtasks run
+   * When a rejected promise is absorbed
+   * Then no rejection is left to the process
+   */
+  it('absorbs a rejection under a constructor whose species throws', (done) => {
+    const prototype = Promise.prototype as unknown as { constructor: unknown }
+    const realConstructor = prototype.constructor
+    const unhandled = jest.fn()
+    process.on('unhandledRejection', unhandled)
+    const Stand = function Stand() {} as unknown as { [Symbol.species]: unknown }
+    Object.defineProperty(Stand, Symbol.species, {
+      get: () => {
+        throw new Error('species')
+      }
+    })
+    prototype.constructor = Stand
+
+    absorb(Promise.reject(new Error('dropped')))
+
+    setImmediate(() => {
+      setImmediate(() => {
+        prototype.constructor = realConstructor
+        process.off('unhandledRejection', unhandled)
+        expect(unhandled).not.toHaveBeenCalled()
+        done()
+      })
+    })
+  })
+
+  /**
+   * Given a hook that plants a constructor whose species throws, and rejects
+   * When it runs under `withTimeout` and the plant stays in place while microtasks run
+   * Then the call is refused, and neither the hook's rejection nor the returned promise is left to the process
+   */
+  it('leaves nothing unhandled when a hook plants a throwing species and rejects', (done) => {
+    const prototype = Promise.prototype as unknown as { constructor: unknown }
+    const realConstructor = prototype.constructor
+    const unhandled = jest.fn()
+    process.on('unhandledRejection', unhandled)
+    const Stand = function Stand() {} as unknown as { [Symbol.species]: unknown }
+    Object.defineProperty(Stand, Symbol.species, {
+      get: () => {
+        throw new Error('species')
+      }
+    })
+    const work = (): Promise<never> => {
+      prototype.constructor = Stand
+      return Promise.reject(new Error('hook failed'))
+    }
+
+    withTimeout(work, 1000)
+
+    setImmediate(() => {
+      setImmediate(() => {
+        prototype.constructor = realConstructor
+        process.off('unhandledRejection', unhandled)
+        expect(unhandled).not.toHaveBeenCalled()
+        done()
+      })
+    })
+  })
+
+  /**
+   * Given a frozen promise and a value that is not an object
+   * When each is absorbed
+   * Then neither throws
+   */
+  it('absorbs a frozen promise and a primitive without throwing', () => {
+    const frozen = Object.freeze(Promise.reject(new Error('dropped')))
+
+    expect(() => {
+      absorb(frozen)
+      absorb(42)
+    }).not.toThrow()
   })
 })

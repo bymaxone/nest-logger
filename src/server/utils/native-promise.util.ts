@@ -13,6 +13,7 @@ export const IntrinsicPromise = Object.getPrototypeOf((async (): Promise<void> =
   .constructor as PromiseConstructor
 
 const hasOwn = Object.hasOwn
+const define = Object.defineProperty
 const ownDescriptor = Reflect.getOwnPropertyDescriptor
 const nativeThen = Function.prototype.call.bind(IntrinsicPromise.prototype.then) as (
   promise: unknown,
@@ -71,14 +72,26 @@ export interface Outcome {
  * Waits for `pending` and drops how it ended, so a rejection of it is not left to the process. Nothing
  * is decided from the wait, which is why it is not refused when the baseline does not hold.
  *
- * A promise is given its handlers by the `then` captured at load, which does not read the `then` of
- * `pending` but does read its `constructor` and species; a value that is not a promise, or one whose
- * species throws, is awaited instead, and the rejection of it is absorbed either way.
+ * `pending` is first given an own `constructor`, the intrinsic one, so that the handlers and an `await`
+ * read that slot and not the `constructor` of `Promise.prototype`, which a program may have replaced
+ * with one whose species throws; an object that cannot take it (a frozen one) keeps what it has. A
+ * promise is then given its handlers by the `then` captured at load, which does not read the `then` of
+ * `pending`; a value that is not a promise is awaited instead.
  *
  * @param pending - A value that may be a promise nobody else will read.
  */
 export function absorb(pending: unknown): void {
   const drop = (): void => undefined
+  try {
+    define(pending as object, 'constructor', {
+      __proto__: null,
+      value: IntrinsicPromise,
+      writable: true,
+      configurable: true
+    } as PropertyDescriptor)
+  } catch {
+    // A primitive or a frozen object: it keeps the constructor it has.
+  }
   try {
     nativeThen(pending, drop, drop)
     return
