@@ -105,11 +105,23 @@ export function absorb(pending: unknown): void {
   }
 }
 
-/** Gives an object with no own `constructor` the intrinsic one; `false` when nothing was written. */
-function pin(target: unknown): boolean {
+/**
+ * Gives a promise this library returns an own `constructor`, the intrinsic one, so the `await` of
+ * whoever receives it reads that slot and not the `constructor` of `Promise.prototype`, which a program
+ * may have replaced after this check. It stays: the promise is the library's own. A frozen object keeps
+ * what it has.
+ *
+ * @param promise - A promise on a decision path, or a promise of a dependency about to be awaited.
+ * @returns `promise`.
+ */
+export function tag<T>(promise: T): T {
+  write(promise)
+  return promise
+}
+
+function write(target: unknown): boolean {
   try {
-    if (typeof target !== 'object' || target === null || hasOwn(target, 'constructor')) return false
-    define(target, 'constructor', {
+    define(target as object, 'constructor', {
       __proto__: null,
       value: IntrinsicPromise,
       writable: true,
@@ -117,9 +129,15 @@ function pin(target: unknown): boolean {
     } as PropertyDescriptor)
     return true
   } catch {
-    // A frozen object, or a Proxy that refuses: it keeps what it has.
+    // A frozen object, a primitive, or a Proxy that refuses: it keeps what it has.
     return false
   }
+}
+
+/** Gives an object with no own `constructor` the intrinsic one; `false` when nothing was written. */
+function pin(target: unknown): boolean {
+  if (typeof target !== 'object' || target === null || hasOwn(target, 'constructor')) return false
+  return write(target)
 }
 
 /** Takes back what {@link pin} wrote. */

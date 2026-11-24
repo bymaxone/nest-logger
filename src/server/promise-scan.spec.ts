@@ -44,7 +44,13 @@ const EXEMPT: Readonly<Record<string, string>> = {
     'captured: a comparison with the intrinsic, no promise is awaited',
   'server/utils/native-promise.util.ts|the captured intrinsic|value: IntrinsicPromise,':
     'captured: the own constructor given to a promise that is dropped',
-  "server/utils/with-timeout.util.ts|the captured intrinsic|import { absorb, awaitOutcome, IntrinsicPromise } from './native-promise.util'":
+  'observability/logger-health.indicator.ts|the captured intrinsic|const IntrinsicPromise = Object.getPrototypeOf((async (): Promise<void> => undefined)())':
+    'captured: the capture itself, from an async function',
+  'observability/logger-health.indicator.ts|the captured intrinsic|const answer = new IntrinsicPromise<HealthIndicatorResult>((resolve) => {':
+    'captured: the verdict is delivered by a promise built from the intrinsic constructor',
+  'observability/logger-health.indicator.ts|the captured intrinsic|value: IntrinsicPromise,':
+    'captured: the own constructor of that promise',
+  "server/utils/with-timeout.util.ts|the captured intrinsic|import { absorb, awaitOutcome, IntrinsicPromise, tag } from './native-promise.util'":
     'captured: the import',
   'server/utils/with-timeout.util.ts|the captured intrinsic|const wait = new IntrinsicPromise<void>((resolve, reject) => {':
     'captured: the deadline, built from the intrinsic constructor and settled by a timer or by the outcome box'

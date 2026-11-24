@@ -11,6 +11,11 @@ import { Inject, Injectable } from '@nestjs/common'
 import { LOGGER_OBSERVABILITY_TOKEN } from '@bymax-one/nest-logger'
 import type { ILoggerObservability } from '@bymax-one/nest-logger'
 
+/** The intrinsic `Promise`, taken from an async function so a `globalThis.Promise` set before the load is not it. */
+const IntrinsicPromise = Object.getPrototypeOf((async (): Promise<void> => undefined)())
+  .constructor as PromiseConstructor
+const define = Object.defineProperty
+
 /** The name of the indicator in the readiness response. */
 export const LOGGER_HEALTH_INDICATOR_NAME = 'logger'
 
@@ -37,15 +42,27 @@ export class LoggerHealthIndicator implements IHealthIndicator {
    *
    * @returns `up` or `down`, with the counts of the state as details.
    */
-  async check(): Promise<HealthIndicatorResult> {
+  check(): Promise<HealthIndicatorResult> {
     const { destinations, failedInit, writeFailing, hasHealthySink } =
       this.observability.deliveryState()
     // No prototype: an object that resolves a promise is asked for its `then`, and one planted on
     // `Object.prototype` would answer for the verdict.
-    return {
+    const verdict = {
       __proto__: null,
       status: hasHealthySink ? 'up' : 'down',
       details: { destinations, failedInit, writeFailing }
     } as HealthIndicatorResult
+    // The caller awaits this: its own constructor keeps that await off the one of `Promise.prototype`.
+    const answer = new IntrinsicPromise<HealthIndicatorResult>((resolve) => {
+      resolve(verdict)
+    })
+    // A promise made here is extensible, so the write cannot be refused.
+    define(answer, 'constructor', {
+      __proto__: null,
+      value: IntrinsicPromise,
+      writable: true,
+      configurable: true
+    } as PropertyDescriptor)
+    return answer
   }
 }

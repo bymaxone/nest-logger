@@ -504,4 +504,66 @@ describe('Promise.resolve replaced after the library loaded', () => {
     expect(settled).toBeUndefined()
     expect(unhandled).not.toHaveBeenCalled()
   })
+
+  /**
+   * Given a Promise.prototype whose constructor and then are both replaced, the then answering `up`
+   * When the outermost caller awaits `indicator.check()` for a state with no healthy sink
+   * Then the verdict it receives is still `down`
+   */
+  it('keeps the verdict the outermost caller awaits', async () => {
+    const proto = Promise.prototype as { constructor: unknown; then: unknown }
+    const { constructor, then } = proto
+    const indicator = new LoggerHealthIndicator({
+      deliveryState: () => ({
+        destinations: 1,
+        failedInit: 1,
+        writeFailing: 0,
+        hasHealthySink: false
+      })
+    } as never)
+
+    const answer = indicator.check()
+    let verdict: { status: string } | undefined
+    proto.constructor = function Stand() {}
+    proto.then = function forged(resolve: (value: unknown) => void): void {
+      resolve({ status: 'up', details: {} })
+    }
+    try {
+      verdict = await answer
+    } finally {
+      proto.constructor = constructor
+      proto.then = then
+    }
+
+    expect(verdict.status).toBe('down')
+  })
+
+  /**
+   * Given the same replaced constructor and then, and a hook that throws
+   * When the outermost caller awaits `withTimeout`
+   * Then the caller receives the rejection and not a forged fulfilment
+   */
+  it('keeps the rejection the outermost caller awaits from withTimeout', async () => {
+    const proto = Promise.prototype as { constructor: unknown; then: unknown }
+    const { constructor, then } = proto
+    const answer = withTimeout(() => {
+      throw new Error('hook failed')
+    }, 50)
+
+    let outcome = 'fulfilled'
+    proto.constructor = function Stand() {}
+    proto.then = function forged(resolve: (value: unknown) => void): void {
+      resolve(undefined)
+    }
+    try {
+      await answer
+    } catch {
+      outcome = 'rejected'
+    } finally {
+      proto.constructor = constructor
+      proto.then = then
+    }
+
+    expect(outcome).toBe('rejected')
+  })
 })

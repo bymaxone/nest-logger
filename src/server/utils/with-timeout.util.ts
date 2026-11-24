@@ -5,7 +5,7 @@
  * never settle (a connection that is never answered), and an application that waits for it never
  * starts or never stops. The deadline abandons the wait; it cannot cancel the work.
  */
-import { absorb, awaitOutcome, IntrinsicPromise } from './native-promise.util'
+import { absorb, awaitOutcome, IntrinsicPromise, tag } from './native-promise.util'
 
 /** The error a hook that did not settle in time is rejected with. */
 export class HookTimeoutError extends Error {
@@ -45,5 +45,5 @@ export function withTimeout(work: () => unknown, ms: number): Promise<void> {
   })
   // A refusal rejects at once, and a caller that refuses first never reads this promise.
   absorb(wait)
-  return wait
+  return tag(wait)
 }
