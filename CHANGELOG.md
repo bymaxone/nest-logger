@@ -12,6 +12,8 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.30] - 2026-11-24
+
 ### Breaking
 
 - **`LoggerHealthIndicator.check()` answers a frozen verdict.** The result and its `details` are
@@ -44,7 +46,9 @@ heading here.
   `constructor` of the promise can stay if a species getter makes it non-configurable inside that window;
   code running concurrently that plants a `then` and erases it again between the check and the
   work's own settlement cannot be seen afterwards, and a dependency that reads a static inside itself is code
-  aimed at that dependency, not at the logger. These guards are best-effort hardening, not a security
+  aimed at that dependency, not at the logger. Code that replaces the `constructor` of `Promise.prototype`
+  before this package is loaded is not detected either: the intrinsic is read from that slot at load, so
+  the baseline is the replacement. These guards are best-effort hardening, not a security
   boundary: code running inside the host process is trusted (SECURITY.md, "Threat model: same-process
   code"). A descriptor read by these guards, and by the `toJSON` lookup outside `errorOwnFields: 'safe'` and the options filter, is read for
   its own `get` and `value` only, so a field planted on `Object.prototype` is not taken for one.
@@ -3554,7 +3558,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.29...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.30...HEAD
+[1.4.30]: https://github.com/bymaxone/nest-logger/compare/v1.4.29...v1.4.30
 [1.4.29]: https://github.com/bymaxone/nest-logger/compare/v1.4.28...v1.4.29
 [1.4.28]: https://github.com/bymaxone/nest-logger/compare/v1.4.27...v1.4.28
 [1.4.27]: https://github.com/bymaxone/nest-logger/compare/v1.4.26...v1.4.27
