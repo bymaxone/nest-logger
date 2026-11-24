@@ -746,6 +746,88 @@ describe('Promise.resolve replaced after the library loaded', () => {
   })
 
   /**
+   * Given a destination whose write answers a rejected native promise with its own accessor constructor,
+   * and a `then` of Promise.prototype that fulfils and puts itself back
+   * When a chunk is written to its stream
+   * Then the failure is counted and no rejection is left to the process
+   */
+  it('counts a failed write whose promise carries its own constructor', async () => {
+    const unhandled = jest.fn()
+    process.on('unhandledRejection', unhandled)
+    const health = new DestinationHealth()
+    const proto = Promise.prototype as unknown as { then: unknown }
+    const realThen = proto.then
+    const destination: ILogDestination = {
+      name: 'sink',
+      write: () => {
+        const answer = Promise.reject(new Error('write failed'))
+        Object.defineProperty(answer, 'constructor', {
+          get() {
+            return Object
+          },
+          configurable: true
+        })
+        proto.then = function forged(this: unknown, resolve: () => void) {
+          proto.then = realThen
+          resolve()
+        }
+        return answer
+      }
+    }
+    const stream = destinationToStream(destination, health)
+    const stderr = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+    try {
+      stream.write('entry\n')
+    } finally {
+      proto.then = realThen
+    }
+    await tick()
+    await tick()
+    stderr.mockRestore()
+    process.off('unhandledRejection', unhandled)
+
+    expect(health.failedWriteTotal(destination)).toBe(1)
+    expect(unhandled).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Given a `then` of Promise.prototype replaced by a data function before the call and kept until the
+   * hook settles
+   * When a hook that rejects runs under `withTimeout`
+   * Then the rejection is the one the caller sees, because a native promise is waited for without a `then`
+   */
+  it('keeps the rejection of a hook under a then replaced for the whole wait', async () => {
+    const proto = Promise.prototype as unknown as { then: unknown }
+    const realThen = proto.then as (
+      this: unknown,
+      a: () => void,
+      b: (c: unknown) => void
+    ) => unknown
+    proto.then = function forged(this: unknown, resolve: () => void) {
+      resolve()
+    }
+    const seen = new Promise<unknown>((settled) => {
+      try {
+        const answer = withTimeout(() => Promise.reject(new Error('hook')), 50)
+        // Observed through the real then: the replaced one would answer for the caller.
+        realThen.call(
+          answer,
+          () => settled('fulfilled'),
+          (cause: unknown) => settled(cause)
+        )
+      } finally {
+        proto.then = realThen
+      }
+    })
+
+    const outcome = await seen
+
+    expect(outcome).toBeInstanceOf(Error)
+    expect((outcome as Error).message).toBe('hook')
+  })
+
+  /**
    * Given a hook that returns a native promise whose prototype was swapped, inside the hook, for one whose
    * constructor and then are accessors that restore themselves after one read
    * When it runs under `withTimeout`

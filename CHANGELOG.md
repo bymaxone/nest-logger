@@ -15,7 +15,7 @@ heading here.
 ### Fixed
 
 - **A replaced `Promise.resolve`, a replaced `Promise.prototype.constructor` and a `then` planted on a
-  prototype root can no longer forge what the logger awaits.** Measured: with `Promise.resolve` replaced after
+  prototype root no longer decide what the logger awaits, in the cases measured here.** Measured: with `Promise.resolve` replaced after
   the import, the health indicator answered `up` for a delivery with no healthy sink, `withTimeout` settled a
   hook that had rejected, a failed destination write was not recorded for readiness, and a late rejection of a
   tenant resolver reached the process. The sites no longer read a static of `Promise`: a promise the
@@ -28,7 +28,16 @@ heading here.
   `Promise.prototype` that a runtime wraps (a context manager) is allowed. `withTimeout` now resolves with
   nothing. A source scan fails for a new read of a static, a
   `new Promise`, `.then(`, `.catch(` or `.finally(` in `src`.
-  Known limits: code running concurrently that plants a `then` and erases it again between the check and the
+  A native promise a hook or a destination returns is waited for through the intrinsic constructor, for the
+  length of one synchronous call, and is refused when it already carries its own `constructor` or `then`
+  or cannot take that slot.
+  Also changed in the public surface: `LoggerHealthIndicator.check()` now answers a frozen verdict (its
+  `details` frozen too), so a consumer that mutated the verdict gets a `TypeError` in strict mode.
+  Known limits: a frozen, sealed or non-extensible native promise cannot take a handler under a replaced
+  `Promise.prototype.constructor` whose species throws, so a rejection of it can reach the process (a
+  waited-for promise of that shape is refused instead); while a rejection is absorbed, the temporary
+  `constructor` of the promise can stay if a species getter makes it non-configurable inside that window;
+  code running concurrently that plants a `then` and erases it again between the check and the
   work's own settlement cannot be seen afterwards, and a dependency that reads a static inside itself is code
   aimed at that dependency, not at the logger.
 - **A key planted on `Object.prototype` is no option.** The options were read by property access through

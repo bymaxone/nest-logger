@@ -78,13 +78,15 @@ export interface Outcome {
  * Waits for `pending` and drops how it ended, so a rejection of it is not left to the process. Nothing
  * is decided from the wait, which is why it is not refused when the baseline does not hold.
  *
- * While the handlers are attached, a native `pending` is given an own `constructor`, the intrinsic one, so that
- * they and an `await` read that slot and not the `constructor` of `Promise.prototype`, which a program
- * may have replaced with one whose species throws. The slot is removed again at once, so a value the
- * caller owns is left as it was; one that cannot take it (a frozen object) or already has its own keeps
- * what it has, and a frozen promise under a replaced constructor whose species throws is therefore not covered. A promise is given its handlers by the
- * `then` captured at load, which does not read the `then` of `pending`; a value that is not a promise
- * is awaited instead.
+ * While the handlers are attached, a native `pending` with no own `constructor` is given one, the
+ * intrinsic, so that they and an `await` read that slot and not the `constructor` of `Promise.prototype`,
+ * which a program may have replaced with one whose species throws. The slot is removed again in a
+ * `finally`, so a value the caller owns is left as it was except for the length of that window: a species
+ * getter that runs inside it can make the slot non-configurable, and then the removal fails and the slot
+ * stays. A value that cannot take the slot (frozen, sealed or non-extensible) or already has its own keeps
+ * what it has, and such a promise under a replaced constructor whose species throws is therefore not
+ * covered. A promise is given its handlers by the `then` captured at load, which does not read the `then`
+ * of `pending`; a value that is not a promise is awaited instead.
  *
  * @param pending - A value that may be a promise nobody else will read.
  */
