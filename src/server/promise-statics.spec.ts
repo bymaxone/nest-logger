@@ -566,4 +566,25 @@ describe('Promise.resolve replaced after the library loaded', () => {
 
     expect(outcome).toBe('rejected')
   })
+
+  /**
+   * Given a consumer promise that carries a constructor of its own
+   * When it is absorbed
+   * Then it still carries that constructor, and its rejection is not left to the process
+   */
+  it('keeps the own constructor of a consumer promise', async () => {
+    const unhandled = jest.fn()
+    process.on('unhandledRejection', unhandled)
+    const mine = function Mine() {}
+    const consumer = Promise.reject(new Error('dropped'))
+    Object.defineProperty(consumer, 'constructor', { value: mine, configurable: true })
+
+    absorb(consumer)
+    await tick()
+    await tick()
+    process.off('unhandledRejection', unhandled)
+
+    expect(Object.getOwnPropertyDescriptor(consumer, 'constructor')?.value).toBe(mine)
+    expect(unhandled).not.toHaveBeenCalled()
+  })
 })

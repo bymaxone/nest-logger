@@ -33,6 +33,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-24 — server: 48,974 B real -> 49,004 B budget (47.86 KiB), as approved by the project manager (measured + 30): every promise returned on a decision path carries an own intrinsic constructor (16b.12).
 //   - 2026-11-24 — server: 48,879 B real -> 48,909 B budget (47.76 KiB), as approved by the project manager (measured + 30).
 //     absorb gives the promise it drops an own constructor, the intrinsic one, so a constructor whose species throws cannot orphan it. Comments do not ship in dist: the growth is code.
 //   - 2026-11-24 — server: 48,827 B real -> 48,857 B budget (47.71 KiB), as approved by the project manager (measured + 30).
@@ -393,7 +394,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 48_909 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 49_004 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',
