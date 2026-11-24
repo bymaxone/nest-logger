@@ -36,4 +36,27 @@ describe('a planted option whose descriptor has no own get', () => {
       Reflect.deleteProperty(Object.prototype, 'level')
     }
   })
+
+  /**
+   * Given `level` planted on Object.prototype as an accessor with a setter and no getter, and options that
+   * are a Proxy answering another `level`
+   * When they are filtered
+   * Then the answer of the Proxy is kept: an accessor with no getter decides nothing, so nothing is refused
+   */
+  it('is not refused when the planted accessor has no getter', () => {
+    const options = new Proxy(
+      {},
+      { get: (_target, key) => (key === 'level' ? 'debug' : undefined) }
+    )
+    Object.defineProperty(Object.prototype, 'level', {
+      set: jest.fn(),
+      configurable: true
+    })
+
+    try {
+      expect(dropUnsetOptions(options as never)).toEqual({ level: 'debug' })
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'level')
+    }
+  })
 })
