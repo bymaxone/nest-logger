@@ -33,6 +33,13 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-24 — server: 49,022 B real -> 49,052 B budget (47.90 KiB), and observability: 1,301 B
+//     real -> 1,331 B budget (1.30 KiB), each measured + 30 as approved by the project manager. What
+//     the bytes bought: the baseline of a promise also compares the species getter of the intrinsic
+//     `Promise`, so a species that throws is refused and not left to orphan a rejection (server,
+//     +18 B); a promise the library returns carries a constructor that cannot be redefined, and the
+//     readiness check builds its own promise and freezes its verdict (observability, +62 B over the
+//     1,239 B budget, which it already exceeded since the check owns its promise).
 //   - 2026-11-24 — server: 48,974 B real -> 49,004 B budget (47.86 KiB), as approved by the project manager (measured + 30): every promise returned on a decision path carries an own intrinsic constructor (16b.12).
 //   - 2026-11-24 — server: 48,879 B real -> 48,909 B budget (47.76 KiB), as approved by the project manager (measured + 30).
 //     absorb gives the promise it drops an own constructor, the intrinsic one, so a constructor whose species throws cannot orphan it. Comments do not ship in dist: the growth is code.
@@ -394,12 +401,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 49_004 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 49_052 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',
     path: 'dist/observability/index.mjs',
-    brotli: 1.21 * 1024
+    brotli: 1_331
   }
 ]
 
