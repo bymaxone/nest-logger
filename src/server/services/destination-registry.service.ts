@@ -38,6 +38,7 @@ import type { ILogDestination } from '../interfaces/log-destination.interface'
 import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
 import { buildMessageCensor } from '../pino-factory'
 import { toSingleLineMessage } from '../utils/escape-log-text.util'
+import { intactOr } from '../utils/native-promise.util'
 import { detectOtelTraceApi } from '../utils/otel-detector'
 import type { MessageCensor } from '../utils/report-destination-failure.util'
 import {
@@ -110,7 +111,9 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
   async onModuleInit(): Promise<void> {
     for (const destination of this.registered) {
       try {
-        await withTimeout(() => destination.onInit?.(), this.options.destinationHookTimeoutMs)
+        await intactOr(
+          withTimeout(() => destination.onInit?.(), this.options.destinationHookTimeoutMs)
+        )
         this.active.push(destination)
         this.health.markHealthy(destination, this.effectiveLevelOf(destination))
       } catch (cause) {
@@ -148,15 +151,17 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         // declared: not awaiting one would let its rejection escape as an
         // unhandled promise, and let the bootstrap entry be emitted before the
         // buffer it is resolving had been drained.
-        await withTimeout(
-          () =>
-            destination.onRegistryReady?.({
-              heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
-                destination,
-                this.effectiveLevelOf(destination)
-              )
-            }),
-          this.options.destinationHookTimeoutMs
+        await intactOr(
+          withTimeout(
+            () =>
+              destination.onRegistryReady?.({
+                heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
+                  destination,
+                  this.effectiveLevelOf(destination)
+                )
+              }),
+            this.options.destinationHookTimeoutMs
+          )
         )
       } catch (cause) {
         this.reportHookFailure(destination, cause)
@@ -344,7 +349,7 @@ export class DestinationRegistry implements OnModuleInit, OnApplicationShutdown 
         continue
       }
       try {
-        await withTimeout(() => destination.onShutdown?.(), remaining)
+        await intactOr(withTimeout(() => destination.onShutdown?.(), remaining))
       } catch (cause) {
         this.reportShutdownFailure(destination, cause)
       }

@@ -1,0 +1,248 @@
+/**
+ * Verifies that no outcome the logger reads depends on `Promise.resolve`: a program that replaces it
+ * after the library loaded (a polyfill, a patched runtime) must not turn a `down` health verdict into
+ * `up`, a failed hook into a settled one, a failed write into an unrecorded one, or hand the process
+ * a rejection nobody absorbs.
+ *
+ * Layer: server, tests. The static is replaced only for the synchronous call that would read it and
+ * restored at once, so no case holds the replacement across an await.
+ */
+import { LoggerHealthIndicator } from '../observability/logger-health.indicator'
+
+import type { ILogDestination } from './interfaces/log-destination.interface'
+import { RequestIdMiddleware } from './middlewares/request-id.middleware'
+import { applyDefaults } from './config/default-options'
+import { LogContextService } from './services/log-context.service'
+import { DestinationHealth } from './services/destination-health.service'
+import { destinationToStream } from './utils/destination-to-stream'
+import { PromiseTamperedError } from './utils/native-promise.util'
+import { withTimeout } from './utils/with-timeout.util'
+
+import type { LoggableRequest, LoggableResponse } from './interfaces/http-context.interface'
+
+/** Runs `act` while `Promise.resolve` is `forged`, and puts the real one back before returning. */
+function whileForged<T>(forged: (value?: unknown) => unknown, act: () => T): T {
+  const real = Promise.resolve
+  Promise.resolve = forged as never
+  try {
+    return act()
+  } finally {
+    Promise.resolve = real
+  }
+}
+
+/** A thenable that settles as fulfilled at once, whatever it stands for. */
+const fulfilled = (): unknown => ({ then: (ok: (value: unknown) => void) => ok(undefined) })
+
+const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
+
+describe('Promise.resolve replaced after the library loaded', () => {
+  /**
+   * Given a delivery state with no healthy sink, and a `Promise.resolve` that answers `up`
+   * When the health indicator is checked
+   * Then the verdict is still `down`
+   */
+  it('does not change the health verdict', async () => {
+    const real = Promise.resolve.bind(Promise)
+    const indicator = new LoggerHealthIndicator({
+      deliveryState: () => ({
+        destinations: 1,
+        failedInit: 1,
+        writeFailing: 0,
+        hasHealthySink: false
+      })
+    } as never)
+
+    const result = await whileForged(
+      () => real({ status: 'up', details: {} }),
+      () => indicator.check()
+    )
+
+    expect(result.status).toBe('down')
+  })
+
+  /**
+   * Given a hook whose promise rejects, and a `Promise.resolve` that answers a thenable that fulfils
+   * When the hook runs under `withTimeout`
+   * Then the call rejects with what the hook rejected with
+   */
+  it('does not settle a failed hook as fulfilled', async () => {
+    const failure = new Error('hook failed')
+    const work = (): Promise<never> => Promise.reject(failure)
+
+    const outcome = whileForged(fulfilled, () => withTimeout(work, 1000))
+
+    await expect(outcome).rejects.toBe(failure)
+  })
+
+  /**
+   * Given a destination whose write rejects, and a `Promise.resolve` that answers a thenable that
+   * fulfils
+   * When a chunk is written to its stream
+   * Then the failure is recorded for readiness
+   */
+  it('does not hide a failed write', async () => {
+    const health = new DestinationHealth()
+    const destination: ILogDestination = {
+      name: 'sink',
+      write: () => Promise.reject(new Error('write failed'))
+    }
+    const stream = destinationToStream(destination, health)
+    const stderr = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+    try {
+      whileForged(fulfilled, () => stream.write('entry\n'))
+      await tick()
+      await tick()
+
+      expect(health.failedWriteTotal(destination)).toBe(1)
+    } finally {
+      stderr.mockRestore()
+    }
+  })
+
+  /**
+   * Given a tenant resolver that answers a promise, and a `Promise.resolve` that answers something
+   * that absorbs nothing
+   * When the middleware reads the answer
+   * Then the answer is still awaited, so a rejection of it is absorbed and not left to the process
+   */
+  it('still absorbs the rejection of a resolver that answers a promise', async () => {
+    let awaited = false
+    const answer = {
+      then: (_ok: (value: unknown) => void, fail: (cause: unknown) => void): void => {
+        awaited = true
+        fail(new Error('late'))
+      }
+    }
+    const logContext = new LogContextService()
+    const options = applyDefaults({
+      service: { name: 'promise-statics', version: '1.0.0' },
+      http: { tenantIdResolver: () => answer as never }
+    })
+    const middleware = new RequestIdMiddleware(logContext, options)
+    const req = { headers: {}, method: 'GET', url: '/x' } as unknown as LoggableRequest
+    const res = { setHeader: jest.fn() } as unknown as LoggableResponse
+
+    whileForged(
+      () => ({ catch: () => undefined }),
+      () => {
+        middleware.use(req, res, () => undefined)
+      }
+    )
+    await tick()
+
+    expect(awaited).toBe(true)
+  })
+
+  /**
+   * Given a `then` that fulfils with `up`, planted on `Object.prototype` while the result is built
+   * When the health indicator is checked with no healthy sink
+   * Then the verdict is still `down`, because the result is a box with no prototype
+   */
+  it('does not let a then on Object.prototype change the verdict', async () => {
+    const indicator = new LoggerHealthIndicator({
+      deliveryState: () => ({
+        destinations: 1,
+        failedInit: 1,
+        writeFailing: 0,
+        hasHealthySink: false
+      })
+    } as never)
+    const proto = Object.prototype as unknown as { then?: unknown }
+    proto.then = (ok: (value: unknown) => void): void => ok({ status: 'up', details: {} })
+
+    let pending: Promise<{ status: string }>
+    try {
+      pending = indicator.check() as Promise<{ status: string }>
+    } finally {
+      delete proto.then
+    }
+
+    expect((await pending).status).toBe('down')
+  })
+
+  /**
+   * Given a hook that swaps `Promise.prototype.constructor` for a stand-in and rejects, and a `then`
+   * that puts the real constructor back before it fulfils
+   * When the hook runs under `withTimeout`
+   * Then the call is refused, not settled as fulfilled
+   */
+  it('refuses a constructor replaced and restored around the await', async () => {
+    const prototype = Promise.prototype as unknown as { constructor: unknown; then: unknown }
+    const realConstructor = prototype.constructor
+    const realThen = prototype.then
+    const work = (): Promise<never> => {
+      prototype.constructor = function Stand() {}
+      prototype.then = (ok: (value: unknown) => void): void => {
+        prototype.constructor = realConstructor
+        prototype.then = realThen
+        ok(undefined)
+      }
+      return Promise.reject(new Error('hook failed'))
+    }
+
+    let outcome: Promise<void>
+    try {
+      outcome = withTimeout(work, 1000)
+    } finally {
+      prototype.constructor = realConstructor
+      prototype.then = realThen
+    }
+
+    await expect(outcome).rejects.toBeInstanceOf(PromiseTamperedError)
+  })
+
+  /**
+   * Given a `then` already planted on a root of the prototype chains
+   * When a hook runs under `withTimeout`
+   * Then the call is refused at entry and the hook is not called
+   */
+  it.each([
+    ['Object.prototype', Object.prototype],
+    ['Array.prototype', Array.prototype],
+    ['Function.prototype', Function.prototype]
+  ])('refuses at entry when a then is planted on %s', async (_name, root) => {
+    const work = jest.fn()
+    Object.defineProperty(root, 'then', { value: undefined, configurable: true })
+
+    let outcome: Promise<void>
+    try {
+      outcome = withTimeout(work, 1000)
+    } finally {
+      delete (root as { then?: unknown }).then
+    }
+
+    await expect(outcome).rejects.toBeInstanceOf(PromiseTamperedError)
+    expect(work).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Given a `then` planted on Object.prototype and a destination whose write answers a promise
+   * When a chunk is written to its stream
+   * Then the write is refused: it is recorded as failed and the refusal is reported on stderr
+   */
+  it('records a refused write as failed and reports it', async () => {
+    const health = new DestinationHealth()
+    const destination: ILogDestination = { name: 'sink', write: () => Promise.resolve() }
+    const stream = destinationToStream(destination, health)
+    const stderr = jest.spyOn(process.stderr, 'write').mockReturnValue(true)
+    const proto = Object.prototype as unknown as { then?: unknown }
+    Object.defineProperty(proto, 'then', { value: undefined, configurable: true })
+
+    try {
+      stream.write('entry\n')
+    } finally {
+      delete proto.then
+    }
+    await tick()
+    await tick()
+
+    try {
+      expect(health.failedWriteTotal(destination)).toBe(1)
+      expect(String(stderr.mock.calls.map((call) => call[0]))).toContain('promise prototype')
+    } finally {
+      stderr.mockRestore()
+    }
+  })
+})

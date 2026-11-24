@@ -14,6 +14,23 @@ heading here.
 
 ### Fixed
 
+- **A replaced `Promise.resolve`, a replaced `Promise.prototype.constructor` and a `then` planted on a
+  prototype root can no longer forge what the logger awaits.** Measured: with `Promise.resolve` replaced after
+  the import, the health indicator answered `up` for a delivery with no healthy sink, `withTimeout` settled a
+  hook that had rejected, a failed destination write was not recorded for readiness, and a late rejection of a
+  tenant resolver reached the process. The four sites no longer read a static of `Promise`: a promise the
+  library builds comes from the intrinsic constructor (taken from an async function, so a `globalThis.Promise`
+  set before the load is not it), a wait is an `await`, and the outcome of a wait is a box with no prototype.
+  Before each `await` that feeds a verdict the baseline is asserted, with no call of the host between the
+  check and the wait: `Promise.prototype.constructor` is the intrinsic one and no `then` sits on
+  `Object.prototype`, `Array.prototype` or `Function.prototype`. A failed assertion refuses the verdict: a
+  hook is reported as failed, a write is recorded as failed and reported on stderr. A `then` of
+  `Promise.prototype` that a runtime wraps (a context manager) is allowed. `withTimeout` now resolves with
+  nothing, because its callers never read the value. A source scan fails for a new read of a static, a
+  `new Promise`, `.then(`, `.catch(` or `.finally(` in `src`, with the three timer sites listed by file and count.
+  Known limits: code running concurrently that plants a `then` and erases it again between the check and the
+  work's own settlement cannot be seen afterwards, and a dependency that reads a static inside itself is code
+  aimed at that dependency, not at the logger.
 - **A key planted on `Object.prototype` is no option.** The options were read by property access through
   the prototype chain, so a `shouldDisableDefaultRedact: true` planted on `Object.prototype` (by a
   dependency with a prototype-pollution flaw) turned the default redact paths off, and `redactCensor`,

@@ -37,12 +37,15 @@ export class LoggerHealthIndicator implements IHealthIndicator {
    *
    * @returns `up` or `down`, with the counts of the state as details.
    */
-  check(): Promise<HealthIndicatorResult> {
+  async check(): Promise<HealthIndicatorResult> {
     const { destinations, failedInit, writeFailing, hasHealthySink } =
       this.observability.deliveryState()
-    return Promise.resolve({
+    // No prototype: an object that resolves a promise is asked for its `then`, and one planted on
+    // `Object.prototype` would answer for the verdict.
+    return {
+      __proto__: null,
       status: hasHealthySink ? 'up' : 'down',
       details: { destinations, failedInit, writeFailing }
-    })
+    } as HealthIndicatorResult
   }
 }
