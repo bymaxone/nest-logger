@@ -118,7 +118,9 @@ function readSet(source: object, keys: readonly string[]): Record<string, unknow
   for (const key of keys) {
     const root = rootHolding(source, key)
     const planted = root && Object.getOwnPropertyDescriptor(root, key)
-    if (planted?.get) {
+    const accessor =
+      planted !== undefined && Object.hasOwn(planted, 'get') && planted.get !== undefined
+    if (accessor) {
       // An answer of a Proxy cannot be told from a forward to the planted accessor, which would decide.
       if (types.isProxy(source))
         refuse(
@@ -129,7 +131,7 @@ function readSet(source: object, keys: readonly string[]): Record<string, unknow
     // `Reflect` reads through a getter like a property access and keeps the dynamic key off the
     // object-injection sink list.
     const value = Reflect.get(source, key) as unknown
-    if (planted && !planted.get && Object.is(value, planted.value)) continue
+    if (planted && Object.hasOwn(planted, 'value') && Object.is(value, planted.value)) continue
     if (value !== undefined && value !== null) Reflect.set(set, key, value)
   }
   return set

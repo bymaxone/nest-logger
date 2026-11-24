@@ -33,6 +33,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-24 — server: 49,195 B real -> 49,225 B budget (48.07 KiB), measured + 30 as approved by
+//     the project manager. What the bytes bought: a descriptor is read for its own get and value only,
+//     so a field planted on Object.prototype is never taken for one (species baseline, toJSON, options).
 //   - 2026-11-24 — server: 49,124 B real -> 49,154 B budget (48.00 KiB), measured + 30 as approved by
 //     the project manager. What the bytes bought: the result of a hook is waited for through the
 //     intrinsic constructor (one synchronous call, then removed), and a native promise that carries its
@@ -405,7 +408,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 49_154 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 49_225 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',

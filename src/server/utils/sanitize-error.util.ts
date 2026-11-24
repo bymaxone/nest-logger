@@ -347,11 +347,7 @@ const SQLSTATE = /^[0-9A-DF-Z][0-9A-Z]{4}$/
 /** Returned by {@link ownFieldForLog} for a field that must not be written. */
 export const OMIT_OWN_FIELD: unique symbol = Symbol('omit-own-field')
 
-/**
- * The value of an own data property, read from its descriptor so no getter runs. An accessor
- * descriptor has no `value` of its own, and a plain read of it would find one planted on
- * `Object.prototype`, so only a descriptor that owns `value` answers.
- */
+/** An own data value, read from the descriptor so no getter runs and no planted `Object.prototype.value` answers. */
 function ownDataValue(source: object, key: string): unknown {
   const descriptor = Object.getOwnPropertyDescriptor(source, key)
   return descriptor !== undefined && Object.hasOwn(descriptor, 'value')

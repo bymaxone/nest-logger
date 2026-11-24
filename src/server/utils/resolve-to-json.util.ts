@@ -44,8 +44,11 @@ export function resolveToJson(value: object, viaGet = false): ResolvedToJson {
     proxied = proxied || types.isProxy(current)
     const descriptor = Object.getOwnPropertyDescriptor(current, 'toJSON')
     if (descriptor !== undefined) {
-      accessor = descriptor.get !== undefined
-      candidate = descriptor.get === undefined ? descriptor.value : descriptor.get.call(value)
+      // Own fields only: a read of the missing one finds what is planted on `Object.prototype`.
+      const getter = Object.hasOwn(descriptor, 'get') ? descriptor.get : undefined
+      accessor = getter !== undefined
+      if (getter !== undefined) candidate = getter.call(value)
+      else if (Object.hasOwn(descriptor, 'value')) candidate = descriptor.value
       break
     }
     const next: unknown = Object.getPrototypeOf(current) // a non-object ends the walk
