@@ -302,9 +302,8 @@ export function destinationToStream(
         if (result === undefined) {
           callback()
         } else {
-          // Counted while in flight. A rejection is only recorded when the promise
-          // settles, and readiness can be computed before that — so a pending
-          // write has to read as UNPROVEN rather than as silent success, or a
+          // Counted while in flight: a rejection is only recorded when the promise settles, and
+          // readiness can be computed before that, so a pending write has to read as UNPROVEN, or a
           // buffering sink discards its copy moments before this one rejects.
           health.markWritePending(destination)
           void awaitOutcome(
