@@ -9,8 +9,8 @@
  * nothing of the package: it covers no mutant, never runs in the mutation run, and is listed too. It
  * reads the Stryker configuration, the JSON and the text of the specs, and runs no other code of the package.
  */
-import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join, relative as relativePath } from 'node:path'
 
 const ROOT = join(__dirname, '..')
 
@@ -33,20 +33,53 @@ const ADDED = [...LIST.matchAll(/'((?:\\.|[^'\\])*)'/g)]
   .filter((pattern) => pattern !== '/node_modules/')
 
 /**
- * Every spec under `src` that imports no module by a relative path or by the package's own name, by a static scan of its text.
- * Stryker runs a test only for a mutant it covers, so a spec that reaches no module of the package covers
- * none, never runs in the mutation run, and the inventory step fails unless the exempt list names it.
- * A dynamic `import()` and a `require` count as an import, so a spec is asked for an entry only when
- * nothing at all links it to the package.
+ * The specifiers a source text imports as values: a type-only `import type` is erased when the file is
+ * compiled, so it reaches no code of the package and does not count. A dynamic `import()`, a `require`,
+ * a bare `import 'x'` and a re-export count, as does any `import` that names a value, even beside a type.
+ */
+function valueSpecifiers(text: string): string[] {
+  const found: string[] = []
+  const named = /\b(?:import|export)\s+(type\s+)?[^;'"]*?\sfrom\s*['"]([^'"]+)['"]/g
+  for (const match of text.matchAll(named)) {
+    if (match[1] === undefined) found.push(match[2] ?? '')
+  }
+  const other = /\b(?:import\s*\(\s*|require\s*\(\s*|import\s+)['"]([^'"]+)['"]/g
+  for (const match of text.matchAll(other)) found.push(match[1] ?? '')
+  return found
+}
+
+/** The file a relative specifier names from `from`, or `undefined` when it is not a TypeScript module. */
+function resolveModule(from: string, specifier: string): string | undefined {
+  const base = join(ROOT, from, '..', specifier)
+  return [`${base}.ts`, join(base, 'index.ts')].find((candidate) => existsSync(candidate))
+}
+
+/**
+ * Whether the text of `file` reaches code of the package: it imports the package by name, or a module of
+ * `src`, or a helper under `__tests__` that does. A helper is followed because the spec runs what it runs.
+ */
+function linksToSource(file: string, text: string, seen: ReadonlySet<string> = new Set()): boolean {
+  return valueSpecifiers(text).some((specifier) => {
+    if (specifier.startsWith('@bymax-one/nest-logger')) return true
+    if (!/^\.{1,2}\//.test(specifier)) return false
+    const target = resolveModule(file, specifier)
+    if (target === undefined || seen.has(target)) return false
+    const relative = relativePath(ROOT, target).split('\\').join('/')
+    if (!relative.includes('/__tests__/')) return true
+    return linksToSource(relative, readFileSync(target, 'utf8'), new Set([...seen, target]))
+  })
+}
+
+/**
+ * Every spec under `src` that reaches no code of the package, by a static scan of its text. Stryker runs
+ * a test only for a mutant it covers, so a spec that reaches none covers none, never runs in the mutation
+ * run, and the inventory step fails unless the exempt list names it.
  */
 const SPECS = (readdirSync(join(ROOT, 'src'), { recursive: true }) as string[])
   .filter((file) => file.endsWith('.spec.ts'))
   .map((file) => `src/${file.split('\\').join('/')}`)
 const IMPORTS_NO_SOURCE = SPECS.filter(
-  (file) =>
-    !/(?:from|import|require)\s*\(?\s*['"](?:\.{1,2}\/|@bymax-one\/nest-logger)/.test(
-      readFileSync(join(ROOT, file), 'utf8')
-    )
+  (file) => !linksToSource(file, readFileSync(join(ROOT, file), 'utf8'))
 )
 
 describe('the Stryker ignore list and the inventory exempt list', () => {
@@ -73,11 +106,11 @@ describe('the Stryker ignore list and the inventory exempt list', () => {
   })
 
   /*
-   * Given every spec under src whose text imports nothing by a relative path
+   * Given every spec under src whose text reaches no code of the package
    * When each is looked up in the exempt list
    * Then every one of them is there, because it covers no mutant and so never runs in the mutation run
    */
-  it('names every spec that imports nothing of the package in the exempt list', () => {
+  it('names every spec that reaches no code of the package in the exempt list', () => {
     const unlisted = IMPORTS_NO_SOURCE.filter((file) => !EXEMPT.includes(file))
 
     expect(unlisted).toStrictEqual([])
@@ -91,5 +124,70 @@ describe('the Stryker ignore list and the inventory exempt list', () => {
   it('finds the specs that read text, and not the ones that import the package', () => {
     expect(IMPORTS_NO_SOURCE).toContain('src/readme.exports.spec.ts')
     expect(IMPORTS_NO_SOURCE).not.toContain('src/server/binary-marker.spec.ts')
+  })
+
+  /*
+   * Given specs whose only import of the package is a helper under __tests__ that imports its code
+   * When the scan follows the helper
+   * Then they count as linked, because they run what the helper runs
+   */
+  it('counts a spec that reaches the package only through a helper as linked', () => {
+    expect(IMPORTS_NO_SOURCE).not.toContain('src/server/nested-error-shapes.a.spec.ts')
+    expect(IMPORTS_NO_SOURCE).not.toContain('src/server/nested-error-shapes.blind.spec.ts')
+  })
+
+  /*
+   * Given a text whose only relative imports are `import type`, one of them over several lines
+   * When its imports are read as values
+   * Then none is found, because a type-only import is erased and reaches no code
+   */
+  it('does not count a type-only import as reaching the package', () => {
+    const text = [
+      "import type { A } from './a'",
+      'import type {',
+      '  B,',
+      '  C',
+      "} from '../b'",
+      "import type * as ns from './ns'"
+    ].join('\n')
+
+    expect(valueSpecifiers(text)).toStrictEqual([])
+    expect(linksToSource('src/x.spec.ts', text)).toBe(false)
+  })
+
+  /*
+   * Given a text that imports a value of src, a helper under __tests__ and a type
+   * When the scan reads it
+   * Then it is linked, and every one of the value specifiers is found, the type one is not
+   */
+  it('counts a spec that imports src values together with a helper and a type as linked', () => {
+    const text = [
+      "import { buildPinoInstance } from './pino-factory'",
+      "import { makeOptions } from './__tests__/pino-factory.fixtures'",
+      "import type { Options } from './interfaces/options'"
+    ].join('\n')
+
+    expect(valueSpecifiers(text)).toStrictEqual([
+      './pino-factory',
+      './__tests__/pino-factory.fixtures'
+    ])
+    expect(linksToSource('src/server/x.spec.ts', text)).toBe(true)
+  })
+
+  /*
+   * Given a dynamic import, a require, a bare import and a re-export of the package
+   * When the scan reads each
+   * Then each is a value specifier
+   */
+  it('counts a dynamic import, a require, a bare import and a re-export as values', () => {
+    const text = [
+      "const a = await import('./a')",
+      "const b = require('./b')",
+      "import './c'",
+      "export { d } from './d'",
+      "import e, { type F } from './e'"
+    ].join('\n')
+
+    expect(valueSpecifiers(text)).toStrictEqual(['./d', './e', './a', './b', './c'])
   })
 })

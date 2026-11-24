@@ -24,7 +24,7 @@ const config: Config = {
   // runs. It asserts about documentation, not behaviour, so it kills no mutant; `pnpm test` still
   // runs it against the real source. `check-api-surface.spec.ts` runs a repository script on
   // fixture directories and touches no code in `src`, so it kills no mutant either.
-  // `builtins-scan.spec.ts` reads the TEXT of five files for the calls they make, and the sandbox's
+  // `builtins-scan.spec.ts` reads the TEXT of the source files it lists for the calls they make, and the sandbox's
   // instrumented copies add calls of their own (`cover.apply`), so its scan fails the dry run; it runs
   // against the real source in `pnpm test`, and executes none of the code it reads.
   testPathIgnorePatterns: [
