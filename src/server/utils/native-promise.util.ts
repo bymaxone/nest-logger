@@ -31,7 +31,7 @@ const roots: readonly object[] = [Object.prototype, Array.prototype, Function.pr
 export class PromiseTamperedError extends Error {
   constructor() {
     super(
-      'the constructor of the promise prototype was replaced, or a then was planted on a prototype root'
+      'the promise baseline does not hold: the constructor of the promise prototype was replaced, a then was planted on a prototype root, or the promise awaited carries its own constructor or then'
     )
   }
 }
@@ -159,6 +159,32 @@ function unpin(target: unknown): void {
 }
 
 /**
+ * Makes a value the host handed back safe to wait for. A native promise is given the intrinsic
+ * `constructor` for the length of one synchronous call, inside which an async function waits for it, so
+ * that wait reads that slot and not the `constructor` of `Promise.prototype` (which work may have swapped
+ * for an accessor that restores itself after one read), and never reads a `then`. The slot is removed
+ * again before the call returns. A native promise that already carries its own `constructor` or `then`, or
+ * that cannot take the slot (frozen), is refused: what it would answer to the wait is the host's to forge.
+ *
+ * @param value - What the work returned, after the baseline was asserted.
+ * @returns A promise of ours that settles as `value` does, or `value` itself when it is not a native promise.
+ * @throws {PromiseTamperedError} When a native promise cannot be waited for without reading a slot of the host.
+ */
+function hold(value: unknown): unknown {
+  if (!isNativePromise(value)) return value
+  if (hasOwn(value, 'constructor') || hasOwn(value, 'then') || !setOwnConstructor(value, true)) {
+    throw new PromiseTamperedError()
+  }
+  try {
+    return (async (): Promise<void> => {
+      await value
+    })()
+  } finally {
+    unpin(value)
+  }
+}
+
+/**
  * Calls `work`, waits for what it returned, and hands `finish` how that ended. A throw, a rejection and
  * a baseline that does not hold end as `ok: false`, and a throw of `finish` itself is dropped.
  *
@@ -192,7 +218,7 @@ async function run(
     return finish({ __proto__: null, ok: false, cause } as Outcome)
   }
   try {
-    await intactOr(pending)
+    await hold(intactOr(pending))
   } catch (cause) {
     // A refusal leaves the work's own rejection with no handler, and an unhandled rejection ends the process.
     if (cause instanceof PromiseTamperedError) absorb(pending)

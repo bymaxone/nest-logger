@@ -666,4 +666,112 @@ describe('Promise.resolve replaced after the library loaded', () => {
     expect(Object.isFrozen(verdict)).toBe(true)
     expect(Object.isFrozen(verdict.details)).toBe(true)
   })
+
+  /**
+   * Given a hook that returns a native promise carrying its own then, its own data constructor or its
+   * own accessor constructor
+   * When it runs under `withTimeout`
+   * Then each is refused with a PromiseTamperedError, and a forged settlement is never read
+   */
+  it.each([
+    [
+      'own then',
+      (p: Promise<void>) =>
+        Object.defineProperty(p, 'then', {
+          value: (resolve: () => void) => resolve()
+        })
+    ],
+    [
+      'own data constructor',
+      (p: Promise<void>) => Object.defineProperty(p, 'constructor', { value: Object })
+    ],
+    [
+      'own accessor constructor',
+      (p: Promise<void>) =>
+        Object.defineProperty(p, 'constructor', {
+          get() {
+            return Object
+          }
+        })
+    ]
+  ])('refuses a hook promise with %s', async (_name, plant) => {
+    const hostile = Promise.reject(new Error('hook'))
+    plant(hostile)
+
+    const outcome = withTimeout(() => hostile, 50)
+
+    await expect(outcome).rejects.toBeInstanceOf(PromiseTamperedError)
+  })
+
+  /**
+   * Given a hook that installs, inside its own call, accessors on the constructor and the then of
+   * Promise.prototype that restore themselves after one read, and returns a rejected promise
+   * When it runs under `withTimeout`
+   * Then it is refused, because the baseline is read before the wait and an accessor is not the intrinsic
+   */
+  it('refuses a hook that plants self-restoring prototype accessors', async () => {
+    const proto = Promise.prototype as unknown as Record<string, unknown>
+    const own = (key: string) => Object.getOwnPropertyDescriptor(proto, key) as PropertyDescriptor
+    const original = { constructor: own('constructor'), then: own('then') }
+    const restore = () => {
+      Object.defineProperty(proto, 'constructor', original.constructor)
+      Object.defineProperty(proto, 'then', original.then)
+    }
+    class Fake {}
+    let answer: Promise<void>
+    try {
+      answer = withTimeout(() => {
+        const hostile = Promise.reject(new Error('hook'))
+        Object.defineProperty(proto, 'constructor', {
+          get() {
+            restore()
+            return Fake
+          },
+          configurable: true
+        })
+        Object.defineProperty(proto, 'then', {
+          get() {
+            restore()
+            return (resolve: () => void) => resolve()
+          },
+          configurable: true
+        })
+        return hostile
+      }, 50)
+    } finally {
+      restore()
+    }
+
+    await expect(answer).rejects.toBeInstanceOf(PromiseTamperedError)
+  })
+
+  /**
+   * Given a hook that returns a native promise whose prototype was swapped, inside the hook, for one whose
+   * constructor and then are accessors that restore themselves after one read
+   * When it runs under `withTimeout`
+   * Then the rejection is the one the caller sees, and the forged then is never read
+   */
+  it('keeps the rejection of a hook promise whose prototype was swapped', async () => {
+    class Fake {}
+    const hostile = Promise.reject(new Error('hook'))
+    const swapped = Object.create(Promise.prototype, {
+      constructor: {
+        get() {
+          return Fake
+        },
+        configurable: true
+      },
+      then: {
+        get() {
+          return (resolve: () => void) => resolve()
+        },
+        configurable: true
+      }
+    }) as object
+    Object.setPrototypeOf(hostile, swapped)
+
+    const answer = withTimeout(() => hostile, 50)
+
+    await expect(answer).rejects.toThrow('hook')
+  })
 })
