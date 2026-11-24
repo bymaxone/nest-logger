@@ -12,6 +12,13 @@ heading here.
 
 ## [Unreleased]
 
+### Breaking
+
+- **`LoggerHealthIndicator.check()` answers a frozen verdict.** The result and its `details` are
+  frozen, so code that adds or changes a field on what `check()` returned throws a `TypeError` in strict
+  mode (and drops the write silently in sloppy mode). Migration: copy before you mutate, for example
+  `const verdict = { ...result, details: { ...result.details } }`, and change the copy.
+
 ### Fixed
 
 - **A replaced `Promise.resolve`, a replaced `Promise.prototype.constructor` and a `then` planted on a
@@ -31,8 +38,6 @@ heading here.
   A native promise a hook or a destination returns is waited for through the intrinsic constructor, for the
   length of one synchronous call, and is refused when it already carries its own `constructor` or `then`
   or cannot take that slot.
-  Also changed in the public surface: `LoggerHealthIndicator.check()` now answers a frozen verdict (its
-  `details` frozen too), so a consumer that mutated the verdict gets a `TypeError` in strict mode.
   Known limits: a frozen, sealed or non-extensible native promise cannot take a handler under a replaced
   `Promise.prototype.constructor` whose species throws, so a rejection of it can reach the process (a
   waited-for promise of that shape is refused instead); while a rejection is absorbed, the temporary
