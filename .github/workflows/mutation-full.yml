@@ -37,8 +37,12 @@ jobs:
       # for them, the slowest 31.7. Run 44819362291, on the same eight shards, took between 14 and 51
       # minutes, the slowest 51 (shard 5), so 60 left 1.2 times the slowest and 77 leaves 1.5 times it (76.5). A
       # run the ceiling cancels leaves no score and no baseline for the week, and nothing blocks on this
-      # job, so an over-wide ceiling costs only the minutes it uses.
-      timeout-minutes: 77
+      # job, so an over-wide ceiling costs only the minutes it uses. Run 45375562146, on the same eight
+      # shards, ran shard 7 (12 files, 1,090 mutants, 3,615 tests) into 77 minutes and was cancelled, with
+      # 14 test-runner restarts for memory, while the other seven finished in 31 to 63. Run 44940017967 took
+      # 50 minutes for the same shard, with 2 restarts, 994 mutants and 2,897 tests. 120 leaves 1.5 times the
+      # 77 minutes that run was cancelled at.
+      timeout-minutes: 120
       # A unit test the cold run did not run fails the job. The specs that judge no mutant are
       # listed, with the reason, in scripts/mutation-inventory.exempt.json.
       inventory: enforce
