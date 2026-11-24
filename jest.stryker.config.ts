@@ -31,7 +31,8 @@ const config: Config = {
     ...(base.testPathIgnorePatterns ?? ['/node_modules/']),
     '/readme-error-catalog\\.spec\\.ts$',
     '/check-api-surface\\.spec\\.ts$',
-    '/builtins-scan\\.spec\\.ts$'
+    '/builtins-scan\\.spec\\.ts$',
+    '/promise-scan\\.spec\\.ts$'
   ]
 }
 

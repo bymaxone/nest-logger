@@ -9,12 +9,12 @@ describe('withTimeout', () => {
     jest.useRealTimers()
   })
 
-  it('resolves with the value of a synchronous work', async () => {
-    await expect(withTimeout(() => 7, 50)).resolves.toBe(7)
+  it('resolves once a synchronous work returned, and not with its value', async () => {
+    await expect(withTimeout(() => 7, 50)).resolves.toBeUndefined()
   })
 
-  it('resolves with the value of a promise that settles in time', async () => {
-    await expect(withTimeout(() => Promise.resolve('ok'), 50)).resolves.toBe('ok')
+  it('resolves once a promise settles in time, and not with its value', async () => {
+    await expect(withTimeout(() => Promise.resolve('ok'), 50)).resolves.toBeUndefined()
   })
 
   it('rejects with the rejection of the work', async () => {

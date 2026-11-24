@@ -19,6 +19,7 @@ import type { LogLevel } from '../../shared/types/log-level.type'
 import type { ILogDestination } from '../interfaces/log-destination.interface'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { isError } from '../utils/is-error.util'
+import { tag } from '../utils/native-promise.util'
 import { writeStdoutSafely } from '../utils/safe-stdio.util'
 
 /**
@@ -249,7 +250,7 @@ async function buildTransform(view: PrettyViewOptions): Promise<Transform> {
   // instead (`stream.pipe(process.stdout)`) would leak the RAW NDJSON to
   // stdout alongside the prettified output — pino-pretty writes the formatted
   // text to its `destination` and passes the original chunk through unchanged.
-  const { build } = await import('pino-pretty')
+  const { build } = await tag(import('pino-pretty'))
   return build({
     ...DEFAULT_VIEW,
     ...view,
@@ -407,7 +408,7 @@ export class PrettyDevDestination implements ILogDestination {
     // paths this destination DOES own — the pre-init drain and the raw
     // fallbacks — go through `writeStdoutSafely`, which guards lazily.
     try {
-      this.stream = await buildTransform(this.view)
+      this.stream = await tag(buildTransform(this.view))
     } catch (cause) {
       // Mark as failed so subsequent writes are dropped rather than falling back
       // to raw stdout here: with a stdout sink also registered, a fallback would

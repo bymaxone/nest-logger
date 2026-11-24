@@ -155,12 +155,15 @@ function nextOf(iterator: unknown): object {
 
 /**
  * Every built-in the redaction of a record reads, by holder and member: the files that decide what to
- * hide (`fold-key`, `normalize-url`, `matches-exclude-path`, `sanitize-error`, the name paths of
+ * hide (`fold-key`, `normalize-url`, `matches-exclude-path`, `sanitize-error`, the redaction of names and error text, the size bounds, the name paths of
  * `pino-factory`) call these, and Pino and the code that hides a message in an error stack call the
  * rest. A spec scans those files and fails for a built-in member a call reaches that is not here.
  */
 export const GUARDED_BUILTINS: ReadonlyArray<readonly [object, ReadonlyArray<Member>]> = [
   [Array, ['from', 'isArray']],
+  [ArrayBuffer, ['isView']],
+  [Buffer, ['byteLength', 'from']],
+  [Buffer.prototype, ['readUInt8', 'subarray']],
   [
     Array.prototype,
     ['at', 'filter', 'flatMap', 'forEach', 'join', 'map', 'push', 'reduce', 'shift', 'some', 'sort']
@@ -171,17 +174,21 @@ export const GUARDED_BUILTINS: ReadonlyArray<readonly [object, ReadonlyArray<Mem
     String.prototype,
     ['includes', 'indexOf', 'lastIndexOf', 'normalize', 'replace', 'search', 'slice', 'split']
   ],
-  [String.prototype, ['startsWith', 'toLowerCase', Symbol.iterator, Symbol.replace]],
+  [String.prototype, ['charCodeAt', 'startsWith', 'toLowerCase', Symbol.iterator, Symbol.replace]],
   [Map.prototype, ['clear', 'get', 'has', 'set', Symbol.iterator]],
-  [Set.prototype, ['add', 'has', 'values', Symbol.iterator]],
+  [Set.prototype, ['add', 'delete', 'has', 'values', Symbol.iterator]],
   [RegExp.prototype, ['exec', 'test', Symbol.replace]],
-  [Object, ['create', 'defineProperty', 'entries', 'fromEntries', 'getOwnPropertyDescriptor']],
+  [
+    Object,
+    ['assign', 'create', 'defineProperty', 'entries', 'fromEntries', 'getOwnPropertyDescriptor']
+  ],
+  [Function.prototype, ['call']],
   [Object, ['getOwnPropertyDescriptors', 'getPrototypeOf', 'hasOwn', 'keys']],
   [
     Reflect,
     ['defineProperty', 'deleteProperty', 'get', 'getOwnPropertyDescriptor', 'ownKeys', 'set']
   ],
-  [Math, ['max']],
+  [Math, ['max', 'min']],
   [Number, ['isInteger']],
   [nextOf([][Symbol.iterator]()), ['next']],
   [nextOf(''[Symbol.iterator]()), ['next']],

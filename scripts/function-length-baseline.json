@@ -8,8 +8,8 @@
     "[\"src/server/mixins/trace-context.mixin.ts\",[\"fn\",\"createTraceContextMixin\"]]": 60,
     "[\"src/server/mixins/trace-context.mixin.ts\",[\"fn\",\"createTraceContextMixin\"],[\"anon\"]]": 51,
     "[\"src/server/readme-quick-start.spec.ts\",[\"container\",\"describe\",\"README Quick Start (sections 2 and 4)\"],[\"test\",\"it\",\"logs the README flow as structured JSON lines on stdout\"]]": 51,
-    "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"]]": 86,
-    "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"],[\"member\",\"<class>\",\"write\"]]": 70,
+    "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"]]": 84,
+    "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"],[\"member\",\"<class>\",\"write\"]]": 68,
     "[\"src/server/utils/redact-by-name.hostile-hook.property.spec.ts\",[\"fn\",\"shapes\"]]": 191,
     "[\"src/server/utils/redact-by-name.util.ts\",[\"fn\",\"walkProperties\"]]": 54,
     "[\"src/server/utils/sanitize-error.util.ts\",[\"fn\",\"toSanitizedError\"]]": 58

@@ -12,8 +12,39 @@ heading here.
 
 ## [Unreleased]
 
+### Breaking
+
+- **`LoggerHealthIndicator.check()` answers a frozen verdict.** The result and its `details` are
+  frozen, so code that adds or changes a field on the result that `check()` resolves to throws a `TypeError` in strict
+  mode (and drops the write silently in sloppy mode). Migration: copy before you mutate, for example
+  `const verdict = { ...result, details: { ...result.details } }`, and change the copy.
+
 ### Fixed
 
+- **A replaced `Promise.resolve`, a replaced `Promise.prototype.constructor` and a `then` planted on a
+  prototype root no longer decide what the logger awaits, in the cases measured here.** Measured: with `Promise.resolve` replaced after
+  the import, the health indicator answered `up` for a delivery with no healthy sink, `withTimeout` settled a
+  hook that had rejected, a failed destination write was not recorded for readiness, and a late rejection of a
+  tenant resolver reached the process. The sites no longer read a static of `Promise`: a promise the
+  library builds comes from the intrinsic constructor (taken from an async function, so a `globalThis.Promise`
+  set before the load is not it), a wait is an `await`, and the outcome of a wait is a box with no prototype.
+  Before each `await` that feeds a verdict the baseline is asserted, with no call of the host between the
+  check and the wait: `Promise.prototype.constructor` is the intrinsic one and no `then` sits on
+  `Object.prototype`, `Array.prototype` or `Function.prototype`. A failed assertion refuses the verdict: a
+  hook is reported as failed, a write is recorded as failed and reported on stderr. A `then` of
+  `Promise.prototype` that a runtime wraps (a context manager) is allowed. `withTimeout` now resolves with
+  nothing. A source scan fails for a new read of a static, a
+  `new Promise`, `.then(`, `.catch(` or `.finally(` in `src`.
+  A native promise a hook or a destination returns is waited for through the intrinsic constructor, for the
+  length of one synchronous call, and is refused when it already carries its own `constructor` or `then`
+  or cannot take that slot.
+  Known limits: a frozen, sealed or non-extensible native promise cannot take a handler under a replaced
+  `Promise.prototype.constructor` whose species throws, so a rejection of it can reach the process (a
+  waited-for promise of that shape is refused instead); while a rejection is absorbed, the temporary
+  `constructor` of the promise can stay if a species getter makes it non-configurable inside that window;
+  code running concurrently that plants a `then` and erases it again between the check and the
+  work's own settlement cannot be seen afterwards, and a dependency that reads a static inside itself is code
+  aimed at that dependency, not at the logger.
 - **A key planted on `Object.prototype` is no option.** The options were read by property access through
   the prototype chain, so a `shouldDisableDefaultRedact: true` planted on `Object.prototype` (by a
   dependency with a prototype-pollution flaw) turned the default redact paths off, and `redactCensor`,

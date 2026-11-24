@@ -29,6 +29,7 @@ import {
   markOwnRequestId,
   readOwnRequestId
 } from '../utils/http-log-state.util'
+import { absorb } from '../utils/native-promise.util'
 
 /** Response/request header carrying the correlation id. */
 const REQUEST_ID_HEADER = 'x-request-id'
@@ -63,7 +64,7 @@ const CORRELATION_ID_CHARSET = /^[A-Za-z0-9._:/+=-]+$/
  * process as an unhandled rejection; the middleware has already moved on without it.
  */
 function settleLate(answer: unknown): void {
-  Promise.resolve(answer).catch(() => undefined)
+  absorb(answer)
 }
 
 /**

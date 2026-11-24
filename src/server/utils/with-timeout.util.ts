@@ -5,6 +5,7 @@
  * never settle (a connection that is never answered), and an application that waits for it never
  * starts or never stops. The deadline abandons the wait; it cannot cancel the work.
  */
+import { absorb, awaitOutcome, IntrinsicPromise, tag } from './native-promise.util'
 
 /** The error a hook that did not settle in time is rejected with. */
 export class HookTimeoutError extends Error {
@@ -15,33 +16,34 @@ export class HookTimeoutError extends Error {
 }
 
 /**
- * Run `work` and settle with its result, or reject with a {@link HookTimeoutError} once `ms` pass.
+ * Run `work` and settle once it has, or reject with a {@link HookTimeoutError} once `ms` pass.
  *
  * The timer is cleared when the work settles. It is not unreferenced: it is what settles the wait
  * when the work never does, and a process with no other handle would otherwise exit with the hook
- * still pending, and never report it. A throw, a
- * rejection and a value that is not a promise are all read as the work's own outcome. When the
- * deadline wins, a later settlement of the work is ignored.
+ * still pending, and never report it. A throw and a rejection are the work's own failure, and what
+ * the work returned is not read. When the deadline wins, a later settlement of the work is ignored.
+ * The wait is refused with a {@link PromiseTamperedError} when the promise baseline does not hold.
  *
  * @param work - The hook call, which may throw, return a value or return a promise.
  * @param ms - The deadline in milliseconds, an integer from 1 to 2147483647.
- * @returns What the work settled with.
+ * @returns A promise that resolves with nothing once the work settled.
  */
-export function withTimeout<T>(work: () => T | PromiseLike<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
+export function withTimeout(work: () => unknown, ms: number): Promise<void> {
+  const wait = new IntrinsicPromise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new HookTimeoutError(ms))
     }, ms)
-    const settle =
-      <A extends unknown[]>(done: (...args: A) => void) =>
-      (...args: A): void => {
+    awaitOutcome(work, (outcome) => {
+      if (outcome.ok) resolve()
+      else reject(outcome.cause)
+      try {
         clearTimeout(timer)
-        done(...args)
+      } catch {
+        // The wait is settled; a timer left armed rejects a settled promise and does nothing.
       }
-    try {
-      Promise.resolve(work()).then(settle(resolve), settle(reject))
-    } catch (cause) {
-      settle(reject)(cause)
-    }
+    })
   })
+  // A refusal rejects at once, and a caller that refuses first never reads this promise.
+  absorb(wait)
+  return tag(wait)
 }

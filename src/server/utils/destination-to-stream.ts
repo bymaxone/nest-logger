@@ -26,6 +26,7 @@ import { Writable } from 'node:stream'
 import type { WritableOptions } from 'node:stream'
 
 import { toSingleLineMessage } from './escape-log-text.util'
+import { awaitOutcome } from './native-promise.util'
 import { reportDestinationFailure, safeDestinationName } from './report-destination-failure.util'
 import type { MessageCensor } from './report-destination-failure.util'
 import { writeStderrSafely, writeStdoutSafely } from './safe-stdio.util'
@@ -296,25 +297,23 @@ export function destinationToStream(
         // was about to fail. This library already learned the realm-local lesson
         // once, from `instanceof Error`, which is why `isErrorLike` exists.
         //
-        // `Promise.resolve` assimilates both shapes. Synchronous writes keep the
+        // `await` assimilates both shapes, and reads no static of `Promise`. Synchronous writes keep the
         // synchronous path, so the back-pressure contract is unchanged.
         if (result === undefined) {
           callback()
         } else {
-          // Counted while in flight. A rejection is only recorded when the promise
-          // settles, and readiness can be computed before that — so a pending
-          // write has to read as UNPROVEN rather than as silent success, or a
+          // Counted while in flight: a rejection is only recorded when the promise settles, and
+          // readiness can be computed before that, so a pending write has to read as UNPROVEN, or a
           // buffering sink discards its copy moments before this one rejects.
           health.markWritePending(destination)
-          Promise.resolve(result).then(
-            () => {
+          awaitOutcome(
+            () => result,
+            (outcome) => {
               health.markWriteSettled(destination)
-              callback()
+              if (outcome.ok) callback()
+              else onFailure(outcome.cause)
             },
-            (cause: unknown) => {
-              health.markWriteSettled(destination)
-              onFailure(cause)
-            }
+            result
           )
         }
       } catch (cause) {

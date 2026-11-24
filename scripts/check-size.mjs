@@ -33,6 +33,24 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-24 — server: 49,124 B real -> 49,154 B budget (48.00 KiB), measured + 30 as approved by
+//     the project manager. What the bytes bought: the result of a hook is waited for through the
+//     intrinsic constructor (one synchronous call, then removed), and a native promise that carries its
+//     own constructor or then, or cannot take the slot, is refused (16b.15).
+//   - 2026-11-24 — server: 49,022 B real -> 49,052 B budget (47.90 KiB), and observability: 1,301 B
+//     real -> 1,331 B budget (1.30 KiB), each measured + 30 as approved by the project manager. What
+//     the bytes bought: the baseline of a promise also compares the species getter of the intrinsic
+//     `Promise`, so a species that throws is refused and not left to orphan a rejection (server,
+//     +18 B); a promise the library returns carries a constructor that cannot be redefined, and the
+//     readiness check builds its own promise and freezes its verdict (observability, +62 B over the
+//     1,239 B budget, which it already exceeded since the check owns its promise).
+//   - 2026-11-24 — server: 48,974 B real -> 49,004 B budget (47.86 KiB), as approved by the project manager (measured + 30): every promise returned on a decision path carries an own intrinsic constructor (16b.12).
+//   - 2026-11-24 — server: 48,879 B real -> 48,909 B budget (47.76 KiB), as approved by the project manager (measured + 30).
+//     absorb gives the promise it drops an own constructor, the intrinsic one, so a constructor whose species throws cannot orphan it. Comments do not ship in dist: the growth is code.
+//   - 2026-11-24 — server: 48,827 B real -> 48,857 B budget (47.71 KiB), as approved by the project manager (measured + 30).
+//     DEC-217/16b correction round: a wait that is refused absorbs its own promise, the entry refusal absorbs the promise the caller holds, and the baseline reads the own descriptor of the constructor. Comments do not ship in dist: the growth is code.
+//   - 2026-11-24 — server: 48,778 B real -> 48,808 B budget (47.66 KiB), as approved by the project manager (measured + 30).
+//     DEC-217/16b: the intrinsic-promise util (baseline check, null-prototype outcome box, absorb) and its use at four sites. Comments do not ship in dist: the growth is code.
 //   - 2026-11-23 — server: 48,276 B real -> 48,306 B budget (47.17 KiB), as approved by the project manager (measured + 30).
 //     The table of guarded built-ins (about 85 members, by holder) and the guard at the entry of each path that reads them.
 //   - 2026-11-23 — server: 47,779 B real -> 47,809 B budget (46.69 KiB), as approved by the project manager (measured + 30).
@@ -387,12 +405,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 48_306 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 49_154 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',
     path: 'dist/observability/index.mjs',
-    brotli: 1.21 * 1024
+    brotli: 1_331
   }
 ]
 
