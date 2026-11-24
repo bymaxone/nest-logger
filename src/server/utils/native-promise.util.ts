@@ -25,7 +25,9 @@ const nativeThen = Function.prototype.call.bind(IntrinsicPromise.prototype.then)
 ) => unknown
 const promisePrototype = IntrinsicPromise.prototype as object
 const speciesGetter = ownDescriptor(IntrinsicPromise, Symbol.species)?.get
-const roots: readonly object[] = [Object.prototype, Array.prototype, Function.prototype]
+const objectRoot = Object.prototype
+const arrayRoot = Array.prototype
+const functionRoot = Function.prototype
 
 /** The error a verdict is refused with when the promise baseline no longer holds. */
 export class PromiseTamperedError extends Error {
@@ -49,10 +51,7 @@ export function promiseIntact(): boolean {
   if (own === undefined || !hasOwn(own, 'value') || own.value !== IntrinsicPromise) return false
   // The species the captured `then` reads: a getter that throws would orphan the rejection it attaches to.
   if (ownDescriptor(IntrinsicPromise, Symbol.species)?.get !== speciesGetter) return false
-  for (let at = 0; at < roots.length; at++) {
-    if (hasOwn(roots[at] as object, 'then')) return false
-  }
-  return true
+  return !hasOwn(objectRoot, 'then') && !hasOwn(arrayRoot, 'then') && !hasOwn(functionRoot, 'then')
 }
 
 /**
@@ -210,7 +209,7 @@ async function run(
   held: unknown
 ): Promise<void> {
   if (!promiseIntact()) {
-    if (held !== undefined) absorb(held)
+    absorb(held)
     return finish({ __proto__: null, ok: false, cause: new PromiseTamperedError() } as Outcome)
   }
   let pending: unknown

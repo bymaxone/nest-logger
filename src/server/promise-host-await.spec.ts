@@ -176,6 +176,76 @@ describe('A native promise the host returns', () => {
   })
 
   /**
+   * Given a hook that returns a native promise with its own constructor that is writable and configurable
+   * When it runs under `withTimeout`
+   * Then it is refused, and the constructor it carried is not replaced by ours
+   */
+  it('refuses a hook promise whose own constructor could be overwritten', async () => {
+    const hostile = Promise.reject(new Error('hook'))
+    Object.defineProperty(hostile, 'constructor', {
+      value: Object,
+      writable: true,
+      configurable: true
+    })
+
+    const outcome = withTimeout(() => hostile, 50)
+
+    await expect(outcome).rejects.toBeInstanceOf(PromiseTamperedError)
+    expect(hostile.constructor).toBe(Object)
+  })
+
+  /**
+   * Given a hook that returns a frozen native promise
+   * When it runs under `withTimeout`
+   * Then it is refused, because it cannot take the intrinsic constructor
+   */
+  it('refuses a frozen hook promise', async () => {
+    const hostile = Object.freeze(Promise.reject(new Error('hook')))
+
+    const outcome = withTimeout(() => hostile, 50)
+
+    await expect(outcome).rejects.toBeInstanceOf(PromiseTamperedError)
+  })
+
+  /**
+   * Given a hook that returns a native promise with no own constructor
+   * When `withTimeout` returns
+   * Then the promise is left without one, and the promise `withTimeout` returned keeps its own for good
+   */
+  it('leaves the hook promise as it was and tags the one it returns', async () => {
+    const hostile = Promise.reject(new Error('hook'))
+
+    const outcome = withTimeout(() => hostile, 50)
+    const left = Object.hasOwn(hostile, 'constructor')
+    const tagged = Object.getOwnPropertyDescriptor(outcome, 'constructor')
+
+    await expect(outcome).rejects.toThrow('hook')
+    expect(left).toBe(false)
+    expect(tagged).toMatchObject({ writable: false, configurable: false, value: Promise })
+  })
+
+  /**
+   * Given a hook that returns a thenable that rejects
+   * When it runs under `withTimeout`
+   * Then its then is read once, and its failure is the one the caller sees
+   */
+  it('reads the then of a thenable once', async () => {
+    let calls = 0
+    const thenable = {
+      then(_resolve: unknown, reject: (cause: unknown) => void) {
+        calls++
+        reject(new Error('thenable'))
+      }
+    }
+
+    const outcome = withTimeout(() => thenable, 50)
+
+    await expect(outcome).rejects.toThrow('thenable')
+    await tick()
+    expect(calls).toBe(1)
+  })
+
+  /**
    * Given a hook that returns a native promise whose prototype was swapped, inside the hook, for one whose
    * constructor and then are accessors that restore themselves after one read
    * When it runs under `withTimeout`
