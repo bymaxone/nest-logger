@@ -425,4 +425,35 @@ describe('Promise.resolve replaced after the library loaded', () => {
       absorb(42)
     }).not.toThrow()
   })
+
+  /**
+   * Given a hook that settles after 20 ms and a `then` accessor planted on Object.prototype at 10 ms
+   * When it runs under `withTimeout`
+   * Then the call resolves with nothing and the accessor was never read, because nothing is returned that has a `then`
+   */
+  it('reads no then of Object.prototype when the wait ends', async () => {
+    const root = Object.prototype as unknown as { then?: unknown }
+    const reads = jest.fn()
+    const plant = setTimeout(() => {
+      Object.defineProperty(root, 'then', {
+        configurable: true,
+        get: () => {
+          reads()
+          return undefined
+        }
+      })
+    }, 10)
+    const work = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20))
+
+    let settled: unknown = 'pending'
+    try {
+      settled = await withTimeout(work, 1000)
+    } finally {
+      clearTimeout(plant)
+      delete root.then
+    }
+
+    expect(settled).toBeUndefined()
+    expect(reads).not.toHaveBeenCalled()
+  })
 })
