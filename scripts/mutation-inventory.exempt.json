@@ -42,5 +42,9 @@
   {
     "file": "src/server/promise-scan.spec.ts",
     "reason": "Reads the text of the production source, comments removed, for Promise statics and methods and executes none of the code it reads, so it judges no mutant. It is left out of the Stryker run in jest.stryker.config.ts, and `pnpm test` runs it against the real source."
+  },
+  {
+    "file": "src/mutation-inventory-parity.spec.ts",
+    "reason": "Reads the text of jest.stryker.config.ts, of the exempt list and of the other specs, and imports nothing of the package, so it covers no mutant and Stryker never runs it: the cold run 45407498207 listed every row of it as not run. `pnpm test` runs it against the real files."
   }
 ]
