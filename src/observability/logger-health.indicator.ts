@@ -47,12 +47,12 @@ export class LoggerHealthIndicator implements IHealthIndicator {
       this.observability.deliveryState()
     // No prototype: an object that resolves a promise is asked for its `then`, and one planted on
     // `Object.prototype` would answer for the verdict.
-    const verdict = {
+    // Frozen: the same object reaches whoever awaits it, and nothing may change the verdict on the way.
+    const verdict = Object.freeze({
       __proto__: null,
       status: hasHealthySink ? 'up' : 'down',
-      details: { destinations, failedInit, writeFailing }
-    } as HealthIndicatorResult
-    // The caller awaits this: its own constructor keeps that await off the one of `Promise.prototype`.
+      details: Object.freeze({ destinations, failedInit, writeFailing })
+    }) as HealthIndicatorResult
     const answer = new IntrinsicPromise<HealthIndicatorResult>((resolve) => {
       resolve(verdict)
     })
@@ -60,8 +60,8 @@ export class LoggerHealthIndicator implements IHealthIndicator {
     define(answer, 'constructor', {
       __proto__: null,
       value: IntrinsicPromise,
-      writable: true,
-      configurable: true
+      writable: false,
+      configurable: false
     } as PropertyDescriptor)
     return answer
   }

@@ -22,6 +22,7 @@ const nativeThen = Function.prototype.call.bind(IntrinsicPromise.prototype.then)
   onRejected: () => void
 ) => unknown
 const promisePrototype = IntrinsicPromise.prototype as object
+const speciesGetter = ownDescriptor(IntrinsicPromise, Symbol.species)?.get
 const roots: readonly object[] = [Object.prototype, Array.prototype, Function.prototype]
 
 /** The error a verdict is refused with when the promise baseline no longer holds. */
@@ -44,6 +45,8 @@ export function promiseIntact(): boolean {
   // The descriptor, not a read: an accessor would answer the intrinsic here and a stand-in at the await.
   const own = ownDescriptor(promisePrototype, 'constructor')
   if (own === undefined || !hasOwn(own, 'value') || own.value !== IntrinsicPromise) return false
+  // The species the captured `then` reads: a getter that throws would orphan the rejection it attaches to.
+  if (ownDescriptor(IntrinsicPromise, Symbol.species)?.get !== speciesGetter) return false
   for (let at = 0; at < roots.length; at++) {
     if (hasOwn(roots[at] as object, 'then')) return false
   }
@@ -108,24 +111,24 @@ export function absorb(pending: unknown): void {
 /**
  * Gives a promise this library returns an own `constructor`, the intrinsic one, so the `await` of
  * whoever receives it reads that slot and not the `constructor` of `Promise.prototype`, which a program
- * may have replaced after this check. It stays: the promise is the library's own. A frozen object keeps
- * what it has.
+ * may have replaced after this check. It stays, and it cannot be redefined: the promise is the library's
+ * own. A frozen object keeps what it has.
  *
  * @param promise - A promise on a decision path, or a promise of a dependency about to be awaited.
  * @returns `promise`.
  */
 export function tag<T>(promise: T): T {
-  write(promise)
+  setOwnConstructor(promise, false)
   return promise
 }
 
-function write(target: unknown): boolean {
+function setOwnConstructor(target: unknown, temporary: boolean): boolean {
   try {
     define(target as object, 'constructor', {
       __proto__: null,
       value: IntrinsicPromise,
-      writable: true,
-      configurable: true
+      writable: temporary,
+      configurable: temporary
     } as PropertyDescriptor)
     return true
   } catch {
@@ -137,7 +140,7 @@ function write(target: unknown): boolean {
 /** Gives an object with no own `constructor` the intrinsic one; `false` when nothing was written. */
 function pin(target: unknown): boolean {
   if (typeof target !== 'object' || target === null || hasOwn(target, 'constructor')) return false
-  return write(target)
+  return setOwnConstructor(target, true)
 }
 
 /** Takes back what {@link pin} wrote. */

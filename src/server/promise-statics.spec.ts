@@ -587,4 +587,63 @@ describe('Promise.resolve replaced after the library loaded', () => {
     expect(Object.getOwnPropertyDescriptor(consumer, 'constructor')?.value).toBe(mine)
     expect(unhandled).not.toHaveBeenCalled()
   })
+
+  /**
+   * Given a species getter that throws on the intrinsic Promise while a hook is awaited
+   * When `withTimeout` is called
+   * Then it is refused with a PromiseTamperedError, and nothing is left unhandled
+   */
+  it('refuses a throwing species of the intrinsic and leaves nothing unhandled', async () => {
+    const unhandled = jest.fn()
+    process.on('unhandledRejection', unhandled)
+    const original = Object.getOwnPropertyDescriptor(Promise, Symbol.species) as PropertyDescriptor
+    Object.defineProperty(Promise, Symbol.species, {
+      get() {
+        throw new Error('species')
+      },
+      configurable: true
+    })
+    let answer: Promise<void>
+    try {
+      answer = withTimeout(() => Promise.reject(new Error('hook')), 50)
+    } finally {
+      Object.defineProperty(Promise, Symbol.species, original)
+    }
+
+    await expect(answer).rejects.toBeInstanceOf(PromiseTamperedError)
+    await tick()
+    await tick()
+    process.off('unhandledRejection', unhandled)
+
+    expect(unhandled).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Given the promise `check()` returns
+   * When a program tries to redefine its constructor, or to change the verdict it carries
+   * Then neither is possible
+   */
+  it('returns a verdict promise whose constructor and verdict cannot be changed', async () => {
+    const indicator = new LoggerHealthIndicator({
+      deliveryState: () => ({
+        destinations: 1,
+        failedInit: 0,
+        writeFailing: 0,
+        hasHealthySink: true
+      })
+    } as never)
+
+    const answer = indicator.check()
+    const verdict = await answer
+
+    expect(() =>
+      Object.defineProperty(answer, 'constructor', {
+        get() {
+          throw new Error('redefined')
+        }
+      })
+    ).toThrow(TypeError)
+    expect(Object.isFrozen(verdict)).toBe(true)
+    expect(Object.isFrozen(verdict.details)).toBe(true)
+  })
 })
