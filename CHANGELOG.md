@@ -15,7 +15,7 @@ heading here.
 ### Breaking
 
 - **`LoggerHealthIndicator.check()` answers a frozen verdict.** The result and its `details` are
-  frozen, so code that adds or changes a field on what `check()` returned throws a `TypeError` in strict
+  frozen, so code that adds or changes a field on the result that `check()` resolves to throws a `TypeError` in strict
   mode (and drops the write silently in sloppy mode). Migration: copy before you mutate, for example
   `const verdict = { ...result, details: { ...result.details } }`, and change the copy.
 
