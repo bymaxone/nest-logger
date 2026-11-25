@@ -182,3 +182,37 @@ describe('Logger E2E — a body the verify function of the parser refuses, throu
     expect(out.text).not.toContain(SECRET)
   })
 })
+
+describe('Logger E2E — a body parser mounted after app.init(), through Nest', () => {
+  let app: INestApplication
+  let stdout: jest.SpyInstance
+
+  beforeAll(async () => {
+    app = await NestFactory.create(AppModule, { logger: false, bodyParser: false })
+    await app.init()
+    app.use(json())
+  })
+
+  afterAll(async () => {
+    await app.close()
+  })
+
+  beforeEach(() => {
+    stdout = jest.spyOn(process.stdout, 'write').mockReturnValue(true)
+  })
+
+  /*
+   * Given a parser mounted after app.init(), behind the router
+   * When a malformed JSON body is posted to a route that matches
+   * Then the route runs with no parsed body, and no parser entry is written
+   */
+  it('runs the route and writes no parser entry for a malformed body', async () => {
+    const out = await logged(app, stdout, (server) =>
+      request(server).post('/echo').set('content-type', 'application/json').send('{"a":oops}')
+    )
+
+    expect(out.status).toBe(201)
+    expect(out.handled).not.toHaveProperty('bodyParserType')
+    expect(out.text).not.toContain('HTTP_EXCEPTION_HANDLED')
+  })
+})

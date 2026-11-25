@@ -1,7 +1,9 @@
 /**
  * Pins what a consumer serializer on a resource binding receives when an extra of `service` is an
- * `Error`: the redactor of the bindings is told it walks the root of a record, and the serializer
- * is handed the `Error` itself, not a plain object that holds its parts.
+ * `Error`: the redactor of the bindings is told it walks the root of a record. In the flat format the
+ * serializer for `service.cause` is handed the `Error` itself; in the nested format the serializer for
+ * `service` is handed the whole service object, and its `cause` is the `Error`, not a plain object that
+ * holds its parts.
  *
  * Layer: server, tests.
  */
@@ -43,7 +45,7 @@ describe('a serializer named for a resource binding', () => {
   /*
    * Given an Error with an own field, held in an extra of `service`, and a serializer for that binding
    * When the base is bound to the logger as the root of the bindings
-   * Then the serializer receives the Error itself, with only its own field as a key
+   * Then the serializer reads the extra as an Error, with only its own field as a key
    */
   it.each(['nested', 'flat'] as const)('receives the Error in the %s format', (format) => {
     expect(run(format).answer).toStrictEqual({ isError: true, keys: ['extra'] })
