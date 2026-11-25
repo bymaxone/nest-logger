@@ -18,7 +18,7 @@ heading here.
 
 Both were measured against 1.4.30. For the input a real caller produces, the output is the same.
 
-- **Hiding a long message in a stack costs more time when the message is built by concatenation or repeats one pattern.** The message is now cut to one character more than the stack before it is searched, so the table the search builds is bounded by the stack. Measured per call with a message of 10,000,000 characters: 0.009 ms to 1.41 ms for a concatenated message, 0.001 ms to 0.225 ms for a repeated pattern.
+- **Hiding a message longer than the stack it is searched in costs more time.** The message is now cut to one character more than the stack before it is searched, so the table the search builds is bounded by the stack. Measured per call with a message of 10,000,000 characters: 0.009 ms to 1.41 ms for a concatenated message, 0.001 ms to 0.225 ms for a repeated pattern.
 - **`PinoUnexpectedErrorSink` reads `error.getResponse` once.** It was read once to check its type and again to call it. An accessor that answers differently on the second read now gets the fields of its first answer.
 
 ### Documentation
