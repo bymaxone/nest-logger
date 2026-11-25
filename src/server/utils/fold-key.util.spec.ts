@@ -217,6 +217,17 @@ describe('matchesFolded', () => {
   })
 
   /**
+   * Given names of one length only, and a key whose own length is walked although no name has it
+   * When the key is read as a pattern
+   * Then that length holds no candidate, so the key matches nothing and is not hidden
+   */
+  it('reads a walked length that holds no name as holding none', () => {
+    const set = new Set(['a'.repeat(17)])
+
+    expect(matchesFolded(set, 'һtryker was here')).toBe(false)
+  })
+
+  /**
    * Given a key with no ASCII letter at all, such as a word of another script that a name can be spelled
    * with look-alikes of
    * When it is not longer than the longest name
