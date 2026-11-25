@@ -1,7 +1,7 @@
 /**
  * Pins what a consumer serializer on a resource binding receives when an extra of `service` is an
- * `Error`: the redactor of the bindings walks the base as the root of a record, so the subtree the
- * serializer is named for is read as already serialized, and the `Error` reaches it as an `Error`.
+ * `Error`: the redactor of the bindings is told it walks the root of a record, and the serializer
+ * is handed the `Error` itself, not a plain object that holds its parts.
  *
  * Layer: server, tests.
  */
