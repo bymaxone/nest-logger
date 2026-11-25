@@ -15,7 +15,7 @@ heading here.
 ### Documentation
 
 - **A body parser mounted after `app.init()` does not produce a parser entry; the README said it kept the parser's message.** Measured through `NestFactory` and real HTTP, with a malformed JSON body to a route: with Nest's default parser the answer is `400` and `HTTP_EXCEPTION_HANDLED` carries `bodyParserType: 'entity.parse.failed'`; with `express.json()` mounted after `app.init()`, and with no parser at all, the route runs with no parsed body (`201`) and no `HTTP_EXCEPTION_HANDLED` entry is written. Measured with the packed library in a scratch package, `@nestjs/platform-fastify` 11.2.9 and Fastify 5.12.8: the same malformed body answers `400` and `HTTP_EXCEPTION_HANDLED` carries Fastify's own message with no `bodyParserType`, and the response the filter writes fails with `res.status(...).json is not a function`. The Fastify adapter stays unsupported, so this is a documented limit (issue #211), not a gap to close. No code change.
-- **`options.level` outside the six levels is refused.** Measured: `'verbose'`, `'silent'`, `'FATAL'` and the number `30` each make `forRoot` throw, and `'silent'` makes `forRootAsync` throw at bootstrap, with `options.level must be one of: trace, debug, info, warn, error, fatal`; the README listed the six without saying what happens to anything else. No code change.
+- **`options.level` outside the Pino levels is refused.** Measured: `'verbose'`, `'silent'`, `'FATAL'` and the number `30` each make `forRoot` throw, and `'silent'` makes `forRootAsync` throw at bootstrap; the README did not say what happens to a value outside the levels. No code change.
 
 ## [1.4.30] - 2026-11-24
 
