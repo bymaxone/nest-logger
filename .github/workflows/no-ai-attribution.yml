@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
-# The token reads the repository and nothing else by default; the job adds the one more read it needs.
+# The default for a job that declares no permissions of its own; the job below declares its own.
 permissions:
   contents: read
 
