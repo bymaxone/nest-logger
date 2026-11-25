@@ -22,3 +22,8 @@ src/check-function-length.key.spec.ts
 scripts/check-suppressions-baseline.mjs
 scripts/check-suppressions-baseline.test.mjs
 scripts/commitlint-no-ai-attribution.cjs
+
+# Copied byte-identical from the family template (bymaxone/.github check-dist-fresh), formatted for a
+# wider line and with trailing commas that this repository's Prettier would change.
+scripts/check-dist-fresh.mjs
+scripts/check-dist-fresh.test.mjs
