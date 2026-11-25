@@ -12,6 +12,15 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.31] - 2026-11-25
+
+### Changed
+
+Both were measured against 1.4.30. For the input a real caller produces, the output is the same.
+
+- **Hiding a message longer than the stack it is searched in costs more time.** The message is now cut to one character more than the stack before it is searched, so the table the search builds is bounded by the stack. Measured per call with a message of 10,000,000 characters: 0.009 ms to 1.41 ms for a concatenated message, 0.001 ms to 0.225 ms for a repeated pattern.
+- **`PinoUnexpectedErrorSink` reads `error.getResponse` once.** It was read once to check its type and again to call it. An accessor that answers differently on the second read now gets the fields of its first answer.
+
 ### Documentation
 
 - **A body parser mounted after `app.init()` does not produce a parser entry; the README said it kept the parser's message.** Measured through `NestFactory` and real HTTP, with a malformed JSON body to a route: with Nest's default parser the answer is `400` and `HTTP_EXCEPTION_HANDLED` carries `bodyParserType: 'entity.parse.failed'`; with `express.json()` mounted after `app.init()`, and with no parser at all, the route runs with no parsed body (`201`) and no `HTTP_EXCEPTION_HANDLED` entry is written. Measured with the packed library in a scratch package, `@nestjs/platform-fastify` 11.2.9 and Fastify 5.12.8: the same malformed body answers `400` and `HTTP_EXCEPTION_HANDLED` carries Fastify's own message with no `bodyParserType`, and the response the filter writes fails with `res.status(...).json is not a function`. The Fastify adapter stays unsupported, so this is a documented limit (issue #211), not a gap to close. No code change.
@@ -3566,7 +3575,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.30...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.31...HEAD
+[1.4.31]: https://github.com/bymaxone/nest-logger/compare/v1.4.30...v1.4.31
 [1.4.30]: https://github.com/bymaxone/nest-logger/compare/v1.4.29...v1.4.30
 [1.4.29]: https://github.com/bymaxone/nest-logger/compare/v1.4.28...v1.4.29
 [1.4.28]: https://github.com/bymaxone/nest-logger/compare/v1.4.27...v1.4.28

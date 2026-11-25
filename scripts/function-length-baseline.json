@@ -7,7 +7,7 @@
     "[\"src/server/middlewares/request-id.middleware.ts\",[\"member\",\"RequestIdMiddleware\",\"use\"]]": 60,
     "[\"src/server/mixins/trace-context.mixin.ts\",[\"fn\",\"createTraceContextMixin\"]]": 58,
     "[\"src/server/readme-quick-start.spec.ts\",[\"container\",\"describe\",\"README Quick Start (sections 2 and 4)\"],[\"test\",\"it\",\"logs the README flow as structured JSON lines on stdout\"]]": 51,
-    "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"]]": 84,
+    "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"]]": 83,
     "[\"src/server/utils/destination-to-stream.ts\",[\"fn\",\"destinationToStream\"],[\"member\",\"<class>\",\"write\"]]": 68,
     "[\"src/server/utils/redact-by-name.hostile-hook.property.spec.ts\",[\"fn\",\"shapes\"]]": 191,
     "[\"src/server/utils/redact-by-name.util.ts\",[\"fn\",\"walkProperties\"]]": 54,
