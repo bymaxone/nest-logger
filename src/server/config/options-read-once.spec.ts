@@ -199,17 +199,39 @@ describe('a value that is not a list where a list belongs', () => {
   })
 })
 
-describe('a list option whose length is not a count', () => {
-  const lengthOf = (length: unknown): unknown[] =>
-    new Proxy([], {
-      get: (inner, key, receiver) => (key === 'length' ? length : Reflect.get(inner, key, receiver))
-    })
+/** How many indices of a hostile list may be asked for before it throws. */
+const INDICES_ALLOWED = 3
 
+/**
+ * An empty list that answers `length` for its length. Asking for more than a few of its indices
+ * throws, through `has` (which `forEach` asks) or `get`, so a walk of it ends in a failed test
+ * instead of blocking the event loop, where no test timeout can fire.
+ */
+function listOfLength(length: unknown): unknown[] {
+  let asked = 0
+  const ask = (key: string | symbol): void => {
+    if (typeof key !== 'string' || !/^\d+$/.test(key)) return
+    asked += 1
+    if (asked > INDICES_ALLOWED) throw new Error('the list was walked')
+  }
+  return new Proxy([], {
+    has(inner, key): boolean {
+      ask(key)
+      return Reflect.has(inner, key)
+    },
+    get(inner, key, receiver): unknown {
+      ask(key)
+      return key === 'length' ? length : Reflect.get(inner, key, receiver)
+    }
+  })
+}
+
+describe('a list option whose length is not a count', () => {
   it.each([-1, Number.NaN, 1.5, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
     'a length of %s is refused by option name, for each list',
     (length) => {
       for (const name of ['redactPaths', 'errorOwnFieldNames', 'destinations']) {
-        const given = { service: { name: 'api', version: '1.0.0' }, [name]: lengthOf(length) }
+        const given = { service: { name: 'api', version: '1.0.0' }, [name]: listOfLength(length) }
 
         expect(() => resolveOptions(given as never)).toThrow(
           `[BymaxLoggerModule] options.${name} has a length that is not a count`
@@ -218,7 +240,7 @@ describe('a list option whose length is not a count', () => {
       for (const name of ['excludePaths', 'secretPathSegments']) {
         const given = {
           service: { name: 'api', version: '1.0.0' },
-          http: { [name]: lengthOf(length) }
+          http: { [name]: listOfLength(length) }
         }
 
         expect(() => resolveOptions(given as never)).toThrow(
@@ -231,7 +253,7 @@ describe('a list option whose length is not a count', () => {
   it('a length of zero is an empty list', () => {
     const resolved = resolveOptions({
       service: { name: 'api', version: '1.0.0' },
-      redactPaths: lengthOf(0)
+      redactPaths: listOfLength(0)
     } as never)
 
     expect(resolved.redactPaths).toEqual([])
@@ -239,15 +261,13 @@ describe('a list option whose length is not a count', () => {
 })
 
 describe('a list option longer than the cap', () => {
-  const longList = (length: number): unknown[] =>
-    new Proxy([], {
-      get: (inner, key, receiver) => (key === 'length' ? length : Reflect.get(inner, key, receiver))
-    })
-
   it.each(['redactPaths', 'errorOwnFieldNames', 'destinations'])(
     '%s is refused by name before anything is allocated for it',
     (name) => {
-      const given = { service: { name: 'api', version: '1.0.0' }, [name]: longList(1_000_000_000) }
+      const given = {
+        service: { name: 'api', version: '1.0.0' },
+        [name]: listOfLength(1_000_000_000)
+      }
 
       expect(() => resolveOptions(given as never)).toThrow(
         `[BymaxLoggerModule] options.${name} holds more than 10000 entries`
@@ -258,7 +278,7 @@ describe('a list option longer than the cap', () => {
   it.each(['excludePaths', 'secretPathSegments'])('http.%s is refused by name too', (name) => {
     const given = {
       service: { name: 'api', version: '1.0.0' },
-      http: { [name]: longList(10_001) }
+      http: { [name]: listOfLength(10_001) }
     }
 
     expect(() => resolveOptions(given as never)).toThrow(
