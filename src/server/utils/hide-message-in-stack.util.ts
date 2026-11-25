@@ -16,8 +16,9 @@ type Span = readonly [number, number]
  */
 function failureTable(message: string): Int32Array {
   const table = new Int32Array(message.length)
-  // Stryker disable next-line EqualityOperator: equivalent: at `i === message.length` there is no character, so the loop only shrinks `matched` and then writes past the end of the typed array, which stores nothing, and the table is read only below the length of the message.
-  for (let i = 1, matched = 0; i < message.length; i += 1) {
+  // A message of no characters has no table to fill: the loop starts at 1, so it stops there, not past it.
+  const end = Math.max(1, message.length)
+  for (let i = 1, matched = 0; i !== end; i += 1) {
     while (matched > 0 && message[i] !== message[matched]) matched = table[matched - 1] as number
     if (message[i] === message[matched]) matched += 1
     table[i] = matched
@@ -33,17 +34,17 @@ function failureTable(message: string): Int32Array {
  * @internal Exported for its tests only.
  */
 export function occurrences(stack: string, message: string): Span[] {
-  // No table for a message longer than the stack: it is not in it.
-  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (a message longer than the stack is not found in it, so the table that guard spares changes nothing); the true mutant is killed by the rows of hide-message-in-stack.util.spec.ts, and this disable also hides it from the report because Stryker cannot disable one mutant of a line.
-  if (message.length > stack.length) return []
-  const table = failureTable(message)
+  // A message longer than the stack is not in it, and one more character than the stack has can never be
+  // matched: the table is built for that much of it, so the work is the stack's, not the message's.
+  // Stryker disable next-line MethodExpression: removing the `slice` mutant is equivalent: the message is then searched whole and gives the same spans, since one longer than the stack cannot match, so only the bound on the table it builds changes, not the output.
+  const searched = message.slice(0, stack.length + 1)
+  const table = failureTable(searched)
   const spans: Array<[number, number]> = []
-  // Stryker disable next-line EqualityOperator: equivalent: at `i === stack.length` there is no character, so `matched` can only fall, or pass the length of the message when the last character ended an occurrence, and a count past that length is not a match: no span is added.
-  for (let i = 0, matched = 0; i < stack.length; i += 1) {
-    while (matched > 0 && stack[i] !== message[matched]) matched = table[matched - 1] as number
-    if (stack[i] === message[matched]) matched += 1
-    if (matched === message.length) {
-      const start = i + 1 - message.length
+  for (let i = 0, matched = 0; i !== stack.length; i += 1) {
+    while (matched > 0 && stack[i] !== searched[matched]) matched = table[matched - 1] as number
+    if (stack[i] === searched[matched]) matched += 1
+    if (matched === searched.length) {
+      const start = i + 1 - searched.length
       const last = spans[spans.length - 1]
       if (last !== undefined && start < last[1]) last[1] = i + 1
       else spans.push([start, i + 1])

@@ -12,6 +12,7 @@ describe('hideMessageInStack', () => {
    */
   it.each([
     ['a message in a one-line stack', 'Error: SEC', 'SEC', '[R]', 'Error: [R]'],
+    ['a message that is the whole stack', 'SEC', 'SEC', '[R]', '[R]'],
     ['a message in the first line', 'Err: a SEC b\n  at x', 'SEC', '[R]', 'Err: a [R] b\n  at x'],
     [
       'a message that repeats in the first line',
@@ -225,6 +226,15 @@ describe('hideMessagesInStack', () => {
 })
 
 describe('occurrences', () => {
+  /**
+   * Given a message of no characters, which hideMessagesInStack filters out before it asks
+   * When the occurrences are listed for it directly
+   * Then the call returns, because the failure table of an empty message is empty and its loop ends
+   */
+  it('returns for an empty message, whose failure table has no rows to fill', () => {
+    expect(Array.isArray(occurrences('abc', ''))).toBe(true)
+  })
+
   /**
    * Given a run of one character and a message of four of them
    * When the occurrences are listed

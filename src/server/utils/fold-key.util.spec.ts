@@ -191,6 +191,32 @@ describe('matchesFolded', () => {
   })
 
   /**
+   * Given a short key and more names than the bound, all of lengths the key cannot stand for
+   * When the key is read as a pattern
+   * Then it is not hidden: only the lengths it can reach are counted, not every length up to the longest
+   */
+  it('counts only the lengths a short key can reach against the bound on candidates', () => {
+    const many = new Set(Array.from({ length: 70 }, (_, i) => `name${String(i).padStart(4, '0')}`))
+
+    expect(matchesFolded(many, '\u04bb')).toBe(false)
+    expect(matchesFolded(many, '\u04bb'.repeat(8))).toBe(true)
+  })
+
+  /**
+   * Given keys that stand for a name of exactly the longest length, and one letter more
+   * When each is read as a pattern
+   * Then the first is hidden, because the longest length is walked, and the second is not
+   */
+  it('walks the longest length of the names and none beyond it', () => {
+    const set = new Set(['abcdef'])
+
+    expect(matchesFolded(set, 'abcde\u04bb')).toBe(true)
+    expect(matchesFolded(set, 'abcd\u04bb\u04bb')).toBe(true)
+    expect(matchesFolded(set, 'abcd\u04bb\u04bbg')).toBe(false)
+    expect(matchesFolded(set, 'ab\u00dfdef')).toBe(true)
+  })
+
+  /**
    * Given a key with no ASCII letter at all, such as a word of another script that a name can be spelled
    * with look-alikes of
    * When it is not longer than the longest name

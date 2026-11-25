@@ -129,16 +129,16 @@ const I_LIKE_PAIRS: ReadonlyArray<readonly [string, string]> = Array.from(I_LIKE
  */
 export function foldKey(key: string, keepSeparators = false): string {
   if (keepSeparators) {
-    // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
-    if (matchesPattern(PLAIN, key)) return lowerCase(key)
-    return withLookalikes(
-      dropInvisible(readDots(readGlyphs(lowerCase(normalizeText(key, 'NFKD'))), '.'), ''),
-      true
-    )
+    return matchesPattern(PLAIN, key)
+      ? lowerCase(key)
+      : withLookalikes(
+          dropInvisible(readDots(readGlyphs(lowerCase(normalizeText(key, 'NFKD'))), '.'), ''),
+          true
+        )
   }
-  // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
-  if (matchesPattern(PLAIN, key)) return lowerCase(dropNotAscii(key, ''))
-  return withLookalikes(dropNotName(readGlyphs(lowerCase(normalizeText(key, 'NFKD'))), ''), true)
+  return matchesPattern(PLAIN, key)
+    ? lowerCase(dropNotAscii(key, ''))
+    : withLookalikes(dropNotName(readGlyphs(lowerCase(normalizeText(key, 'NFKD'))), ''), true)
 }
 
 /**
@@ -146,15 +146,15 @@ export function foldKey(key: string, keepSeparators = false): string {
  * it, and every other letter that is not ASCII is left for the comparison, where it stands for a letter.
  */
 function foldStrict(key: string): string {
-  // Stryker disable next-line ConditionalExpression: for a key of printable ASCII the full path returns the same text; this branch only skips its work (about 90 ns a key, measured).
-  if (matchesPattern(PLAIN, key)) return lowerCase(dropNotAscii(key, ''))
-  return withLookalikes(
-    dropNotNameStrict(
-      standInSymbols(readGlyphs(lowerCase(normalizeText(key, 'NFKD'))), SYMBOL_STAND_IN),
-      ''
-    ),
-    false
-  )
+  return matchesPattern(PLAIN, key)
+    ? lowerCase(dropNotAscii(key, ''))
+    : withLookalikes(
+        dropNotNameStrict(
+          standInSymbols(readGlyphs(lowerCase(normalizeText(key, 'NFKD'))), SYMBOL_STAND_IN),
+          ''
+        ),
+        false
+      )
 }
 
 /** `folded` with the look-alikes read as the Latin letters, and the i-like ones too when `all` is set. */
@@ -178,7 +178,6 @@ const ALNUM = /^[A-Za-z0-9]*$/
 
 /** A field name folded for hiding. */
 function formOf(key: string): string {
-  // Stryker disable next-line ConditionalExpression: false is equivalent (foldStrict lower-cases an ASCII alphanumeric key too); true is killed by the foldName rows, and one disable covers both mutants
   return matchesPattern(ALNUM, key) ? lowerCase(key) : foldStrict(key)
 }
 
@@ -271,11 +270,14 @@ export function matchesFolded(names: ReadonlySet<string>, folded: string): boole
   // the walk is quadratic in them and a key made of symbols is the safe way to be wrong.
   if (longest === 0) return false
   if (stands > longest) return true
-  // Stryker disable next-line ConditionalExpression: the false mutant is equivalent (no name is as long as the key, so the walk finds none and answers the same), and the true mutant is killed by the rows of fold-key.util.spec.ts; this disable also hides it from the report because Stryker cannot disable one mutant of a line.
-  if (letters.length - stands > longest) return false
+  // A key of more letters than the longest name reaches walks no length: Array.from reads a negative
+  // length as none, so the work for such a key is the count of its letters, not of its names.
+  const shortest = letters.length - stands
+  // Stryker disable next-line ArithmeticOperator: the `-` to `+` mutant is equivalent: the cap on the lengths walked is lost, and the lengths past the longest name hold no names, so only the bound on the walk changes, not the output.
+  const reach = longest - shortest
   const lengths = Array.from(
-    { length: wide + stands + 1 },
-    (_, extra) => byLength.get(letters.length - stands + extra) ?? []
+    { length: Math.min(wide + stands + 1, reach + 1) },
+    (_, extra) => byLength.get(shortest + extra) ?? []
   )
   // More names of a compatible length than a key is walked against: the value is hidden, since the work
   // for a key of any length and any set of names is bounded and a hidden value is the safe answer. The

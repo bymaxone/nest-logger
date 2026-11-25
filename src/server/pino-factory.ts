@@ -116,7 +116,6 @@ export function leafNameOf(path: string): string | undefined {
     const name =
       quoted ??
       (match[2] !== undefined && matchesPattern(INDEX_SEGMENT, match[2]) ? undefined : match[2])
-    // Stryker disable next-line ConditionalExpression: NOT equivalent, and not a coverage gap — the suite kills this mutant, verified by applying it by hand and watching three tests turn red (`leafNameOf yields no leaf for *`, `for *.*`, and the pass-through case in `resolveNameRedactor`). Stryker fails to attribute the killing tests to it under `perTest` coverage analysis, the same way it already does for `otel-detector.ts`. Recorded as what it is rather than mislabelled equivalent.
     if (name !== undefined && name !== '*') {
       leaf = name
     }
