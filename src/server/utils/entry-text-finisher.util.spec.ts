@@ -117,6 +117,23 @@ describe('createTextCensor', () => {
     expect(censor('message', 'x'.repeat(100_000))).toBe('x'.repeat(100_000))
   })
 
+  /**
+   * Given a redactor that records whether it was told the value is the root of a record
+   * When a text is censored under the name of its field
+   * Then the redactor was told so, because the wrapper object it is given is that root
+   */
+  it('hands the text to the redactor as the root of a record', () => {
+    const told: Array<boolean | undefined> = []
+    const censor = createTextCensor((value, isRecordRoot) => {
+      told.push(isRecordRoot)
+      return value
+    })
+
+    censor('message', 'text')
+
+    expect(told).toStrictEqual([true])
+  })
+
   it.each([
     [
       'a redactor that throws',

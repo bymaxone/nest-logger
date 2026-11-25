@@ -545,7 +545,8 @@ function toSanitizedChild(
   depth: number,
   walk: ErrorWalk
 ): SanitizedChild {
-  if (isObject(value) && seen.has(value)) {
+  // `WeakSet.has` answers `false` for a primitive, so no test of the type comes first.
+  if (seen.has(value as object)) {
     return CIRCULAR_SENTINEL
   }
   return toSanitizedError(value, seen, depth, walk)
@@ -732,17 +733,6 @@ export function scrubStack(stack: string, header?: HeaderCensor, wasLonger = fal
       .join('\n')
   )
   return cutText(scrubbed, wasLonger || stack.length > MAX_STACK_SCAN)
-}
-
-/**
- * Type guard for a non-null object (the only values a `WeakSet` can track).
- *
- * @param value - The value to test.
- * @returns `true` when `value` is a non-null object.
- */
-function isObject(value: unknown): value is object {
-  // Stryker disable next-line ConditionalExpression,LogicalOperator: equivalent — every mutant here widens the guard to admit primitives, and the only call site gates `seen.has(value)` on a `WeakSet`, which answers `false` for a primitive regardless. The circular-reference branch is therefore not taken for any value the mutants newly admit, so the sanitized output is unchanged.
-  return typeof value === 'object' && value !== null
 }
 
 /**

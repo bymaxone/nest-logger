@@ -206,6 +206,29 @@ describe('PinoUnexpectedErrorSink, an HttpException', () => {
     expect(Object.keys(entries()[1] ?? {})).not.toContain('errorCode')
   })
 
+  /*
+   * Given an error whose getResponse accessor answers with a function on its first read and with
+   *   nothing on every later one
+   * When the sink reads the response fields
+   * Then the accessor is read exactly once and the code it answered with is written
+   */
+  it('reads the getResponse accessor exactly once', () => {
+    let reads = 0
+    const error = new Error('boom')
+    Object.defineProperty(error, 'getResponse', {
+      get(): (() => { code: string }) | undefined {
+        reads += 1
+        return reads === 1 ? () => ({ code: 'once.only' }) : undefined
+      }
+    })
+    const { sink, entries } = pipeline()
+
+    sink.record({ ...COORDS, error })
+
+    expect(reads).toBe(1)
+    expect(entries()[0]?.['errorCode']).toBe('once.only')
+  })
+
   it('does not read these fields from an error that is not an exception', () => {
     const { sink, entries } = pipeline()
 

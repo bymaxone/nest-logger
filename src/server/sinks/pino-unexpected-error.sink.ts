@@ -146,9 +146,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 function exceptionFields(error: unknown): Record<string, unknown> {
   try {
-    // Stryker disable next-line ConditionalExpression: `typeof error['getResponse'] !== 'function'` replaced by `false` is equivalent. The call below then throws for a value that is not a function and the catch returns the same empty result; the check only spares an ordinary error, the common case, a thrown exception.
-    if (!isRecord(error) || typeof error['getResponse'] !== 'function') return {}
-    const response: unknown = (error['getResponse'] as () => unknown)()
+    if (!isRecord(error)) return {}
+    // Stryker disable next-line OptionalChaining: equivalent: without the `?.` the call throws for an error with no `getResponse`, and the catch below returns the same empty result.
+    const response: unknown = (error['getResponse'] as (() => unknown) | undefined)?.()
     if (!isRecord(response)) return {}
     const nested = response['error']
     const carrier = isRecord(nested) && typeof nested['code'] === 'string' ? nested : response

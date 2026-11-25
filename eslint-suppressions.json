@@ -21,7 +21,7 @@
   },
   "src/server/mixins/trace-context.mixin.ts": {
     "max-lines-per-function": {
-      "count": 2
+      "count": 1
     }
   },
   "src/server/utils/destination-to-stream.ts": {

@@ -166,6 +166,22 @@ describe('LoggerHealthIndicator', () => {
 
     expect(result.status).toBe('down')
   })
+
+  /**
+   * Given a check that has answered
+   * When the `constructor` of the promise it returned is read as an own property
+   * Then it is the intrinsic Promise and can be neither written nor reconfigured
+   */
+  it('answers with a promise whose constructor is fixed', () => {
+    const answer = new LoggerHealthIndicator(new FakeObservability()).check()
+
+    expect(Object.getOwnPropertyDescriptor(answer, 'constructor')).toStrictEqual({
+      value: Promise,
+      writable: false,
+      enumerable: false,
+      configurable: false
+    })
+  })
 })
 
 describe('the markers and the module', () => {
