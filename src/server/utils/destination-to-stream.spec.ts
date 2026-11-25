@@ -61,6 +61,20 @@ describe('destinationToStream', () => {
   })
 
   /*
+   * Given a string that UTF-8 cannot carry, here a lone surrogate
+   * When it is written to the stream
+   * Then the destination receives that same string, so the stream does not encode and decode it
+   */
+  it('hands a string chunk to the destination as it was written', async () => {
+    const destination: ILogDestination = { name: 'lone', write: jest.fn() }
+    const stream = destinationToStream(destination)
+
+    await writeOnce(stream, 'a\ud800b\n')
+
+    expect(destination.write).toHaveBeenCalledWith('a\ud800b\n')
+  })
+
+  /*
    * Buffer chunks (the default when Pino writes binary) must be decoded as UTF-8
    * before reaching the destination — UTF-8 is the wire format Pino emits.
    */

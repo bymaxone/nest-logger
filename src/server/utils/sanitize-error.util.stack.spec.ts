@@ -84,6 +84,24 @@ describe('scrubStack — the length of a stack', () => {
   })
 })
 
+describe('scrubStack — a censored name shorter than the name it replaces', () => {
+  /*
+   * Given a stack longer than the scan bound whose long name is censored away
+   * When it is scrubbed
+   * Then nothing past the bound and the length of the message is read into the room the name left
+   */
+  it('reads no further into the stack for the room the name left', () => {
+    const name = 'N'.repeat(100)
+    const head = `${name}: m\n`
+    const dropped = 'x node_modules\n'.repeat(Math.ceil(MAX_STACK_SCAN / 15))
+    const stack = `${head}${dropped.slice(0, MAX_STACK_SCAN - head.length - 20)}\n${'k'.repeat(200)}`
+
+    const out = scrubStack(stack, { name, censoredName: '', message: 'm', censored: 'm' })
+
+    expect(out.split('k')).toHaveLength(21)
+  })
+})
+
 describe('scrubStack — a cut that falls inside a surrogate pair', () => {
   it('does not leave half of the pair before the suffix', () => {
     const text = 'x'.repeat(MAX_TEXT_LENGTH - 1) + '\u{1F600}' + 'tail'

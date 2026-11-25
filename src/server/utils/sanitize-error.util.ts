@@ -723,7 +723,6 @@ export function scrubStack(stack: string, header?: HeaderCensor, wasLonger = fal
   // The part searched for the message reaches as far past the scan bound as the message is long, so a
   // message that starts before the bound is found whole and hidden whole; the text kept stands for the
   // bound and no more, however much the hidden messages shrink it.
-  // Stryker disable next-line MethodExpression: equivalent in output: an occurrence that starts before the bound ends inside the window, and one that starts after it is not read, so a longer text gives the same result; the slice only bounds the search.
   const window = stack.slice(0, MAX_STACK_SCAN + (header?.message.length ?? 0))
   const scrubbed = escapeControlCharacters(
     (header === undefined ? window : censorMessageInStack(window, header))
