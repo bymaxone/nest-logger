@@ -12,6 +12,11 @@ heading here.
 
 ## [Unreleased]
 
+### Documentation
+
+- **A body parser mounted after `app.init()` does not produce a parser entry; the README said it kept the parser's message.** Measured through `NestFactory` and real HTTP, with a malformed JSON body to a route: with Nest's default parser the answer is `400` and `HTTP_EXCEPTION_HANDLED` carries `bodyParserType: 'entity.parse.failed'`; with `express.json()` mounted after `app.init()`, and with no parser at all, the route runs with no parsed body (`201`) and no `HTTP_EXCEPTION_HANDLED` entry is written. The Fastify adapter stays unsupported, so the type of a Fastify parser error is a documented limit (issue #211), not a gap to close. No code change.
+- **`options.level` outside the six levels throws at startup.** Measured through the validator: `'verbose'`, `'silent'`, `'FATAL'` and the number `30` each throw `options.level must be one of: trace, debug, info, warn, error, fatal`; the README listed the six without saying what happens to anything else. No code change.
+
 ## [1.4.30] - 2026-11-24
 
 ### Breaking
