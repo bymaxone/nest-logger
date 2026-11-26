@@ -78,13 +78,20 @@ describe('README error catalog', () => {
   })
 
   /*
-   * A log-key row is only worth listing if the library can write it. Every uppercase code in
-   * the second table must be a reserved key, so a renamed or removed key fails here.
+   * A code row is only worth listing if the library can write it. Every uppercase code must be
+   * a reserved log key or the whole message of a thrown error, so a renamed or removed one
+   * fails here.
    */
-  it('lists only log keys the library reserves', () => {
+  it('lists only codes the library reserves or throws', () => {
     const codes = firstColumn().filter((cell) => /^[A-Z][A-Z_]+$/.test(cell))
     expect(codes.length).toBeGreaterThanOrEqual(5)
     const reserved = Object.values(RESERVED_LOG_KEYS) as string[]
-    expect(codes.filter((code) => !reserved.includes(code))).toEqual([])
+    const source = sourceFiles(join(ROOT, 'src'))
+      .map((file) => readFileSync(file, 'utf-8'))
+      .join('\n')
+    const unknown = codes.filter(
+      (code) => !reserved.includes(code) && !source.includes(`throw new Error('${code}')`)
+    )
+    expect(unknown).toEqual([])
   })
 })
