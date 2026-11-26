@@ -623,7 +623,7 @@ Two things the old sketch got wrong, both worth stating because they are easy to
 
 > `pino-pretty` is an **optional peer dep**. If it is absent, `PrettyDevDestination.onInit()` **throws** with an actionable message, and the generic init-failure path takes over (§4): the failure is reported as `LOGGER_DESTINATION_INIT_FAILED` on stderr, the destination is dropped from the fan-out, and — if it was the only one registered — entries fall back to raw NDJSON on stdout.
 >
-> Earlier revisions of this guide described a `LOGGER_PRETTY_UNAVAILABLE` key emitted for this case. **No such entry is ever written.** The name survives only in `logger-error-codes.constants.ts`, which is not exported and not used; do not build a dashboard on it. The searchable signal is `LOGGER_DESTINATION_INIT_FAILED` on stderr, with `destination: "pretty-dev"`.
+> Earlier revisions of this guide described a `LOGGER_PRETTY_UNAVAILABLE` key emitted for this case. **No such entry is ever written.** The name is not declared in the source; do not build a dashboard on it. The searchable signal is `LOGGER_DESTINATION_INIT_FAILED` on stderr, with `destination: "pretty-dev"`.
 
 ### An optional peer is still resolvable after `pnpm prune --prod`
 
