@@ -49,10 +49,10 @@ export interface ILogDestination {
    *   - Return a Promise for async I/O
    *
    * Errors thrown here, and rejections of a returned promise, are caught by the
-   * library: the entry is dropped for this destination only, and one failure line
-   * is written to stderr per failed entry. There is no retry and no circuit
-   * breaker, so a destination that initialized and keeps failing keeps receiving
-   * entries and keeps being reported; one that needs to back off does so itself.
+   * library: the entry is dropped for this destination only. Failure lines on stderr
+   * are throttled to one a window for each destination, and shutdown writes the total when more than one write failed. There is no
+   * retry and no circuit breaker, so a destination that initialized and keeps failing keeps
+   * receiving entries; one that needs to back off does so itself.
    * (A destination whose `onInit()` failed is a different case: it receives no
    * entries at all.)
    *
@@ -125,8 +125,8 @@ export interface ILogDestination {
    * Optional lifecycle hook — called during NestJS `onApplicationShutdown`.
    * MUST flush any pending writes and close resources.
    *
-   * The library awaits this — graceful shutdown blocks until all destinations
-   * return.
+   * The library awaits this within the shutdown budget (`shutdown.timeoutMs`): a hook that has
+   * not settled when the budget ends is reported and left, and the hooks not yet called are skipped.
    */
   onShutdown?(): void | PromiseLike<void>
 }

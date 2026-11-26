@@ -94,6 +94,7 @@ export function allowsOwnField(policy: OwnFieldPolicy, key: string): boolean {
 /**
  * The engine's own `byteLength` getters. A subclass can override the property with text that
  * should have been redacted, so the size is never read from the value's own `byteLength`.
+ * The `?.` only keeps the import from throwing where a getter was deleted before this module loaded.
  */
 const TYPED_ARRAY_BYTE_LENGTH = Reflect.getOwnPropertyDescriptor(
   Object.getPrototypeOf(Uint8Array.prototype) as object,
