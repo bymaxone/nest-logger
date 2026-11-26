@@ -411,8 +411,6 @@ src/
 │   │   ├── normalize-url.util.ts           # /users/abc-123 → /users/:id
 │   │   ├── sanitize-error.util.ts          # Cleans stack trace, redacts fields
 │   │   └── compile-redact-paths.util.ts
-│   ├── errors/
-│   │   └── logger-error-codes.constants.ts
 │   ├── config/
 │   │   ├── default-options.ts
 │   │   └── validate-options.ts
@@ -2382,13 +2380,13 @@ export const RESERVED_LOG_KEYS = {
 
 ## 13. Error Code Catalog
 
-Errors the lib may throw (or record as a warning):
+Errors the lib may throw (or record as a warning). The names of thrown errors are labels of this table: no thrown message and no entry carries `LOGGER_INVALID_OPTIONS`, `LOGGER_INVALID_LEVEL`, `LOGGER_CONTEXT_OUT_OF_SCOPE` or `LOGGER_OTEL_API_UNAVAILABLE` as a string (the OpenTelemetry case is written as `LOGGER_BOOTSTRAP_WARNING` with `reason: 'OTEL_API_UNAVAILABLE'`).
 
 | Code                              | Severity                    | When it occurs                                                                   | Recommended action                                                                                                            |
 | --------------------------------- | --------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `LOGGER_INVALID_OPTIONS`          | Throws at initialization    | `service.name` or `service.version` missing                                      | Add the required fields                                                                                                       |
 | `LOGGER_INVALID_LEVEL`            | Throws                      | `level` is not a valid Pino value                                                | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`                                                                      |
-| `LOGGER_PRETTY_UNAVAILABLE`       | **Never emitted**           | Declared only in the unexported `logger-error-codes.constants.ts`                | Do not query it — the real signal is `LOGGER_DESTINATION_INIT_FAILED` on stderr, `destination: "pretty-dev"`                  |
+| `LOGGER_PRETTY_UNAVAILABLE`       | **Never emitted**           | Not declared in the source                                                       | Do not query it — the real signal is `LOGGER_DESTINATION_INIT_FAILED` on stderr, `destination: "pretty-dev"`                  |
 | `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap           | `otel.shouldAutoInjectTraceContext: true` but `@opentelemetry/api` not installed | Install or disable `shouldAutoInjectTraceContext`                                                                             |
 | `LOGGER_DESTINATION_INIT_FAILED`  | Written to **stderr**       | `destination.onInit()` rejects                                                   | Destination is dropped from the write fan-out; others continue. If NONE initialize, entries fall back to raw NDJSON on stdout |
 | `LOGGER_DESTINATION_WRITE_FAILED` | Written to **stderr**       | `destination.write()` throws                                                     | Entry skipped for that destination; others continue                                                                           |
