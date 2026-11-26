@@ -743,7 +743,7 @@ BymaxLoggerModule.forRootAsync({
 
 A non-empty `destinations` **replaces** `DefaultStdoutDestination`, so a file-only or socket-only deployment can turn structured stdout off. To keep stdout beside a custom sink, list it explicitly: `destinations: [new DefaultStdoutDestination(), new LokiDestination({ ... })]`.
 
-`new DefaultStdoutDestination({ minLevel })` takes an optional minimum level; without one it takes every level. Its `name`, which `stderr` reports use, is `stdout-json`; `PrettyDevDestination` is named `pretty-dev`.
+`new DefaultStdoutDestination({ minLevel })` takes an optional minimum level; without one the module `level` applies. Its `name`, which `stderr` reports use, is `stdout-json`; `PrettyDevDestination` is named `pretty-dev`.
 
 A sink you supply may be the only one the application has, so two guarantees cover its failure: a destination that fails `onInit` is reported as `LOGGER_DESTINATION_INIT_FAILED` on `stderr` (not through the logger, whose sinks just failed) and receives no entries, and if **every** destination fails to initialize, entries fall back to raw NDJSON on `stdout`. Adding `new PrettyDevDestination()` without the optional `pino-pretty` therefore costs colours and a line on stderr, never your logs.
 
