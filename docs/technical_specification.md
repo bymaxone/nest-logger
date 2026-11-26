@@ -2380,7 +2380,7 @@ export const RESERVED_LOG_KEYS = {
 
 ## 13. Error Code Catalog
 
-Errors the lib may throw (or record as a warning). The names of thrown errors are labels of this table: no thrown message and no entry carries `LOGGER_INVALID_OPTIONS`, `LOGGER_INVALID_LEVEL`, `LOGGER_CONTEXT_OUT_OF_SCOPE` or `LOGGER_OTEL_API_UNAVAILABLE` as a string (the OpenTelemetry case is written as `LOGGER_BOOTSTRAP_WARNING` with `reason: 'OTEL_API_UNAVAILABLE'`).
+Errors the lib may throw (or record as a warning). The names of thrown errors are labels of this table, not strings to query; the OpenTelemetry case is written as `LOGGER_BOOTSTRAP_WARNING` with `reason: 'OTEL_API_UNAVAILABLE'`.
 
 | Code                              | Severity                    | When it occurs                                                                   | Recommended action                                                                                                            |
 | --------------------------------- | --------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
