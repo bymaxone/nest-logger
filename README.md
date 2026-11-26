@@ -1076,12 +1076,11 @@ Implements NestJS `LoggerService`. All methods are available via `@InjectLogger(
 
 **Helpers**
 
-| Method              | Signature    | Notes                                                                                                                                                                        |
-| ------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `child`             | `(bindings)` | New `PinoLoggerService` over a Pino child logger                                                                                                                             |
-| `setContext`        | `(context)`  | Global label — ⚠️ singleton; prefer `@InjectLogger(MyClass.name)`                                                                                                            |
-| `getRawLogger`      | `()`         | The underlying Pino instance; bypasses the `meta` guards above                                                                                                               |
-| `censorMessageText` | `(text)`     | The text with the censor of the `message` of an entry applied (`redactPaths`, `redactCensor`); use it before writing a free-text error to a channel the library does not own |
+| Method         | Signature    | Notes                                                             |
+| -------------- | ------------ | ----------------------------------------------------------------- |
+| `child`        | `(bindings)` | New `PinoLoggerService` over a Pino child logger                  |
+| `setContext`   | `(context)`  | Global label — ⚠️ singleton; prefer `@InjectLogger(MyClass.name)` |
+| `getRawLogger` | `()`         | The underlying Pino instance; bypasses the `meta` guards above    |
 
 > [!NOTE]
 > There is no `fatalStructured` / `debugStructured`. Structured `fatal` and `debug` helpers are out of scope until a consumer needs them; use `getRawLogger()` in the meantime.
