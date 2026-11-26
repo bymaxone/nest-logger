@@ -12,6 +12,17 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.32] - 2026-11-26
+
+### Documentation
+
+- **Every log key is listed with its level and fields.** `LOGGER_BOOTSTRAP_OK` and `LOGGER_SHUTDOWN_OK` had no row, and `LOGGER_BUILTINS_REPLACED` is now listed under thrown errors.
+- **The README fills gaps it had against the published types**, in the options, the HTTP fields, the decorators, the helpers, the destinations and the `PinoLoggerService` methods.
+- **The row for `censorMessageText` is removed.** The option is marked `@internal`.
+- **The comments on `ILogDestination` match the registry**, on write failure reports and on the shutdown budget.
+
+No code change: against the published 1.4.31, the JavaScript in `dist/` is identical and the type declarations differ only in comments.
+
 ## [1.4.31] - 2026-11-25
 
 ### Changed
@@ -3575,7 +3586,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.31...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.32...HEAD
+[1.4.32]: https://github.com/bymaxone/nest-logger/compare/v1.4.31...v1.4.32
 [1.4.31]: https://github.com/bymaxone/nest-logger/compare/v1.4.30...v1.4.31
 [1.4.30]: https://github.com/bymaxone/nest-logger/compare/v1.4.29...v1.4.30
 [1.4.29]: https://github.com/bymaxone/nest-logger/compare/v1.4.28...v1.4.29
