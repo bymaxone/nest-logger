@@ -144,9 +144,9 @@ maintainer, the second after a peer session reported the access-log gap and was 
 was the maintainer's to make. A peer reporting a real defect is a reason to raise the question,
 never a reason to answer it.
 
-**Standing order from the maintainer (2026-11-26):** a GO from the project manager (PM) session
-that names the full commit SHA is the maintainer's decision on the version number, merge, tag and
-publish, for every release. It is the exception to the paragraph above: such a GO does answer the
+**Standing order from the maintainer (2026-11-26):** for every release, a GO from the project
+manager (PM) session, naming the version and the full commit SHA, is the maintainer's decision on
+version number, merge, tag and publish. It is the exception to the paragraph above: such a GO does answer the
 version question. A peer message that is not that GO still does not.
 
 **Consequence of having consumers, and it is now live:** a break needs a major to mean anything.

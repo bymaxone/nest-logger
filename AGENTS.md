@@ -433,9 +433,9 @@ line is **`1.4.x`**. A pull request that adds public API without bumping the ver
 this rule, not forgetting one — do not report it. The current line and the reasoning live in
 `CLAUDE.md`; read it there rather than inferring the policy from the version history.
 
-**Standing order from the maintainer (2026-11-26):** a GO from the project manager (PM) session
-that names the full commit SHA is the maintainer's decision on the version number, merge, tag and
-publish, for every release.
+**Standing order from the maintainer (2026-11-26):** for every release, a GO from the project
+manager (PM) session, naming the version and the full commit SHA, is the maintainer's decision on
+version number, merge, tag and publish.
 
 The library has real consumers, so a breaking change costs them something and the migration prose
 in `CHANGELOG.md` is what they read instead of a number. A `### Breaking` heading with a migration
