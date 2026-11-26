@@ -17,8 +17,8 @@ heading here.
 ### Documentation
 
 - **Every log key is listed with its level and fields.** `LOGGER_BOOTSTRAP_OK` and `LOGGER_SHUTDOWN_OK` had no row, and `LOGGER_BUILTINS_REPLACED` is now listed under thrown errors.
-- **The README fills gaps it had against the published types**, in the options, the HTTP fields, the decorators, the helpers, the destinations and the `PinoLoggerService` methods.
-- **The row for `censorMessageText` is removed.** The option is marked `@internal`.
+- **The README fills gaps it had against the published types**, in the options, the HTTP fields, the decorators, the helpers and the destinations.
+- **The row for `censorMessageText` is removed.** The method is marked `@internal`.
 - **The comments on `ILogDestination` match the registry**, on write failure reports and on the shutdown budget.
 
 No code change: against the published 1.4.31, the JavaScript in `dist/` is identical and the type declarations differ only in comments.
