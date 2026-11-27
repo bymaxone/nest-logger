@@ -196,7 +196,8 @@ export interface BymaxLoggerModuleOptions {
   shouldUseAsNestLogger?: boolean
   /**
    * Additional `@pinojs/redact` paths, applied on top of the default coverage
-   * whatever `redactStrategy` is in force.
+   * whatever `redactStrategy` is in force. Pino ships `@pinojs/redact` from
+   * `10.1.0`; `10.0.0` ships `slow-redact` in its place.
    */
   redactPaths?: readonly string[]
   /**

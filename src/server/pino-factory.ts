@@ -334,7 +334,7 @@ function ownFieldPolicyOf(options: ResolvedBymaxLoggerModuleOptions): OwnFieldPo
 /**
  * The names censored inside an `Error` under `redactStrategy: 'paths'`: the record's names belong to
  * `@pinojs/redact` there, but an `Error` is converted by the walk, so the default names are censored
- * in its own fields and its causes at any depth, beyond what `@pinojs/redact`'s wildcards reach.
+ * in its own fields and its causes at any depth, beyond what the default path list reaches.
  */
 function namesInsideErrors(
   options: ResolvedBymaxLoggerModuleOptions
@@ -480,8 +480,8 @@ function buildSerializers(
   //   0. The redactor here is `buildNameRedactor`, applied ungated: it ignores
   //      `redactStrategy`. That strategy is the consumer's choice about THEIR
   //      OWN payload; this output is what the library synthesizes, and
-  //      `@pinojs/redact`'s four-wildcard ceiling cannot reach the depth a cause
-  //      chain serializes to.
+  //      the default path list stops at four wildcards, short of the depth a
+  //      cause chain serializes to.
   //   1. Redaction runs on the serializer's OUTPUT. This is NOT a redundant
   //      second pass over data the `formatters.log` walk already saw — a
   //      serializer PRODUCES a value, and can synthesize fields that existed
