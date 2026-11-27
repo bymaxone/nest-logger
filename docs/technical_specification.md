@@ -116,7 +116,7 @@ The community lib [`nestjs-pino`](https://github.com/iamolegga/nestjs-pino) (Iam
 | `MODULE_ACTION_RESULT` convention  | `nestjs-pino` is agnostic — it neither requires nor encourages the convention. To ensure uniform adoption across the bymax ecosystem, we need an API that makes the convention **the natural path**. |
 | Opinionated redact registry        | `nestjs-pino` exposes `pinoHttp.redact` without opinion; the consumer chooses. This lib **opines**: 140 default paths covering BR PII (CPF/CNPJ/RG) + LGPD + PCI DSS, merged with custom extensions. |
 | Out-of-the-box OTel correlation    | `nestjs-pino` does not have a built-in OTel mixin (the consumer wires `@opentelemetry/instrumentation-pino`). This lib detects `trace.getActiveSpan()` automatically.                                |
-| Productivity decorators            | `nestjs-pino` does not provide `@InjectLogger`, `@LogContext`, `@LogPerformance`. This lib delivers them zero-config.                                                                                |
+| Productivity decorators            | `nestjs-pino` does not provide `@InjectLogger`, `@LogPerformance`. This lib delivers them zero-config.                                                                                               |
 | Multi-tenant via `tenantId`        | `nestjs-pino` requires the consumer to wire the header. This lib reads `x-tenant-id` by default and propagates via ALS.                                                                              |
 | Supply chain                       | Keeping our own implementation reduces upstream dependency and eliminates the risk of unexpected breaking changes (community libs follow their own cadence).                                         |
 | Maintenance cost                   | ~400-600 additional LoC (vs. ~1,500 total LoC in the lib). Justifiable given the 6 reasons above.                                                                                                    |
@@ -610,8 +610,8 @@ export interface BymaxLoggerModuleOptions {
   }
 
   /**
-   * Maximum size of a single log entry in bytes. Larger entries are truncated with a marker.
-   * Protects against log explosion from huge metadata objects.
+   * UTF-8 byte ceiling per serialized field (`err` and any custom serializer), not per entry
+   * (§17.7). Over it the value is replaced by a marker.
    * @default 65536 (64KB)
    */
   maxEntrySizeBytes?: number
@@ -832,10 +832,8 @@ import type { DestinationHealth } from '../services/destination-health.service'
  *
  * - `_write(chunk, _enc, cb)` hands the payload to `dest.write()` and invokes `cb()`
  *   synchronously when the destination returns `undefined`.
- * - Size bounding is NOT done here. `createSizeBoundedSerializer` is a Pino serializer and
- *   runs before the entry is serialized, replacing an oversized payload with a synthetic
- *   envelope carrying `LOGGER_ENTRY_TRUNCATED`; by the time a chunk reaches this adapter it
- *   is already within the budget.
+ * - Size bounding is NOT done here. `createSizeBoundedSerializer` is a Pino serializer: it
+ *   bounds what one serializer returns, not the chunk that reaches this adapter (§17.7).
  * - On destination errors — thrown or rejected — the wrapper records the failure in
  *   `DestinationHealth`, reports `LOGGER_DESTINATION_WRITE_FAILED` to stderr and calls `cb()`
  *   without an error (never throws — `cb(err)` would surface as a stream `'error'` and take
@@ -852,10 +850,8 @@ export function destinationToStream(dest: ILogDestination, health: DestinationHe
     decodeStrings: false,
     write(chunk: string | Buffer, _enc, cb) {
       try {
-        // NOT truncated here. Size bounding is a Pino SERIALIZER
-        // (`createSizeBoundedSerializer`), applied before the entry is
-        // serialized — by the time a chunk reaches this adapter it is already
-        // within the budget.
+        // NOT truncated here. Size bounding is a Pino SERIALIZER, which bounds one field,
+        // not this chunk (§17.7).
         const payload = typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
         // A sink that failed `onInit` never became live, so it is SKIPPED rather
         // than written to — its `write()` may assume resources it never acquired.
@@ -920,47 +916,8 @@ export function destinationToStream(dest: ILogDestination, health: DestinationHe
   })
 }
 
-/**
- * Size bounding, as it is actually implemented: a Pino SERIALIZER wrapper, not a
- * step inside the write adapter. It runs before the entry is serialized, so by the
- * time a chunk reaches `destinationToStream` it is already within budget.
- *
- * The oversized value is replaced by a marker OBJECT rather than a whole synthetic
- * NDJSON line, because at this point the entry is still being built — replacing the
- * finished line would discard the surrounding fields with it.
- *
- * Fail-soft twice over: an un-measurable value (circular reference, hostile
- * `toJSON`) passes through untouched rather than throwing on the logging path, and
- * so does a serializer that legitimately returns `undefined`.
- */
-/** Characters of the original JSON kept in `_preview` when a value is truncated. */
-const PREVIEW_LENGTH = 200
-
-export function createSizeBoundedSerializer<T>(
-  baseSerializer: (input: T) => unknown,
-  maxBytes: number
-): (input: T) => unknown {
-  return (input: T): unknown => {
-    const serialized = baseSerializer(input)
-    let json: string | undefined
-    try {
-      json = JSON.stringify(serialized)
-    } catch {
-      return serialized
-    }
-    if (json === undefined) return serialized
-    const byteSize = Buffer.byteLength(json, 'utf-8')
-    if (byteSize > maxBytes) {
-      return {
-        _truncated: true,
-        _logKey: RESERVED_LOG_KEYS.LOGGER_ENTRY_TRUNCATED,
-        _originalSize: byteSize,
-        _preview: json.slice(0, PREVIEW_LENGTH)
-      }
-    }
-    return serialized
-  }
-}
+// Size bounding is not part of this adapter: see `createSizeBoundedSerializer` in
+// `src/server/utils/truncate-large-entries.ts` and §17.7.
 ```
 
 **Multistream wiring** (in `pino-factory.ts`):
@@ -2540,7 +2497,7 @@ Deliverables:
 - [ ] `normalize-url.util.ts` + paired tests
 - [ ] `HttpLoggingInterceptor`
 - [ ] `HttpExceptionFilter`
-- [ ] `@InjectLogger`, `@LogContext`, `@LogPerformance`
+- [ ] `@InjectLogger`, `@LogContext` (deprecated, §9.2), `@LogPerformance`
 - [ ] Conditional registration as global via `APP_INTERCEPTOR`/`APP_FILTER` when `http.isEnabled`
 - [ ] E2E tests with `supertest` in a Nest fixture app
 - [ ] 100% coverage on normalize-url (high blast radius)
@@ -2611,7 +2568,7 @@ There is no flush method. Call `await app.close()`, or `app.enableShutdownHooks(
 
 ### 17.5 `pino-http` not embedded
 
-The lib does **not** depend on `pino-http` — it has its own `HttpLoggingInterceptor` and, for requests that never reach an interceptor, `applyAccessLog` (both use the lib's URL normalization and `LogContextService`). `pino-http` is **not** a peer dependency.
+The lib does **not** depend on `pino-http` — it has its own `HttpLoggingInterceptor` and, for requests that never reach an interceptor, `applyAccessLog` (both use the lib's URL normalization). `pino-http` is **not** a peer dependency.
 
 If a consumer still prefers `pino-http` (`pinoHttp({ ... })`), they install it independently and register it as Express/Fastify middleware — no wiring from this lib is required. With `http.isEnabled` as well, each request is logged twice, so pick one.
 
