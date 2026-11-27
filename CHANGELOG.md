@@ -16,7 +16,7 @@ heading here.
 
 ### Breaking
 
-- **Behaviour change under `redactStrategy: 'names'`:** an object that Pino serializes into a raw logger message is redacted by name. So a `Buffer` or a typed array is written as `[Binary N bytes]`, a value nested deeper than the walk reads is cut, and a boxed `String` is written as a map of its indexes. Migration: format such a value yourself before you pass it, for example `raw.info('digest %s', buffer.toString('hex'))`. `redactStrategy: 'paths'` writes the message as before.
+- **Behaviour change under `redactStrategy: 'names'`:** an object that Pino serializes into a raw logger message is redacted by name. By default a `Buffer` or a typed array is written as `[Binary N bytes]`, a value nested deeper than the walk reads is cut, and a boxed `String` is written as a map of its indexes. Migration: format such a value before you pass it, for example `raw.info('digest %s', buffer.toString('hex'))`. `redactStrategy: 'paths'` writes the message as before.
 
 ### Security
 
