@@ -41,6 +41,7 @@ import {
   createTextCensor,
   ENTRY_TEXT_FINISHER
 } from './utils/entry-text-finisher.util'
+import { guardChildBindings } from './utils/guard-child-bindings.util'
 import { mergeMixinSafely } from './utils/merge-mixin-safely.util'
 import {
   createOwnFieldPolicy,
@@ -667,38 +668,26 @@ function buildRecordFormatter(
  * The `formatters` of the logger: the level as a label, and the name-walk redaction of the record
  * and of the bindings.
  *
- * @param options - Fully-defaulted module options.
- * @param redactRecord - The redactor of the caller's record.
  * @param redactBindings - The redactor of the bindings, which `maxStringLength` does not limit.
+ * @param formatRecord - The record formatter, which redacts the caller's record.
  * @returns The Pino `formatters` option.
  */
 function buildFormatters(
-  options: ResolvedBymaxLoggerModuleOptions,
-  redactRecord: Redactor,
   redactBindings: Redactor,
-  onTruncate: TruncationSink
+  formatRecord: (record: Record<string, unknown>) => Record<string, unknown>
 ): NonNullable<LoggerOptions['formatters']> {
   return {
-    // Emit the level as a string label instead of the numeric code — easier
-    // for log aggregators. Trace context is injected via `mixin`, never via
-    // `formatters.log` (which cannot see ambient ALS / OTel state).
+    // The level as a label, easier for log aggregators. Trace context comes from `mixin`:
+    // `formatters.log` cannot see ambient ALS / OTel state.
     level: (label) => ({ level: label }),
-    // `base` bindings never reach `formatters.log` — Pino pre-serializes them
-    // into the instance's `chindings`, the same reason `child()` has to redact
-    // its own. That matters because `service` is CONSUMER-supplied and
-    // `applyDefaults` keeps whatever it was given: a `{ name, version, apiKey }`
-    // went out in clear, where the path expansion had covered it via `*.*.apiKey`.
-    // Redacting here rather than trimming to the two declared fields keeps a
-    // consumer's extra metadata instead of silently dropping it. Runs ONCE, at
-    // logger construction — no per-entry cost. `true`: bindings are a record
-    // root, iterated rather than serialized.
+    // `base` bindings never reach `formatters.log`: Pino pre-serializes them into `chindings`.
+    // `service` is CONSUMER-supplied and `applyDefaults` keeps whatever it was given, so a
+    // `{ name, version, apiKey }` is redacted here, which keeps the consumer's extra metadata
+    // where trimming to the two declared fields would drop it. Runs ONCE, at logger
+    // construction. `true`: bindings are a record root, iterated rather than serialized.
     bindings: (bindings) => redactBindings(bindings, true) as Record<string, unknown>,
-    // The name-walk redactor runs here, on the merged record (mixin output +
-    // the caller's object), which is exactly the surface a caller controls.
-    // `base` and child bindings are NOT visible at this hook — they are
-    // library-owned (`service`, the `@InjectLogger` context) and carry nothing
-    // sensitive, which `pino-factory.spec.ts` pins.
-    log: buildRecordFormatter(options, redactRecord, onTruncate)
+    // The record, not bindings: `base` is redacted above, children by `guardChildBindings`.
+    log: formatRecord
   }
 }
 
@@ -768,10 +757,12 @@ export function buildPinoInstance(
   //     e2e case, which is the check that caught it.
   const redactRecord = resolveRecordRedactor(options)
   const redactSerialized = buildNameRedactor(options)
+  const redactBindings = resolveNameRedactor(options)
   const ownFields = ownFieldPolicyOf(options)
 
   const redactOption = resolveRedactOption(options)
   const onTruncate: TruncationSink = (reason) => health.recordTruncation(reason)
+  const formatRecord = buildRecordFormatter(options, redactRecord, onTruncate)
   const pinoOptions: LoggerOptions = {
     level: options.level,
     ...(redactOption === undefined ? {} : { redact: { ...redactOption, remove: false } }),
@@ -788,12 +779,13 @@ export function buildPinoInstance(
     // is encoded as a JSON string here: a quote, a backslash or a newline in it must
     // neither break the line nor add fields to it.
     timestamp: () => `,"time":${JSON.stringify(String(options.timestamp()))}`,
-    formatters: buildFormatters(options, redactRecord, resolveNameRedactor(options), onTruncate),
+    formatters: buildFormatters(redactBindings, formatRecord),
     serializers: buildSerializers(options, redactSerialized, ownFields, onTruncate),
     mixin: buildTraceMixin(logContext, options),
     mixinMergeStrategy: mergeMixinSafely
   }
 
   const streams = pino.multistream(buildStreams(options, destinations, health))
-  return withEntryTextFinisher(pino(pinoOptions, streams), options, onTruncate)
+  const logger = withEntryTextFinisher(pino(pinoOptions, streams), options, onTruncate)
+  return guardChildBindings(logger, { redactBindings, redactSerialized, formatRecord })
 }

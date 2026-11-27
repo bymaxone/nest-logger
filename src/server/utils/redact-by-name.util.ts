@@ -34,9 +34,9 @@
  *   - `ArrayBuffer` views (`Buffer`, typed arrays) — indexed byte containers,
  *     returned untouched.
  *
- * What this file cannot reach: bindings passed to `child()`. Pino pre-serializes
- * them into the instance's `chindings` fragment before any formatter runs, so
- * `PinoLoggerService.child()` applies this redactor itself.
+ * What a formatter cannot reach: bindings. Pino pre-serializes them into the instance's
+ * `chindings` fragment, so `PinoLoggerService.child()` and `guardChildBindings` apply this
+ * redactor themselves.
  *
  * Contract: SNAPSHOT and NEVER-THROW. Nothing the caller passed is mutated; the
  * result is a fresh structure built from values read exactly ONCE. That is a

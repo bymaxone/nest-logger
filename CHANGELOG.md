@@ -12,6 +12,20 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.35] - 2026-11-27
+
+### Security
+
+- **Bindings passed to `child()` and `setBindings()` on the raw logger are now redacted**, and so is what the `formatters` and `serializers` of child options return.
+
+### Changed
+
+- The `formatters` and `serializers` of child options receive the redacted copy of the bindings, as a serializer already does for a record. A value in bindings of the raw logger is written as `service.child()` writes it.
+
+### Documentation
+
+- **The message text is not redacted**: a value the raw logger formats into it is written as it is. The `redact` and `msgPrefix` options of a child are applied as you set them.
+
 ## [1.4.34] - 2026-11-27
 
 No behaviour change: the published JavaScript is byte-identical to `1.4.33`, and the type declarations differ in comments only.
@@ -3606,7 +3620,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.34...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.35...HEAD
+[1.4.35]: https://github.com/bymaxone/nest-logger/compare/v1.4.34...v1.4.35
 [1.4.34]: https://github.com/bymaxone/nest-logger/compare/v1.4.33...v1.4.34
 [1.4.33]: https://github.com/bymaxone/nest-logger/compare/v1.4.32...v1.4.33
 [1.4.32]: https://github.com/bymaxone/nest-logger/compare/v1.4.31...v1.4.32
