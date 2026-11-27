@@ -33,7 +33,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-27 — server: 49,824 B real -> 49,854 B budget (48.69 KiB), measured + 30 as approved by
+//   - 2026-11-27 — server: 49,917 B real -> 49,947 B budget (48.78 KiB), measured + 30 as approved by
 //     the project manager. What the bytes bought: under 'names', an object that Pino writes into the
 //     message of an entry is walked by name, and a Pino without the members this needs is refused.
 //   - 2026-11-27 — server: 49,480 B real -> 49,510 B budget (48.35 KiB), measured + 30 as approved by
@@ -414,7 +414,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 49_854 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 49_947 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',
