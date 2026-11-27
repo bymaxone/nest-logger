@@ -240,6 +240,8 @@ export interface RedactRules {
    * whole walk.
    */
   readonly insideErrors?: RedactRules | undefined
+  /** Whether an `Error` is written as data under a serialized key too. */
+  readonly linksAsData?: boolean
   /** Whether an accessor is left out without being run. */
   readonly dataOnly?: boolean
   /** Under `'paths'`, which values with a `toJSON` hold a field the paths name. */
@@ -617,9 +619,9 @@ function walkProperties(
 ): unknown {
   const source = value as Record<string, unknown>
   const keys = keysToRead(source, rules.dataOnly)
-  const asData = isError(value) && (rules.ownFields.safe || (rules.errorsAsData && !inSerialized))
+  const scrubbed = isError(value) && (rules.ownFields.safe || rules.linksAsData || !inSerialized)
+  const asData = scrubbed && (rules.ownFields.safe || rules.errorsAsData)
   const copy = startCopy(value, asData)
-  const scrubbed = isError(value) && (rules.ownFields.safe || !inSerialized)
   const omitted = new Set<string>()
   const header = headerMessage(rules, source, keys, isError(value))
   for (const key of keys) {

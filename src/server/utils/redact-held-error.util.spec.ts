@@ -176,3 +176,46 @@ describe('what is written for a held Error', () => {
     expect(JSON.stringify(written(failed(), () => ({ code: 'E1' }), 2))).not.toContain('E1')
   })
 })
+
+/** What is written for a held `Error` under the `err` key, which has a serializer. */
+function underErr(cause: Error): unknown {
+  const error = new Error('failed', { cause })
+  Object.defineProperty(error, 'inner', { value: { pan: 'x' } })
+  Object.defineProperty(error, 'toJSON', { value: () => ({ cause }) })
+  const hold = createPathHold(['err.pan'], 1000, createOwnFieldPolicy('safe', []))
+  const redact = createNameRedactor(
+    ['password'],
+    '[X]',
+    ['err'],
+    1000,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    hold
+  )
+  return JSON.parse(JSON.stringify(redact({ err: error }, true))) as unknown
+}
+
+describe('what is written for a held Error under a serialized key', () => {
+  /* An instance keeps its head where the comparison does not read it, so a link is data. */
+  it('writes the name, message and stack of a cause', () => {
+    const stack = 'Error: refused\n    at run (/srv/app.js:1:1)'
+    const cause = Object.assign(new Error('refused'), { stack })
+
+    expect(underErr(cause)).toEqual({
+      err: { cause: { name: 'Error', message: 'refused', stack } }
+    })
+  })
+
+  /* A link is cut as under any other key, so its text is the one `'safe'` writes. */
+  it('writes the own enumerable message of a cause as cut', () => {
+    const cause = new Error()
+    Reflect.deleteProperty(cause, 'message')
+    Object.assign(cause, { message: 'm'.repeat(20_000) })
+    const { err } = underErr(cause) as { err: { cause: { message: string } } }
+
+    expect(err.cause.message.startsWith('mmm')).toBe(true)
+    expect(err.cause.message.length).toBeLessThan(20_000)
+  })
+})

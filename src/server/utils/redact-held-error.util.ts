@@ -84,7 +84,9 @@ function commonForm(safe: unknown, written: unknown, hold: PathHold, censor: str
  * Write a held `Error`: what both its `'safe'` form and what its `toJSON` returns hold. A `toJSON`
  * that returns no plain object, and anything that cannot be read, is the censor. Never throws.
  *
- * The `'safe'` form is read first, so what `toJSON` does to the `Error` is not part of it.
+ * The `'safe'` form is read first, so what `toJSON` does to the `Error` is not part of it. The
+ * output is walked with every `Error` written as data, under a serialized key too: an instance
+ * keeps its head and links where the comparison does not read them.
  *
  * @param error - The held `Error`.
  * @param toJson - Its `toJSON`.
@@ -106,7 +108,8 @@ export function writeHeldError(
     setAdd(ancestors, error)
     const output = toJson.call(error)
     if (Array.isArray(output) || isError(output)) return rules.censor
-    return commonForm(safe, walkPart(output, rules, 1), rules.pathHold, rules.censor)
+    const written = walkPart(output, { ...rules, linksAsData: true }, 1)
+    return commonForm(safe, written, rules.pathHold, rules.censor)
   } catch {
     return rules.censor
   }
