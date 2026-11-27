@@ -21,6 +21,11 @@ heading here.
 - Under the same strategy, a path ending in `message` or `stack` counts the `message` or `stack` of every `Error` a value with a `toJSON` is or holds, and one walk reads at most 200,000 objects and fields to find a named field; past that it counts as holding one.
 - Under the same strategy, a value with a `toJSON` is searched before `toJSON` runs, so a large structure behind a `toJSON` costs more per call.
 
+### Changed
+
+- Some errors logged under `err` now include the name and message of nested causes, matching the output under other keys (1.4.37 wrote `UnknownError`).
+- Known limit: under `err`, some nested errors may be written as `UnknownError` where 1.4.37 wrote their name and message, for example an error below a plain object that is a cause or an aggregate member, or a nested error whose own `toJSON` returns no `name`.
+
 ### Documentation
 
 - The README states the `toJSON` rule of `redactStrategy: 'paths'`.
