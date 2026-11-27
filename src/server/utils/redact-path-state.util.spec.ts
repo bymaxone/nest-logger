@@ -2,7 +2,7 @@
  * Pins `createPathHold`: which own state counts as holding a field the paths name, and what is
  * written for a held `Error`.
  *
- * Layer: unit, server/utils.
+ * Layer: server, utils.
  */
 import { createOwnFieldPolicy } from './own-field-policy.util'
 import { createPathHold } from './redact-path-state.util'
