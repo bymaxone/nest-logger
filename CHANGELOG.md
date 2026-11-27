@@ -20,7 +20,7 @@ heading here.
 
 ### Changed
 
-- **Behaviour change under `redactStrategy: 'names'`:** the `bindings` formatter and the `serializers` of child options receive a redacted plain copy of the bindings instead of your objects. The copy has no methods: a `Date` arrives as a string, a `Map` as `{}` and a class instance as a plain object, so a serializer that calls a method of one of these throws. A value in bindings of the raw logger is written as `service.child()` writes it.
+- **Behaviour change under `redactStrategy: 'names'`:** the `bindings` formatter and the `serializers` of child options receive a redacted copy of the bindings instead of your objects. In the copy a `Date` arrives as a string, a `Map` as `{}` and a class instance other than an `Error` as a plain object, so a serializer that calls a method of one of these throws. A value in bindings of the raw logger is written as `service.child()` writes it.
 - Under `redactStrategy: 'paths'`, bindings of the raw logger are handled as before: Pino's redact paths apply, and your own objects reach the formatters and serializers.
 
 ### Documentation
