@@ -159,6 +159,15 @@ describe('guardChildBindings', () => {
     expect(line).toMatchObject({ level: 'info', value: 30, serializedMark: true })
   })
 
+  it('does not hand the record formatter what a log formatter returns when that is nothing', () => {
+    for (const nothing of [undefined, null]) {
+      const line = childLine({}, { formatters: { log: () => nothing as never } }, { a: 1 })
+
+      expect(line).toMatchObject({ msg: 'm' })
+      expect(line).not.toHaveProperty('recordMark')
+    }
+  })
+
   it('redacts what a serializer of the child options returns, keeping its this', () => {
     const serializers = {
       account: function (this: unknown, id: unknown): unknown {

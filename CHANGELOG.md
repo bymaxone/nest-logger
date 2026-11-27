@@ -20,7 +20,7 @@ heading here.
 
 ### Changed
 
-- Under `redactStrategy: 'names'`, the `bindings` formatter and the `serializers` of child options receive the redacted copy of the bindings, as a serializer already does for a record. A value in bindings of the raw logger is written as `service.child()` writes it.
+- The `bindings` formatter and the `serializers` of child options receive a copy of the bindings, not your objects, under both redaction strategies: a `Date` arrives as a string, a `Map` as `{}` and a class instance as a plain object, so a serializer that calls a method of one of these throws. Under `redactStrategy: 'names'` redacted values are already censored in the copy. A value in bindings of the raw logger is written as `service.child()` writes it.
 
 ### Documentation
 

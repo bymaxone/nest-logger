@@ -65,7 +65,10 @@ function guardFormatters(formatters: object, guard: ChildGuard): object {
   return replacing(formatters, {
     bindings: followedBy(bindings, (output) => guard.redactBindings(output, true)),
     level: followedBy(level, (output) => guard.redactSerialized(output)),
-    log: followedBy(log, (output) => guard.formatRecord(output as Record<string, unknown>))
+    // A formatter that returns nothing is passed on as it is: Pino writes no fields for it.
+    log: followedBy(log, (output) =>
+      output ? guard.formatRecord(output as Record<string, unknown>) : output
+    )
   })
 }
 

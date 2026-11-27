@@ -189,6 +189,25 @@ describe('Logger E2E — bindings of the raw logger', () => {
     })
   })
 
+  it.each([
+    ['undefined', 'names'],
+    ['null', 'names'],
+    ['undefined', 'paths'],
+    ['null', 'paths']
+  ] as const)(
+    'writes the line when a child formatters.log returns %s under %s',
+    async (returned, redactStrategy) => {
+      const nothing = returned === 'null' ? null : undefined
+      const lines = await linesOf(
+        (raw) =>
+          raw.child({}, { formatters: { log: () => nothing as never } }).info({ a: 1 }, 'PROBE'),
+        { redactStrategy }
+      )
+
+      expect(JSON.parse(lines)).toMatchObject({ msg: 'PROBE' })
+    }
+  )
+
   it('throws what Pino throws for a child with no bindings', async () => {
     await linesOf((raw) => {
       expect(() => raw.child(undefined as never)).toThrow('missing bindings for child Pino')
