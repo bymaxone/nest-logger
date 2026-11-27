@@ -1788,7 +1788,7 @@ If a consumer still prefers `pino-http` (`pinoHttp({ ... })`), they install it i
 
 ### 17.7 No size limit on the whole entry
 
-`maxEntrySizeBytes` (65536 by default) bounds each serialized field (`err` and any custom serializer) and each derived `exception.*` and `error.type` field. A serializer output over it is replaced by `{"_truncated":true,"_logKey":"LOGGER_ENTRY_TRUNCATED","_originalSize":<n>,"_preview":"<first chars>"}`; a derived field is cut. The entry's `msg`, and an error's `message` and `stack`, are cut at 16384 characters. `maxEntrySizeBytes` does not bound a value under a metadata key, or the entry: with the defaults, a 100000-character metadata string and an entry of 40 fields of 4000 characters are both written whole. `maxStringLength`, off until set, cuts long string values. The reserved key `LOGGER_ENTRY_TRUNCATED` is part of `RESERVED_LOG_KEYS` (§12.3).
+`maxEntrySizeBytes` (65536 by default) bounds each serialized field (`err` and any custom serializer) and each derived `exception.*` and `error.type` field. A serializer output over it is replaced by `{"_truncated":true,"_logKey":"LOGGER_ENTRY_TRUNCATED","_originalSize":<n>,"_preview":"<first chars>"}`; a derived field is cut. The entry's `msg`, and an error's `message` and `stack`, are cut at 16384 characters; a message written through `getRawLogger()` is not. `maxEntrySizeBytes` does not bound a value under a metadata key, or the entry: with the defaults, a 100000-character metadata string and an entry of 40 fields of 4000 characters are both written whole. `maxStringLength`, off until set, cuts long string values. The reserved key `LOGGER_ENTRY_TRUNCATED` is part of `RESERVED_LOG_KEYS` (§12.3).
 
 ### 17.8 The destination registry trusts `options.level`
 

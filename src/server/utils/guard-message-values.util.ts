@@ -5,7 +5,8 @@
  * which Pino serializes with the `stringify` of the format options of the instance. And as the whole
  * message, passed as such or taken by Pino from `err.message`, which it hands to the serializer
  * registered under `msg`. The walk by name is composed into both, so the redact paths of Pino still
- * apply to a placeholder. `%s` and `%d` print what Pino prints.
+ * apply to a placeholder. `%s` and `%d` print what Pino prints. Under `'paths'` the walk is applied
+ * only to what holds a binary value, which Pino's redact paths cannot copy.
  *
  * The format options are reached through `pino.symbols`. A Pino that does not have them in the shape
  * this module expects is refused when the logger is built.
@@ -14,6 +15,7 @@ import pino from 'pino'
 import type { Logger as PinoLogger } from 'pino'
 
 import { bareDescriptor } from './bare-descriptor.util'
+import { holdsBinary } from './binary-values.util'
 import type { MessageRedactor } from './redact-by-name.util'
 
 const apply = Reflect.apply
@@ -25,7 +27,7 @@ type AnyCallable = (...inputs: unknown[]) => unknown
 
 const UNSUPPORTED =
   'LOGGER_PINO_UNSUPPORTED: this version of pino does not expose symbols.formatOptsSym as ' +
-  "redactStrategy: 'names' needs it to redact the message of an entry"
+  'the logger needs to redact the message of an entry'
 
 /** The function under `value`, or a refusal when it is not one. */
 function required(value: unknown): AnyCallable {
@@ -77,20 +79,32 @@ export function redactMessageOutput(
   return writable((output) => redact(output, false, true))
 }
 
+/** What takes a message, or the object of a placeholder, to what Pino is given under `strategy`. */
+function messageWalk(
+  strategy: 'names' | 'paths',
+  redact: MessageRedactor
+): (value: unknown) => unknown {
+  const walked = walkedWith(redact)
+  if (strategy === 'names') return walked
+  return (value) => (holdsBinary(value) ? walked(value) : value)
+}
+
 /**
- * The serializer of `msg` under `'names'`, none under `'paths'`. A serializer of the host or of a
- * child under the same key replaces it, and has what it returns redacted by
- * {@link redactMessageOutput}.
+ * The serializer of `msg`. A serializer of the host or of a child under the same key replaces it,
+ * and has what it returns redacted by {@link redactMessageOutput}.
  *
  * @param strategy - The redaction strategy of the module.
  * @param redact - The redactor that walks by name.
+ * @param redactRecord - The redactor of the record under `strategy`, which walks what holds a binary
+ *   value under `'paths'`.
  * @returns The entry to spread into the serializers of Pino.
  */
 export function messageSerializers(
   strategy: 'names' | 'paths',
-  redact: MessageRedactor
-): { msg?: (message: unknown) => unknown } {
-  return strategy === 'names' ? { msg: writable(walkedWith(redact)) } : {}
+  redact: MessageRedactor,
+  redactRecord: MessageRedactor
+): { msg: (message: unknown) => unknown } {
+  return { msg: writable(messageWalk(strategy, strategy === 'names' ? redact : redactRecord)) }
 }
 
 /** Give `target` its own value under `key`, writable so that Pino can still replace it. */
@@ -100,22 +114,25 @@ function define(target: object, key: symbol, value: unknown): void {
 }
 
 /**
- * Compose the walk by name into the placeholders of a Pino instance. Every child of the instance
- * inherits it through its prototype.
+ * Compose the walk of {@link messageSerializers} into the placeholders of a Pino instance. Every
+ * child of the instance inherits it through its prototype.
  *
  * @param logger - The Pino instance the factory built.
- * @param redact - The redactor that walks by name.
+ * @param redact - The redactor that walks by name under `'names'`, that of the record under
+ *   `'paths'`.
+ * @param strategy - The redaction strategy of the module.
  * @returns What guards a child that Pino gave format options of its own, as it does for the child
  *   options `redact`.
  * @throws Error `LOGGER_PINO_UNSUPPORTED` when Pino does not have the members to compose with.
  */
 export function guardMessageValues(
   logger: PinoLogger,
-  redact: MessageRedactor
+  redact: MessageRedactor,
+  strategy: 'names' | 'paths'
 ): (child: object) => void {
   const symbols = get(pino, 'symbols') as Record<string, unknown> | undefined
   const formatOptions = requiredSymbol(symbols?.['formatOptsSym'])
-  const walked = walkedWith(redact)
+  const walked = messageWalk(strategy, redact)
 
   const guardFormat = (instance: object): void => {
     const current = get(instance, formatOptions) as { stringify?: unknown } | undefined

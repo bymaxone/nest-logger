@@ -291,11 +291,12 @@ export interface BymaxLoggerModuleOptions {
   /**
    * The most characters a string value of a log record is written with, with the exceptions below.
    * A longer string is cut to this many characters, without splitting a surrogate pair, and ends
-   * with `…[truncated]`, so what is written is up to 12 characters longer than the limit. An integer
+   * with `…[truncated]`, so what is written is up to 12 characters longer than the limit, except the
+   * `msg` taken from an object message, which is escaped after the cut. An integer
    * from 64 to 2147483647. Default: not set, and a string is written whole.
    *
    * Applies to every string value of the record at any depth, but not to a key, a value that is
-   * not text, the log message (capped at 16384 characters; the one exception is the text of an
+   * not text, the log message (capped at 16384 characters, except through `getRawLogger()`; the one exception is the text of an
    * object that is written as the fields of the entry, which is cut), the `logKey`, the bindings of
    * a logger (the service identity and a `context`), a value a redaction rule censors, or anything
    * under a key that has a serializer (`err` and the keys of `serializers`; see

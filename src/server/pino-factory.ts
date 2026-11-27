@@ -507,7 +507,7 @@ function buildSerializers(
       () => onTruncate('max_entry_size')
     )
   return {
-    ...messageSerializers(options.redactStrategy, redactSerialized),
+    ...messageSerializers(options.redactStrategy, redactSerialized, resolveNameRedactor(options)),
     err: bound((error) => markErrorOutput(serializeErrorValue(error, ownFields, censorMessage))),
     ...Object.fromEntries(
       Object.entries(options.serializers).map(

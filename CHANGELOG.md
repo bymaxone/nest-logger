@@ -12,6 +12,23 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.37] - 2026-11-27
+
+### Breaking
+
+- A binary value (a `Buffer`, a typed array or a `DataView`) passed to the raw logger as the merge object, or to `child()` or `setBindings()` as the bindings, is written as one field, `binary`, with its size, instead of one field for each byte or character. Migration: pass it under a key of your own in the form you want to read, for example `raw.info({ digest: buffer.toString('hex') })`.
+- Under `redactStrategy: 'paths'`, a message, a placeholder object or bindings of the raw logger that hold a binary value are walked before Pino writes them. The other values in them are then written as the walk writes them (a `Map` as `{}`, for one), and a `msg` serializer, `formatters.bindings` and the serializers receive that copy. Values that hold no binary are written as before.
+- Under `redactStrategy: 'paths'` too, the logger now refuses to start with `LOGGER_PINO_UNSUPPORTED` when `pino.symbols.formatOptsSym` is missing. Tested on `pino` 10.0.0 and 10.4.0.
+
+### Fixed
+
+- Under `redactStrategy: 'paths'`, a binary value in a message, a placeholder or bindings of the raw logger could make Pino throw a `TypeError` into the caller, with the default redact paths or with a wildcard path of your own. It is now written as its size.
+
+### Documentation
+
+- The `msg` taken from an object message is escaped after `maxStringLength` cuts it, so it can be longer than the limit plus 12.
+- A message written through `getRawLogger()` is not capped at 16384 characters.
+
 ## [1.4.36] - 2026-11-27
 
 ### Breaking
@@ -3638,7 +3655,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.36...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.37...HEAD
+[1.4.37]: https://github.com/bymaxone/nest-logger/compare/v1.4.36...v1.4.37
 [1.4.36]: https://github.com/bymaxone/nest-logger/compare/v1.4.35...v1.4.36
 [1.4.35]: https://github.com/bymaxone/nest-logger/compare/v1.4.34...v1.4.35
 [1.4.34]: https://github.com/bymaxone/nest-logger/compare/v1.4.33...v1.4.34
