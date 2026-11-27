@@ -208,6 +208,39 @@ describe('Logger E2E — bindings of the raw logger', () => {
     }
   )
 
+  it("hands a child serializer your own objects under redactStrategy: 'paths'", async () => {
+    const lines = await linesOf(
+      (raw) =>
+        raw
+          .child({ at: new Date(0) }, { serializers: { at: (at: Date) => at.getTime() } })
+          .info('PROBE'),
+      { redactStrategy: 'paths' }
+    )
+
+    expect(JSON.parse(lines)).toMatchObject({ at: 0 })
+  })
+
+  it("hands a child formatters.bindings your own objects under redactStrategy: 'paths'", async () => {
+    const at = new Date(0)
+    const seen: unknown[] = []
+    const keep = (bindings: Record<string, unknown>): Record<string, unknown> => {
+      seen.push(bindings['at'])
+      return bindings
+    }
+    await linesOf(
+      (raw) => {
+        const child = raw.child({ at }, { formatters: { bindings: keep } })
+        child.setBindings({ at })
+        child.info('PROBE')
+      },
+      { redactStrategy: 'paths' }
+    )
+
+    expect(seen).toHaveLength(2)
+    expect(seen[0]).toBe(at)
+    expect(seen[1]).toBe(at)
+  })
+
   it('throws what Pino throws for a child with no bindings', async () => {
     await linesOf((raw) => {
       expect(() => raw.child(undefined as never)).toThrow('missing bindings for child Pino')

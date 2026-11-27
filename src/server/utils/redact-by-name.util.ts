@@ -35,8 +35,8 @@
  *     returned untouched.
  *
  * What a formatter cannot reach: bindings. Pino pre-serializes them into the instance's
- * `chindings` fragment, so `PinoLoggerService.child()` and `guardChildBindings` apply this
- * redactor themselves.
+ * `chindings` fragment, so `PinoLoggerService.child()` applies this redactor itself, and so
+ * does `guardChildBindings` under the `'names'` strategy.
  *
  * Contract: SNAPSHOT and NEVER-THROW. Nothing the caller passed is mutated; the
  * result is a fresh structure built from values read exactly ONCE. That is a

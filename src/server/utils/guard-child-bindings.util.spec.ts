@@ -19,7 +19,10 @@ const mark =
       : `${name}:${String(value)}`
 
 /** A guarded Pino instance with markers for redactors, and the records it writes. */
-function build(): { logger: PinoLogger; lines: () => Array<Record<string, unknown>> } {
+function build(redactStrategy: 'names' | 'paths' = 'names'): {
+  logger: PinoLogger
+  lines: () => Array<Record<string, unknown>>
+} {
   const written: string[] = []
   const logger = guardChildBindings(
     pino({ base: null, timestamp: false }, { write: (line: string) => void written.push(line) }),
@@ -28,7 +31,8 @@ function build(): { logger: PinoLogger; lines: () => Array<Record<string, unknow
       redactBindings: (value, asRoot) => ({ ...(value as object), boundMark: asRoot === true }),
       redactSerialized: mark('serializedMark'),
       formatRecord: (record) => ({ ...record, recordMark: true })
-    }
+    },
+    { redactStrategy }
   )
   return {
     logger,
@@ -60,6 +64,27 @@ describe('guardChildBindings', () => {
       { a: 1, boundMark: true, level: 20 },
       { b: 2, boundMark: true }
     ])
+  })
+
+  it("leaves bindings as passed under 'paths', and still redacts what a callback returns", () => {
+    const { logger, lines } = build('paths')
+    const at = new Date(0)
+    const seen: unknown[] = []
+
+    const child = logger.child(
+      { at },
+      {
+        formatters: { bindings: (b) => (seen.push(b['at']), b) },
+        serializers: { account: () => ({}) }
+      }
+    )
+    child.setBindings({ at })
+    child.info({ account: 'a1' }, 'm')
+
+    expect(seen).toEqual([at, at])
+    expect(seen[0]).toBe(at)
+    expect(lines()[0]).toMatchObject({ account: { serializedMark: true } })
+    expect(lines()[0]).not.toHaveProperty('boundMark')
   })
 
   it('redacts what setBindings adds, on the instance and on a child', () => {

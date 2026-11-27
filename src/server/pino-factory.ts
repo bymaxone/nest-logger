@@ -686,7 +686,7 @@ function buildFormatters(
     // where trimming to the two declared fields would drop it. Runs ONCE, at logger
     // construction. `true`: bindings are a record root, iterated rather than serialized.
     bindings: (bindings) => redactBindings(bindings, true) as Record<string, unknown>,
-    // The record, not bindings: `base` is redacted above, children by `guardChildBindings`.
+    // The record, not bindings: `base` is redacted above, and a child's by `guardChildBindings`.
     log: formatRecord
   }
 }
@@ -787,5 +787,5 @@ export function buildPinoInstance(
 
   const streams = pino.multistream(buildStreams(options, destinations, health))
   const logger = withEntryTextFinisher(pino(pinoOptions, streams), options, onTruncate)
-  return guardChildBindings(logger, { redactBindings, redactSerialized, formatRecord })
+  return guardChildBindings(logger, { redactBindings, redactSerialized, formatRecord }, options)
 }

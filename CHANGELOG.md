@@ -16,11 +16,12 @@ heading here.
 
 ### Security
 
-- **Bindings passed to `child()` and `setBindings()` on the raw logger are now redacted**, and so is what the `formatters` and `serializers` of child options return.
+- **Under the default `redactStrategy: 'names'`, bindings passed to `child()` and `setBindings()` on the raw logger are now redacted.** Under both strategies, so is what the `serializers`, `formatters.log` and `formatters.level` of child options return.
 
 ### Changed
 
-- The `bindings` formatter and the `serializers` of child options receive a copy of the bindings, not your objects, under both redaction strategies: a `Date` arrives as a string, a `Map` as `{}` and a class instance as a plain object, so a serializer that calls a method of one of these throws. Under `redactStrategy: 'names'` redacted values are already censored in the copy. A value in bindings of the raw logger is written as `service.child()` writes it.
+- **Behaviour change under `redactStrategy: 'names'`:** the `bindings` formatter and the `serializers` of child options receive a redacted plain copy of the bindings instead of your objects. The copy has no methods: a `Date` arrives as a string, a `Map` as `{}` and a class instance as a plain object, so a serializer that calls a method of one of these throws. A value in bindings of the raw logger is written as `service.child()` writes it.
+- Under `redactStrategy: 'paths'`, bindings of the raw logger are handled as before: Pino's redact paths apply, and your own objects reach the formatters and serializers.
 
 ### Documentation
 

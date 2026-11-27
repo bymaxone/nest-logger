@@ -41,6 +41,9 @@ function followedBy(run: unknown, then: Callable): unknown {
   }
 }
 
+/** What was given, for bindings the module does not walk. */
+const asPassed: Redactor = (value: unknown): unknown => value
+
 /**
  * A copy of `source` with some members replaced. The prototype and the other members stay as they
  * are, because Pino reads them from the object it is given, and a frozen source can be copied.
@@ -106,10 +109,18 @@ function guardOptions(options: unknown, guard: ChildGuard): unknown {
  * writes them, and what the options of a child replace is redacted too.
  *
  * @param logger - The Pino instance the factory built.
- * @param guard - The redaction of the module.
+ * @param redaction - The redaction of the module.
+ * @param options - The strategy. Under `'paths'`, bindings are left to Pino's redact paths, and the
+ *   formatters and serializers of the child options receive the objects the caller passed.
  * @returns `logger`.
  */
-export function guardChildBindings(logger: PinoLogger, guard: ChildGuard): PinoLogger {
+export function guardChildBindings(
+  logger: PinoLogger,
+  redaction: ChildGuard,
+  options: { readonly redactStrategy: 'names' | 'paths' }
+): PinoLogger {
+  const guard =
+    options.redactStrategy === 'names' ? redaction : { ...redaction, redactBindings: asPassed }
   const nativeChild: unknown = logger.child
   const nativeSetBindings: unknown = logger.setBindings
   // Missing bindings are passed on as they are, so Pino answers for them.
