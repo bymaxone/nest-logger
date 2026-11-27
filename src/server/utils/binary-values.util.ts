@@ -2,10 +2,8 @@
  * Where a binary value reaches Pino without the walk of the record having read it.
  *
  * Layer: server/utils. Pino's path redaction copies what it reads onto the prototype of the
- * original, and a copy with the prototype of a typed array throws a `TypeError` when it is written,
- * into the caller. Under `redactStrategy: 'paths'` the message, the placeholders and the bindings
- * of the raw logger are given to Pino as they are, unless they hold a binary value, which the walk
- * then replaces with its size.
+ * original, and a copy with the prototype of a `Buffer` throws a `TypeError` when it is written,
+ * into the caller.
  */
 import { setAdd, setHas } from './captured-builtins.util'
 import { withBinaryAsSize } from './own-field-policy.util'
@@ -40,7 +38,7 @@ export function holdsBinary(value: unknown): boolean {
 
 /**
  * A binary view given where the fields of a line or of the bindings are expected, as one field with
- * its size. It has no field names, and Pino would write one field for each of its bytes.
+ * its size. It has no field names, and Pino would write one field for each element of a typed array.
  *
  * @param value - The merge object or the bindings.
  * @returns `value`, or the one field.

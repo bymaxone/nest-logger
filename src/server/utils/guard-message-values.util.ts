@@ -6,7 +6,7 @@
  * message, passed as such or taken by Pino from `err.message`, which it hands to the serializer
  * registered under `msg`. The walk by name is composed into both, so the redact paths of Pino still
  * apply to a placeholder. `%s` and `%d` print what Pino prints. Under `'paths'` the walk is applied
- * only to what holds a binary value, which Pino's redact paths cannot copy.
+ * only to what holds a binary value, because Pino's redact paths cannot copy a `Buffer`.
  *
  * The format options are reached through `pino.symbols`. A Pino that does not have them in the shape
  * this module expects is refused when the logger is built.
