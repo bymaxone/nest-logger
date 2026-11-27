@@ -41,7 +41,7 @@
 
 `@bymax-one/nest-logger` is a NestJS library for structured JSON logging in production, built on **Pino 10** with **optional** integration with **OpenTelemetry SDK 1.x** for distributed trace correlation. The lib provides:
 
-- A `PinoLoggerService` that implements the official NestJS `LoggerService` interface and can replace the default logger with no application code changes
+- A `PinoLoggerService` that implements the official NestJS `LoggerService` interface and can replace the default logger
 - An additional custom API `info(logKey, message, userId?, metadata?)` that follows the `MODULE_ACTION_RESULT` convention adopted across the Bymax ecosystem
 - An HTTP interceptor for automatic request/response logging with normalized URLs
 - An HTTP exception filter with sanitized stack trace capture
@@ -103,25 +103,25 @@ Choosing Pino aligns the Bymax ecosystem with the market direction and removes ~
 4. **No `dependencies`** — the required peers are `@nestjs/common`, `@nestjs/core`, `pino`, `reflect-metadata` and `rxjs`; every other peer is optional.
 5. **Convention over configuration** — `MODULE_ACTION_RESULT` log keys, reasonable default redact paths, NestJS-compatible default log levels. Safe defaults without requiring setup.
 6. **NestJS-native compatibility** — `PinoLoggerService` implements `LoggerService` from `@nestjs/common`, usable in `app.useLogger()` or injectable as a traditional service.
-7. **Multi-tenant ready** — `tenantId` propagation via `AsyncLocalStorage` in every log with no additional application code.
+7. **Multi-tenant ready** — `tenantId` propagation via `AsyncLocalStorage` in every log.
 8. **Secure by default** — redact paths for common sensitive fields (`password`, `passwordHash`, `token`, `mfaSecret`, `cardNumber`, `cvv`, `cpf`, `cnpj`, `headers.authorization`, `headers.cookie`) enabled out-of-the-box.
 
 ### 1.7 Decision: from-scratch implementation (not `nestjs-pino`)
 
 The community lib [`nestjs-pino`](https://github.com/iamolegga/nestjs-pino) (Iamolegga) covers ~70% of this lib's scope: ALS-based request context, `pino-http` HTTP logging, `Logger`/`PinoLogger`/`NativeLogger` services. **So why not depend on it?**
 
-| Criterion                          | Assessment                                                                                                                                                                                                                            |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Parity with `@bymax-one/nest-auth` | The public bymax repo grows by keeping its own visual identity + conventions. Depending on a community lib breaks architectural parity.                                                                                               |
-| `MODULE_ACTION_RESULT` convention  | `nestjs-pino` is agnostic — it neither requires nor encourages the convention. To ensure uniform adoption across the bymax ecosystem, we need an API that makes the convention **the natural path**.                                  |
-| Opinionated redact registry        | `nestjs-pino` exposes `pinoHttp.redact` without opinion; the consumer chooses. This lib **opines**: 62 sensitive names, expanded to 315 default paths, covering BR PII (CPF/CNPJ/RG) + LGPD + PCI DSS, merged with custom extensions. |
-| Out-of-the-box OTel correlation    | `nestjs-pino` does not have a built-in OTel mixin (the consumer wires `@opentelemetry/instrumentation-pino`). This lib detects `trace.getActiveSpan()` automatically.                                                                 |
-| Productivity decorators            | `nestjs-pino` does not provide `@InjectLogger`, `@LogPerformance`. This lib delivers them zero-config.                                                                                                                                |
-| Multi-tenant via `tenantId`        | `nestjs-pino` requires the consumer to wire the header. This lib reads `x-tenant-id` by default and propagates via ALS.                                                                                                               |
-| Supply chain                       | Keeping our own implementation reduces upstream dependency and eliminates the risk of unexpected breaking changes (community libs follow their own cadence).                                                                          |
-| Maintenance cost                   | ~400-600 additional LoC. Justifiable given the reasons above.                                                                                                                                                                         |
+| Criterion                          | Assessment                                                                                                                                                                                                                    |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Parity with `@bymax-one/nest-auth` | The public bymax repo grows by keeping its own visual identity + conventions. Depending on a community lib breaks architectural parity.                                                                                       |
+| `MODULE_ACTION_RESULT` convention  | `nestjs-pino` is agnostic — it neither requires nor encourages the convention. To ensure uniform adoption across the bymax ecosystem, we need an API that makes the convention **the natural path**.                          |
+| Opinionated redact registry        | `nestjs-pino` exposes `pinoHttp.redact` without opinion; the consumer chooses. This lib **opines**: sensitive names expanded to default paths, covering BR PII (CPF/CNPJ/RG) + LGPD + PCI DSS, merged with custom extensions. |
+| Out-of-the-box OTel correlation    | `nestjs-pino` does not have a built-in OTel mixin (the consumer wires `@opentelemetry/instrumentation-pino`). This lib detects `trace.getActiveSpan()` automatically.                                                         |
+| Productivity decorators            | `nestjs-pino` does not provide `@InjectLogger`, `@LogPerformance`. This lib delivers them.                                                                                                                                    |
+| Multi-tenant via `tenantId`        | `nestjs-pino` requires the consumer to wire the header. This lib reads `x-tenant-id` by default and propagates via ALS.                                                                                                       |
+| Supply chain                       | Keeping our own implementation reduces upstream dependency and eliminates the risk of unexpected breaking changes (community libs follow their own cadence).                                                                  |
+| Maintenance cost                   | Justifiable given the reasons above.                                                                                                                                                                                          |
 
-**Accepted trade-offs:** more code to maintain, no direct community reuse, responsibility to track Pino releases. **Mitigation:** a Stryker `break` threshold of 100, strict CI gates, the Pino peer dep accepts wide ranges (`^10.0.0`).
+**Accepted trade-offs:** more code to maintain, no direct community reuse, responsibility to track Pino releases. **Mitigation:** a Stryker `break` threshold, strict CI gates, the Pino peer dep accepts wide ranges (`^10.0.0`).
 
 ### 1.8 Feature Categorization
 
@@ -221,7 +221,7 @@ export const {
   .build()
 ```
 
-`BymaxLoggerModule` (`src/server/logger.module.ts`) extends the base and adds the providers: the logger and context services, the destination registry and health record, the Pino instance, the resolved destinations, the redactor, the observability handle, and one child logger per context name registered by `@InjectLogger`. When `http.isEnabled` is set, `forRoot` registers `HttpLoggingInterceptor` as `APP_INTERCEPTOR`, and `HttpExceptionFilter` too unless `shouldCaptureExceptions` is `false`. `forRootAsync` cannot read the options at registration time: it always registers an interceptor factory, which returns a pass-through when HTTP logging is off, and it never registers the filter.
+`BymaxLoggerModule` (`src/server/logger.module.ts`) extends the base and adds the providers. When `http.isEnabled` is set, `forRoot` registers `HttpLoggingInterceptor` as `APP_INTERCEPTOR`, and `HttpExceptionFilter` too unless `shouldCaptureExceptions` is `false`. `forRootAsync` cannot read the options at registration time: it always registers an interceptor factory, which returns a pass-through when HTTP logging is off, and it never registers the filter.
 
 > The module is **global** by default (`isGlobal: true` via `setExtras`). All app modules have access to the logger without importing `BymaxLoggerModule` in each one. Disable via `BymaxLoggerModule.forRoot({ ..., isGlobal: false })`.
 
@@ -329,7 +329,7 @@ The Pino mixin reads the context via `LogContextService.getStore()` and merges i
 
 > **OTel-compatible**: OpenTelemetry's `AsyncHooksContextManager` uses the same native mechanism. The two `AsyncLocalStorage`s (the nest-logger one and the OTel one) coexist without conflict.
 
-> **Why not `nestjs-cls`?** The `nestjs-cls` lib (Papooch) is a rich wrapper over `AsyncLocalStorage` with Proxy Providers, a Transactional plugin, and better support for websocket gateways/queue consumers. We don't use it as a peer dep because: (1) it adds transitive deps that the lib wants to avoid, (2) the `nest-logger` use case is strictly "propagate 5 fields" — it doesn't justify importing an entire lib, (3) consumers already using `nestjs-cls` can **integrate** via a custom decorator that reads `ClsService` and sets it on `LogContextService` in the `RequestIdMiddleware`.
+> **Why not `nestjs-cls`?** The `nestjs-cls` lib (Papooch) is a rich wrapper over `AsyncLocalStorage` with Proxy Providers, a Transactional plugin, and better support for websocket gateways/queue consumers. We don't use it as a peer dep because: (1) it adds transitive deps that the lib wants to avoid, (2) the `nest-logger` use case is strictly "propagate fields" — it doesn't justify importing an entire lib, (3) consumers already using `nestjs-cls` can **integrate** via a custom decorator that reads `ClsService` and sets it on `LogContextService` in the `RequestIdMiddleware`.
 
 ---
 
@@ -430,17 +430,7 @@ src/
 
 ### 3.3 Exports per subpath
 
-**`@bymax-one/nest-logger`** (server). The list is `src/server/index.ts`:
-
-- Module: `BymaxLoggerModule`
-- Services: `PinoLoggerService`, `LogContextService`
-- Destinations: `DefaultStdoutDestination`, `PrettyDevDestination` (type `PrettyViewOptions`)
-- HTTP: `HttpExceptionFilter`, `HttpLoggingInterceptor`, `RequestIdMiddleware`, `HttpAccessLogMiddleware`, `applyAccessLog`, `applyRequestIdMiddleware`, `PinoUnexpectedErrorSink`
-- Decorators: `InjectLogger`, `LogContext` (with `LOG_CONTEXT_METADATA_KEY`), `LogPerformance`
-- Tokens: `LOGGER_OPTIONS_TOKEN`, `LOGGER_PINO_INSTANCE_TOKEN`, `LOGGER_DESTINATIONS_TOKEN`, `LOGGER_REDACTOR_TOKEN`, `LOGGER_OBSERVABILITY_TOKEN`, `LOG_CONTEXT_TOKEN`
-- Constants and guards: `DEFAULT_REDACT_PATHS`, `REDACT_COMMON_FIELDS`, `isValidTraceId`, `PINO_LEVEL_NAMES`, `PINO_LEVEL_NUMBERS`
-- Types: the destination, HTTP, options, observability and context interfaces (the context shape is exported as `LogContextBag`)
-- Everything `./shared` exports
+**`@bymax-one/nest-logger`** (server). The list is `src/server/index.ts`.
 
 **`@bymax-one/nest-logger/shared`** (zero deps, importable in the frontend for typing):
 
@@ -642,8 +632,6 @@ function applyDefaults(opts: BymaxLoggerModuleOptions): ResolvedBymaxLoggerModul
 }
 ```
 
-The trace mixin (§11.1.1) receives these three names in its options object.
-
 ### 4.4 Sync `forRoot` example
 
 ```typescript
@@ -796,7 +784,7 @@ The factory pairs each stream with a level (`minLevel`, else the module level) a
 
 ### 5.3 Default destination — `DefaultStdoutDestination`
 
-Used only when `destinations` is empty:
+Used when `destinations` is empty:
 
 ```typescript
 import { writeStdoutSafely } from '../utils/safe-stdio.util'
@@ -1326,7 +1314,7 @@ The method is wrapped in an async function. When `this.logger` is present it log
 
 ### 10.1 Default list — `DEFAULT_REDACT_PATHS`
 
-Under the default `redactStrategy: 'names'`, the library's own walk censors a sensitive name at any depth. `DEFAULT_REDACT_PATHS` is the path form of the same list: each of the 62 names in `REDACT_COMMON_FIELDS` bare and at depths 1 to 4, plus five absolute header paths, 315 paths in all. The opt-in `'paths'` strategy hands them to Pino `redact` (`@pinojs/redact`), where `*` matches a single level. The names are in `src/server/constants/default-redact-paths.constants.ts`.
+Under the default `redactStrategy: 'names'`, the library's own walk censors a sensitive name at any depth. `DEFAULT_REDACT_PATHS` is the path form of the same list. The opt-in `'paths'` strategy hands them to Pino `redact` (`@pinojs/redact`), where `*` matches a single level. The names are in `src/server/constants/default-redact-paths.constants.ts`.
 
 > Under the default strategy only the consumer's `redactPaths` reach `pino.redact`. `compileRedactPaths` is internal.
 
@@ -1359,8 +1347,7 @@ BymaxLoggerModule.forRoot({
 Pino's `redact` option is implemented by `@pinojs/redact`. The history of the default is below.
 
 Superseded in `1.2.0`. Path-based redaction was measured at ~107 µs per entry (~9.3 k logs/s),
-not the ~3% the official benchmark suggests — the cost grows with the PATH COUNT, and the default
-list expanded to 140 at the time. The default is now a name-keyed snapshotting walk at ~3.6 µs per entry; the
+not the ~3% the official benchmark suggests — the cost grows with the PATH COUNT. The default is now a name-keyed snapshotting walk at ~3.6 µs per entry; the
 path expansion survives for consumer `redactPaths` and the opt-in `redactStrategy: 'paths'`.
 See `docs/guidelines/PINO-REDACTION-GUIDELINES.md` and `bench/README.md`.
 
@@ -1558,7 +1545,7 @@ export const RESERVED_LOG_KEYS = Object.freeze({
 } as const)
 ```
 
-> **Count: 22 reserved keys.** Apps must not reuse these keys to avoid collision in log queries. `HTTP_REQUEST_COMPLETED` is reserved and never emitted.
+> Apps must not reuse these keys to avoid collision in log queries. `HTTP_REQUEST_COMPLETED` is reserved and never emitted.
 
 ---
 
