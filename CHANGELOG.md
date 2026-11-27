@@ -21,7 +21,7 @@ heading here.
 
 ### Documentation
 
-- Under `redactStrategy: 'paths'`, known limit: a `Buffer` in a message, a placeholder or bindings of the raw logger can make Pino throw a `TypeError` into the caller, with the default redact paths or with a wildcard path in `redactPaths`, and no line is written. Convert it first, for example `buffer.toString('hex')`.
+- Under `redactStrategy: 'paths'`, known limit: a `Buffer` in a message, a placeholder or bindings of the raw logger can make Pino throw a `TypeError` into the caller, with the default redact paths or with a wildcard path in `redactPaths`, and no line is written. One passed as the merge object or as the bindings themselves is written one field for each byte. Convert it first, for example `buffer.toString('hex')`.
 - The `msg` taken from an object message is escaped after `maxStringLength` cuts it, so it can be longer than the limit plus 12.
 - A message written through `getRawLogger()` is not capped at 16384 characters.
 - `%s` writes a Buffer as the text its bytes decode to, and `%s`, `%d`, `%i` and `%f` throw on a typed array (not a Buffer) whose bytes can no longer be read: both are Pino's own formatting.
