@@ -12,12 +12,21 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.33] - 2026-11-27
+
+No behaviour change: the published code differs from `1.4.32` in one comment.
+
+### Documentation
+
+- **`minLevel` of `DefaultStdoutDestination` says what omitting it does.** The destination then receives what the module `level` lets through, and a `minLevel` below that level widens nothing.
+- **The `1.4.32` entry on the README says what it filled**: gaps against the behaviour as well as against the types.
+
 ## [1.4.32] - 2026-11-26
 
 ### Documentation
 
 - **Every log key is listed with its level and fields.** `LOGGER_BOOTSTRAP_OK` and `LOGGER_SHUTDOWN_OK` had no row, and `LOGGER_BUILTINS_REPLACED` is now listed under thrown errors.
-- **The README fills gaps it had against the published types**, in the options, the HTTP fields, the decorators, the helpers and the destinations.
+- **The README fills gaps it had against the published types and the behaviour**, in the options, the HTTP fields, the decorators, the helpers and the destinations.
 - **The row for `censorMessageText` is removed.** The method is marked `@internal`.
 - **The comments on `ILogDestination` match the registry**, on write failure reports and on the shutdown budget.
 
@@ -3586,7 +3595,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.32...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.33...HEAD
+[1.4.33]: https://github.com/bymaxone/nest-logger/compare/v1.4.32...v1.4.33
 [1.4.32]: https://github.com/bymaxone/nest-logger/compare/v1.4.31...v1.4.32
 [1.4.31]: https://github.com/bymaxone/nest-logger/compare/v1.4.30...v1.4.31
 [1.4.30]: https://github.com/bymaxone/nest-logger/compare/v1.4.29...v1.4.30
