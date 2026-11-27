@@ -33,7 +33,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
-//   - 2026-11-27 — server: 51,167 B real -> 51,197 B budget (50.00 KiB), measured + 30 by the same
+//   - 2026-11-27 — server: 51,233 B real -> 51,263 B budget (50.06 KiB), measured + 30 by the same
 //     rule. What the bytes bought: under 'paths', the search of a value's state before its
 //     `toJSON` is called, and what a held `Error` is written from.
 //   - 2026-11-27 — server: 50,099 B real -> 50,129 B budget (48.95 KiB), measured + 30 by the same
