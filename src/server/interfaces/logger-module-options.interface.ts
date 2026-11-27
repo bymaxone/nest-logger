@@ -295,10 +295,10 @@ export interface BymaxLoggerModuleOptions {
    * from 64 to 2147483647. Default: not set, and a string is written whole.
    *
    * Applies to every string value of the record at any depth, but not to a key, a value that is
-   * not text, a log message given as a string or taken from an `Error` (capped at 16384
-   * characters; the text of an object message is cut), the `logKey`, the bindings of a logger (the
-   * service identity and a `context`), a value a redaction rule censors, or anything under a key
-   * that has a serializer (`err` and the keys of `serializers`; see
+   * not text, the log message (capped at 16384 characters; the one exception is the text of an
+   * object that is written as the fields of the entry, which is cut), the `logKey`, the bindings of
+   * a logger (the service identity and a `context`), a value a redaction rule censors, or anything
+   * under a key that has a serializer (`err` and the keys of `serializers`; see
    * `maxEntrySizeBytes`), so the stack of an error logged under `err` is never cut by it. The event
    * name and the `exception.*` and `error.type` fields the library writes are added after the cut,
    * so the limit does not apply to them (`maxEntrySizeBytes` cuts the exception fields), and a key of your own with one of those names is cut like
