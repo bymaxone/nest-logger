@@ -237,6 +237,8 @@ describe('the stand-in of a held Error', () => {
       errors: ['[X]']
     })
     expect(standIn(new Error(), () => ({ cause: 'x', errors: ['x'] }))).toEqual({})
+    const listed = Object.assign(new Error('failed'), { errors: [new Error('real')] })
+    expect(standIn(listed, () => ({ errors: [other] }))).toEqual({ errors: ['[X]'] })
   })
 
   /* Its own cause and members are followed: by their `toJSON` if they have one. */
