@@ -12,6 +12,22 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.36] - 2026-11-27
+
+### Breaking
+
+- **Behaviour change under `redactStrategy: 'names'`:** an object that the raw logger writes into the message is now redacted by name, and written as the same object in a record is. So a `Buffer` or a typed array is written as `[Binary N bytes]`, a value nested deeper than the walk reads is cut, and a boxed `String` is written as a map of its indexes. Migration: format such a value yourself before you pass it, for example `raw.info('digest %s', buffer.toString('hex'))`. `redactStrategy: 'paths'` writes the message as before.
+
+### Security
+
+- **Under the default `redactStrategy: 'names'`, an object that the raw logger formats into the message with `%o`, `%O` or `%j`, or takes as the message, is now redacted by name.** Pino's redact paths apply to a placeholder as before. `%s` and `%d` print what they printed before, and a string is never read.
+- The walk composes with two members of Pino reached through `pino.symbols`. If they are missing, the logger refuses to start with `LOGGER_PINO_UNSUPPORTED`. Tested on `pino` 10.0.0 and 10.4.0.
+
+### Documentation
+
+- Under `redactStrategy: 'paths'`, what the `formatters.level` of child options returns is walked by name, and what its `formatters.log` returns goes through the record formatter of the module.
+- Redacting a very large object, in bindings or in the message, takes time in proportion to what the walk reads: about 200 ms was measured for an object that exhausts its budget.
+
 ## [1.4.35] - 2026-11-27
 
 ### Breaking
