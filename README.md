@@ -302,7 +302,7 @@ A key that holds `undefined` or `null` is read as not set, in the options and in
 
 - Every option is type-checked at startup: a wrong type (the string `'false'` for a boolean, say) throws `[BymaxLoggerModule] options.<path> …` and names what was received by type, never by value.
 - `service.name` and `service.version` must be strings that are not blank after `trim()`.
-- `redactPaths` entries must be non-empty strings in `@pinojs/redact` path syntax. That is the engine Pino ships from `10.1.0`; `10.0.0` ships `slow-redact` in its place. A malformed path (`a..b`, `a[`) is not checked by the module: Pino refuses it while the logger is built, with `Invalid redaction path (<path>)`, which is not prefixed `[BymaxLoggerModule]`.
+- `redactPaths` entries must be non-empty strings in `@pinojs/redact` path syntax. That is the engine Pino ships from `10.1.0`; `10.0.0` ships `slow-redact` in its place. A malformed path (`a..b`, `a[`) is not checked by the module: Pino refuses it while the logger is built, with an error that is not prefixed `[BymaxLoggerModule]`.
 - Each `destinations` entry must be an object with a non-empty string `name` and a `write` function; `onInit`, `onShutdown` and `onRegistryReady`, when present, must be functions. Anything else is refused at startup with `[BymaxLoggerModule] options.destinations[i] …`.
 - `serializers` must be a plain object whose every value is a function; a key `err` replaces the default `err` serializer.
 - `http.excludePaths` replaces the default list instead of adding to it, and the defaults are exact anchored paths: `[/^\/health$/]` stops excluding `/metrics`.
