@@ -41,13 +41,13 @@
 
 `@bymax-one/nest-logger` is a NestJS library for structured JSON logging in production, built on **Pino 10** with **optional** integration with **OpenTelemetry SDK 1.x** for distributed trace correlation. The lib provides:
 
-- A `PinoLoggerService` that implements the official NestJS `LoggerService` interface and can replace the default logger with in the application code changes
-- An additional custom API `log(logKey, message, userId?, metadata?)` that follows the `MODULE_ACTION_RESULT` convention adopted across the Bymax ecosystem
+- A `PinoLoggerService` that implements the official NestJS `LoggerService` interface and can replace the default logger
+- An additional custom API `info(logKey, message, userId?, metadata?)` that follows the `MODULE_ACTION_RESULT` convention adopted across the Bymax ecosystem
 - An HTTP interceptor for automatic request/response logging with normalized URLs
 - An HTTP exception filter with sanitized stack trace capture
 - `@InjectLogger()` and `@LogPerformance()` decorators to reduce boilerplate
-- Automatic propagation of context (`requestId`, `tenantId`, `userId`, `traceId`, `spanId`) via `AsyncLocalStorage` — in the prop drilling, in the `(req: Request)` in service signatures
-- A declarative PII redaction system via `pino.redact` paths
+- Automatic propagation of context (`requestId`, `tenantId`, `userId`, `traceId`, `spanId`) via `AsyncLocalStorage` — no prop drilling, no `(req: Request)` in service signatures
+- PII redaction: a name-keyed walk by default, with `pino.redact` paths for consumer `redactPaths`
 - Automatic detection of an active OpenTelemetry span — injects `traceId`/`spanId` into every log when OTel is configured; logs normally without those properties when it is not
 - A pluggable destination system via the `ILogDestination` interface — stdout JSON (default), `pino-pretty` (dev), file, Loki, custom Postgres, or any destination that accepts a stream
 
@@ -64,14 +64,14 @@ In multi-service architectures, reliable trace-correlated logging is foundationa
 
 ### 1.3 Why Pino + OpenTelemetry (not Winston)
 
-| Criterion        | Pino 10                                              | Winston                                                 |
-| ---------------- | ---------------------------------------------------- | ------------------------------------------------------- |
-| Performance      | **5-7× faster** in official benchmarks               | Baseline (slower by design)                             |
-| Footprint        | Low allocation; this library uses no worker (§17.3)  | Higher allocation, synchronous transformations          |
-| Native structure | JSON-first                                           | JSON via format combinators (extra layer)               |
-| OTel ecosystem   | Official `@opentelemetry/instrumentation-pino`       | `@opentelemetry/instrumentation-winston` (less support) |
-| PII redact       | Declarative `redact` paths via builtin `fast-redact` | Custom (manual)                                         |
-| Adoption 2024+   | Standard in new Node backends                        | Legacy                                                  |
+| Criterion        | Pino 10                                             | Winston                                                 |
+| ---------------- | --------------------------------------------------- | ------------------------------------------------------- |
+| Performance      | **5-7× faster** in official benchmarks              | Baseline (slower by design)                             |
+| Footprint        | Low allocation; this library uses no worker (§17.3) | Higher allocation, synchronous transformations          |
+| Native structure | JSON-first                                          | JSON via format combinators (extra layer)               |
+| OTel ecosystem   | Official `@opentelemetry/instrumentation-pino`      | `@opentelemetry/instrumentation-winston` (less support) |
+| PII redact       | Declarative `redact` paths via `@pinojs/redact`     | Custom (manual)                                         |
+| Adoption 2024+   | Standard in new Node backends                       | Legacy                                                  |
 
 Choosing Pino aligns the Bymax ecosystem with the market direction and removes ~700 LoC of custom code (transports, formatters, sanitization) that would otherwise be maintained manually in a Winston-based solution.
 
@@ -90,58 +90,58 @@ Choosing Pino aligns the Bymax ecosystem with the market direction and removes ~
 | Cost      | Zero — open source package                      |
 | License   | MIT                                             |
 | Runtime   | Node.js 24+                                     |
-| Framework | NestJS 11+                                      |
-| Subpaths  | `.` (server), `./shared`                        |
+| Framework | NestJS 11                                       |
+| Subpaths  | `.` (server), `./shared`, `./observability`     |
 | Engine    | Pino 10 (peer dependency)                       |
 | OTel      | `@opentelemetry/api` (optional peer dependency) |
 
 ### 1.6 Design Principles
 
-1. **Pino first, NestJS on top** — the lib is a thin wrapper over Pino. All of Pino's power-user features (child loggers, mixins, serializers, transports) remain accessible to the advanced consumer via `getRawLogger()`.
-2. **OTel optional, never required** — the lib detects `trace.getActiveSpan()` at runtime; if empty, it logs normally. In the `NodeSDK` configuration is performed by the lib — that stays with the consumer.
+1. **Pino first, NestJS on top** — the lib is a thin wrapper over Pino. All of Pino's power-user features (child loggers, mixins, serializers) remain accessible to the advanced consumer via `getRawLogger()`.
+2. **OTel optional, never required** — the lib detects `trace.getActiveSpan()` at runtime; if empty, it logs normally. No `NodeSDK` configuration is performed by the lib — that stays with the consumer.
 3. **Dependency inversion** — destinations are pluggable via `ILogDestination`. The lib only knows the default (stdout JSON). The consumer plugs in Loki, Postgres, S3 archive, or any async destination.
-4. **Zero critical external dependencies** — only Pino as a required peer. Everything else is an optional peer.
+4. **No `dependencies`** — the required peers are `@nestjs/common`, `@nestjs/core`, `pino`, `reflect-metadata` and `rxjs`; every other peer is optional.
 5. **Convention over configuration** — `MODULE_ACTION_RESULT` log keys, reasonable default redact paths, NestJS-compatible default log levels. Safe defaults without requiring setup.
 6. **NestJS-native compatibility** — `PinoLoggerService` implements `LoggerService` from `@nestjs/common`, usable in `app.useLogger()` or injectable as a traditional service.
-7. **Multi-tenant ready** — `tenantId` propagation via `AsyncLocalStorage` in every log with in the additional application code.
+7. **Multi-tenant ready** — `tenantId` propagation via `AsyncLocalStorage` in every log.
 8. **Secure by default** — redact paths for common sensitive fields (`password`, `passwordHash`, `token`, `mfaSecret`, `cardNumber`, `cvv`, `cpf`, `cnpj`, `headers.authorization`, `headers.cookie`) enabled out-of-the-box.
 
 ### 1.7 Decision: from-scratch implementation (not `nestjs-pino`)
 
 The community lib [`nestjs-pino`](https://github.com/iamolegga/nestjs-pino) (Iamolegga) covers ~70% of this lib's scope: ALS-based request context, `pino-http` HTTP logging, `Logger`/`PinoLogger`/`NativeLogger` services. **So why not depend on it?**
 
-| Criterion                          | Assessment                                                                                                                                                                                           |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Parity with `@bymax-one/nest-auth` | The public bymax repo grows by keeping its own visual identity + conventions. Depending on a community lib breaks architectural parity.                                                              |
-| `MODULE_ACTION_RESULT` convention  | `nestjs-pino` is agnostic — it neither requires nor encourages the convention. To ensure uniform adoption across the bymax ecosystem, we need an API that makes the convention **the natural path**. |
-| Opinionated redact registry        | `nestjs-pino` exposes `pinoHttp.redact` without opinion; the consumer chooses. This lib **opines**: 140 default paths covering BR PII (CPF/CNPJ/RG) + LGPD + PCI DSS, merged with custom extensions. |
-| Out-of-the-box OTel correlation    | `nestjs-pino` does not have a built-in OTel mixin (the consumer wires `@opentelemetry/instrumentation-pino`). This lib detects `trace.getActiveSpan()` automatically.                                |
-| Productivity decorators            | `nestjs-pino` does not provide `@InjectLogger`, `@LogPerformance`. This lib delivers them zero-config.                                                                                               |
-| Multi-tenant via `tenantId`        | `nestjs-pino` requires the consumer to wire the header. This lib reads `x-tenant-id` by default and propagates via ALS.                                                                              |
-| Supply chain                       | Keeping our own implementation reduces upstream dependency and eliminates the risk of unexpected breaking changes (community libs follow their own cadence).                                         |
-| Maintenance cost                   | ~400-600 additional LoC (vs. ~1,500 total LoC in the lib). Justifiable given the 6 reasons above.                                                                                                    |
+| Criterion                          | Assessment                                                                                                                                                                                                                    |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Parity with `@bymax-one/nest-auth` | The public bymax repo grows by keeping its own visual identity + conventions. Depending on a community lib breaks architectural parity.                                                                                       |
+| `MODULE_ACTION_RESULT` convention  | `nestjs-pino` is agnostic — it neither requires nor encourages the convention. To ensure uniform adoption across the bymax ecosystem, we need an API that makes the convention **the natural path**.                          |
+| Opinionated redact registry        | `nestjs-pino` exposes `pinoHttp.redact` without opinion; the consumer chooses. This lib **opines**: sensitive names expanded to default paths, covering BR PII (CPF/CNPJ/RG) + LGPD + PCI DSS, merged with custom extensions. |
+| Out-of-the-box OTel correlation    | `nestjs-pino` does not have a built-in OTel mixin (the consumer wires `@opentelemetry/instrumentation-pino`). This lib detects `trace.getActiveSpan()` automatically.                                                         |
+| Productivity decorators            | `nestjs-pino` does not provide `@InjectLogger`, `@LogPerformance`. This lib delivers them.                                                                                                                                    |
+| Multi-tenant via `tenantId`        | `nestjs-pino` requires the consumer to wire the header. This lib reads `x-tenant-id` by default and propagates via ALS.                                                                                                       |
+| Supply chain                       | Keeping our own implementation reduces upstream dependency and eliminates the risk of unexpected breaking changes (community libs follow their own cadence).                                                                  |
+| Maintenance cost                   | Justifiable given the reasons above.                                                                                                                                                                                          |
 
-**Accepted trade-offs:** more code to maintain, in the direct community reuse, responsibility to track Pino releases. **Mitigation:** Stryker ≥ 99%, strict CI gates, the Pino peer dep accepts wide ranges (`^10.0.0`).
+**Accepted trade-offs:** more code to maintain, no direct community reuse, responsibility to track Pino releases. **Mitigation:** a Stryker `break` threshold, strict CI gates, the Pino peer dep accepts wide ranges (`^10.0.0`).
 
 ### 1.8 Feature Categorization
 
 #### Core (always active)
 
-| Component                  | Responsibility                                                                                        |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `PinoLoggerService`        | Main log API (`log`, `info`, `warn`, `error`, `debug`, `trace`, `fatal`) with the `logKey` convention |
-| `LogContextService`        | Manages `AsyncLocalStorage` for `requestId`, `tenantId`, `userId` propagation                         |
-| `DefaultStdoutDestination` | Default destination (stdout JSON)                                                                     |
-| `RedactPathsRegistry`      | Compiled list of PII paths for redaction                                                              |
-| `TraceContextMixin`        | Pino mixin that injects `traceId`/`spanId` when OTel is active                                        |
+| Component                  | Responsibility                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `PinoLoggerService`        | NestJS methods (`log`, `error`, `warn`, `debug`, `verbose`, `fatal`) and structured `info`, `warnStructured`, `errorStructured` |
+| `LogContextService`        | Manages `AsyncLocalStorage` for `requestId`, `tenantId`, `userId` propagation                                                   |
+| `DefaultStdoutDestination` | Default destination (stdout JSON)                                                                                               |
+| Name redactor              | Censors the sensitive names of `REDACT_COMMON_FIELDS`                                                                           |
+| `TraceContextMixin`        | Pino mixin that injects `traceId`/`spanId` when OTel is active                                                                  |
 
 #### HTTP (opt-in via `http.isEnabled: true`)
 
-| Component                | Activation                                | Responsibility                                                        |
-| ------------------------ | ----------------------------------------- | --------------------------------------------------------------------- |
-| `HttpLoggingInterceptor` | `http: { isEnabled: true }`               | Logs request/response with normalized URL and duration                |
-| `HttpExceptionFilter`    | `forRoot` with `http.isEnabled`           | Logs HTTP exceptions; off when `shouldCaptureExceptions` is `false`   |
-| `RequestIdMiddleware`    | `http: { shouldGenerateRequestId: true }` | Reads/generates the `x-request-id` header and injects it into context |
+| Component                | Activation                                                          | Responsibility                                                      |
+| ------------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `HttpLoggingInterceptor` | `http: { isEnabled: true }`                                         | Logs request/response with normalized URL and duration              |
+| `HttpExceptionFilter`    | `forRoot` with `http.isEnabled`                                     | Logs HTTP exceptions; off when `shouldCaptureExceptions` is `false` |
+| `RequestIdMiddleware`    | `useRequestContext`, `applyAccessLog` or `applyRequestIdMiddleware` | Reads/generates `x-request-id` and opens the context scope          |
 
 #### Decorators (always available)
 
@@ -198,58 +198,30 @@ BymaxLoggerModule.forRootAsync({
 import { ConfigurableModuleBuilder } from '@nestjs/common'
 import type { BymaxLoggerModuleOptions } from './interfaces/logger-module-options.interface'
 
+export interface BymaxLoggerModuleExtras {
+  isGlobal?: boolean
+}
+
 export const {
   ConfigurableModuleClass: BymaxLoggerModuleBase,
-  MODULE_OPTIONS_TOKEN: LOGGER_OPTIONS_TOKEN,
+  MODULE_OPTIONS_TOKEN: BUILDER_OPTIONS_TOKEN,
   OPTIONS_TYPE,
   ASYNC_OPTIONS_TYPE
 } = new ConfigurableModuleBuilder<BymaxLoggerModuleOptions>()
   .setClassMethodName('forRoot') // generates `forRoot` AND `forRootAsync`
-  .setExtras(
+  .setFactoryMethodName('createLoggerOptions')
+  .setExtras<BymaxLoggerModuleExtras>(
     { isGlobal: true }, // default; can be overridden per-call
     (definition, extras) => ({
       ...definition,
-      global: extras.isGlobal // Nest's DynamicModule still uses `global` here;
+      global: extras.isGlobal !== false // Nest's DynamicModule still uses `global` here;
       // the consumer-facing option key is `isGlobal`
     })
   )
   .build()
 ```
 
-Then `BymaxLoggerModule` inherits from the base + adds providers (`PinoLoggerService`, `LogContextService`, etc.):
-
-```typescript
-@Module({})
-export class BymaxLoggerModule extends BymaxLoggerModuleBase {
-  // Overrides forRoot/forRootAsync to inject lib providers
-  static override forRoot(options: BymaxLoggerModuleOptions): DynamicModule {
-    const base = super.forRoot(options)
-    return {
-      ...base,
-      providers: [
-        ...(base.providers ?? []),
-        PinoLoggerService,
-        LogContextService,
-        DestinationRegistry
-      ],
-      exports: [PinoLoggerService, LogContextService]
-    }
-  }
-  static override forRootAsync(options: typeof ASYNC_OPTIONS_TYPE): DynamicModule {
-    const base = super.forRootAsync(options)
-    return {
-      ...base,
-      providers: [
-        ...(base.providers ?? []),
-        PinoLoggerService,
-        LogContextService,
-        DestinationRegistry
-      ],
-      exports: [PinoLoggerService, LogContextService]
-    }
-  }
-}
-```
+`BymaxLoggerModule` (`src/server/logger.module.ts`) extends the base and adds the providers. When `http.isEnabled` is set, `forRoot` registers `HttpLoggingInterceptor` as `APP_INTERCEPTOR`, and `HttpExceptionFilter` too unless `shouldCaptureExceptions` is `false`. `forRootAsync` cannot read the options at registration time: it always registers an interceptor factory, which returns a pass-through when HTTP logging is off, and it never registers the filter.
 
 > The module is **global** by default (`isGlobal: true` via `setExtras`). All app modules have access to the logger without importing `BymaxLoggerModule` in each one. Disable via `BymaxLoggerModule.forRoot({ ..., isGlobal: false })`.
 
@@ -263,10 +235,10 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
 ```
 1. App boot →
 2. BymaxLoggerModule.forRoot(options) evaluates config →
-3. RedactPathsRegistry compiles default paths + custom paths →
-4. ConfigurationFactory builds Pino options:
+3. The redaction is resolved: the sensitive names plus the consumer `redactPaths` →
+4. `buildPinoInstance` builds the Pino options:
    - level
-   - redact { paths, censor }
+   - redact { paths, censor }, only when consumer `redactPaths` or `redactStrategy: 'paths'` call for it
    - serializers { err } (a library serializer built on `sanitizeError` — NOT `pino.stdSerializers.err`, which derived `type` from the value's constructor and reported `"Object"` for a normalized error; plus the consumer's `serializers`. A `req` field that holds a request is serialized by the record formatter, unless the consumer registers `serializers.req`)
    - mixin → `TraceContextMixin` injects `traceId`/`spanId` (from OTel active span) + `LogContextService` fields into **every** log
    - ISO 8601 timestamp
@@ -278,22 +250,23 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
 7. PinoLoggerService is instantiated with a reference to the root Pino →
 8. LogContextService initializes AsyncLocalStorage<LogContext> →
 9. If http.isEnabled, HttpLoggingInterceptor is registered as global; forRoot also registers HttpExceptionFilter unless shouldCaptureExceptions is false →
-10. The lib emits its initial log: { logKey: 'LOGGER_BOOTSTRAP_OK', level, destinations: [...] } →
+10. The lib emits `LOGGER_BOOTSTRAP_OK` with the message `BymaxLoggerModule initialized` →
 11. On onApplicationShutdown(): the lib emits LOGGER_SHUTDOWN_OK with { destinations }
     FIRST — an entry written after the sinks closed would have nowhere to go — then
-    flushes the ACTIVE destinations in reverse registration order, sequentially, each
-    `onShutdown` wrapped in its own try/catch so one failure cannot cost the others.
+    drains the queues and calls `onShutdown` on the ACTIVE destinations in reverse
+    registration order, all within one `shutdown.timeoutMs` budget. A failing hook is
+    reported and the rest still run; hooks past the budget are skipped and listed.
     It takes no signal argument and resolves `void`.
 ```
 
 ### 2.3 Log flow
 
 ```
-1. Service calls logger.log('USER_CREATED', 'User registered', userId, { plan }) →
-2. PinoLoggerService.log() →
-3. LogContextService.getStore() retrieves context from AsyncLocalStorage:
-   { requestId, tenantId, userId, traceId, spanId } →
-4. TraceContextMixin enriches with trace.getActiveSpan() (if OTel is active) →
+1. Service calls logger.info('USER_CREATED', 'User registered', userId, { plan }) →
+2. PinoLoggerService.info() →
+3. The mixin reads LogContextService.getStore() (AsyncLocalStorage):
+   { requestId, tenantId, userId, ... } →
+4. The mixin adds traceId/spanId from trace.getActiveSpan() (if OTel is active) →
 5. Final object passed to pino.info():
    {
      logKey: 'USER_CREATED',
@@ -304,11 +277,11 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
      tenantId: 't_acme',
      traceId: '4bf92...',
      spanId: '00f067...',
-     time: 1717000000000,
-     level: 30,
+     time: '2024-05-29T16:26:40.000Z',
+     level: 'info',
      service: { name: 'my-app', version: '1.2.3' }
    } →
-6. pino.redact applies censorship on configured paths →
+6. Redaction: sensitive names are censored at any depth; consumer redactPaths also reach pino.redact →
 7. Serialized JSON goes through pino.multistream, in the application thread, to each destination →
 8. The default destination calls process.stdout.write; a custom one (Loki, Postgres) may batch
 ```
@@ -324,30 +297,15 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
 4. Handler runs (every log inside has requestId/tenantId automatically) →
 5. Response 2xx → HTTP_REQUEST_SUCCESS { statusCode, duration }
    Response 3xx → HTTP_REQUEST_REDIRECT
-   Response 4xx → HTTP_REQUEST_CLIENT_ERROR (warn)
-   Response 5xx → HTTP_REQUEST_SERVER_ERROR (error)
+   Thrown value → HTTP_REQUEST_CLIENT_ERROR (warn) or HTTP_REQUEST_SERVER_ERROR (error), see 7.1
+   4xx or 5xx set without a throw → no terminal entry from the interceptor
 ```
 
 ### 2.5 OpenTelemetry integration (optional)
 
-The lib **does not initialize** the OTel SDK. Responsibility stays with the consumer (in `apps/.../main.ts` before `NestFactory.create`). The integration works via a **Pino mixin** (not via `formatters.log`):
+The lib **does not initialize** the OTel SDK. Responsibility stays with the consumer (in `apps/.../main.ts` before `NestFactory.create`). The integration works via a **Pino mixin** (not via `formatters.log`): on every entry it reads the active span and, when the trace and span ids are valid, adds `traceId`, `spanId` and `traceFlags` (two hex digits). The source is `src/server/mixins/trace-context.mixin.ts`.
 
-```typescript
-// TraceContextMixin — official Pino signature: (mergeObject, level, logger) => object
-function traceContextMixin(
-  _mergeObject: Record<string, unknown>,
-  _level: number,
-  _logger: PinoLogger
-): Record<string, string> | undefined {
-  const span = trace?.getActiveSpan()
-  if (!span) return undefined
-  const ctx = span.spanContext()
-  if (!ctx.traceId || ctx.traceId === '00000000000000000000000000000000') return undefined
-  return { traceId: ctx.traceId, spanId: ctx.spanId, traceFlags: ctx.traceFlags.toString(16) }
-}
-```
-
-> **Why mixin and not `formatters.log`?** `formatters.log` only receives the object the caller passed to `pino.info(obj, msg)` — it has in the access to ambient context (active span, AsyncLocalStorage). The **mixin** is called by Pino for every log without needing input from the caller, and it is the official place to enrich logs with fields derived from the environment. Confirm with [official Pino docs](https://github.com/pinojs/pino/blob/main/docs/api.md#mixin-function).
+> **Why mixin and not `formatters.log`?** `formatters.log` only receives the object the caller passed to `pino.info(obj, msg)` — it has no access to ambient context (active span, AsyncLocalStorage). The **mixin** is called by Pino for every log without needing input from the caller, and it is the official place to enrich logs with fields derived from the environment. Confirm with [official Pino docs](https://github.com/pinojs/pino/blob/main/docs/api.md#mixin-function).
 
 If `@opentelemetry/api` is not installed **or** `NodeSDK` has not been started, `trace.getActiveSpan()` returns `undefined` and the lib logs without `traceId`/`spanId`. **Zero application code changes** between having or not having OTel.
 
@@ -371,13 +329,13 @@ The Pino mixin reads the context via `LogContextService.getStore()` and merges i
 
 > **OTel-compatible**: OpenTelemetry's `AsyncHooksContextManager` uses the same native mechanism. The two `AsyncLocalStorage`s (the nest-logger one and the OTel one) coexist without conflict.
 
-> **Why not `nestjs-cls`?** The `nestjs-cls` lib (Papooch) is a rich wrapper over `AsyncLocalStorage` with Proxy Providers, a Transactional plugin, and better support for websocket gateways/queue consumers. We don't use it as a peer dep because: (1) it adds transitive deps that the lib wants to avoid, (2) the `nest-logger` use case is strictly "propagate 5 fields" — it doesn't justify importing an entire lib, (3) consumers already using `nestjs-cls` can **integrate** via a custom decorator that reads `ClsService` and sets it on `LogContextService` in the `RequestIdMiddleware`. Documented in `docs/guidelines/OTEL-INTEGRATION-GUIDELINES.md` §troubleshooting.
+> **Why not `nestjs-cls`?** The `nestjs-cls` lib (Papooch) is a rich wrapper over `AsyncLocalStorage` with Proxy Providers, a Transactional plugin, and better support for websocket gateways/queue consumers. We don't use it as a peer dep because: (1) it adds transitive deps that the lib wants to avoid, (2) the `nest-logger` use case is strictly "propagate fields" — it doesn't justify importing an entire lib, (3) consumers already using `nestjs-cls` can **integrate** via a custom decorator that reads `ClsService` and sets it on `LogContextService` in the `RequestIdMiddleware`.
 
 ---
 
 ## 3. Package Structure
 
-### 3.1 Full directory tree
+### 3.1 Directory tree (abridged)
 
 ```
 src/
@@ -408,9 +366,9 @@ src/
 │   │   ├── injection-tokens.constants.ts   # Symbol() tokens
 │   │   └── log-levels.constants.ts
 │   ├── mixins/
-│   │   └── trace-context.mixin.ts          # Pino formatter for OTel
+│   │   └── trace-context.mixin.ts          # Pino mixin for OTel
 │   ├── utils/
-│   │   ├── normalize-url.util.ts           # /users/abc-123 → /users/:id
+│   │   ├── normalize-url.util.ts           # /users/123 → /users/:id
 │   │   ├── sanitize-error.util.ts          # Cleans stack trace, redacts fields
 │   │   └── compile-redact-paths.util.ts
 │   ├── config/
@@ -418,7 +376,7 @@ src/
 │   │   └── validate-options.ts
 │   ├── logger.module.builder.ts            # ConfigurableModuleBuilder factory
 │   ├── logger.module.ts                    # BymaxLoggerModule (extends builder; overrides forRoot/forRootAsync)
-│   ├── pino-factory.ts                     # buildPinoInstance(options, logContext)
+│   ├── pino-factory.ts                     # buildPinoInstance(options, logContext, destinations, health)
 │   └── index.ts                            # Barrel — public exports
 │
 └── shared/
@@ -437,72 +395,63 @@ src/
 ```json
 "exports": {
   ".": {
-    "types": "./dist/server/index.d.ts",
-    "import": "./dist/server/index.mjs",
-    "require": "./dist/server/index.cjs"
+    "import": {
+      "types": "./dist/server/index.d.ts",
+      "default": "./dist/server/index.mjs"
+    },
+    "require": {
+      "types": "./dist/server/index.d.cts",
+      "default": "./dist/server/index.cjs"
+    }
   },
   "./shared": {
-    "types": "./dist/shared/index.d.ts",
-    "import": "./dist/shared/index.mjs",
-    "require": "./dist/shared/index.cjs"
-  }
+    "import": {
+      "types": "./dist/shared/index.d.ts",
+      "default": "./dist/shared/index.mjs"
+    },
+    "require": {
+      "types": "./dist/shared/index.d.cts",
+      "default": "./dist/shared/index.cjs"
+    }
+  },
+  "./observability": {
+    "import": {
+      "types": "./dist/observability/index.d.ts",
+      "default": "./dist/observability/index.mjs"
+    },
+    "require": {
+      "types": "./dist/observability/index.d.cts",
+      "default": "./dist/observability/index.cjs"
+    }
+  },
+  "./package.json": "./package.json"
 }
 ```
 
 ### 3.3 Exports per subpath
 
-**`@bymax-one/nest-logger`** (server):
-
-```typescript
-// Module
-export { BymaxLoggerModule } from './logger.module'
-
-// Services
-export { PinoLoggerService } from './services/pino-logger.service'
-export { LogContextService } from './services/log-context.service'
-
-// Interceptors / Filters / Middlewares
-export { HttpLoggingInterceptor } from './interceptors/http-logging.interceptor'
-export { HttpExceptionFilter } from './filters/http-exception.filter'
-export { RequestIdMiddleware } from './middlewares/request-id.middleware'
-
-// Decorators
-export { InjectLogger } from './decorators/inject-logger.decorator'
-export { LogContext } from './decorators/log-context.decorator'
-export { LogPerformance } from './decorators/log-performance.decorator'
-
-// Interfaces
-export type { ILogDestination } from './interfaces/log-destination.interface'
-export type {
-  BymaxLoggerModuleOptions,
-  BymaxLoggerModuleAsyncOptions
-} from './interfaces/logger-module-options.interface'
-
-// Destinations
-export { DefaultStdoutDestination } from './destinations/default-stdout.destination'
-export { PrettyDevDestination } from './destinations/pretty-dev.destination'
-export type { PrettyViewOptions } from './destinations/pretty-dev.destination'
-
-// Injection tokens
-export {
-  LOGGER_OPTIONS_TOKEN,
-  LOGGER_PINO_INSTANCE_TOKEN,
-  LOGGER_DESTINATIONS_TOKEN
-} from './constants/injection-tokens.constants'
-
-// Constants (re-exported from shared for convenience)
-export { DEFAULT_REDACT_PATHS } from './constants/default-redact-paths.constants'
-```
+**`@bymax-one/nest-logger`** (server). The list is `src/server/index.ts`.
 
 **`@bymax-one/nest-logger/shared`** (zero deps, importable in the frontend for typing):
 
 ```typescript
 export type { LogLevel } from './types/log-level.type'
 export type { LogEntry } from './types/log-entry.type'
-export type { ResolvedServiceMetadata, ServiceMetadata } from './types/service-metadata.type'
-export { RESERVED_LOG_KEYS } from './constants/reserved-log-keys.constants'
+export type {
+  EmittedDeploymentResource,
+  EmittedServiceResource,
+  ResolvedServiceMetadata,
+  ServiceMetadata
+} from './types/service-metadata.type'
+export {
+  RESERVED_LOG_KEYS,
+  RESERVED_LOG_KEYS_NOT_EMITTED
+} from './constants/reserved-log-keys.constants'
+export type { ReservedLogKey } from './constants/reserved-log-keys.constants'
 export { LOG_KEYS_CONVENTION_REGEX } from './constants/log-keys-convention.constants'
 ```
+
+**`@bymax-one/nest-logger/observability`**: `BymaxLoggerObservabilityModule`, `LoggerMetricsContributor`, `LoggerHealthIndicator`, `LOGGER_HEALTH_INDICATOR_NAME`.
 
 ---
 
@@ -510,7 +459,11 @@ export { LOG_KEYS_CONVENTION_REGEX } from './constants/log-keys-convention.const
 
 ### 4.1 `BymaxLoggerModuleOptions` interface
 
+The listing and the table below are abridged. Every option is in `src/server/interfaces/logger-module-options.interface.ts`.
+
 ```typescript
+import type { LoggableRequest } from '@bymax-one/nest-logger'
+
 export interface BymaxLoggerModuleOptions {
   /**
    * Service metadata — written as `service.name` and `service.version` in every log.
@@ -519,6 +472,9 @@ export interface BymaxLoggerModuleOptions {
   service: {
     name: string
     version: string
+    namespace?: string
+    instanceId?: string
+    environment?: string
   }
 
   /**
@@ -536,15 +492,14 @@ export interface BymaxLoggerModuleOptions {
   isGlobal?: boolean
 
   /**
-   * Whether to also expose this logger as NestJS `app.useLogger()` replacement.
-   * When true, all internal NestJS logs (`Bootstrap`, `RoutesResolver`, etc.) flow through Pino.
-   * @default true
+   * @deprecated Not read. Call `BymaxLoggerModule.useNestLogger(app)` instead.
    */
   shouldUseAsNestLogger?: boolean
 
   /**
-   * PII paths to redact. Merged with `DEFAULT_REDACT_PATHS`.
+   * PII paths to redact, added to the default coverage.
    * Pino syntax: 'a.b.c', '*.token', 'req.headers.authorization'.
+   * Under the default `redactStrategy: 'names'` each path's last name (not a wildcard or index) is also censored at any depth.
    * @see https://github.com/pinojs/pino/blob/main/docs/redaction.md
    */
   redactPaths?: string[]
@@ -562,7 +517,7 @@ export interface BymaxLoggerModuleOptions {
   shouldDisableDefaultRedact?: boolean
 
   /**
-   * Custom destinations beyond the default stdout JSON.
+   * A non-empty list replaces the default stdout JSON destination.
    * Multiple destinations are written to via Pino's multi-stream.
    */
   destinations?: ILogDestination[]
@@ -573,29 +528,23 @@ export interface BymaxLoggerModuleOptions {
   http?: {
     /** Register HttpLoggingInterceptor as global; forRoot also registers HttpExceptionFilter. @default false */
     isEnabled?: boolean
-    /** Capture exceptions in filter (in addition to interceptor). @default true if enabled */
+    /** Register the filter (`forRoot` only). @default true */
     shouldCaptureExceptions?: boolean
-    /** Auto-generate x-request-id header if missing. @default true if enabled */
+    /** Generate an x-request-id when missing, in the request-id middleware. @default true */
     shouldGenerateRequestId?: boolean
     /** URL paths to exclude from HTTP logging (regex array). @default [/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/] */
     excludePaths?: RegExp[]
-    /** Header name where tenantId is read for context propagation. @default 'x-tenant-id' */
-    tenantIdHeader?: string
-    /**
-     * Resolver used by the HTTP interceptor/filter to extract the user id from the
-     * incoming request. Defaults to `req.user?.id`, which works with Passport-style
-     * `req.user` shapes but is loosely typed. Override when your auth layer attaches
-     * the user differently (e.g., a JWT claim on `req.auth.sub`).
-     * @default (req) => req.user?.id
-     */
-    userIdResolver?: (req: unknown) => string | undefined
+    /** Header where tenantId is read; `false` reads none. @default 'x-tenant-id' */
+    tenantIdHeader?: string | false
+    /** Resolve the tenantId from the request. */
+    tenantIdResolver?: (request: LoggableRequest) => string | undefined
   }
 
   /**
    * OpenTelemetry integration tuning.
    */
   otel?: {
-    /** Inject traceId/spanId from active OTel span into every log. @default true if @opentelemetry/api is installed */
+    /** Inject traceId/spanId from the active OTel span into every log. @default true */
     shouldAutoInjectTraceContext?: boolean
     /** Name of the field for traceId. @default 'traceId' (camelCase). Set to 'trace_id' to align with OTel Logs Data Model wire format. */
     traceIdField?: string
@@ -633,30 +582,30 @@ export interface BymaxLoggerModuleOptions {
 
 ### 4.2 Options table and defaults
 
-| Option                              | Type                          | Default                                                                  | Notes                                                                                                                |
-| ----------------------------------- | ----------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `service.name`                      | `string`                      | **required**                                                             | E.g., `'bymax-finance-backend'`                                                                                      |
-| `service.version`                   | `string`                      | **required**                                                             | Typically `process.env.RELEASE_SHA ?? 'dev'`                                                                         |
-| `level`                             | `LogLevel`                    | `'info'` prod, `'debug'` other                                           | Values: `'fatal' \| 'error' \| 'warn' \| 'info' \| 'debug' \| 'trace'`                                               |
-| `isGlobal`                          | `boolean`                     | `true`                                                                   | `@Global()` for LoggerModule — mapped to Nest's `DynamicModule.global` internally                                    |
-| `shouldUseAsNestLogger`             | `boolean`                     | `true`                                                                   | Replaces NestJS internal logger                                                                                      |
-| `redactPaths`                       | `string[]`                    | `[]` (merged with `DEFAULT_REDACT_PATHS`)                                | `fast-redact` syntax — wildcard `*` matches **a single level** (not recursive). List explicit depths if you need to. |
-| `redactCensor`                      | `string`                      | `'[REDACTED]'`                                                           | String that replaces sensitive values                                                                                |
-| `shouldDisableDefaultRedact`        | `boolean`                     | `false`                                                                  | ⚠️ Do not use in prod without a strong reason                                                                        |
-| `destinations`                      | `ILogDestination[]`           | `[DefaultStdoutDestination]`                                             | + `PrettyDevDestination` auto in dev                                                                                 |
-| `http.isEnabled`                    | `boolean`                     | `false`                                                                  | Enables HTTP interceptor + filter                                                                                    |
-| `http.shouldCaptureExceptions`      | `boolean`                     | `true` (if `enabled`)                                                    | Enables the exception filter                                                                                         |
-| `http.shouldGenerateRequestId`      | `boolean`                     | `true` (if `enabled`)                                                    | Auto-generates `x-request-id`                                                                                        |
-| `http.excludePaths`                 | `RegExp[]`                    | `[/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/]` | Do not log healthchecks                                                                                              |
-| `http.tenantIdHeader`               | `string`                      | `'x-tenant-id'`                                                          | Header for multi-tenant context                                                                                      |
-| `otel.shouldAutoInjectTraceContext` | `boolean`                     | `true` (if OTel is available)                                            | Injects `traceId`/`spanId`/`traceFlags`                                                                              |
-| `otel.traceIdField`                 | `string`                      | `'traceId'` (or `'trace_id'` if `fieldFormat: 'snake_case'`)             | Field name in the log                                                                                                |
-| `otel.spanIdField`                  | `string`                      | `'spanId'` (or `'span_id'`)                                              | Field name in the log                                                                                                |
-| `otel.traceFlagsField`              | `string`                      | `'traceFlags'` (or `'trace_flags'`)                                      | Field name in the log                                                                                                |
-| `otel.fieldFormat`                  | `'camelCase' \| 'snake_case'` | `'camelCase'`                                                            | Shortcut to align with OTel Logs Data Model (`snake_case`) or Pino-native (`camelCase`)                              |
-| `maxEntrySizeBytes`                 | `number`                      | `65536` (64KB)                                                           | Ceiling per serialized field, not per entry (§17.7)                                                                  |
-| `serializers`                       | `Record<string, fn>`          | `{}` (merged with defaults)                                              | Default: `err`                                                                                                       |
-| `timestamp`                         | `() => string`                | `() => new Date().toISOString()`                                         | Custom override                                                                                                      |
+| Option                              | Type                          | Default                                                                  | Notes                                                                                                                                   |
+| ----------------------------------- | ----------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `service.name`                      | `string`                      | **required**                                                             | E.g., `'bymax-finance-backend'`                                                                                                         |
+| `service.version`                   | `string`                      | **required**                                                             | Typically `process.env.RELEASE_SHA ?? 'dev'`                                                                                            |
+| `level`                             | `LogLevel`                    | `'info'` prod, `'debug'` other                                           | Values: `'fatal' \| 'error' \| 'warn' \| 'info' \| 'debug' \| 'trace'`                                                                  |
+| `isGlobal`                          | `boolean`                     | `true`                                                                   | `@Global()` for LoggerModule — mapped to Nest's `DynamicModule.global` internally                                                       |
+| `shouldUseAsNestLogger`             | `boolean`                     | —                                                                        | Deprecated and not read; call `BymaxLoggerModule.useNestLogger(app)`                                                                    |
+| `redactPaths`                       | `string[]`                    | `[]` (added to the default coverage)                                     | Pino `redact` syntax; under the default `redactStrategy: 'names'` the last name (not a wildcard or index) is also censored at any depth |
+| `redactCensor`                      | `string`                      | `'[REDACTED]'`                                                           | String that replaces sensitive values                                                                                                   |
+| `shouldDisableDefaultRedact`        | `boolean`                     | `false`                                                                  | ⚠️ Do not use in prod without a strong reason                                                                                           |
+| `destinations`                      | `ILogDestination[]`           | `[]`                                                                     | Empty: `DefaultStdoutDestination` is used. A non-empty list replaces it                                                                 |
+| `http.isEnabled`                    | `boolean`                     | `false`                                                                  | Enables HTTP interceptor + filter                                                                                                       |
+| `http.shouldCaptureExceptions`      | `boolean`                     | `true`                                                                   | Registers the exception filter (`forRoot` only)                                                                                         |
+| `http.shouldGenerateRequestId`      | `boolean`                     | `true`                                                                   | Generates `x-request-id` where the request-id middleware is mounted                                                                     |
+| `http.excludePaths`                 | `RegExp[]`                    | `[/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/]` | Do not log healthchecks                                                                                                                 |
+| `http.tenantIdHeader`               | `string \| false`             | `'x-tenant-id'`                                                          | Header for multi-tenant context                                                                                                         |
+| `otel.shouldAutoInjectTraceContext` | `boolean`                     | `true`                                                                   | Injects `traceId`/`spanId`/`traceFlags` when `@opentelemetry/api` resolves                                                              |
+| `otel.traceIdField`                 | `string`                      | `'traceId'` (or `'trace_id'` if `fieldFormat: 'snake_case'`)             | Field name in the log                                                                                                                   |
+| `otel.spanIdField`                  | `string`                      | `'spanId'` (or `'span_id'`)                                              | Field name in the log                                                                                                                   |
+| `otel.traceFlagsField`              | `string`                      | `'traceFlags'` (or `'trace_flags'`)                                      | Field name in the log                                                                                                                   |
+| `otel.fieldFormat`                  | `'camelCase' \| 'snake_case'` | `'camelCase'`                                                            | Shortcut to align with OTel Logs Data Model (`snake_case`) or Pino-native (`camelCase`)                                                 |
+| `maxEntrySizeBytes`                 | `number`                      | `65536` (64KB)                                                           | Ceiling per serialized field, not per entry (§17.7)                                                                                     |
+| `serializers`                       | `Record<string, fn>`          | `{}` (merged with defaults)                                              | Default: `err`                                                                                                                          |
+| `timestamp`                         | `() => string`                | `() => new Date().toISOString()`                                         | Custom override                                                                                                                         |
 
 ### 4.3 `applyDefaults()` — how `otel.fieldFormat` becomes individual field names
 
@@ -669,7 +618,9 @@ The lib normalizes user-supplied options through a small `applyDefaults()` pass 
 Pseudo-implementation:
 
 ```typescript
-function applyDefaults(opts: BymaxLoggerModuleOptions): NormalizedOptions {
+import type { ResolvedBymaxLoggerModuleOptions } from '@bymax-one/nest-logger'
+
+function applyDefaults(opts: BymaxLoggerModuleOptions): ResolvedBymaxLoggerModuleOptions {
   const fieldFormat = opts.otel?.fieldFormat ?? 'camelCase'
   const snakeCase = fieldFormat === 'snake_case'
 
@@ -680,8 +631,6 @@ function applyDefaults(opts: BymaxLoggerModuleOptions): NormalizedOptions {
   return { ...opts, otel: { ...opts.otel, traceIdField, spanIdField, traceFlagsField } }
 }
 ```
-
-This is what the composed mixin (§11.1.1) consumes via the `fieldNames` parameter.
 
 ### 4.4 Sync `forRoot` example
 
@@ -751,6 +700,8 @@ export const LOGGER_OPTIONS_TOKEN = Symbol('BYMAX_LOGGER_OPTIONS')
 export const LOGGER_PINO_INSTANCE_TOKEN = Symbol('BYMAX_LOGGER_PINO_INSTANCE')
 export const LOGGER_DESTINATIONS_TOKEN = Symbol('BYMAX_LOGGER_DESTINATIONS')
 export const LOG_CONTEXT_TOKEN = Symbol('BYMAX_LOGGER_LOG_CONTEXT')
+export const LOGGER_REDACTOR_TOKEN = Symbol('BYMAX_LOGGER_REDACTOR')
+export const LOGGER_OBSERVABILITY_TOKEN = Symbol.for('BYMAX_LOGGER_OBSERVABILITY')
 ```
 
 > **Why `Symbol()`?** Avoids collision with tokens from other libs (strings may collide; symbols are unique). Pattern inherited from `@bymax-one/nest-auth`.
@@ -783,6 +734,11 @@ export interface ILogDestination {
    * @param payload - Final JSON string (UTF-8) representing one log entry, including trailing newline.
    */
   write(payload: string): void | PromiseLike<void>
+
+  /**
+   * Bytes the destination still holds, if it can say.
+   */
+  queuedBytes?(): number
 
   /**
    * Called once during NestJS bootstrap. Use for opening connections, buffers, etc.
@@ -818,186 +774,45 @@ export interface ILogDestination {
 
 ### 5.2 Adapter mapping — wrapping `ILogDestination` for `pino.multistream`
 
-`ILogDestination` exposes a simple `write(payload: string)` method, but Pino's `multistream` API expects Node `Writable` streams. The lib bridges the two with a small internal helper that wraps each destination in a `Writable` adapter.
+`ILogDestination` exposes a simple `write(payload: string)` method, but Pino's `multistream` API expects Node `Writable` streams. `destinationToStream` (`src/server/utils/destination-to-stream.ts`) wraps each destination in a bounded `Writable`:
 
-```typescript
-import { Writable } from 'node:stream'
+- A write that throws or rejects drops that entry and is reported to stderr, throttled, as `LOGGER_DESTINATION_WRITE_FAILED`.
+- Entries beyond `destinationQueue.maxBytes` are dropped and counted.
+- A destination whose `onInit` failed is skipped, or its entries are rescued to stdout when no destination initialized.
 
-import { reportDestinationFailure, safeDestinationName } from './report-destination-failure.util'
-import { writeStdoutSafely } from './safe-stdio.util'
-import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
-import type { ILogDestination } from '../interfaces/log-destination.interface'
-import type { DestinationHealth } from '../services/destination-health.service'
-
-/**
- * Internal helper: wrap an ILogDestination in a Writable suitable for pino.multistream.
- *
- * - `_write(chunk, _enc, cb)` hands the payload to `dest.write()` and invokes `cb()`
- *   synchronously when the destination returns `undefined`.
- * - Size bounding is NOT done here. `createSizeBoundedSerializer` is a Pino serializer: it
- *   bounds what one serializer returns, not the chunk that reaches this adapter (§17.7).
- * - On destination errors — thrown or rejected — the wrapper records the failure in
- *   `DestinationHealth`, reports `LOGGER_DESTINATION_WRITE_FAILED` to stderr and calls `cb()`
- *   without an error (never throws — `cb(err)` would surface as a stream `'error'` and take
- *   the host down, and an unreported rejection would crash the process).
- * - Per-destination level filtering happens at the multistream entry level (`{ stream, level }`),
- *   which the FACTORY builds; the adapter returns the `Writable` only.
- * - Backpressure: the adapter never returns a value from `_write` — deferring `cb` is the whole
- *   mechanism, and the buffer it grows is what makes the public `write()` return `false`.
- */
-export function destinationToStream(dest: ILogDestination, health: DestinationHealth): Writable {
-  return new Writable({
-    // String chunks stay strings: Pino writes UTF-8 NDJSON, so this skips a
-    // string→Buffer→string round-trip on the hot path.
-    decodeStrings: false,
-    write(chunk: string | Buffer, _enc, cb) {
-      try {
-        // NOT truncated here. Size bounding is a Pino SERIALIZER, which bounds one field,
-        // not this chunk (§17.7).
-        const payload = typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
-        // A sink that failed `onInit` never became live, so it is SKIPPED rather
-        // than written to — its `write()` may assume resources it never acquired.
-        // The fan-out has a stream for every REGISTERED destination, so this branch
-        // is what keeps a failed one out of it. When nothing initialized at all, the
-        // elected rescuer emits the raw entry to stdout: without it, one bad
-        // destination silences the whole application.
-        if (health.isFailed(dest)) {
-          if (health.shouldRescue(dest)) writeStdoutSafely(payload)
-          cb()
-          return
-        }
-        const result = dest.write(payload)
-        // Branch on `undefined`, NOT on `result instanceof Promise`: `instanceof` is
-        // realm-local and answers `false` for a cross-realm promise or a plain
-        // thenable, which would then take the synchronous path and lose the entry.
-        if (result !== undefined) {
-          // Counted while IN FLIGHT: readiness can run before this settles, and a
-          // pending write must read as unproven rather than as silent success.
-          health.markWritePending(dest)
-          Promise.resolve(result).then(
-            () => {
-              health.markWriteSettled(dest)
-              cb()
-            },
-            (err: unknown) => {
-              health.markWriteSettled(dest)
-              // RECORDED before it is reported: without `markWriteFailed`, readiness
-              // still counts this sink as having taken the entry and another
-              // destination may discard the copy it was holding.
-              health.markWriteFailed(dest)
-              const name = safeDestinationName(dest)
-              // Through `reportDestinationFailure`, not formatted inline: it does the
-              // `String(cause)` and the `name`/`message` reads INSIDE its own guard,
-              // so an Error with a throwing getter cannot make this handler throw
-              // before `cb()`, and it escapes the control characters a terminal would
-              // otherwise interpret from a remote-derived message.
-              reportDestinationFailure(
-                RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
-                name,
-                err,
-                `Log destination "${name}" failed to write; the entry was dropped`
-              )
-              cb()
-            }
-          )
-          return
-        }
-        cb()
-      } catch (err) {
-        health.markWriteFailed(dest)
-        const name = safeDestinationName(dest)
-        reportDestinationFailure(
-          RESERVED_LOG_KEYS.LOGGER_DESTINATION_WRITE_FAILED,
-          name,
-          err,
-          `Log destination "${name}" failed to write; the entry was dropped`
-        )
-        cb()
-      }
-    }
-  })
-}
-
-// Size bounding is not part of this adapter: see `createSizeBoundedSerializer` in
-// `src/server/utils/truncate-large-entries.ts` and §17.7.
-```
-
-**Multistream wiring** (in `pino-factory.ts`):
-
-```typescript
-import pino from 'pino'
-
-import { destinationToStream } from './utils/destination-to-stream'
-import { safeMinLevel } from './utils/report-destination-failure.util'
-
-// The LEVEL is attached here, not returned by the adapter: `pino.multistream`
-// filters per entry, and the adapter's only job is the write fan-out.
-const entries = destinations.map((d) => ({
-  // Guarded: this runs at provider construction, before any lifecycle hook, so a
-  // throwing `minLevel` getter would fail the factory and the application would
-  // never start. The guard also pins the answer, so this level and the one the
-  // registry records for the same destination cannot diverge.
-  level: safeMinLevel(d) ?? options.level,
-  stream: destinationToStream(d, health)
-}))
-const multistream = pino.multistream(entries, { dedupe: false })
-const logger = pino(pinoOptions, multistream)
-```
-
-> **Why a `Writable` wrapper and not direct calls?** Pino's multistream resolves per-entry level filtering and applies backpressure based on standard stream semantics. Implementing the contract via `Writable._write` is the smallest adapter surface that gives the lib both behaviors for free.
+The factory pairs each stream with a level (`minLevel`, else the module level) and passes the list to `pino.multistream`, which filters by level.
 
 ### 5.3 Default destination — `DefaultStdoutDestination`
 
-Canonical implementation the lib registers automatically:
+Used when `destinations` is empty:
 
 ```typescript
+import { writeStdoutSafely } from '../utils/safe-stdio.util'
+
+@Injectable()
 export class DefaultStdoutDestination implements ILogDestination {
   readonly name = 'stdout-json'
   readonly minLevel?: LogLevel
 
   constructor(opts: { minLevel?: LogLevel } = {}) {
-    this.minLevel = opts.minLevel
+    if (opts.minLevel !== undefined) {
+      this.minLevel = opts.minLevel
+    }
+  }
+
+  queuedBytes(): number {
+    return process.stdout.writableLength
   }
 
   write(payload: string): void {
-    process.stdout.write(payload)
+    writeStdoutSafely(payload)
   }
 }
 ```
 
 ### 5.4 Dev destination — `PrettyDevDestination`
 
-When `NODE_ENV !== 'production'` or `pretty: true`, the lib also registers a destination that uses `pino-pretty` as a transport:
-
-```typescript
-import { Transform } from 'node:stream'
-import pretty from 'pino-pretty'
-
-export class PrettyDevDestination implements ILogDestination {
-  readonly name = 'pretty-dev'
-  private readonly stream: Transform
-
-  constructor() {
-    this.stream = pretty({
-      colorize: true,
-      translateTime: 'SYS:HH:MM:ss.l',
-      ignore: 'pid,hostname,service',
-      singleLine: false
-    })
-    this.stream.pipe(process.stdout)
-  }
-
-  write(payload: string): void {
-    this.stream.write(payload)
-  }
-
-  onShutdown(): void {
-    this.stream.end()
-  }
-}
-```
-
-> `pino-pretty` is an **optional peer dependency**. If not installed and `pretty: true`, the lib emits a bootstrap warning and falls back to `DefaultStdoutDestination`.
+Opt in with `destinations: [new PrettyDevDestination()]` (options: `minLevel`, `view`). It renders through `pino-pretty`, an **optional peer dependency** that `onInit` loads, and it refuses `NODE_ENV=production`. When `onInit` throws, for that reason or because the package is missing, the registry reports `LOGGER_DESTINATION_INIT_FAILED` on stderr and skips it; entries fall back to raw NDJSON on stdout only if no destination initializes.
 
 ### 5.5 Adapter example — Grafana Loki
 
@@ -1113,7 +928,7 @@ export class PrismaPostgresDestination implements ILogDestination {
           message: String(entry.msg ?? ''),
           logKey: String(entry.logKey ?? 'unknown'),
           metadata: entry,
-          timestamp: new Date(Number(entry.time))
+          timestamp: new Date(String(entry.time))
         })),
         skipDuplicates: true
       })
@@ -1171,7 +986,7 @@ export class RollingFileDestination implements ILogDestination {
 
 Implements the official `LoggerService` interface from `@nestjs/common` (which has variadic `(message, ...optionalParams)` signatures) **and** adds a more ergonomic "typed" structured API.
 
-> **Note about `any`:** the `log/error/warn/debug/verbose/fatal` methods accept `message: any` and `...optionalParams: any[]` **because the official NestJS interface requires it** ([source](https://github.com/nestjs/nest/blob/master/packages/common/services/logger.service.ts)). Replacing with `unknown` would break contract checking for `app.useLogger()`. This is the **only exception** to the "zero `any`" rule in §1.6 — all other methods (`info`, `warnStructured`, `errorStructured`, `child`, `setContext`, `getRawLogger`) use precise types. The snippet below shows only the public surface (method bodies elided with `{ ... }`); the full implementation lives in `pino-logger.service.ts`.
+The Nest-style methods take `message: unknown, ...optionalParams: unknown[]`. The snippet below shows only the public surface (method bodies elided with `{ ... }`); the full implementation is in `pino-logger.service.ts`.
 
 ```typescript
 import { Injectable, LoggerService as NestLoggerService, OnApplicationShutdown, Scope } from '@nestjs/common'
@@ -1198,23 +1013,21 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * @example
    *   logger.log('User created')                    // NestJS variadic
    *   logger.log('User created', 'UsersService')    // with context override
-   *   logger.log({ userId: 'u_1' }, 'User created') // structured (Pino-style)
+   *   logger.log({ message: 'User created', orderId }) // object: its keys become fields
    */
-  log(message: any, ...optionalParams: any[]): void { ... }
+  log(message: unknown, ...optionalParams: unknown[]): void { ... }
 
   /**
-   * Logs an error. Two patterns supported:
-   *   1. NestJS variadic: error(message, trace?, context?)
-   *   2. Structured: error(logKey: string, error: Error, userId?: string, metadata?: object)
-   *
-   * Pattern detection: if `secondArg instanceof Error`, switches to structured path.
+   * Logs an error: NestJS signature error(message, stack?, context?). An error-like `message`,
+   * or an `Error` among the other arguments, is logged as `err`; a plain object becomes fields.
+   * For a log key and a user id use `errorStructured`.
    */
-  error(message: any, ...optionalParams: any[]): void { ... }
+  error(message: unknown, ...optionalParams: unknown[]): void { ... }
 
-  warn(message: any, ...optionalParams: any[]): void { ... }
-  debug(message: any, ...optionalParams: any[]): void { ... }
-  verbose(message: any, ...optionalParams: any[]): void { ... }
-  fatal(message: any, ...optionalParams: any[]): void { ... }
+  warn(message: unknown, ...optionalParams: unknown[]): void { ... }
+  debug(message: unknown, ...optionalParams: unknown[]): void { ... }
+  verbose(message: unknown, ...optionalParams: unknown[]): void { ... }
+  fatal(message: unknown, ...optionalParams: unknown[]): void { ... }
 
   // ─── Structured API (recommended for new code) ──────────────────────────
 
@@ -1255,12 +1068,12 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    * Useful for per-job, per-request, per-user loggers.
    *
    * Semantics:
-   *  - Returns a NEW `PinoLoggerService` instance that wraps `getRawLogger().child(bindings)`.
-   *  - The child INHERITS the same `LogContextService` reference (ALS is process-wide,
-   *    not per-child) — so `requestId` / `tenantId` / `userId` propagate to the child too.
+   *  - Returns a NEW `PinoLoggerService` instance over a Pino child created with the redacted bindings.
+   *  - The request context reaches the child's entries too: the context mixin sits on the
+   *    Pino instance, and the child is a Pino child of it.
    *  - The child has its OWN bindings merged into every log it emits.
    *  - Calling `getRawLogger()` on the child returns the underlying Pino child instance.
-   *  - `setContext()` on the child only changes the child's `context` binding — it does
+   *  - `setContext()` on the child only changes the child's `context` field — it does
    *    NOT mutate the parent. Each instance owns its `context` field independently.
    *
    * @example
@@ -1278,8 +1091,8 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
 
   // ─── Lifecycle ──────────────────────────────────────────────────────────
 
-  async onApplicationShutdown(): Promise<void> {
-    // Flush via destination registry
+  onApplicationShutdown(): void {
+    // Empty: `DestinationRegistry` shuts the destinations down.
   }
 }
 ```
@@ -1299,17 +1112,25 @@ export interface LogContext {
   [key: string]: unknown
 }
 
+// The interface is exported from the package as `LogContextBag`.
 @Injectable()
 export class LogContextService {
   private readonly als = new AsyncLocalStorage<LogContext>()
 
   /**
    * Run a callback inside a context scope. All logs emitted within the callback
-   * (synchronously or asynchronously) inherit the context.
+   * (synchronously or asynchronously) inherit the context. Prototype-polluting keys are
+   * stripped, and the new scope replaces any enclosing one.
    */
   run<T>(context: LogContext, callback: () => T): T {
-    return this.als.run(context, callback)
+    return this.als.run(this.sanitizeContext(context), callback)
   }
+
+  /** Like `run`, but the enclosing scope's fields are kept under the new ones. */
+  runMerged<T>(context: LogContext, callback: () => T): T { ... }
+
+  /** Copies the context without prototype-polluting keys. */
+  private sanitizeContext(context: LogContext): LogContext { ... }
 
   /**
    * Returns the current context, or `undefined` if outside any scope.
@@ -1320,11 +1141,12 @@ export class LogContextService {
 
   /**
    * Add or override fields in the current context (mutates the active store).
-   * Throws if called outside a `run()` scope.
+   * Throws if called outside a `run()` scope, or for a prototype-polluting key.
    */
   set(key: string, value: unknown): void {
     const store = this.als.getStore()
-    if (!store) throw new Error('LogContextService.set() called outside run() scope')
+    if (!store) throw new Error('[LogContextService] set() called outside run() scope')
+    // (an unsafe key throws here)
     store[key] = value
   }
 
@@ -1339,214 +1161,15 @@ export class LogContextService {
 
 ### 6.3 `DestinationRegistry` — internal, not exported
 
-Manages the lifecycle of registered destinations:
+Manages the lifecycle of the registered destinations (`src/server/services/destination-registry.service.ts`).
 
-```typescript
-import { Inject, Injectable } from '@nestjs/common'
-import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common'
+On bootstrap it runs each `onInit` in order under `destinationHookTimeoutMs`, marks failures and reports them to stderr as `LOGGER_DESTINATION_INIT_FAILED`, runs `onRegistryReady`, then logs `LOGGER_BOOTSTRAP_OK`. It also logs `LOGGER_BOOTSTRAP_WARNING` when the default redaction is disabled, or when trace injection is on and `@opentelemetry/api` does not resolve.
 
-import { DestinationHealth } from './destination-health.service'
-import { PinoLoggerService } from './pino-logger.service'
-import {
-  LOGGER_DESTINATIONS_TOKEN,
-  LOGGER_OPTIONS_TOKEN
-} from '../constants/injection-tokens.constants'
-import { LOG_LEVEL_PRIORITY } from '../constants/log-levels.constants'
-import type { ILogDestination } from '../interfaces/log-destination.interface'
-import type { ResolvedBymaxLoggerModuleOptions } from '../interfaces/logger-module-options.interface'
-import { escapeControlCharacters, toSingleLineMessage } from '../utils/escape-log-text.util'
-import {
-  reportDestinationFailure,
-  safeDestinationName,
-  safeMinLevel
-} from '../utils/report-destination-failure.util'
-import { writeStderrSafely } from '../utils/safe-stdio.util'
-import { isErrorLike } from '../utils/sanitize-error.util'
-import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
-import type { LogLevel } from '../../shared/types/log-level.type'
-
-@Injectable()
-class DestinationRegistry implements OnModuleInit, OnApplicationShutdown {
-  /** The subset that initialized successfully — used for SHUTDOWN, not for writes.
-   *  The fan-out is built from the full registered set and gates each write on
-   *  `DestinationHealth.isFailed`, so a failed sink is skipped per write rather
-   *  than removed from the streams. `onShutdown` runs over this subset because a
-   *  destination that never initialized may have no resources to close. */
-  private readonly active: ILogDestination[] = []
-
-  // Every provider carries an explicit `@Inject`, including the class-typed one:
-  // tsup strips decorator metadata, so implicit DI resolves in development and
-  // fails in the published package.
-  constructor(
-    @Inject(LOGGER_DESTINATIONS_TOKEN) private readonly destinations: ILogDestination[],
-    @Inject(PinoLoggerService) private readonly logger: PinoLoggerService,
-    @Inject(DestinationHealth) private readonly health: DestinationHealth,
-    @Inject(LOGGER_OPTIONS_TOKEN) private readonly options: ResolvedBymaxLoggerModuleOptions
-  ) {}
-
-  /** The severity a destination actually receives: the STRICTER of the module
-   *  level and the destination's own `minLevel`. */
-  private effectiveLevelOf(dest: ILogDestination): LogLevel {
-    const moduleLevel = this.options.level
-    // Read ONCE, through the guard: `minLevel` is consumer-defined and may be a
-    // getter that throws — this runs on both branches of the init loop, including
-    // the catch that keeps a failing destination from aborting bootstrap — and it
-    // may be stateful, which is why the guard pins the first answer so the factory
-    // and this recording cannot disagree about the same destination's level.
-    const configured = safeMinLevel(dest)
-    if (configured === undefined) return moduleLevel
-    // `LOG_LEVEL_PRIORITY.indexOf`, mirroring the implementation. `PINO_LEVEL_NUMBERS`
-    // would order identically — both run trace→fatal — but the specification exists to
-    // describe the shipped code, not an equivalent way of writing it.
-    return LOG_LEVEL_PRIORITY.indexOf(configured) > LOG_LEVEL_PRIORITY.indexOf(moduleLevel)
-      ? configured
-      : moduleLevel
-  }
-
-  async onModuleInit() {
-    // Each onInit() is wrapped in try/catch. On failure the destination is recorded
-    // as FAILED in `DestinationHealth`, and that recording is what keeps entries away
-    // from it: the adapter checks `isFailed` on every write. Being absent from
-    // `active` has nothing to do with it — `active` drives shutdown. The destination
-    // stays REGISTERED so the readiness hook still reaches it.
-    // `LOGGER_DESTINATION_INIT_FAILED` goes to stderr even though Pino IS already
-    // wired here — the instance is built during provider construction, which is why
-    // this same method can emit `LOGGER_BOOTSTRAP_OK` through the logger a few lines
-    // later. The reason is the fan-out, not the lifecycle: the logger writes to the
-    // very set that contains the sink which just failed, so reporting through it can
-    // feed the failure back into itself. The lib NEVER throws to abort boot —
-    // degraded mode over crash.
-    for (const dest of this.destinations) {
-      try {
-        await dest.onInit?.()
-        this.active.push(dest)
-        this.health.markHealthy(dest, this.effectiveLevelOf(dest))
-      } catch (err) {
-        this.health.markFailed(dest, this.effectiveLevelOf(dest))
-        // Guarded: reading `name` at the call site would put the throw back inside
-        // this catch, which exists so a failing destination cannot abort boot.
-        const name = safeDestinationName(dest)
-        reportDestinationFailure(
-          RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-          name,
-          err,
-          `Log destination "${name}" failed to initialize and was skipped`
-        )
-      }
-    }
-    // The registered set is NOT truncated to the survivors, and nothing else needs
-    // it to be: the fan-out covers every registered destination and `destinationToStream`
-    // skips a failed one per write via `health.isFailed` (see the adapter above).
-    // Keeping it registered matters because a sink that failed `onInit` is the one
-    // most likely to be holding entries it now has to resolve — dropping it here
-    // would strand them and silently break the guarantee below.
-
-    // Called for EVERY registered destination, healthy and failed alike, once all
-    // `onInit` calls have settled, and awaited. Isolated per destination: a hook
-    // that throws is reported and skipped rather than aborting the rest.
-    for (const dest of this.destinations) {
-      try {
-        await dest.onRegistryReady?.({
-          heldEntriesDeliveredElsewhere: this.health.deliveredByHealthySink(
-            dest,
-            this.effectiveLevelOf(dest)
-          )
-        })
-      } catch (err) {
-        // The same key the real registry reuses for a failing readiness hook;
-        // there is no separate reserved key for it.
-        const name = safeDestinationName(dest)
-        reportDestinationFailure(
-          RESERVED_LOG_KEYS.LOGGER_DESTINATION_INIT_FAILED,
-          name,
-          err,
-          `Log destination "${name}" failed its readiness hook`
-        )
-      }
-    }
-
-    // LAST, and the ordering is load-bearing rather than incidental. Every health
-    // record is written by now, so a last-resort sink can carry these entries when
-    // every destination failed. Announcing first would emit them into a fan-out that
-    // has not yet been told anything is wrong, and `LOGGER_BOOTSTRAP_WARNING` — the
-    // signal that exists so a security review can see redaction was disabled — would
-    // be lost exactly when the configuration is already known to be broken.
-    this.logger.info(RESERVED_LOG_KEYS.LOGGER_BOOTSTRAP_OK, 'BymaxLoggerModule initialized')
-  }
-
-  async onApplicationShutdown(): Promise<void> {
-    // Emitted BEFORE the sinks are torn down — an entry written after they closed
-    // would have nowhere to go. It is the bookend to `LOGGER_BOOTSTRAP_OK`: its
-    // absence tells an operator a graceful shutdown from a killed process.
-    this.logger.info(
-      RESERVED_LOG_KEYS.LOGGER_SHUTDOWN_OK,
-      'BymaxLoggerModule shutting down',
-      undefined,
-      { destinations: this.active.length }
-    )
-    // Yield the event loop once: `destinationToStream` leaves the Writable callback
-    // pending until an async `write()` settles, so without this barrier the loop
-    // below could close a sink whose shutdown entry is still in flight. A
-    // best-effort ordering nudge, not a delivery guarantee — the authoritative
-    // contract is `ILogDestination.onShutdown`, which MUST flush pending writes.
-    await new Promise<void>((resolve) => {
-      setImmediate(resolve)
-    })
-    // Reverse order — first registered closes last. Over ACTIVE, not registered:
-    // a destination whose `onInit` failed may never have acquired the resources
-    // `onShutdown` would close.
-    //
-    // Sequential and per-destination guarded, NOT `Promise.allSettled`: settling
-    // every promise contains the failures but reports none of them, so a final
-    // flush that lost its batch would leave no trace anywhere.
-    for (const dest of [...this.active].reverse()) {
-      try {
-        await dest.onShutdown?.()
-      } catch (err) {
-        // Coercion INSIDE the guard, and the text escaped. Reading `stack`/`message`
-        // on an Error with hostile getters, or `String(err)` on a value with a
-        // throwing `Symbol.toPrimitive`, throws from within this catch — and the
-        // throw would propagate out of `onApplicationShutdown`, skipping the flush
-        // of every destination still queued behind this one.
-        this.reportShutdownFailure(dest, err)
-      }
-    }
-  }
-
-  /**
-   * Report a failing `onShutdown` without letting the report abort the teardown
-   * of the destinations still queued behind it.
-   *
-   * The DESTINATION is passed, not its name: `readonly name: string` does not stop
-   * a consumer implementing it as a getter, and reading it at the call site would
-   * put the throw back inside the catch. Name and detail are guarded separately,
-   * so one unreadable value does not cost the other.
-   */
-  private reportShutdownFailure(dest: ILogDestination, cause: unknown): void {
-    const name = toSingleLineMessage(safeDestinationName(dest))
-    let detail = 'UnknownError'
-    try {
-      // The two escapers are NOT interchangeable: `escapeControlCharacters` keeps
-      // newlines because a stack is legitimately multi-line, so it may only be used
-      // ON a stack. A message, or a non-Error value, is a single-line field —
-      // routing it through the multi-line escaper lets `failed\n[forged entry]`
-      // write a second raw line an operator reads as genuine.
-      const stack = isErrorLike(cause) ? cause.stack : undefined
-      detail =
-        stack === undefined
-          ? toSingleLineMessage(isErrorLike(cause) ? String(cause.message) : String(cause))
-          : escapeControlCharacters(String(stack))
-    } catch {
-      // A value that cannot be read is still worth a line naming the destination.
-    }
-    writeStderrSafely(`[DestinationRegistry] Shutdown failed for "${name}": ${detail}\n`)
-  }
-}
-```
+On shutdown it logs `LOGGER_SHUTDOWN_OK`, then within `shutdown.timeoutMs` drains the queues (at most `shutdown.drainTimeoutMs`) and calls `onShutdown` in reverse order on the destinations that initialized. It reports failed hooks (`LOGGER_DESTINATION_SHUTDOWN_FAILED`), skipped hooks and drop totals on stderr.
 
 ### 6.4 `BymaxLoggerModule.useNestLogger(app)` — wiring the lib as NestJS's logger
 
-The `shouldUseAsNestLogger?: boolean` option (default `true`) signals **intent**: the consumer wants this lib to replace NestJS's default internal logger (`Bootstrap`, `RoutesResolver`, `NestApplication`). However, because the lib lives inside a module and cannot reach the `INestApplication` instance, the **runtime wiring** must happen in `main.ts`. The lib exposes a static helper for it:
+The `shouldUseAsNestLogger` option is deprecated and has no effect; call this helper. Because the lib lives inside a module and cannot reach the `INestApplication` instance, the **runtime wiring** must happen in `main.ts`. The lib exposes a static helper for it:
 
 ```typescript
 import type { INestApplication } from '@nestjs/common'
@@ -1564,8 +1187,16 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
    * @param app The Nest application instance returned by NestFactory.create()
    */
   static useNestLogger(app: INestApplication): void {
-    const loggerService = app.get(PinoLoggerService, { strict: false })
-    app.useLogger(loggerService)
+    let logger: PinoLoggerService
+    try {
+      logger = app.get(PinoLoggerService, { strict: false })
+    } catch (cause) {
+      throw new Error(
+        '[BymaxLoggerModule] useNestLogger(app) called but BymaxLoggerModule was not imported',
+        { cause }
+      )
+    }
+    app.useLogger(logger)
     app.flushLogs()
   }
 }
@@ -1580,7 +1211,7 @@ BymaxLoggerModule.useNestLogger(app) // replaces NestJS internal logger + flushe
 await app.listen(3000)
 ```
 
-> **Why the option exists if wiring is manual?** `shouldUseAsNestLogger: true` is purely a convention hint — the lib emits a bootstrap log that informs the consumer whether the helper is expected to be called. Calling `useNestLogger(app)` when `shouldUseAsNestLogger: false` is a no-op contract violation that surfaces as a warning. The lib **cannot** auto-wire `app.useLogger()` because modules don't see the `INestApplication`.
+> **Why a helper?** The lib cannot call `app.useLogger()` itself because a module does not see the `INestApplication`.
 
 ---
 
@@ -1588,7 +1219,7 @@ await app.listen(3000)
 
 ### 7.1 `HttpLoggingInterceptor`
 
-Logs the full HTTP request lifecycle. Normalizes URLs to avoid an explosion of distinct log keys (`/users/abc-123` and `/users/def-456` both become `/users/:id`).
+Logs the full HTTP request lifecycle. Normalizes URLs to avoid an explosion of distinct `url` values (`/users/123` and `/users/456` both become `/users/:id`).
 
 The source is `src/server/interceptors/http-logging.interceptor.ts`.
 
@@ -1600,28 +1231,11 @@ The source is `src/server/interceptors/http-logging.interceptor.ts`.
 
 ### 7.2 URL normalization algorithm
 
-Pure function, exported as `normalizeUrl(url: string): string`:
-
-```typescript
-const UUID_REGEX = /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
-const ULID_REGEX = /\/[0-9A-HJKMNP-TV-Z]{26}/g // Crockford base32, 26 chars
-const NANOID_REGEX = /\/[A-Za-z0-9_-]{21}/g // nanoid default size
-
-export function normalizeUrl(url: string): string {
-  // Remove query string
-  const path = url.split('?')[0] ?? ''
-
-  return path
-    .replace(UUID_REGEX, '/:id')
-    .replace(ULID_REGEX, '/:id')
-    .replace(NANOID_REGEX, '/:id')
-    .replace(/\/\d+/g, '/:id') // pure numeric IDs
-}
-```
+The internal `normalizeUrl(url, extra)` (not exported from the package) removes the query string, replaces credential-looking path segments (long hex, JWT, long opaque token, email, and matches of `http.secretPathSegments`) with `:redacted`, then collapses UUIDs, ULIDs, 21-character nanoids and leading digits of a segment to `/:id`. If the built-ins it relies on were replaced, the whole path becomes `/:redacted`.
 
 ### 7.3 Registration as a global interceptor
 
-When `http.isEnabled: true`, the lib automatically registers via `APP_INTERCEPTOR`:
+When `http.isEnabled: true`, `forRoot` registers it via `APP_INTERCEPTOR`:
 
 ```typescript
 // Internally in logger.module.ts:
@@ -1630,6 +1244,8 @@ When `http.isEnabled: true`, the lib automatically registers via `APP_INTERCEPTO
   useClass: HttpLoggingInterceptor,
 }
 ```
+
+`forRootAsync` always registers a factory, which returns `HttpLoggingInterceptor` or a pass-through once the options are known.
 
 ---
 
@@ -1658,51 +1274,13 @@ The filter and the access log do not suppress each other. With both active, a ha
 
 ### 9.1 `@InjectLogger()`
 
-Convenience to avoid repeating `@Inject(PinoLoggerService)` in constructors. When given an optional name, it returns a per-injection-point **child logger** bound to that context — no singleton mutation, no request scope required.
+Convenience to avoid repeating `@Inject(PinoLoggerService)` in constructors. When given a name, it injects a **child logger** bound to that context — no singleton mutation, no request scope required.
 
-#### Implementation mechanism (no handwave)
+#### Implementation mechanism
 
-`@InjectLogger(context?: string)` is implemented as a custom parameter decorator that produces a NestJS provider factory token. At provider time:
+With a name, the decorator injects the token `getContextLoggerToken(name)`; the module registers one provider per distinct name, which returns `rootLogger.child({ context: name })`. Without a name it injects the root `PinoLoggerService`, which has no context.
 
-- The factory resolves the root `PinoLoggerService` from the DI container.
-- It calls `logger.child({ context: context ?? <className-from-reflect-metadata> })` and returns the child.
-- Class context defaults to the **host class's name**, read either via `Reflect.getMetadata('design:type', target)` or via `target.constructor.name` when the metadata is unavailable.
-- Each injection point gets a distinct child logger, so per-class context is **isolated** — no singleton mutation across services.
-- Because the implementation uses `child(bindings)` (see §6.1), it is safe across async contexts: the ALS-managed `requestId` / `tenantId` / `userId` still flow through the inherited `LogContextService`, while only the `context` binding is per-class.
-
-```typescript
-import { Inject } from '@nestjs/common'
-import { PinoLoggerService } from '../services/pino-logger.service'
-
-/**
- * Returns a parameter decorator that injects a PinoLoggerService child bound
- * to a per-injection-point `context`. The decorator collects metadata at decoration
- * time; the module wires a provider factory at compile time that, on resolve,
- * returns `rootLogger.child({ context })`.
- */
-export function InjectLogger(context?: string): ParameterDecorator {
-  return (target, propertyKey, parameterIndex) => {
-    // 1) Register the dependency on the root PinoLoggerService.
-    Inject(PinoLoggerService)(target, propertyKey, parameterIndex)
-
-    // 2) Record the requested context on class metadata. The module reads this
-    //    list at registration time and emits one provider factory per entry:
-    //
-    //      {
-    //        provide: INJECT_LOGGER_TOKEN(target, parameterIndex),
-    //        useFactory: (root: PinoLoggerService) =>
-    //          root.child({ context: context ?? target.constructor.name }),
-    //        inject: [PinoLoggerService],
-    //      }
-    //
-    //    The token returned by INJECT_LOGGER_TOKEN is what NestJS resolves at
-    //    construction time, replacing the direct PinoLoggerService injection
-    //    above with the bound child instance.
-  }
-}
-```
-
-> **Why the child-logger approach over a request-scoped interceptor?** A `LoggerContextInterceptor` that reads metadata and calls `setContext()` on a request-scoped logger also works, but forces every consumer of the logger into `Scope.REQUEST` (~5% latency penalty per §17.1) and pays the ALS overhead on every log. The child-logger approach is **zero-cost**: the child is created once at provider time, lives as a singleton tied to its host class, and emits its `context` binding for free.
+> **Why a child logger and not a request-scoped one?** The child is created once and shared by every injection point that uses the same name, so no `Scope.REQUEST` is needed. The request fields still come from `LogContextService`.
 
 Usage:
 
@@ -1724,40 +1302,9 @@ A class decorator that stores `name` as metadata under `LOG_CONTEXT_METADATA_KEY
 
 ### 9.3 `@LogPerformance(thresholdMs?)`
 
-Method decorator. Logs execution duration. If the duration exceeds `thresholdMs`, it raises the level to `warn` (`SLOW_METHOD`).
+Method decorator. Logs execution duration. If the duration exceeds `thresholdMs`, it raises the level to `warn` (`METHOD_SLOW_EXECUTION`).
 
-```typescript
-export function LogPerformance(thresholdMs = 1000): MethodDecorator {
-  return (target, propertyKey, descriptor: PropertyDescriptor) => {
-    const original = descriptor.value
-    descriptor.value = async function (this: { logger?: PinoLoggerService }, ...args: unknown[]) {
-      const start = Date.now()
-      try {
-        return await original.apply(this, args)
-      } finally {
-        const duration = Date.now() - start
-        const method = `${target.constructor.name}.${String(propertyKey)}`
-        if (this.logger) {
-          if (duration > thresholdMs) {
-            this.logger.warnStructured(
-              'METHOD_SLOW_EXECUTION',
-              `${method} took ${duration}ms`,
-              undefined,
-              { method, duration, thresholdMs }
-            )
-          } else {
-            this.logger.info('METHOD_EXECUTION', `${method} completed`, undefined, {
-              method,
-              duration
-            })
-          }
-        }
-      }
-    }
-    return descriptor
-  }
-}
-```
+The method is wrapped in an async function. When `this.logger` is present it logs `METHOD_EXECUTION`, or `METHOD_SLOW_EXECUTION` at `warn` when the duration exceeds `thresholdMs` (default 1000). A non-finite or negative threshold throws `TypeError`, and a failure while logging does not affect the method.
 
 > Requires `this.logger` to be an instance of `PinoLoggerService` (usually by injection). The decorator fails silently if `logger` is not present — it does not force a pattern.
 
@@ -1767,68 +1314,9 @@ export function LogPerformance(thresholdMs = 1000): MethodDecorator {
 
 ### 10.1 Default list — `DEFAULT_REDACT_PATHS`
 
-> ⚠️ **Important about `*` wildcards in `pino.redact` (powered by `fast-redact`)**: the `*` wildcard matches **a single level** of the tree — it is not recursive. `*.password` redacts `body.password`, `meta.password`, etc., but does **not** redact `body.user.password` (you need `*.*.password`). For depth coverage, we list paths for depths 1 through 4 levels. Absolute paths (`req.body.creditCard.number`) follow standard bracket/dot syntax. Source: [github.com/davidmarkclements/fast-redact](https://github.com/davidmarkclements/fast-redact#wildcards).
+Under the default `redactStrategy: 'names'`, the library's own walk censors a sensitive name at any depth. `DEFAULT_REDACT_PATHS` is the path form of the same list. The opt-in `'paths'` strategy hands them to Pino `redact` (`@pinojs/redact`), where `*` matches a single level. The names are in `src/server/constants/default-redact-paths.constants.ts`.
 
-Pino-syntax paths. Defensive coverage at **4 levels** (sufficient for most HTTP/RPC payloads):
-
-```typescript
-/**
- * Helper: generates wildcard variants by depth. fast-redact does not support
- * recursive descent (`**`), so we list each level explicitly.
- *
- * Output: ['*.password', '*.*.password', '*.*.*.password', '*.*.*.*.password']
- */
-const depth = (field: string): readonly string[] =>
-  ['*', '*.*', '*.*.*', '*.*.*.*'].map((prefix) => `${prefix}.${field}`)
-
-export const DEFAULT_REDACT_PATHS: readonly string[] = [
-  // Passwords — depth 1-4
-  ...depth('password'),
-  ...depth('passwordHash'),
-  ...depth('passwordConfirm'),
-  ...depth('newPassword'),
-  ...depth('oldPassword'),
-
-  // Tokens
-  ...depth('token'),
-  ...depth('accessToken'),
-  ...depth('refreshToken'),
-  ...depth('idToken'),
-  ...depth('apiKey'),
-  ...depth('apiSecret'),
-
-  // MFA
-  ...depth('mfaSecret'),
-  ...depth('mfaRecoveryCodes'),
-  ...depth('totpSecret'),
-
-  // Payment (PCI DSS)
-  ...depth('cardNumber'),
-  ...depth('cardCvv'),
-  ...depth('cvv'),
-  ...depth('cvc'),
-  ...depth('cardExpiry'),
-
-  // Personal documents (BR — LGPD)
-  ...depth('cpf'),
-  ...depth('cnpj'),
-  ...depth('rg'),
-
-  // Common headers with secrets (absolute paths — in the wildcard)
-  'req.headers.authorization',
-  'req.headers.cookie',
-  'req.headers["x-api-key"]',
-  'req.headers["x-auth-token"]',
-  'res.headers["set-cookie"]',
-
-  // Conservative PII — email can be disabled if the app justifies logging
-  ...depth('email')
-] as const
-```
-
-> **Performance:** with 140 generated paths (27 root fields + 27 × 4 levels = 108 + 5 absolute header paths), `fast-redact` compiles everything into a single JS function at initialization. Pino benchmark: redacting 100 paths impacts ~3% on throughput. There is no per-log regex matching overhead.
-
-> **Auditing the redact registry:** the consumer can inspect via `LOGGER_OPTIONS_TOKEN` (see §10.5). In test environments, expose `compileRedactPaths(opts).effectivePaths` for CI assertions that expected paths are active.
+> Under the default strategy only the consumer's `redactPaths` reach `pino.redact`. `compileRedactPaths` is internal.
 
 ### 10.2 How to extend
 
@@ -1837,8 +1325,7 @@ BymaxLoggerModule.forRoot({
   service: { name: 'my-app', version: '1.0.0' },
   redactPaths: [
     '*.internalSecret', // adds
-    'body.creditCard.*', // deep redaction inside subobject
-    'payload.user.taxId' // specific path
+    'payload.user.taxId' // under the default strategy `taxId` is also censored at any depth
   ]
 })
 ```
@@ -1849,24 +1336,18 @@ The lib **merges** with `DEFAULT_REDACT_PATHS` (does not replace). To fully repl
 BymaxLoggerModule.forRoot({
   service: { name: 'my-app', version: '1.0.0' },
   shouldDisableDefaultRedact: true, // discards defaults
-  redactPaths: ['*.password'] // only these
+  redactPaths: ['*.password'] // only consumer names remain: `password`, at any depth
 })
 ```
 
 ⚠️ `shouldDisableDefaultRedact: true` is recorded as a warning in the bootstrap log for security-review auditing.
 
-### 10.3 Performance — builtin `fast-redact`
+### 10.3 Performance
 
-`pino.redact` uses `fast-redact` internally, which **compiles** paths at initialization time into a specialized JavaScript function built via `new Function(...)`. There is in the per-log overhead from regex matching or object tree traversal.
-
-**Recommended limits:**
-
-- ≤ 200 total paths: < 5% throughput impact
-- > 200 paths: evaluate grouping by depth or a custom serializer
+Pino's `redact` option is implemented by `@pinojs/redact`. The history of the default is below.
 
 Superseded in `1.2.0`. Path-based redaction was measured at ~107 µs per entry (~9.3 k logs/s),
-not the ~3% the official benchmark suggests — the cost grows with the PATH COUNT, and the default
-list expands to 140. The default is now a name-keyed snapshotting walk at ~3.6 µs per entry; the
+not the ~3% the official benchmark suggests — the cost grows with the PATH COUNT. The default is now a name-keyed snapshotting walk at ~3.6 µs per entry; the
 path expansion survives for consumer `redactPaths` and the opt-in `redactStrategy: 'paths'`.
 See `docs/guidelines/PINO-REDACTION-GUIDELINES.md` and `bench/README.md`.
 
@@ -1885,14 +1366,16 @@ BymaxLoggerModule.forRoot({
 
 ```typescript
 // For debugging in dev:
-import { LOGGER_OPTIONS_TOKEN } from '@bymax-one/nest-logger'
+import { Inject, Injectable } from '@nestjs/common'
+import { LOGGER_OPTIONS_TOKEN, type BymaxLoggerModuleOptions } from '@bymax-one/nest-logger'
 
 @Injectable()
 class LogAuditService {
   constructor(@Inject(LOGGER_OPTIONS_TOKEN) private readonly opts: BymaxLoggerModuleOptions) {}
 
-  listActiveRedactPaths(): string[] {
-    return [...DEFAULT_REDACT_PATHS, ...(this.opts.redactPaths ?? [])]
+  // Consumer paths only; the default coverage is REDACT_COMMON_FIELDS.
+  listConfiguredRedactPaths(): string[] {
+    return [...(this.opts.redactPaths ?? [])]
   }
 }
 ```
@@ -1903,122 +1386,17 @@ class LogAuditService {
 
 ### 11.1 Detecting active OTel
 
-The lib uses `@opentelemetry/api` as an **optional peer dependency**. Because the package ships as ESM (`"type": "module"` in `package.json`), `require` is not available by default — we use `createRequire` from `node:module` for synchronous optional resolution, or `await import()` in async modules:
+`@opentelemetry/api` is an **optional peer dependency**. It is resolved synchronously with `createRequire`, anchored on the package's own location and then on `process.cwd()` (`src/server/utils/otel-detector.ts`). When it is absent the detector is silent; when it is installed but fails to load, `LOGGER_OTEL_API_BROKEN` is written to stderr once.
 
-```typescript
-import { createRequire } from 'node:module'
-
-// Sync (preferred — runs at module bootstrap, not in the hot path)
-let trace: typeof import('@opentelemetry/api').trace | undefined
-try {
-  const requireFromHere = createRequire(import.meta.url)
-  trace = requireFromHere('@opentelemetry/api').trace
-} catch {
-  trace = undefined // OTel API not installed → graceful fallback
-}
-```
-
-Equivalent async alternative (for cases where the lib is loaded with top-level `await`):
-
-```typescript
-let trace: typeof import('@opentelemetry/api').trace | undefined
-try {
-  const otelApi = await import('@opentelemetry/api')
-  trace = otelApi.trace
-} catch {
-  trace = undefined
-}
-```
-
-For CJS builds (generated by `tsup` for the `require` subpath), `createRequire` falls back to native CommonJS `require`. Both forms converge to the same runtime behavior.
-
-On every log, the trace context mixin (**official Pino 10 signature**: `(mergeObject, level, logger) => object`):
-
-```typescript
-import type { Logger as PinoLogger } from 'pino'
-
-/**
- * Pino mixin invoked for every log entry. Reads:
- *   - OTel active span (if SDK started) → traceId, spanId, traceFlags
- *   - LogContextService store (if inside run() scope) → requestId, tenantId, userId
- *
- * Returns the partial object merged into the log entry.
- *
- * @param _mergeObject Object the caller passed to pino.info(obj, msg) — unused here
- * @param _level       Numeric Pino level (10..60) — unused here
- * @param _logger      The Pino instance — unused here, but part of v10 mixin contract
- */
-function traceContextMixin(
-  _mergeObject: Record<string, unknown>,
-  _level: number,
-  _logger: PinoLogger
-): Record<string, string> | undefined {
-  if (!trace) return undefined
-  const span = trace.getActiveSpan()
-  if (!span) return undefined
-  const ctx = span.spanContext()
-  if (!ctx.traceId || ctx.traceId === '00000000000000000000000000000000') return undefined
-  return {
-    traceId: ctx.traceId,
-    spanId: ctx.spanId,
-    traceFlags: ctx.traceFlags.toString(16).padStart(2, '0')
-  }
-}
-```
-
-**Behavior without OTel:** the lib logs normally, with in the `traceId`/`spanId`.
-**Behavior with OTel but in the active span:** the lib logs without `traceId`/`spanId` (because there is in the contextualized trace).
+**Behavior without OTel:** the lib logs normally, with no `traceId`/`spanId`.
+**Behavior with OTel but no active span:** the lib logs without `traceId`/`spanId` (because there is no contextualized trace).
 **Behavior with OTel + active span:** the lib injects `traceId`/`spanId` into every entry.
 
-#### 11.1.1 Composed mixin (canonical implementation)
+#### 11.1.1 The trace context mixin
 
-In practice the lib registers **a single** mixin that merges (i) fields from `LogContextService.getStore()` and (ii) OTel trace context derived from `trace.getActiveSpan()?.spanContext()`. This avoids registering two mixins and guarantees a deterministic merge order.
+`createTraceContextMixin` (`src/server/mixins/trace-context.mixin.ts`) builds the single mixin. It merges the `LogContextService` store first and the active span's `traceId`, `spanId` and `traceFlags` last, so the span wins over a same-named context key. The ids are validated before use, and a failure inside the mixin does not break the log call.
 
-```typescript
-import type { LogContextService } from '../services/log-context.service'
-
-/**
- * Pino 10 mixin signature is `(mergeObject, level) => object`. A third argument
- * (the logger instance) is accepted by older versions but is legacy and ignored
- * in Pino 10 — we keep the 2-arg form to match the current contract.
- *
- * Merge order is intentional:
- *   1. ALS context (requestId / tenantId / userId / arbitrary fields) is written FIRST.
- *   2. OTel `traceId` / `spanId` / `traceFlags` are written LAST and OVERRIDE
- *      any same-named keys placed by ALS. Rationale: an active span is the most
- *      authoritative source of the trace identity at this exact moment.
- *
- * Performance: this runs per-log. Both lookups are O(1):
- *   - `LogContextService.getStore()` → AsyncLocalStorage read
- *   - `trace.getActiveSpan()` → context.active() then spanContext()
- */
-export function buildComposedMixin(
-  logContext: LogContextService,
-  fieldNames: { traceId: string; spanId: string; traceFlags: string }
-): (mergeObject: Record<string, unknown>, level: number) => Record<string, unknown> {
-  return (_mergeObject, _level) => {
-    // 1) ALS context first
-    const merged: Record<string, unknown> = { ...(logContext.getStore() ?? {}) }
-
-    // 2) OTel trace context overrides ALS-supplied same-named keys
-    if (trace) {
-      const span = trace.getActiveSpan()
-      if (span) {
-        const ctx = span.spanContext()
-        if (ctx.traceId && ctx.traceId !== '00000000000000000000000000000000') {
-          merged[fieldNames.traceId] = ctx.traceId
-          merged[fieldNames.spanId] = ctx.spanId
-          merged[fieldNames.traceFlags] = ctx.traceFlags.toString(16).padStart(2, '0')
-        }
-      }
-    }
-
-    return merged
-  }
-}
-```
-
-> **Why one mixin instead of two?** Pino accepts a single `mixin` option per logger. Composing in user code keeps merge precedence explicit and avoids ordering surprises if Pino changes how multiple mixins are layered in the future.
+> **Why one mixin instead of two?** Pino accepts a single `mixin` option per logger. Composing both in one function keeps merge precedence explicit and avoids ordering surprises if Pino changes how multiple mixins are layered in the future.
 
 > **Why ALS first, OTel last?** If the ALS scope was opened with a `traceId` (e.g., propagated manually from a queue consumer) and OTel has since started a new span, the OTel span ID is the truth on the wire for this exact log call. The order makes that explicit and testable.
 
@@ -2052,24 +1430,7 @@ const sdk = new NodeSDK({
 
 sdk.start()
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  void sdk
-    .shutdown()
-    .then(() => console.log('OTel SDK shut down'))
-    .catch((err) => console.error('Error shutting down OTel', err))
-    .finally(() => process.exit(0))
-})
-
-// NOW import Nest
-import { NestFactory } from '@nestjs/core'
-import { AppModule } from './app.module'
-
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true })
-  // ... rest of bootstrap
-}
-bootstrap()
+// Shut the SDK down only after `await app.close()` (see §18.2 and §17.3).
 ```
 
 ### 11.3 `@opentelemetry/instrumentation-pino` (recommended)
@@ -2136,7 +1497,7 @@ Valid examples:
 **Invalid** examples (do not follow the convention):
 
 - `userLogin` (camelCase)
-- `LOGIN_SUCCESS` (missing module)
+- `LOGIN_SUCCESS` (missing module; a convention only, since the regex accepts two words)
 - `STARTED` (missing module and action)
 
 ### 12.2 Validation regex (exported in `./shared`)
@@ -2158,7 +1519,7 @@ function isValidLogKey(key: string): boolean {
 
 ```typescript
 // src/shared/constants/reserved-log-keys.constants.ts
-export const RESERVED_LOG_KEYS = {
+export const RESERVED_LOG_KEYS = Object.freeze({
   LOGGER_BOOTSTRAP_OK: 'LOGGER_BOOTSTRAP_OK',
   LOGGER_BOOTSTRAP_WARNING: 'LOGGER_BOOTSTRAP_WARNING',
   LOGGER_SHUTDOWN_OK: 'LOGGER_SHUTDOWN_OK',
@@ -2168,17 +1529,23 @@ export const RESERVED_LOG_KEYS = {
   HTTP_REQUEST_CLIENT_ERROR: 'HTTP_REQUEST_CLIENT_ERROR',
   HTTP_REQUEST_SERVER_ERROR: 'HTTP_REQUEST_SERVER_ERROR',
   HTTP_REQUEST_COMPLETED: 'HTTP_REQUEST_COMPLETED',
+  HTTP_REQUEST_ABORTED: 'HTTP_REQUEST_ABORTED',
   HTTP_EXCEPTION_HANDLED: 'HTTP_EXCEPTION_HANDLED',
   HTTP_EXCEPTION_UNHANDLED: 'HTTP_EXCEPTION_UNHANDLED',
+  HTTP_UNEXPECTED_ERROR: 'HTTP_UNEXPECTED_ERROR',
+  HTTP_UNEXPECTED_ERROR_DROPPED: 'HTTP_UNEXPECTED_ERROR_DROPPED',
   METHOD_EXECUTION: 'METHOD_EXECUTION',
   METHOD_SLOW_EXECUTION: 'METHOD_SLOW_EXECUTION',
   LOGGER_DESTINATION_INIT_FAILED: 'LOGGER_DESTINATION_INIT_FAILED',
   LOGGER_DESTINATION_WRITE_FAILED: 'LOGGER_DESTINATION_WRITE_FAILED',
-  LOGGER_ENTRY_TRUNCATED: 'LOGGER_ENTRY_TRUNCATED'
-} as const
+  LOGGER_DESTINATION_SHUTDOWN_FAILED: 'LOGGER_DESTINATION_SHUTDOWN_FAILED',
+  LOGGER_ENTRY_TRUNCATED: 'LOGGER_ENTRY_TRUNCATED',
+  LOGGER_REDACTION_FAILED: 'LOGGER_REDACTION_FAILED',
+  LOGGER_OTEL_API_BROKEN: 'LOGGER_OTEL_API_BROKEN'
+} as const)
 ```
 
-> **Count: 16 reserved keys.** Apps must not reuse these keys to avoid collision in log queries.
+> Apps must not reuse these keys to avoid collision in log queries. `HTTP_REQUEST_COMPLETED` is reserved and never emitted.
 
 ---
 
@@ -2227,7 +1594,8 @@ The lib is intentionally focused on logging. **Out of scope:**
   "@nestjs/common": "^11.0.16",
   "@nestjs/core": "^11.1.18",
   "pino": "^10.0.0",
-  "reflect-metadata": "^0.2.0"
+  "reflect-metadata": "^0.2.0",
+  "rxjs": "^7.8.0"
 }
 ```
 
@@ -2237,24 +1605,31 @@ The lib is intentionally focused on logging. **Out of scope:**
 | `@nestjs/core`     | `^11.1.18` | `APP_INTERCEPTOR`, `APP_FILTER`, `ModuleRef`. Floor excludes GHSA-36xv-jgw5-4q75        |
 | `pino`             | `^10.0.0`  | Logging engine                                                                          |
 | `reflect-metadata` | `^0.2.0`   | NestJS decorators                                                                       |
+| `rxjs`             | `^7.8.0`   | Interceptor streams                                                                     |
 
 ### 15.2 Optional peer dependencies
 
 ```json
 "peerDependencies": {
+  "@bymax-one/nest-core": "^1.6.10",
+  "@opentelemetry/api": "^1.9.0",
   "pino-pretty": "^13.0.0",
-  "@opentelemetry/api": "^1.9.0"
+  "prom-client": "^15.0.0"
 },
 "peerDependenciesMeta": {
+  "@bymax-one/nest-core": { "optional": true },
+  "@opentelemetry/api": { "optional": true },
   "pino-pretty": { "optional": true },
-  "@opentelemetry/api": { "optional": true }
+  "prom-client": { "optional": true }
 }
 ```
 
-| Package              | When to install                                    | Declared range |
-| -------------------- | -------------------------------------------------- | -------------- |
-| `pino-pretty`        | If `pretty: true` or using `PrettyDevDestination`  | `^13.0.0`      |
-| `@opentelemetry/api` | If you want `traceId`/`spanId` correlation in logs | `^1.9.0`       |
+| Package                | When to install                                    | Declared range |
+| ---------------------- | -------------------------------------------------- | -------------- |
+| `pino-pretty`          | If using `PrettyDevDestination`                    | `^13.0.0`      |
+| `@opentelemetry/api`   | If you want `traceId`/`spanId` correlation in logs | `^1.9.0`       |
+| `@bymax-one/nest-core` | If using the `./observability` subpath             | `^1.6.10`      |
+| `prom-client`          | If using the `./observability` subpath             | `^15.0.0`      |
 
 > **Note on `pino-http`**: the lib does **not** depend on `pino-http`. Consumers can use `pino-http` independently if they choose; this lib does not depend on it (see §17.5 for the rationale).
 >
@@ -2270,39 +1645,11 @@ The lib has **no direct dependencies**. The entire ecosystem comes via peer deps
 
 - The consumer controls the exact Pino version
 - The supply chain surface is reduced to a minimum (`pino` + audited transitives)
-- Compatibility with any `@nestjs/common` 11.x the consumer already has
+- Compatibility with any `@nestjs/common` `^11.0.16` the consumer already has
 
 ### 15.4 devDependencies (expected in the repo)
 
-```json
-"devDependencies": {
-  "@nestjs/common": "^11",
-  "@nestjs/core": "^11",
-  "@nestjs/platform-express": "^11",
-  "@nestjs/testing": "^11",
-  "@opentelemetry/api": "^1.9",
-  "@opentelemetry/sdk-trace-base": "^1.x",
-  "@opentelemetry/context-async-hooks": "^1.x",
-  "@types/jest": "^30",
-  "@types/node": "^26",
-  "@types/supertest": "^7",
-  "@typescript-eslint/eslint-plugin": "^8",
-  "@typescript-eslint/parser": "^8",
-  "eslint": "^9",
-  "eslint-config-prettier": "^10",
-  "eslint-plugin-prettier": "^5",
-  "eslint-plugin-security": "^4",
-  "jest": "^30",
-  "pino": "^10",
-  "pino-pretty": "^13",
-  "prettier": "^3.8",
-  "reflect-metadata": "^0.2",
-  "supertest": "^7",
-  "ts-jest": "^29",
-  "tsup": "^9.0",
-  "typescript": "^5.9"
-}
-```
+See `devDependencies` in `package.json`.
 
 ---
 
@@ -2405,7 +1752,7 @@ Validation:
 
 ## 17. Known Limitations
 
-### 17.1 In the `Scope.REQUEST` support
+### 17.1 No `Scope.REQUEST` support
 
 The lib uses singleton (`Scope.DEFAULT`). Request-scoped context comes via `AsyncLocalStorage`, not via DI scope.
 
@@ -2413,7 +1760,7 @@ The lib uses singleton (`Scope.DEFAULT`). Request-scoped context comes via `Asyn
 
 For a distinct context per class, see §17.2.
 
-### 17.2 In the `Scope.TRANSIENT`
+### 17.2 No `Scope.TRANSIENT`
 
 For a similar reason. The `@InjectLogger(context)` decorator solves the "distinct context per class" problem without requiring transient scope. A class that names a context must be imported before the `forRoot` / `forRootAsync` call is evaluated, which is when the contexts are collected.
 
@@ -2470,27 +1817,23 @@ import { BymaxLoggerModule } from '@bymax-one/nest-logger'
 export class AppModule {}
 ```
 
-Stdout output (via `pino-pretty`):
+Open the request scope in `main.ts`, so that entries carry `requestId` and `tenantId`:
 
+```typescript
+import { NestFactory } from '@nestjs/core'
+import { BymaxLoggerModule } from '@bymax-one/nest-logger'
+import { AppModule } from './app.module'
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, { bufferLogs: true })
+  BymaxLoggerModule.useNestLogger(app)
+  BymaxLoggerModule.useRequestContext(app)
+  await app.listen(3000)
+}
+bootstrap()
 ```
-[15:32:14.123] INFO (my-app-dev/12345): LOGGER_BOOTSTRAP_OK
-    level: "debug"
-    destinations: ["stdout-json", "pretty-dev"]
-[15:32:14.456] INFO (my-app-dev/12345): HTTP_REQUEST_START
-    requestId: "r_abc123"
-    method: "POST"
-    url: "/users"
-    ip: "127.0.0.1"
-[15:32:14.512] INFO (my-app-dev/12345): USER_CREATED
-    requestId: "r_abc123"
-    userId: "u_new"
-    email: "[REDACTED]"
-    plan: "free"
-[15:32:14.523] INFO (my-app-dev/12345): HTTP_REQUEST_SUCCESS
-    requestId: "r_abc123"
-    statusCode: 201
-    duration: 67
-```
+
+Stdout output is NDJSON, one object per line; for the rendered view add `destinations: [new PrettyDevDestination()]`. The first entry of the library is `LOGGER_BOOTSTRAP_OK` with the message `BymaxLoggerModule initialized`, and a request logs `HTTP_REQUEST_START` with the message `POST /users`.
 
 ### 18.2 Prod setup with OTLP → Loki + OTel
 
@@ -2517,15 +1860,21 @@ const sdk = new NodeSDK({
 })
 sdk.start()
 
-process.on('SIGTERM', () => {
-  void sdk.shutdown().finally(() => process.exit(0))
-})
-
 import { NestFactory } from '@nestjs/core'
+import { BymaxLoggerModule } from '@bymax-one/nest-logger'
 import { AppModule } from './app.module'
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true })
+  BymaxLoggerModule.useNestLogger(app)
+  BymaxLoggerModule.useRequestContext(app)
+  process.once('SIGTERM', () => {
+    // Close the app first, so the destinations drain, then the SDK.
+    void app
+      .close()
+      .then(() => sdk.shutdown())
+      .finally(() => process.exit(0))
+  })
   await app.listen(3000)
 }
 bootstrap()
@@ -2570,7 +1919,7 @@ Logs in Loki look like:
 
 ```json
 {
-  "level": 30,
+  "level": "info",
   "time": "2026-05-27T15:32:14.512Z",
   "service": { "name": "my-app", "version": "abc123def" },
   "logKey": "USER_CREATED",
@@ -2603,7 +1952,9 @@ import { InjectLogger, PinoLoggerService } from '@bymax-one/nest-logger'
 export class PaymentsService {
   constructor(
     @InjectLogger(PaymentsService.name)
-    private readonly logger: PinoLoggerService
+    private readonly logger: PinoLoggerService,
+    // Your own payment client.
+    private readonly stripe: StripeClient
   ) {}
 
   async refund(paymentId: string, amount: number, requestedBy: string) {
@@ -2649,26 +2000,26 @@ Recommended strategy when migrating from a Winston-based codebase:
 +   constructor(private readonly logger: PinoLoggerService) {}
 
     foo() {
-      this.logger.log('USER_CREATED', 'user.create', userId, { plan: 'pro' })
-      // ^ The API is compatible — in the need to change call sites
+-     this.logger.log('USER_CREATED', 'user.create', userId, { plan: 'pro' })
++     this.logger.info('USER_CREATED', 'user.create', userId, { plan: 'pro' })
     }
   }
 ```
 
-The structured API of `PinoLoggerService.info(logKey, msg, userId, metadata)` is 1:1 compatible with `LoggerService.log(logKey, msg, userId, metadata)` from the old code. The `log()` method also remains (NestJS interface).
+`PinoLoggerService.info(logKey, msg, userId, metadata)` takes the arguments of the old `LoggerService.log()`. Here `log()` is the NestJS method and does not take them, so an unchanged call loses data without an error: change the call sites.
 
 **Step 2 — Replace the module**
 
 ```diff
 - import { LoggerModule } from './_commons_/logger/logger.module'
-+ import { BymaxLoggerModule } from '@bymax-one/nest-logger'
++ import { BymaxLoggerModule, type LogLevel } from '@bymax-one/nest-logger'
 
   @Module({
 -   imports: [LoggerModule],
 +   imports: [
 +     BymaxLoggerModule.forRoot({
 +       service: { name: 'fitness-backend', version: process.env.RELEASE_SHA ?? 'dev' },
-+       level: process.env.LOG_LEVEL as LogLevel ?? 'info',
++       level: (process.env.LOG_LEVEL as LogLevel | undefined) ?? 'info',
 +       http: { isEnabled: true },
 +     }),
 +   ],
@@ -2687,7 +2038,7 @@ Two options:
 
 Replace with `@opentelemetry/instrumentation-prisma` when OTel is added. Until then, Prisma queries simply don't get logged (acceptable loss).
 
-**Migration scope:** `LoggerService` call sites (near 1:1 replacement) + OTel SDK setup in `main.ts` + decision on Postgres vs Loki destination + test updates. Execution in a dedicated session by an AI agent.
+**Migration scope:** `LoggerService.log()` call sites (renamed to `info()`) + OTel SDK setup in `main.ts` + decision on Postgres vs Loki destination + test updates. Execution in a dedicated session by an AI agent.
 
 ---
 
@@ -2702,7 +2053,7 @@ Replace with `@opentelemetry/instrumentation-prisma` when OTel is added. Until t
 | **Trace**             | A set of spans related to one distributed operation                    |
 | **`traceparent`**     | W3C header with `traceId`+`spanId`+flags for cross-service correlation |
 | **PII**               | Personally Identifiable Information — sensitive personal data          |
-| **Fast-redact**       | Pino's builtin library that compiles redact paths into a JS fn         |
+| **@pinojs/redact**    | The library behind Pino's `redact` option                              |
 | **Mixin (Pino)**      | Function that returns additional fields to merge into every log        |
 | **Serializer (Pino)** | Function that normalizes a type (e.g., `Error` → plain object)         |
 | **Destination**       | This lib's term for a Pino "transport" (where logs go)                 |
@@ -2733,14 +2084,14 @@ Sources:
 
 ## Appendix C — Log Level Mapping
 
-| Pino numeric | Pino string | NestJS string                                     | OTel Severity | Typical use case                                |
-| ------------ | ----------- | ------------------------------------------------- | ------------- | ----------------------------------------------- |
-| 60           | `fatal`     | (`'error'` in Nest, but fatal logged as critical) | FATAL         | The process is about to exit                    |
-| 50           | `error`     | `error`                                           | ERROR         | Failure that requires human attention           |
-| 40           | `warn`      | `warn`                                            | WARN          | Recoverable anomaly                             |
-| 30           | `info`      | `log`                                             | INFO          | Significant business events                     |
-| 20           | `debug`     | `debug`                                           | DEBUG         | Implementation detail useful in troubleshooting |
-| 10           | `trace`     | `verbose`                                         | TRACE         | Ultra-granular detail (rarely in prod)          |
+| Pino numeric | Pino string | NestJS string | OTel Severity | Typical use case                                |
+| ------------ | ----------- | ------------- | ------------- | ----------------------------------------------- |
+| 60           | `fatal`     | `fatal`       | FATAL         | The process is about to exit                    |
+| 50           | `error`     | `error`       | ERROR         | Failure that requires human attention           |
+| 40           | `warn`      | `warn`        | WARN          | Recoverable anomaly                             |
+| 30           | `info`      | `log`         | INFO          | Significant business events                     |
+| 20           | `debug`     | `debug`       | DEBUG         | Implementation detail useful in troubleshooting |
+| 10           | `trace`     | `verbose`     | TRACE         | Ultra-granular detail (rarely in prod)          |
 
 **Mapping in `PinoLoggerService`:**
 
@@ -2749,7 +2100,7 @@ Sources:
 - `debug()` (NestJS) → `pino.debug()`
 - `warn()` (NestJS) → `pino.warn()`
 - `error()` (NestJS) → `pino.error()`
-- `fatal()` (optional NestJS 11+) → `pino.fatal()`
+- `fatal()` (NestJS) → `pino.fatal()`
 
 The structured API (`info()`, `warnStructured()`, `errorStructured()`) maps 1:1 to Pino.
 
