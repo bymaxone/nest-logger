@@ -108,8 +108,8 @@ class Named {
   }
 }
 
-/** What 1.4.35 wrote for these, measured on its build. */
-const UNCHANGED: ReadonlyArray<readonly [string, (raw: Raw) => void, unknown]> = [
+/** What Pino writes for these with no redaction in front of it. */
+const AS_PINO_WRITES: ReadonlyArray<readonly [string, (raw: Raw) => void, unknown]> = [
   ['%s of a plain object', (raw) => raw.info('P %s', bag()), 'P [object Object]'],
   ['%s of a class with toString', (raw) => raw.info('P %s', new Named()), 'P Named#7'],
   ['%s of an array', (raw) => raw.info('P %s', [1, bag()]), 'P 1,[object Object]'],
@@ -204,7 +204,7 @@ function messageRows(): void {
     })
   })
 
-  it.each(UNCHANGED)('writes %s as before', async (_name, emit, expected) => {
+  it.each(AS_PINO_WRITES)('writes %s as Pino does', async (_name, emit, expected) => {
     expect(await messageOf(emit)).toStrictEqual(expected)
   })
 }

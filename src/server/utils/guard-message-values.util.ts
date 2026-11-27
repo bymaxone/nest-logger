@@ -5,7 +5,7 @@
  * which Pino serializes with the `stringify` of the format options of the instance. And as the whole
  * message, passed as such or taken by Pino from `err.message`, which it hands to the serializer
  * registered under `msg`. The walk by name is composed into both, so the redact paths of Pino still
- * apply to a placeholder. `%s` and `%d` print what they printed before.
+ * apply to a placeholder. `%s` and `%d` print what Pino prints.
  *
  * The format options are reached through `pino.symbols`. A Pino that does not have them in the shape
  * this module expects is refused when the logger is built.
