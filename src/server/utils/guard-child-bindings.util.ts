@@ -110,7 +110,7 @@ function guardOptions(options: unknown, guard: ChildGuard): unknown {
  *
  * @param logger - The Pino instance the factory built.
  * @param redaction - The redaction of the module.
- * @param options - The strategy. Under `'paths'`, bindings are left to Pino's redact paths, and the
+ * @param options - The strategy. Under `'paths'`, bindings are passed on as they are, so the
  *   formatters and serializers of the child options receive the objects the caller passed.
  * @returns `logger`.
  */
