@@ -82,11 +82,19 @@ function guardFormatters(formatters: object, guard: ChildGuard): object {
 /**
  * The serializers of a child's options, each with its output redacted like a module serializer's.
  * Only string keys are copied: Pino 10 runs no serializer under a symbol.
+ *
+ * When `keepsMessageWalk`, a `msg` entry that holds no serializer is left out, because Pino would
+ * put it in the place of the walk of the message that the child inherits.
  */
-function guardSerializers(serializers: object, redact: Redactor): object {
+function guardSerializers(
+  serializers: object,
+  redact: Redactor,
+  keepsMessageWalk: boolean
+): object {
   const source = serializers as Record<PropertyKey, unknown>
   const guarded: Record<PropertyKey, unknown> = {}
   for (const key in source) {
+    if (keepsMessageWalk && key === 'msg' && !source[key]) continue
     const value = followedBy(source[key], (output) => redact(output))
     defineProperty(guarded, key, bareDescriptor({ value, enumerable: true }))
   }
@@ -94,7 +102,7 @@ function guardSerializers(serializers: object, redact: Redactor): object {
 }
 
 /** The options of a child with the module's redaction composed into what they replace. */
-function guardOptions(options: unknown, guard: ChildGuard): unknown {
+function guardOptions(options: unknown, guard: ChildGuard, keepsMessageWalk: boolean): unknown {
   if (typeof options !== 'object' || options === null) return options
   const { formatters, serializers } = options as ChildLoggerOptions
   const replaced: Record<string, unknown> = {}
@@ -103,7 +111,8 @@ function guardOptions(options: unknown, guard: ChildGuard): unknown {
     replaced['formatters'] = guardFormatters(formatters, guard)
   }
   if (hasOwn(options, 'serializers') && serializers) {
-    replaced['serializers'] = guardSerializers(serializers, guard.redactSerialized)
+    const redact = guard.redactSerialized
+    replaced['serializers'] = guardSerializers(serializers, redact, keepsMessageWalk)
   }
   return replacing(options, replaced)
 }
@@ -126,12 +135,11 @@ export function guardChildBindings(
   redaction: ChildGuard,
   options: { readonly redactStrategy: 'names' | 'paths' }
 ): PinoLogger {
-  const guard =
-    options.redactStrategy === 'names' ? redaction : { ...redaction, redactBindings: asPassed }
-  const guardChildMessages =
-    options.redactStrategy === 'names'
-      ? guardMessageValues(logger, redaction.redactSerialized)
-      : undefined
+  const byName = options.redactStrategy === 'names'
+  const guard = byName ? redaction : { ...redaction, redactBindings: asPassed }
+  const guardChildMessages = byName
+    ? guardMessageValues(logger, redaction.redactSerialized)
+    : undefined
   const nativeChild: unknown = logger.child
   const nativeSetBindings: unknown = logger.setBindings
   // Missing bindings are passed on as they are, so Pino answers for them.
@@ -141,7 +149,7 @@ export function guardChildBindings(
   const child = function (this: PinoLogger, bindings: unknown, options?: unknown): unknown {
     const built = apply(nativeChild as AnyCallable, this, [
       redacted(bindings),
-      guardOptions(options, guard)
+      guardOptions(options, guard, byName)
     ])
     guardChildMessages?.(built as object)
     return built

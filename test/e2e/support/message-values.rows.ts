@@ -152,6 +152,40 @@ const FROM_ERR: ReadonlyArray<readonly [string, (raw: Raw) => void]> = [
   ]
 ]
 
+/** A `msg` serializer of the host that keeps the message and adds a field to it. */
+const wrap = (message: unknown): unknown => ({ message, token: SECRET })
+
+/** What the walk leaves of {@link wrap} over {@link bag}. */
+const WRAPPED = { message: JSON.parse(CENSORED) as unknown, token: '[REDACTED]' }
+
+/** The rows for the serializers of the host and of a child. */
+function serializerRows(): void {
+  it('walks what a msg serializer of the module options returns', async () => {
+    const message = await messageOf((raw) => raw.info({}, bag()), { serializers: { msg: wrap } })
+
+    expect(message).toStrictEqual(WRAPPED)
+  })
+
+  it('walks what a msg serializer of the child options returns', async () => {
+    const message = await messageOf((raw) =>
+      raw.child({}, { serializers: { msg: wrap } }).info({}, bag())
+    )
+
+    expect(message).toStrictEqual(WRAPPED)
+  })
+
+  it.each<[string, object]>([
+    ['serializers of its own', { other: String }],
+    ['an undefined msg serializer', { msg: undefined }],
+    ['a null msg serializer', { msg: null }],
+    ['a false msg serializer', { msg: false }]
+  ])('keeps the walk in a child with %s', async (_name, serializers) => {
+    const message = await messageOf((raw) => raw.child({}, { serializers }).info({}, bag()))
+
+    expect(message).toStrictEqual(JSON.parse(CENSORED))
+  })
+}
+
 /** The rows that compare a whole message. */
 function messageRows(): void {
   it.each(PLACEHOLDERS)('redacts %s', async (_name, emit, expected) => {
@@ -168,22 +202,6 @@ function messageRows(): void {
       token: '[REDACTED]',
       kept: 'visible'
     })
-  })
-
-  it('redacts what a msg serializer of the host returns', async () => {
-    const echo = (message: unknown): unknown => message
-    const lines = await linesOf(
-      (raw) => {
-        raw.info({}, bag())
-        raw.child({}, { serializers: { msg: echo } }).info({}, bag())
-      },
-      { serializers: { msg: echo } }
-    )
-
-    expect(lines.map((line) => line['msg'])).toStrictEqual([
-      JSON.parse(CENSORED),
-      JSON.parse(CENSORED)
-    ])
   })
 
   it.each(UNCHANGED)('writes %s as before', async (_name, emit, expected) => {
@@ -265,6 +283,7 @@ function strategyRows(): void {
 export function describeMessageValues(label: string): void {
   describe(`Logger E2E — objects in the message (${label})`, () => {
     messageRows()
+    serializerRows()
     boundaryRows()
     strategyRows()
   })

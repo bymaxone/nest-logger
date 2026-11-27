@@ -221,6 +221,25 @@ describe('guardChildBindings', () => {
     expect(line['account']).toBe('a1')
   })
 
+  it.each([
+    ['names', 'serializedMark:parent:m'],
+    ['paths', 'm']
+  ] as const)(
+    "under '%s', a child with an undefined msg serializer writes '%s'",
+    (strategy, expected) => {
+      const { logger, lines } = build(strategy)
+      const parent = logger.child(
+        {},
+        { serializers: { msg: (m: unknown) => `parent:${String(m)}` } }
+      )
+      const msg = undefined as never
+
+      parent.child({}, { serializers: { msg } }).info('m')
+
+      expect(lines()[0]?.['msg']).toBe(expected)
+    }
+  )
+
   it('reads members the options inherit, and copies a frozen object', () => {
     class Options {
       get level(): string {
