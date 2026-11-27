@@ -360,13 +360,11 @@ By design, NestJS does not pass `Request` to services. To propagate `requestId`,
 `RequestIdMiddleware` opens the scope; the interceptor does not.
 
 ```typescript
-// RequestIdMiddleware.use() in pseudo-code:
-logContext.run(
-  context, // the enclosing scope's fields, then:
-  // requestId: set when one is resolved
-  // tenantId:  read from the request only when the enclosing scope has none
-  () => next() // every log inside this callback automatically carries the context
-)
+// RequestIdMiddleware.use(), on the mount that opens the scope, in pseudo-code:
+const context = pick(logContext.getStore(), ['requestId', 'tenantId']) // a new object; nothing else
+if (requestId !== undefined) context.requestId = requestId // resolved from this request
+if (context.tenantId === undefined && tenantId !== undefined) context.tenantId = tenantId
+logContext.run(context, () => next()) // every log inside this callback carries the context
 ```
 
 The Pino mixin reads the context via `LogContextService.getStore()` and merges it into the log object.
