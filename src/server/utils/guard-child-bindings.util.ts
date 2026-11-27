@@ -13,7 +13,7 @@
 import type { ChildLoggerOptions, Logger as PinoLogger } from 'pino'
 
 import { bareDescriptor } from './bare-descriptor.util'
-import { binaryAsField, holdsBinary } from './binary-values.util'
+import { binaryAsField, needsTheWalk } from './binary-values.util'
 import {
   guardMessageValues,
   messageSerializers,
@@ -52,12 +52,12 @@ function followedBy(run: unknown, then: Callable): unknown {
 
 /**
  * The redaction of bindings under `strategy`. Under `'paths'` they are Pino's to redact, and are
- * walked only when they hold a binary value.
+ * walked only where {@link needsTheWalk} says so.
  */
 function bindingsRedactor(strategy: 'names' | 'paths', redact: Redactor): Redactor {
   return (bindings: unknown): unknown => {
     const fields = binaryAsField(bindings)
-    return strategy === 'names' || holdsBinary(fields) ? redact(fields, true) : fields
+    return strategy === 'names' || needsTheWalk(fields) ? redact(fields, true) : fields
   }
 }
 
@@ -148,7 +148,7 @@ function guardOptions(
  *
  * @param logger - The Pino instance the factory built.
  * @param redaction - The redaction of the module.
- * @param options - The strategy. Under `'paths'`, bindings and messages that hold no binary value
+ * @param options - The strategy. Under `'paths'`, bindings and messages that {@link needsTheWalk} leaves
  *   are passed on as they are, so the formatters and serializers of the child options receive the
  *   objects the caller passed.
  * @returns `logger`.

@@ -259,6 +259,135 @@ const ENTRIES: ReadonlyArray<(raw: Raw, value: unknown) => void> = [
   }
 ]
 
+/** A value that only its `toJSON` turns into what `make` gives. */
+const behind = (make: () => unknown): object => ({ toJSON: make })
+
+/** What a `toJSON` returns, with what the line holds in its place. */
+const RETURNED: ReadonlyArray<readonly [string, () => unknown, string]> = [
+  ['a Buffer', bytes, MARKER],
+  ['a typed array', () => new Uint16Array([90, 90]), '[Binary 4 bytes]'],
+  ['a DataView', () => new DataView(new ArrayBuffer(3)), '[Binary 3 bytes]'],
+  ['a nested Buffer', () => ({ b: bytes() }), MARKER]
+]
+
+/** An instance whose class has the `toJSON`. */
+class Held {
+  toJSON(): unknown {
+    return bytes()
+  }
+}
+
+/** Every way in that writes what a `toJSON` returns. */
+const TO_JSON_ENTRIES: ReadonlyArray<readonly [string, (raw: Raw, value: object) => void]> = [
+  ['%j', (raw, value) => raw.info('%j', value)],
+  ['a member of %o', (raw, value) => raw.info('%o', { t: value })],
+  ['%O', (raw, value) => raw.info('%O', [value])],
+  ['an object message', (raw, value) => raw.info({}, value)],
+  ['a member of the msg field', (raw, value) => raw.info({ msg: { t: value } })],
+  ['a member of the merge object', (raw, value) => raw.info({ t: value }, 'm')],
+  [
+    'a field of the err',
+    (raw, value) => raw.info({ err: Object.assign(new Error('e'), { t: value }) })
+  ],
+  ['a child binding', (raw, value) => raw.child({ t: value }).info('c')],
+  [
+    'setBindings',
+    (raw, value) => {
+      const child = raw.child({})
+      child.setBindings({ t: value })
+      child.info('c')
+    }
+  ]
+]
+
+/** Every way in, with an object whose getter or `toJSON` calls `read`. */
+const READ_ONCE: ReadonlyArray<readonly [string, (raw: Raw, value: object) => void]> = [
+  ...TO_JSON_ENTRIES,
+  ['the merge object', (raw, value) => raw.info(value, 'm')],
+  ['child bindings', (raw, value) => raw.child(value).info('c')],
+  [
+    'setBindings itself',
+    (raw, value) => {
+      const child = raw.child({})
+      child.setBindings(value)
+      child.info('c')
+    }
+  ]
+]
+
+/** Declares the rows for what a `toJSON` returns. */
+function describeReturned(pinoName: string): void {
+  describe.each(['names', 'paths'] as const)(
+    `what the host's own code answers under '%s' (${pinoName})`,
+    (redactStrategy) => {
+      it.each(RETURNED)(
+        'writes the size of %s that a toJSON returns',
+        async (_name, make, size) => {
+          const values = [behind(make), behind(() => behind(make))]
+          const lines = await linesOf(
+            values.flatMap((value) =>
+              TO_JSON_ENTRIES.map(
+                ([, entry]) =>
+                  (raw: Raw) =>
+                    entry(raw, value)
+              )
+            ),
+            { redactStrategy }
+          )
+
+          expect(lines).toHaveLength(TO_JSON_ENTRIES.length * values.length)
+          for (const line of lines) expect(line).toContain(size.replace(/"/g, ''))
+        }
+      )
+
+      it('writes the size of what a toJSON of a class returns', async () => {
+        const lines = await linesOf(
+          TO_JSON_ENTRIES.map(
+            ([, entry]) =>
+              (raw: Raw) =>
+                entry(raw, new Held())
+          ),
+          { redactStrategy }
+        )
+
+        for (const line of lines) expect(line).toContain(MARKER)
+      })
+    }
+  )
+}
+
+/** Declares the rows for how often the host's code runs. */
+function describeReads(pinoName: string): void {
+  describe.each(['names', 'paths'] as const)(
+    `the host's own code under '%s' (${pinoName})`,
+    (redactStrategy) => {
+      it.each(READ_ONCE)('reads a getter and a toJSON once through %s', async (_name, entry) => {
+        let getter = 0
+        let toJson = 0
+        const value = {
+          get a(): number {
+            getter += 1
+            return 1
+          }
+        }
+        const other = {
+          t: {
+            toJSON(): number {
+              toJson += 1
+              return 1
+            }
+          }
+        }
+
+        await linesOf([(raw) => entry(raw, value), (raw) => entry(raw, other)], { redactStrategy })
+
+        expect(getter).toBeLessThanOrEqual(1)
+        expect(toJson).toBeLessThanOrEqual(1)
+      })
+    }
+  )
+}
+
 /** Declares one row for each binary shape. */
 function describeShapes(pinoName: string): void {
   describe.each(['names', 'paths'] as const)(
@@ -296,6 +425,10 @@ export function describeBinaryValues(pinoName: string): void {
   )
 
   describeShapes(pinoName)
+
+  describeReturned(pinoName)
+
+  describeReads(pinoName)
 
   describe.each(['names', 'paths'] as const)(
     `an object that never ends under '%s' (${pinoName})`,

@@ -6,7 +6,7 @@
  * message, passed as such or taken by Pino from `err.message`, which it hands to the serializer
  * registered under `msg`. The walk by name is composed into both, so the redact paths of Pino still
  * apply to a placeholder. `%s` and `%d` print what Pino prints. Under `'paths'` the walk is applied
- * only to what holds a binary value, because Pino's redact paths cannot copy a `Buffer`.
+ * only where {@link needsTheWalk} says so, for the binary values Pino would write or cannot copy.
  *
  * The format options are reached through `pino.symbols`. A Pino that does not have them in the shape
  * this module expects is refused when the logger is built.
@@ -15,7 +15,7 @@ import pino from 'pino'
 import type { Logger as PinoLogger } from 'pino'
 
 import { bareDescriptor } from './bare-descriptor.util'
-import { holdsBinary } from './binary-values.util'
+import { needsTheWalk } from './binary-values.util'
 import type { MessageRedactor } from './redact-by-name.util'
 
 const apply = Reflect.apply
@@ -86,7 +86,7 @@ function messageWalk(
 ): (value: unknown) => unknown {
   const walked = walkedWith(redact)
   if (strategy === 'names') return walked
-  return (value) => (holdsBinary(value) ? walked(value) : value)
+  return (value) => (needsTheWalk(value) ? walked(value) : value)
 }
 
 /**
@@ -95,8 +95,8 @@ function messageWalk(
  *
  * @param strategy - The redaction strategy of the module.
  * @param redact - The redactor that walks by name.
- * @param redactRecord - The redactor of the record under `strategy`, which walks what holds a binary
- *   value under `'paths'`.
+ * @param redactRecord - The redactor of the record under `strategy`, which under `'paths'` walks what
+ *   {@link needsTheWalk} says.
  * @returns The entry to spread into the serializers of Pino.
  */
 export function messageSerializers(

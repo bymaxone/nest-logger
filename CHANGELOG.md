@@ -17,18 +17,20 @@ heading here.
 ### Breaking
 
 - A binary value (a `Buffer`, a typed array or a `DataView`) passed to the raw logger as the merge object, or to `child()` or `setBindings()` as the bindings, is written as one field, `binary`, with its size. Migration: pass it under a key of your own in the form you want to read, for example `raw.info({ digest: buffer.toString('hex') })`.
-- Under `redactStrategy: 'paths'`, unless every name redaction is off, a message, a placeholder object or bindings of the raw logger that hold a binary value are walked before Pino writes them. The other values in them are then written as the walk writes them (a `Map` as `{}`, for one), and `formatters.bindings` and the serializers of the bindings receive that copy. So is an object with more than 200,000 members to look through for one, or one that cannot be read there; past the limits of the walk, parts are replaced by a marker. Migration: convert binary values before you pass them, for example `buffer.toString('hex')`, and pass the part of a very large object that you need.
+- Under `redactStrategy: 'paths'`, unless every name redaction is off, a message, a placeholder object or bindings of the raw logger are walked before Pino writes them when they hold a binary value, a getter, a `toJSON` other than the one of a `Date`, or a Proxy. The other values in them are then written as the walk writes them (a `Map` as `{}`, for one), and `formatters.bindings` and the serializers of the bindings receive that copy. So is an object with more than 200,000 members to look through for one, or one that cannot be read there; past the limits of the walk, parts are replaced by a marker. Migration: convert binary values before you pass them, for example `buffer.toString('hex')`, and pass the part of a very large object that you need.
 - Under `redactStrategy: 'paths'` too, the logger now refuses to start with `LOGGER_PINO_UNSUPPORTED` when `pino.symbols.formatOptsSym` is missing. Tested on `pino` 10.0.0 and 10.4.0.
 - A `DataView` whose bytes can no longer be read, because its buffer was transferred or shrank, is written as `[Binary 0 bytes]`, as a typed array there is, where the logger writes a binary value as its size. It used to be reported as a redaction failure in some places. Migration: if you watch for `LOGGER_REDACTION_FAILED` to find such a view, check the buffer before you log it.
 
 ### Fixed
 
 - Under `redactStrategy: 'paths'`, a `Buffer` in a message, a placeholder or bindings of the raw logger could make Pino throw a `TypeError` into the caller, with the default redact paths or with a wildcard path in `redactPaths`. It is now written as its size.
+- A binary value that only a `toJSON` returns is written as its size in the message, placeholders and bindings of the raw logger under `'paths'` too, and a getter there is read once.
 
 ### Documentation
 
 - The `msg` taken from an object message is escaped after `maxStringLength` cuts it, so it can be longer than the limit plus 12.
 - A message written through `getRawLogger()` is not capped at 16384 characters.
+- `%s` writes a Buffer as the text its bytes decode to, and `%s`, `%d`, `%i` and `%f` throw on a typed array (not a Buffer) whose bytes can no longer be read: both are Pino's own formatting.
 
 ## [1.4.36] - 2026-11-27
 

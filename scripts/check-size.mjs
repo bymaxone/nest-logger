@@ -33,6 +33,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-27 — server: 50,554 B real -> 50,584 B budget (49.40 KiB), measured + 30 by the same
+//     rule. What the bytes bought: under 'paths', a getter, a `toJSON` or a Proxy in the message or
+//     bindings of the raw logger is walked, so a binary value it answers with is written as its size.
 //   - 2026-11-27 — server: 50,332 B real -> 50,362 B budget (49.18 KiB), measured + 30 by the same
 //     rule. What the bytes bought: a binary value reaching the raw logger is written as its size, and
 //     under 'paths' a value holding one is walked before Pino's redact paths copy it.
@@ -423,7 +426,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 50_362 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 50_584 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',

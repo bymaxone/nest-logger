@@ -2,16 +2,18 @@
  * @fileoverview Finding binary values where Pino's redact paths would copy them.
  * @layer server/utils
  */
-import { binaryAsField, holdsBinary } from './binary-values.util'
+import { types } from 'node:util'
+
+import { binaryAsField, needsTheWalk } from './binary-values.util'
 import { REDACT_MAX_VISITS } from './redact-by-name.util'
 
-describe('holdsBinary', () => {
+describe('needsTheWalk', () => {
   it.each<readonly [string, unknown]>([
     ['a Buffer', Buffer.from('x')],
     ['a DataView', new DataView(new ArrayBuffer(1))],
     ['a member of a member', { a: [{ b: new Uint8Array(1) }] }]
   ])('finds %s', (_name, value) => {
-    expect(holdsBinary(value)).toBe(true)
+    expect(needsTheWalk(value)).toBe(true)
   })
 
   it.each<readonly [string, unknown]>([
@@ -21,53 +23,85 @@ describe('holdsBinary', () => {
     ['an ArrayBuffer, which is not a view', new ArrayBuffer(1)],
     ['a member that is not enumerable', Object.defineProperty({}, 'a', { value: Buffer.from('x') })]
   ])('finds none in %s', (_name, value) => {
-    expect(holdsBinary(value)).toBe(false)
+    expect(needsTheWalk(value)).toBe(false)
   })
 
-  it('reads a shared or a cyclic member once', () => {
-    let reads = 0
-    const shared = {
-      get a(): number {
-        reads += 1
-        return 1
-      }
-    }
+  it('looks at a shared or a cyclic member once, so that a cycle ends', () => {
+    const shared = { a: 1 }
     const cycle: Record<string, unknown> = { shared, again: shared }
     cycle['self'] = cycle
 
-    expect(holdsBinary(cycle)).toBe(false)
-    expect(reads).toBe(1)
+    expect(needsTheWalk(cycle)).toBe(false)
   })
 
   it('answers that what it cannot read holds one', () => {
-    const hostile = {
-      get a(): never {
-        throw new Error('no')
-      }
-    }
+    const failing = jest.spyOn(types, 'isProxy').mockImplementation(() => {
+      throw new Error('no')
+    })
 
-    expect(holdsBinary(hostile)).toBe(true)
+    expect(needsTheWalk({})).toBe(true)
+    failing.mockRestore()
   })
 
   it.each([
     ['stops at the limit of members, which it reads whole', REDACT_MAX_VISITS, false],
     ['leaves what has more members than the limit to the walk', REDACT_MAX_VISITS + 1, true]
   ])('%s', (_name, members, expected) => {
-    expect(holdsBinary(Array.from({ length: members }, () => 0))).toBe(expected)
+    expect(needsTheWalk(Array.from({ length: members }, () => 0))).toBe(expected)
   })
 
-  it('ends a chain of getters that makes a new object on every read', () => {
-    let reads = 0
-    const link = (): object => ({
-      get next(): unknown {
-        reads += 1
-        // Ends on its own well past the limit, so that a scan without one fails and does not hang.
-        return reads > REDACT_MAX_VISITS * 2 ? null : link()
+  it('calls no getter and no toJSON', () => {
+    let calls = 0
+    const count = (): number => (calls += 1)
+    const getter = {
+      get a(): number {
+        return count()
       }
-    })
+    }
 
-    expect(holdsBinary(link())).toBe(true)
-    expect(reads).toBe(REDACT_MAX_VISITS)
+    expect(needsTheWalk(getter)).toBe(true)
+    expect(needsTheWalk({ t: { toJSON: count } })).toBe(true)
+    expect(needsTheWalk(Object.defineProperty({}, 'toJSON', { get: count }))).toBe(true)
+    expect(calls).toBe(0)
+  })
+
+  it.each<readonly [string, unknown, boolean]>([
+    [
+      'a toJSON of a class',
+      new (class Held {
+        toJSON(): number {
+          return 1
+        }
+      })(),
+      true
+    ],
+    ['a toJSON of a function', Object.assign(() => 1, { toJSON: () => 1 }), true],
+    ['a function without one', { f: () => 1 }, false],
+    ['a Proxy', new Proxy({}, {}), true],
+    ['a Proxy among the prototypes', Object.create(new Proxy({}, {})) as object, true],
+    ['a toJSON that is no function', { toJSON: 'text' }, false],
+    [
+      'a setter alone',
+      Object.defineProperty({}, 'a', {
+        set: (next: unknown) => {
+          expect(next).toBeDefined()
+        },
+        enumerable: true
+      }),
+      true
+    ],
+    ['a Date', { at: new Date(0) }, false],
+    ['a toJSON of its own on a Date', Object.assign(new Date(0), { toJSON: () => 1 }), true],
+    ['an object without a prototype', Object.create(null) as object, false]
+  ])('answers for %s', (_name, value, expected) => {
+    expect(needsTheWalk(value)).toBe(expected)
+  })
+
+  it('answers that a chain of prototypes with no end in sight may run code', () => {
+    let deep: object = {}
+    for (let hop = 0; hop < 300; hop++) deep = Object.create(deep) as object
+
+    expect(needsTheWalk(deep)).toBe(true)
   })
 })
 
