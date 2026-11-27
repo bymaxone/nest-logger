@@ -20,11 +20,11 @@ heading here.
 
 ### Changed
 
-- The `bindings` formatter and the `serializers` of child options receive the redacted copy of the bindings, as a serializer already does for a record. A value in bindings of the raw logger is written as `service.child()` writes it.
+- Under `redactStrategy: 'names'`, the `bindings` formatter and the `serializers` of child options receive the redacted copy of the bindings, as a serializer already does for a record. A value in bindings of the raw logger is written as `service.child()` writes it.
 
 ### Documentation
 
-- **The message text is not redacted**: a value the raw logger formats into it is written as it is. The `redact` and `msgPrefix` options of a child are applied as you set them.
+- **The message text is not redacted by name**: a value the raw logger formats into it is not walked. The `redact` and `msgPrefix` options of a child are applied as you set them.
 
 ## [1.4.34] - 2026-11-27
 
