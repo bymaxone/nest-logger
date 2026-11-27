@@ -39,12 +39,27 @@ function requiredSymbol(value: unknown): symbol {
   return value
 }
 
-/** `redact` for what can hold a field; a primitive has no name to match. */
+/**
+ * `redact` for what can hold a field; a primitive has no name to match. An `Error` is given no
+ * text that Pino would not write for it.
+ */
 function walkedWith(redact: Redactor): (value: unknown) => unknown {
   return (value) =>
     (typeof value === 'object' && value !== null) || typeof value === 'function'
-      ? redact(value)
+      ? redact(value, false, true)
       : value
+}
+
+/** A message the walk leaves nothing of: Pino writes no `msg` for a function. */
+const NO_MESSAGE: unknown = Function.prototype
+
+/** {@link walkedWith} as a serializer, whose `undefined` Pino would write into the line as is. */
+function serializerOf(redact: Redactor): (message: unknown) => unknown {
+  const walked = walkedWith(redact)
+  return (message) => {
+    const written = walked(message)
+    return written === undefined ? NO_MESSAGE : written
+  }
 }
 
 /**
@@ -59,7 +74,7 @@ export function messageSerializers(
   strategy: 'names' | 'paths',
   redact: Redactor
 ): { msg?: (message: unknown) => unknown } {
-  return strategy === 'names' ? { msg: walkedWith(redact) } : {}
+  return strategy === 'names' ? { msg: serializerOf(redact) } : {}
 }
 
 /** Give `target` its own value under `key`, writable so that Pino can still replace it. */

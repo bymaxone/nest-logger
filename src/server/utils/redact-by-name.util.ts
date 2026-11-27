@@ -175,8 +175,11 @@ function rulesInside(
  *   `toJSON` method, because doing so would replace the entire record with that
  *   method's return value; nested values and serializer outputs do reach
  *   `JSON.stringify` and keep it.
+ * @param inMessage - `true` when the value goes into the message of an entry: an `Error` in it is
+ *   written without its `type`, `message`, stack and cause chain, and one that cannot be read as
+ *   `{}`.
  */
-export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
+export type Redactor = (value: unknown, isRecordRoot?: boolean, inMessage?: boolean) => unknown
 
 /** What the `err` serializer returned: its `message` and stack header are already censored. */
 const errorOutputs = new WeakSet<object>()
@@ -228,6 +231,8 @@ export interface RedactRules {
   readonly maxVisits: number
   /** Which own fields of an `Error` are written. */
   readonly ownFields: OwnFieldPolicy
+  /** Whether the text of an `Error` is left out: the walk is of a message. */
+  readonly inMessage?: boolean
   /** Containers this call has visited, counted against {@link RedactRules.maxVisits}. */
   readonly visits: { count: number }
 }
@@ -367,6 +372,8 @@ function walkError(
   try {
     return walkObject(error, rules, depth, ancestors, honorToJson, inSerialized)
   } catch {
+    // The sanitized node carries the message and the stack, which a message is not given.
+    if (rules.inMessage === true) return {}
     // The sanitized node replaces an `Error` that cannot be read: it never throws, copies no
     // field it could not read and marks what it lost. Under a serialized key the same node is
     // what the serializer receives.
@@ -621,7 +628,7 @@ function walkProperties(
           )
     )
   }
-  if (asData) {
+  if (asData && rules.inMessage !== true) {
     const host = errorPartsHost(rules, ancestors, inSerialized)
     addErrorParts(copy, value as Error, without(keys, omitted), host, depth)
   }
@@ -731,11 +738,12 @@ export function createNameRedactor(
     ownFields
   }
   const insideNames = errorOnlyNames === undefined ? undefined : foldedNames(errorOnlyNames)
-  return (value: unknown, isRecordRoot = false): unknown => {
+  return (value: unknown, isRecordRoot = false, inMessage = false): unknown => {
     try {
       const visits = { count: 0 }
       const call: RedactRules = {
         ...rules,
+        inMessage,
         headerKept: typeof value === 'object' && value !== null && errorOutputs.has(value),
         visits,
         insideErrors: rulesInside(rules, insideNames, visits)

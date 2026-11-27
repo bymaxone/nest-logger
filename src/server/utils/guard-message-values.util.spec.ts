@@ -53,6 +53,28 @@ describe('messageSerializers', () => {
     expect(messages()).toStrictEqual(['walked'])
   })
 
+  it('tells the redactor that the value goes into the message', () => {
+    const redact = jest.fn(mark)
+    const { logger } = build(redact)
+    guardMessageValues(logger, redact)
+
+    log(logger, '%o', { a: 1 })
+    log(logger, {}, { b: 2 })
+
+    expect(redact.mock.calls).toStrictEqual([
+      [{ a: 1 }, false, true],
+      [{ b: 2 }, false, true]
+    ])
+  })
+
+  it('writes no msg for a message the walk leaves nothing of', () => {
+    const { logger, messages } = build(() => undefined)
+
+    log(logger, {}, { a: 1 })
+
+    expect(messages()).toStrictEqual([undefined])
+  })
+
   it('leaves primitives as they are', () => {
     const redact = jest.fn(mark)
     const { logger, messages } = build(redact)

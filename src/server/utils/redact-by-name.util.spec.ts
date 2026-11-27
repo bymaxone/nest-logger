@@ -5,6 +5,7 @@
  *
  * Layer: server/utils, tests.
  */
+import { createOwnFieldPolicy } from './own-field-policy.util'
 import {
   REDACT_CIRCULAR,
   REDACT_DEPTH_EXCEEDED,
@@ -332,5 +333,38 @@ describe('createNameRedactor', () => {
     const result = redact(nest(levels, { password: 'SECRET' }))
     expect(JSON.stringify(result)).not.toContain('SECRET')
     expect(JSON.stringify(result)).toContain(REDACT_DEPTH_EXCEEDED)
+  })
+})
+
+describe('createNameRedactor on a value of a message', () => {
+  const safe = createNameRedactor(
+    ['password'],
+    CENSOR,
+    undefined,
+    undefined,
+    createOwnFieldPolicy('safe', [])
+  )
+  const failure = (): Error => Object.assign(new Error('SECRET'), { code: 'E1' })
+
+  /* The message of an entry is given no text of an `Error` that Pino would not write for it. */
+  it('should leave the type, message and stack of an Error out', () => {
+    expect(safe({ cause: failure() }, false, true)).toStrictEqual({ cause: { code: 'E1' } })
+  })
+
+  /* Everywhere else under 'safe' the same `Error` is written with them. */
+  it('should keep them for a value that is not of a message', () => {
+    expect(safe({ cause: failure() })).toMatchObject({ cause: { message: 'SECRET' } })
+  })
+
+  /* The stand-in for an unreadable `Error` carries its text, so a message gets nothing of it. */
+  it.each([redact, safe])('should write an Error that cannot be read as {}', (walk) => {
+    const hostile = Object.defineProperty(failure(), 'boom', {
+      enumerable: true,
+      get: (): never => {
+        throw new Error('hostile')
+      }
+    })
+
+    expect(walk(hostile, false, true)).toStrictEqual({})
   })
 })

@@ -279,6 +279,61 @@ function strategyRows(): void {
   })
 }
 
+/** An `Error` whose text must stay out of the message, with a field of each kind. */
+const failure = (): Error =>
+  Object.assign(new Error(SECRET), { code: 'E1', password: SECRET, detail: 'own' })
+
+/** An `Error` that cannot be read. */
+const unreadable = (): Error =>
+  Object.defineProperty(new Error(SECRET), 'boom', {
+    enumerable: true,
+    get: (): never => {
+      throw new Error('hostile')
+    }
+  })
+
+const ERRORS: ReadonlyArray<readonly [string, (raw: Raw) => void, unknown]> = [
+  ['%o', (raw) => raw.info('P %o', failure()), 'P {"code":"E1"}'],
+  ['%j nested', (raw) => raw.info('P %j', { cause: failure() }), 'P {"cause":{"code":"E1"}}'],
+  ['the object message', (raw) => raw.info({ a: 1 }, failure()), { code: 'E1' }],
+  ['err.message', (raw) => raw.info({ err: { message: failure() } }), { code: 'E1' }],
+  ['%o when it cannot be read', (raw) => raw.info('P %o', unreadable()), 'P {}']
+]
+
+const FUNCTIONS: ReadonlyArray<
+  readonly [string, (raw: Raw) => void, Partial<BymaxLoggerModuleOptions>]
+> = [
+  [
+    "a function under 'safe'",
+    (raw) => raw.info({}, function handler() {}),
+    { errorOwnFields: 'safe' }
+  ],
+  [
+    "an err.message function under 'safe'",
+    (raw) => raw.info({ err: { message: function handler() {} } }),
+    { errorOwnFields: 'safe' }
+  ],
+  ['a Proxy of a function', (raw) => raw.info({}, new Proxy(function handler() {}, {})), {}]
+]
+
+/** The rows for an `Error` and a function in the message. */
+function errorAndFunctionRows(): void {
+  it.each(ERRORS)("writes no text of an Error under 'safe': %s", async (_name, emit, expected) => {
+    expect(await messageOf(emit, { errorOwnFields: 'safe' })).toStrictEqual(expected)
+  })
+
+  it('writes no text of an unreadable Error by default', async () => {
+    expect(await messageOf((raw) => raw.info('P %o', unreadable()))).toBe('P {}')
+  })
+
+  it.each(FUNCTIONS)('writes a valid line with no msg for %s', async (_name, emit, extra) => {
+    const lines = await linesOf(emit, extra)
+
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).not.toHaveProperty('msg')
+  })
+}
+
 /** Declare the rows under `label`. */
 export function describeMessageValues(label: string): void {
   describe(`Logger E2E — objects in the message (${label})`, () => {
@@ -286,5 +341,6 @@ export function describeMessageValues(label: string): void {
     serializerRows()
     boundaryRows()
     strategyRows()
+    errorAndFunctionRows()
   })
 }
