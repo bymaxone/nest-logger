@@ -297,8 +297,8 @@ export const {
 4. Handler runs (every log inside has requestId/tenantId automatically) →
 5. Response 2xx → HTTP_REQUEST_SUCCESS { statusCode, duration }
    Response 3xx → HTTP_REQUEST_REDIRECT
-   Response 4xx → HTTP_REQUEST_CLIENT_ERROR (warn)
-   Response 5xx → HTTP_REQUEST_SERVER_ERROR (error)
+   Thrown value → HTTP_REQUEST_CLIENT_ERROR (warn) or HTTP_REQUEST_SERVER_ERROR (error), see 7.1
+   4xx or 5xx set without a throw → no terminal entry from the interceptor
 ```
 
 ### 2.5 OpenTelemetry integration (optional)
@@ -499,7 +499,7 @@ export interface BymaxLoggerModuleOptions {
   /**
    * PII paths to redact, added to the default coverage.
    * Pino syntax: 'a.b.c', '*.token', 'req.headers.authorization'.
-   * Under the default `redactStrategy: 'names'` each path's last segment is also censored at any depth.
+   * Under the default `redactStrategy: 'names'` each path's last name (not a wildcard or index) is also censored at any depth.
    * @see https://github.com/pinojs/pino/blob/main/docs/redaction.md
    */
   redactPaths?: string[]
@@ -582,30 +582,30 @@ export interface BymaxLoggerModuleOptions {
 
 ### 4.2 Options table and defaults
 
-| Option                              | Type                          | Default                                                                  | Notes                                                                                                            |
-| ----------------------------------- | ----------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `service.name`                      | `string`                      | **required**                                                             | E.g., `'bymax-finance-backend'`                                                                                  |
-| `service.version`                   | `string`                      | **required**                                                             | Typically `process.env.RELEASE_SHA ?? 'dev'`                                                                     |
-| `level`                             | `LogLevel`                    | `'info'` prod, `'debug'` other                                           | Values: `'fatal' \| 'error' \| 'warn' \| 'info' \| 'debug' \| 'trace'`                                           |
-| `isGlobal`                          | `boolean`                     | `true`                                                                   | `@Global()` for LoggerModule — mapped to Nest's `DynamicModule.global` internally                                |
-| `shouldUseAsNestLogger`             | `boolean`                     | —                                                                        | Deprecated and not read; call `BymaxLoggerModule.useNestLogger(app)`                                             |
-| `redactPaths`                       | `string[]`                    | `[]` (added to the default coverage)                                     | Pino `redact` syntax; under the default `redactStrategy: 'names'` the last segment is also censored at any depth |
-| `redactCensor`                      | `string`                      | `'[REDACTED]'`                                                           | String that replaces sensitive values                                                                            |
-| `shouldDisableDefaultRedact`        | `boolean`                     | `false`                                                                  | ⚠️ Do not use in prod without a strong reason                                                                    |
-| `destinations`                      | `ILogDestination[]`           | `[]`                                                                     | Empty: `DefaultStdoutDestination` is used. A non-empty list replaces it                                          |
-| `http.isEnabled`                    | `boolean`                     | `false`                                                                  | Enables HTTP interceptor + filter                                                                                |
-| `http.shouldCaptureExceptions`      | `boolean`                     | `true`                                                                   | Registers the exception filter (`forRoot` only)                                                                  |
-| `http.shouldGenerateRequestId`      | `boolean`                     | `true`                                                                   | Generates `x-request-id` where the request-id middleware is mounted                                              |
-| `http.excludePaths`                 | `RegExp[]`                    | `[/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/]` | Do not log healthchecks                                                                                          |
-| `http.tenantIdHeader`               | `string \| false`             | `'x-tenant-id'`                                                          | Header for multi-tenant context                                                                                  |
-| `otel.shouldAutoInjectTraceContext` | `boolean`                     | `true`                                                                   | Injects `traceId`/`spanId`/`traceFlags` when `@opentelemetry/api` resolves                                       |
-| `otel.traceIdField`                 | `string`                      | `'traceId'` (or `'trace_id'` if `fieldFormat: 'snake_case'`)             | Field name in the log                                                                                            |
-| `otel.spanIdField`                  | `string`                      | `'spanId'` (or `'span_id'`)                                              | Field name in the log                                                                                            |
-| `otel.traceFlagsField`              | `string`                      | `'traceFlags'` (or `'trace_flags'`)                                      | Field name in the log                                                                                            |
-| `otel.fieldFormat`                  | `'camelCase' \| 'snake_case'` | `'camelCase'`                                                            | Shortcut to align with OTel Logs Data Model (`snake_case`) or Pino-native (`camelCase`)                          |
-| `maxEntrySizeBytes`                 | `number`                      | `65536` (64KB)                                                           | Ceiling per serialized field, not per entry (§17.7)                                                              |
-| `serializers`                       | `Record<string, fn>`          | `{}` (merged with defaults)                                              | Default: `err`                                                                                                   |
-| `timestamp`                         | `() => string`                | `() => new Date().toISOString()`                                         | Custom override                                                                                                  |
+| Option                              | Type                          | Default                                                                  | Notes                                                                                                                                   |
+| ----------------------------------- | ----------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `service.name`                      | `string`                      | **required**                                                             | E.g., `'bymax-finance-backend'`                                                                                                         |
+| `service.version`                   | `string`                      | **required**                                                             | Typically `process.env.RELEASE_SHA ?? 'dev'`                                                                                            |
+| `level`                             | `LogLevel`                    | `'info'` prod, `'debug'` other                                           | Values: `'fatal' \| 'error' \| 'warn' \| 'info' \| 'debug' \| 'trace'`                                                                  |
+| `isGlobal`                          | `boolean`                     | `true`                                                                   | `@Global()` for LoggerModule — mapped to Nest's `DynamicModule.global` internally                                                       |
+| `shouldUseAsNestLogger`             | `boolean`                     | —                                                                        | Deprecated and not read; call `BymaxLoggerModule.useNestLogger(app)`                                                                    |
+| `redactPaths`                       | `string[]`                    | `[]` (added to the default coverage)                                     | Pino `redact` syntax; under the default `redactStrategy: 'names'` the last name (not a wildcard or index) is also censored at any depth |
+| `redactCensor`                      | `string`                      | `'[REDACTED]'`                                                           | String that replaces sensitive values                                                                                                   |
+| `shouldDisableDefaultRedact`        | `boolean`                     | `false`                                                                  | ⚠️ Do not use in prod without a strong reason                                                                                           |
+| `destinations`                      | `ILogDestination[]`           | `[]`                                                                     | Empty: `DefaultStdoutDestination` is used. A non-empty list replaces it                                                                 |
+| `http.isEnabled`                    | `boolean`                     | `false`                                                                  | Enables HTTP interceptor + filter                                                                                                       |
+| `http.shouldCaptureExceptions`      | `boolean`                     | `true`                                                                   | Registers the exception filter (`forRoot` only)                                                                                         |
+| `http.shouldGenerateRequestId`      | `boolean`                     | `true`                                                                   | Generates `x-request-id` where the request-id middleware is mounted                                                                     |
+| `http.excludePaths`                 | `RegExp[]`                    | `[/^\/health$/, /^\/health\/live$/, /^\/health\/ready$/, /^\/metrics$/]` | Do not log healthchecks                                                                                                                 |
+| `http.tenantIdHeader`               | `string \| false`             | `'x-tenant-id'`                                                          | Header for multi-tenant context                                                                                                         |
+| `otel.shouldAutoInjectTraceContext` | `boolean`                     | `true`                                                                   | Injects `traceId`/`spanId`/`traceFlags` when `@opentelemetry/api` resolves                                                              |
+| `otel.traceIdField`                 | `string`                      | `'traceId'` (or `'trace_id'` if `fieldFormat: 'snake_case'`)             | Field name in the log                                                                                                                   |
+| `otel.spanIdField`                  | `string`                      | `'spanId'` (or `'span_id'`)                                              | Field name in the log                                                                                                                   |
+| `otel.traceFlagsField`              | `string`                      | `'traceFlags'` (or `'trace_flags'`)                                      | Field name in the log                                                                                                                   |
+| `otel.fieldFormat`                  | `'camelCase' \| 'snake_case'` | `'camelCase'`                                                            | Shortcut to align with OTel Logs Data Model (`snake_case`) or Pino-native (`camelCase`)                                                 |
+| `maxEntrySizeBytes`                 | `number`                      | `65536` (64KB)                                                           | Ceiling per serialized field, not per entry (§17.7)                                                                                     |
+| `serializers`                       | `Record<string, fn>`          | `{}` (merged with defaults)                                              | Default: `err`                                                                                                                          |
+| `timestamp`                         | `() => string`                | `() => new Date().toISOString()`                                         | Custom override                                                                                                                         |
 
 ### 4.3 `applyDefaults()` — how `otel.fieldFormat` becomes individual field names
 
@@ -1069,8 +1069,8 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
    *
    * Semantics:
    *  - Returns a NEW `PinoLoggerService` instance over a Pino child created with the redacted bindings.
-   *  - The child INHERITS the same `LogContextService` reference (ALS is process-wide,
-   *    not per-child) — so `requestId` / `tenantId` / `userId` propagate to the child too.
+   *  - The request context reaches the child's entries too: the context mixin sits on the
+   *    Pino instance, and the child is a Pino child of it.
    *  - The child has its OWN bindings merged into every log it emits.
    *  - Calling `getRawLogger()` on the child returns the underlying Pino child instance.
    *  - `setContext()` on the child only changes the child's `context` field — it does
