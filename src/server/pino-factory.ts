@@ -76,7 +76,7 @@ const PATH_SEGMENT = /\[\s*['"]([^'"]+)['"]\s*\]|([^.[\]]+)/g
 const INDEX_SEGMENT = /^\d+$/
 
 /**
- * The leaf field name of a `fast-redact` path.
+ * The leaf field name of a `@pinojs/redact` path.
  *
  * Consumer `redactPaths` are applied by Pino's stringifier, which runs AFTER the
  * serializer wrapper — so a field they cover was still raw when the size bound
@@ -100,7 +100,7 @@ const INDEX_SEGMENT = /^\d+$/
  * @internal Exported only for unit testing — its edge cases (a wildcard-only
  *   path, a trailing separator, bracket syntax) are invisible in a serialized
  *   line, so they are asserted directly. NOT re-exported by the package barrel.
- * @param path - A `fast-redact` path, dotted and/or bracketed.
+ * @param path - A `@pinojs/redact` path, dotted and/or bracketed.
  * @returns The last segment that names a field, or `undefined` for a path with
  *   none (a wildcard- or index-only path).
  * @example
@@ -333,8 +333,8 @@ function ownFieldPolicyOf(options: ResolvedBymaxLoggerModuleOptions): OwnFieldPo
 
 /**
  * The names censored inside an `Error` under `redactStrategy: 'paths'`: the record's names belong to
- * `fast-redact` there, but an `Error` is converted by the walk, so the default names are censored
- * in its own fields and its causes at any depth, beyond what `fast-redact`'s wildcards reach.
+ * `@pinojs/redact` there, but an `Error` is converted by the walk, so the default names are censored
+ * in its own fields and its causes at any depth, beyond what `@pinojs/redact`'s wildcards reach.
  */
 function namesInsideErrors(
   options: ResolvedBymaxLoggerModuleOptions
@@ -349,7 +349,7 @@ function namesInsideErrors(
  * `redactStrategy` on purpose.
  *
  * `redactStrategy: 'paths'` is an escape hatch for a consumer who depends on
- * `fast-redact`'s exact path-matching over THEIR OWN payload. It was never a
+ * `@pinojs/redact`'s exact path-matching over THEIR OWN payload. It was never a
  * statement about the fields this library synthesizes — and treating it as one
  * opened a hole the moment error serialization started carrying an error's own
  * properties at every depth of the `cause` chain.
@@ -363,7 +363,7 @@ function namesInsideErrors(
  * ```
  *
  * `DEFAULT_REDACT_PATHS` reaches `*.*.*.*.password` — four wildcard levels — and
- * the serialized shape goes deeper than that, so `fast-redact` never saw the
+ * the serialized shape goes deeper than that, so `@pinojs/redact` never saw the
  * field. The name walk has no depth ceiling, which is why it is the right tool
  * for output this library produces regardless of what the consumer chose for
  * their own record.
@@ -379,7 +379,7 @@ function namesInsideErrors(
  *   where the same output was not; under `errorOwnFields: 'safe'` it is walked into plain data
  *   too, since nothing else would make it so.
  * @param coversNames - `false` for the record under the `'paths'` strategy, whose names
- *   `fast-redact` covers.
+ *   `@pinojs/redact` covers.
  * @param forcesWalk - `true` for the record when `maxStringLength` is set: the cut that follows
  *   reads only what the walk wrote, so the walk runs even when it would redact nothing.
  * @returns A redaction function; the identity function when no name is covered and the policy is
@@ -430,12 +430,12 @@ function buildNameRedactor(
  * Build the `redact` option handed to Pino.
  *
  * Under `'names'` the default coverage is already applied by the walk, so
- * `fast-redact` is configured ONLY for the consumer's own `redactPaths` — and
- * skipped entirely when there are none, which keeps `fast-redact` off the hot
+ * `@pinojs/redact` is configured ONLY for the consumer's own `redactPaths` — and
+ * skipped entirely when there are none, which keeps `@pinojs/redact` off the hot
  * path completely for the common configuration.
  *
  * @internal Exported only for unit testing — the difference between "no
- *   `fast-redact` at all" and "`fast-redact` with the full default expansion" is
+ *   `@pinojs/redact` at all" and "`@pinojs/redact` with the full default expansion" is
  *   a ~100× throughput difference that produces IDENTICAL log output, so it
  *   cannot be asserted from a serialized line. NOT re-exported by the package
  *   barrel.
@@ -480,7 +480,7 @@ function buildSerializers(
   //   0. The redactor here is `buildNameRedactor`, applied ungated: it ignores
   //      `redactStrategy`. That strategy is the consumer's choice about THEIR
   //      OWN payload; this output is what the library synthesizes, and
-  //      `fast-redact`'s four-wildcard ceiling cannot reach the depth a cause
+  //      `@pinojs/redact`'s four-wildcard ceiling cannot reach the depth a cause
   //      chain serializes to.
   //   1. Redaction runs on the serializer's OUTPUT. This is NOT a redundant
   //      second pass over data the `formatters.log` walk already saw — a

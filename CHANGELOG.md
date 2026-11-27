@@ -12,6 +12,15 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.34] - 2026-11-27
+
+No behaviour change: the published code differs from `1.4.33` in comments only.
+
+### Documentation
+
+- **The redaction warning shows a call that writes the entry.** Its example used `log()`, which takes Nest's arguments and drops the message, the user id and the metadata of that call; it now uses `info()`.
+- **The redaction engine is named `@pinojs/redact`**, which is what Pino 10 depends on, in the README and the doc comments. Two comments that gave a behaviour of the engine it does not have are removed: that duplicate paths throw, and that wildcards stop at bracket-syntax keys.
+
 ## [1.4.33] - 2026-11-27
 
 No behaviour change: the published code differs from `1.4.32` in one comment.
@@ -3595,7 +3604,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.33...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.34...HEAD
+[1.4.34]: https://github.com/bymaxone/nest-logger/compare/v1.4.33...v1.4.34
 [1.4.33]: https://github.com/bymaxone/nest-logger/compare/v1.4.32...v1.4.33
 [1.4.32]: https://github.com/bymaxone/nest-logger/compare/v1.4.31...v1.4.32
 [1.4.31]: https://github.com/bymaxone/nest-logger/compare/v1.4.30...v1.4.31

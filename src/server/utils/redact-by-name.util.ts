@@ -6,9 +6,8 @@
  * sensitive set, to a bounded depth (see {@link REDACT_MAX_TRAVERSAL_DEPTH}).
  *
  * Why this replaced path matching. The previous default compiled 140
- * `fast-redact` paths, 108 of them multi-level wildcards (`*.password`,
- * `*.*.password`, …). `fast-redact` walks every key at every listed level on
- * every log call, so the cost grew with the PATH COUNT, not with the payload:
+ * `pino.redact` paths, 108 of them multi-level wildcards (`*.password`,
+ * `*.*.password`, …), and the cost grew with the PATH COUNT, not with the payload:
  * measured at ~107 µs per entry (≈9.3 k logs/s) against ~0.9 µs with redaction
  * off. A single traversal is O(nodes) — the same order Pino's serializer already
  * pays. The shipped configuration measures 462 k logs/s against 9.3 k, for

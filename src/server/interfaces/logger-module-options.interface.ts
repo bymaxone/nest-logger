@@ -195,18 +195,18 @@ export interface BymaxLoggerModuleOptions {
    */
   shouldUseAsNestLogger?: boolean
   /**
-   * Additional `fast-redact` paths, applied on top of the default coverage
+   * Additional `@pinojs/redact` paths, applied on top of the default coverage
    * whatever `redactStrategy` is in force.
    */
   redactPaths?: readonly string[]
   /**
    * Engine backing the DEFAULT redaction set (never the consumer's own
-   * `redactPaths`, which are always `fast-redact` paths).
+   * `redactPaths`, which are always `@pinojs/redact` paths).
    *
    *   - `'names'` (default) — one recursive walk censoring any value whose KEY
    *     NAME is in `REDACT_COMMON_FIELDS`, at ANY depth. ~943 k logs/s.
    *   - `'paths'` — the pre-1.2 engine: `DEFAULT_REDACT_PATHS` handed to
-   *     `fast-redact`. Matches only wildcard depths 1–4 and measures ~9.3 k
+   *     `@pinojs/redact`. Matches only wildcard depths 1–4 and measures ~9.3 k
    *     logs/s. Provided as an escape hatch for a consumer depending on exact
    *     path-matching semantics; expect it to be removed in a future major.
    */
