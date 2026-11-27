@@ -67,7 +67,8 @@ import {
   isCensored,
   messageCensor,
   readField,
-  rulesBelow
+  rulesBelow,
+  rulesForOutput
 } from './error-text-exemption.util'
 import { foldedNames, foldName, matchesKey } from './fold-key.util'
 import { isError } from './is-error.util'
@@ -570,7 +571,8 @@ function walkToJsonOutput(
       walk(part, under, depth + below, ancestors, true, inSerialized)
     )
   }
-  return walk(toJson.call(value), rules, depth + 1, ancestors, true, inSerialized)
+  const output = toJson.call(value)
+  return walk(output, rulesForOutput(rules, output), depth + 1, ancestors, true, inSerialized)
 }
 
 /**

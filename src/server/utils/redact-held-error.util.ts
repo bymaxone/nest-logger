@@ -84,10 +84,10 @@ function commonForm(safe: unknown, written: unknown, hold: PathHold, censor: str
  * Write a held `Error`: what both its `'safe'` form and what its `toJSON` returns hold. A `toJSON`
  * that returns no plain object, and anything that cannot be read, is the censor. Never throws.
  *
- * The `'safe'` form is read first, so what `toJSON` does to the `Error` is not part of it. The
- * causes and members of the output are written as data, under a serialized key too: an instance
- * keeps its head and links where the comparison does not read them. An `Error` under another
- * key is left as it is.
+ * The `'safe'` form is read first, so what `toJSON` does to the `Error` is not part of it. An
+ * `Error` in the output's `cause` or `errors`, or in those of an `Error` so written or of an object
+ * a `toJSON` among them returns, is written as data under a serialized key too: an instance keeps
+ * its head and links where the comparison does not read them.
  *
  * @param error - The held `Error`.
  * @param toJson - Its `toJSON`.

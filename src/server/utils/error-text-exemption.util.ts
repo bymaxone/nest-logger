@@ -243,3 +243,17 @@ export function errorTextField(
   const cut = cutIfText(value)
   return key === 'name' ? censorAnyName(rules, cut) : cut
 }
+
+/**
+ * The rules the result of a `toJSON` is walked with. Inside a held `Error`'s output, a result
+ * that is an object stands for the linked value, so its cause and members are links too. A list
+ * or an `Error` keeps the rules.
+ *
+ * @param rules - The rules the value with the `toJSON` is walked with.
+ * @param output - What its `toJSON` returned.
+ * @returns The rules for the result.
+ */
+export function rulesForOutput(rules: RedactRules, output: unknown): RedactRules {
+  if (rules.link === undefined || Array.isArray(output) || isError(output)) return rules
+  return { ...rules, link: 'output' }
+}

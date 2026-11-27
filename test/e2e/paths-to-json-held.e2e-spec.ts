@@ -233,6 +233,41 @@ describe.each(ENTRIES)("a held Error under redactStrategy: 'paths', as %s", (_en
     }
   })
 
+  /* A linked value with a `toJSON` of its own keeps the cause its result holds. */
+  describe.each<readonly [string, Partial<BymaxLoggerModuleOptions>]>([
+    ['the paths alone', {}],
+    ["errorOwnFields: 'safe'", { errorOwnFields: 'safe' }]
+  ])('with %s', (_config, extra) => {
+    /** The head of a linked value over `cause`, as its `toJSON` returns it. */
+    const parts = (cause: unknown): object => ({ name: 'Error', message: 'between', cause })
+    /** An `Error` with a `toJSON` of its own, over `cause`. */
+    const between = (output: (cause: unknown) => unknown): Error => {
+      const error = new Error('between', { cause: new Error('refused') })
+      return Object.defineProperty(error, 'toJSON', { value: () => output(error.cause) })
+    }
+
+    it.each<readonly [string, () => unknown]>([
+      ['an Error', () => between(parts)],
+      ['an Error through two toJSON', () => between((cause) => ({ toJSON: () => parts(cause) }))],
+      ['an object', () => ({ toJSON: () => parts(new Error('refused')) })]
+    ])('writes the cause below %s as the cause and as a member', async (_label, make) => {
+      for (const link of ['cause', 'errors'] as const) {
+        const error = Object.assign(new Error('failed'), {
+          [link]: link === 'cause' ? make() : [make()]
+        })
+        const { written } = await logged(
+          held((e: Error & { errors?: unknown }) => {
+            return { name: e.name, message: e.message, cause: e.cause, errors: e.errors }
+          }, error),
+          { redactPaths: [`${key}.pan`], ...extra }
+        )
+        const below = link === 'cause' ? written.cause?.cause : written.errors?.[0]?.cause
+
+        expect(below).toMatchObject({ message: 'refused' })
+      }
+    })
+  })
+
   /* A linked `Error` loses what `'safe'` drops and what the default names censor. */
   it.each<readonly [string, object]>([
     ['a field of its own', { detail: SECRET }],

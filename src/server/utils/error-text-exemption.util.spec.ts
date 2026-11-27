@@ -11,7 +11,8 @@ import {
   errorTextField,
   headerMessage,
   isCensored,
-  readField
+  readField,
+  rulesForOutput
 } from './error-text-exemption.util'
 import * as hideModule from './hide-message-in-stack.util'
 import type { RedactRules } from './redact-by-name.util'
@@ -457,5 +458,27 @@ describe('errorTextField, how much of a stack is searched', () => {
 
     expect(search).toHaveBeenCalledTimes(1)
     expect(search.mock.calls[0]?.[0]).toHaveLength(MAX_STACK_SCAN + 7)
+  })
+})
+
+describe('rulesForOutput', () => {
+  const marked = { link: 'link' } as unknown as RedactRules
+
+  it('marks an object a linked toJSON returns as the output', () => {
+    expect(rulesForOutput(marked, {}).link).toBe('output')
+  })
+
+  it.each<readonly [string, unknown]>([
+    ['a list', []],
+    ['an Error', new Error('x')]
+  ])('keeps the rules for %s', (_label, output) => {
+    expect(rulesForOutput(marked, output)).toBe(marked)
+  })
+
+  /* Outside a held `Error`'s output nothing is marked. */
+  it('keeps the rules where nothing is marked', () => {
+    const unmarked = rules()
+
+    expect(rulesForOutput(unmarked, {})).toBe(unmarked)
   })
 })
