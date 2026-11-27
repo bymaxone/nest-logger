@@ -704,7 +704,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   /**
    * The entry text of an `Error`: its `message`, read without letting a hostile getter escape, then
    * censored under the name `message`, as the field `err.message` it is a copy of. It is not cut at
-   * `maxStringLength`: the option does not apply to the log message, which is capped at 16384.
+   * `maxStringLength`; `toBoundedMessage` caps it.
    *
    * @param error - The error being logged.
    * @returns The text of the entry.

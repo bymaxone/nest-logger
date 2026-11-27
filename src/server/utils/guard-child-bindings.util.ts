@@ -13,6 +13,7 @@
 import type { ChildLoggerOptions, Logger as PinoLogger } from 'pino'
 
 import { bareDescriptor } from './bare-descriptor.util'
+import { binaryAsField } from './binary-values.util'
 import { guardMessageValues, redactMessageOutput } from './guard-message-values.util'
 import type { MessageRedactor, Redactor } from './redact-by-name.util'
 
@@ -70,7 +71,7 @@ function guardFormatters(formatters: object, guard: ChildGuard): object {
   // Pino's redact paths never reach what `level` returns, so that is walked by name under every
   // strategy.
   return replacing(formatters, {
-    bindings: followedBy(bindings, (output) => guard.redactBindings(output, true)),
+    bindings: followedBy(bindings, (output) => guard.redactBindings(output)),
     level: followedBy(level, (output) => guard.redactSerialized(output)),
     // A formatter that returns nothing is passed on as it is: Pino writes no fields for it.
     log: followedBy(log, (output) =>
@@ -139,7 +140,8 @@ export function guardChildBindings(
   options: { readonly redactStrategy: 'names' | 'paths' }
 ): PinoLogger {
   const byName = options.redactStrategy === 'names'
-  const guard = byName ? redaction : { ...redaction, redactBindings: asPassed }
+  const asFields: Redactor = (value) => redaction.redactBindings(binaryAsField(value), true)
+  const guard = { ...redaction, redactBindings: byName ? asFields : asPassed }
   const guardChildMessages = byName
     ? guardMessageValues(logger, redaction.redactSerialized)
     : undefined
@@ -147,7 +149,7 @@ export function guardChildBindings(
   const nativeSetBindings: unknown = logger.setBindings
   // Missing bindings are passed on as they are, so Pino answers for them.
   const redacted = (bindings: unknown): unknown =>
-    bindings ? guard.redactBindings(bindings, true) : bindings
+    bindings ? guard.redactBindings(bindings) : bindings
 
   const child = function (this: PinoLogger, bindings: unknown, options?: unknown): unknown {
     const built = apply(nativeChild as AnyCallable, this, [

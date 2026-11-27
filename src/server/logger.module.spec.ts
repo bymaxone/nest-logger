@@ -227,9 +227,9 @@ describe('BymaxLoggerModule.forRoot', () => {
   describe('child-binding redaction', () => {
     /*
      * REGRESSION — the module must wire the configured redactor into
-     * `PinoLoggerService`, because `child()` is the only place child bindings can
-     * be scrubbed: Pino pre-serializes them into the instance's `chindings`
-     * fragment before any formatter runs. Asserted through the COMPILED module,
+     * `PinoLoggerService`: the bindings of `service.child()` have to be scrubbed
+     * when the child is made, because Pino pre-serializes them into the
+     * instance's `chindings` fragment before any formatter of the record runs. Asserted through the COMPILED module,
      * not a hand-built service, so a provider that resolves to nothing (or to the
      * identity) fails here rather than silently leaking in production.
      */

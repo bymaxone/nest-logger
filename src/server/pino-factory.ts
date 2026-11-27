@@ -43,7 +43,7 @@ import {
 } from './utils/entry-text-finisher.util'
 import { guardChildBindings } from './utils/guard-child-bindings.util'
 import { messageSerializers, redactMessageOutput } from './utils/guard-message-values.util'
-import { mergeMixinSafely } from './utils/merge-mixin-safely.util'
+import { mixinMergeFor } from './utils/merge-mixin-safely.util'
 import {
   createOwnFieldPolicy,
   type OwnFieldPolicy,
@@ -791,7 +791,7 @@ export function buildPinoInstance(
     formatters: buildFormatters(redactBindings, formatRecord),
     serializers: buildSerializers(options, redactSerialized, ownFields, onTruncate),
     mixin: buildTraceMixin(logContext, options),
-    mixinMergeStrategy: mergeMixinSafely
+    mixinMergeStrategy: mixinMergeFor(options.redactStrategy)
   }
 
   const streams = pino.multistream(buildStreams(options, destinations, health))

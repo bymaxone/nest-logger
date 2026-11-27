@@ -4,6 +4,7 @@
  * Layer: server/utils — pure, no I/O. Kept apart from the factory so the rule about whose value
  * wins sits in one place and in one file.
  */
+import { binaryAsField } from './binary-values.util'
 import { setAdd, setHas } from './captured-builtins.util'
 import { foldKey } from './fold-key.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
@@ -72,4 +73,18 @@ export function mergeMixinSafely(mergeObject: object, mixinObject: object): obje
       _logKey: RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
     }
   }
+}
+
+/**
+ * The `mixinMergeStrategy` of the logger. Under `'names'`, a binary view given as the merge object
+ * is first made one field with its size; under `'paths'` it reaches {@link mergeMixinSafely} as it is.
+ *
+ * @param strategy - The redaction strategy of the module.
+ * @returns The strategy to give to Pino.
+ */
+export function mixinMergeFor(
+  strategy: 'names' | 'paths'
+): (mergeObject: object, mixinObject: object) => object {
+  if (strategy === 'paths') return mergeMixinSafely
+  return (mergeObject, mixinObject) => mergeMixinSafely(binaryAsField(mergeObject), mixinObject)
 }

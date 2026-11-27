@@ -61,6 +61,28 @@ const CASES: ReadonlyArray<readonly [string, (raw: Raw, service: PinoLoggerServi
     'a raw child of a service child',
     (_raw, service) => service.child({ a: 1 }).getRawLogger().child(bag()).info('PROBE')
   ],
+  ['child(bindings, { msgPrefix })', (raw) => raw.child(bag(), { msgPrefix: '> ' }).info('PROBE')],
+  [
+    'bindings that a getter gives',
+    (raw) =>
+      raw
+        .child({
+          held: {
+            get password() {
+              return SECRET
+            }
+          },
+          kept: 'visible'
+        })
+        .info('PROBE')
+  ],
+  [
+    'what bindings() of a child gives back to child',
+    (raw) => {
+      const parent = raw.child(bag())
+      raw.child(parent.bindings()).info('PROBE %s', JSON.stringify(parent.bindings()))
+    }
+  ],
   [
     'setBindings on a child',
     (raw) => {
@@ -309,5 +331,53 @@ describe('Logger E2E — bindings of the raw logger', () => {
       expect(() => raw.child(undefined as never)).toThrow('missing bindings for child Pino')
       raw.info('PROBE')
     })
+  })
+})
+
+describe('Logger E2E — bindings of the raw logger at the limits of the walk', () => {
+  /** `inner` below `levels` objects. */
+  const nested = (levels: number, inner: unknown): unknown =>
+    levels === 0 ? inner : { below: nested(levels - 1, inner) }
+
+  it("redacts the bindings of a child given a redact option of its own under 'names'", async () => {
+    const lines = await linesOf((raw) => raw.child(bag(), { redact: ['other'] }).info('PROBE'))
+
+    expect(lines).toContain('visible')
+    expect(lines).not.toContain(SECRET)
+  })
+
+  it("redacts what a toJSON in the bindings gives under 'names'", async () => {
+    const lines = await linesOf((raw) => raw.child({ held: { toJSON: () => bag() } }).info('PROBE'))
+
+    expect(lines).toContain('visible')
+    expect(lines).not.toContain(SECRET)
+  })
+
+  it('cuts bindings nested past the depth of the walk', async () => {
+    const lines = await linesOf((raw) => raw.child({ held: nested(150, bag()) }).info('PROBE'))
+
+    expect(lines).toContain('[REDACTION_DEPTH_EXCEEDED]')
+    expect(lines).not.toContain(SECRET)
+  })
+
+  it('writes cyclic bindings with the secret censored', async () => {
+    const lines = await linesOf((raw) => {
+      const held: Record<string, unknown> = bag()
+      held['self'] = held
+      raw.child({ held }).info('PROBE')
+    })
+
+    expect(lines).toContain('visible')
+    expect(lines).not.toContain(SECRET)
+  })
+
+  it('writes no member past the budget of the walk', async () => {
+    const lines = await linesOf((raw) => {
+      const many = Array.from({ length: 200_001 }, () => ({}))
+      raw.child({ many, last: bag() }).info('PROBE')
+    })
+
+    expect(lines).toContain('[REDACTION_BUDGET_EXCEEDED]')
+    expect(lines).not.toContain(SECRET)
   })
 })
