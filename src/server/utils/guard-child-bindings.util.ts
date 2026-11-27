@@ -71,7 +71,7 @@ function guardFormatters(formatters: object, guard: ChildGuard): object {
 
 /**
  * The serializers of a child's options, each with its output redacted like a module serializer's.
- * Every enumerable key is read, as Pino does.
+ * Only string keys are copied: Pino 10 runs no serializer under a symbol.
  */
 function guardSerializers(serializers: object, redact: Redactor): object {
   const source = serializers as Record<PropertyKey, unknown>
