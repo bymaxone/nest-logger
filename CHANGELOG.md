@@ -16,7 +16,7 @@ heading here.
 
 ### Breaking
 
-- **Behaviour change under `redactStrategy: 'names'`:** the `bindings` formatter and the `serializers` of child options receive a redacted copy of the bindings instead of your objects. In the copy a `Date` arrives as a string, a `Map` as `{}` and a class instance other than an `Error` as a plain object, so a serializer that calls a method of one of these throws. A value in bindings of the raw logger is written as `service.child()` writes it. Migration: have the callback read the copy (a `Date` is an ISO string), or compute the value before you pass it, for example `raw.child({ at: at.getTime() })`. `redactStrategy: 'paths'` keeps your objects, but bindings are then not redacted by name.
+- **Behaviour change under `redactStrategy: 'names'`:** the `bindings` formatter and the serializers receive a redacted copy of the bindings instead of your objects. In the copy a `Date` arrives as a string, a `Map` as `{}` and a class instance can arrive as a plain object, so a callback that calls a method of one of these can throw. A value in bindings of the raw logger is written as `service.child()` writes it. Migration: have the callback read the copy (a `Date` is an ISO string), or compute the value before you pass it, for example `raw.child({ at: at.getTime() })`. `redactStrategy: 'paths'` keeps your objects, but bindings are then not redacted by name.
 
 ### Security
 
