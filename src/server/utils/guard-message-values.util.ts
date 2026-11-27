@@ -14,7 +14,7 @@ import pino from 'pino'
 import type { Logger as PinoLogger } from 'pino'
 
 import { bareDescriptor } from './bare-descriptor.util'
-import type { Redactor } from './redact-by-name.util'
+import type { MessageRedactor } from './redact-by-name.util'
 
 const apply = Reflect.apply
 const get = Reflect.get
@@ -43,7 +43,7 @@ function requiredSymbol(value: unknown): symbol {
  * `redact` for what can hold a field; a primitive has no name to match. An `Error` is given no
  * text that Pino would not write for it.
  */
-function walkedWith(redact: Redactor): (value: unknown) => unknown {
+function walkedWith(redact: MessageRedactor): (value: unknown) => unknown {
   return (value) =>
     (typeof value === 'object' && value !== null) || typeof value === 'function'
       ? redact(value, false, true)
@@ -54,7 +54,7 @@ function walkedWith(redact: Redactor): (value: unknown) => unknown {
 const NO_MESSAGE: unknown = Function.prototype
 
 /** {@link walkedWith} as a serializer, whose `undefined` Pino would write into the line as is. */
-function serializerOf(redact: Redactor): (message: unknown) => unknown {
+function serializerOf(redact: MessageRedactor): (message: unknown) => unknown {
   const walked = walkedWith(redact)
   return (message) => {
     const written = walked(message)
@@ -72,7 +72,7 @@ function serializerOf(redact: Redactor): (message: unknown) => unknown {
  */
 export function messageSerializers(
   strategy: 'names' | 'paths',
-  redact: Redactor
+  redact: MessageRedactor
 ): { msg?: (message: unknown) => unknown } {
   return strategy === 'names' ? { msg: serializerOf(redact) } : {}
 }
@@ -93,7 +93,10 @@ function define(target: object, key: symbol, value: unknown): void {
  *   options `redact`.
  * @throws Error `LOGGER_PINO_UNSUPPORTED` when Pino does not have the members to compose with.
  */
-export function guardMessageValues(logger: PinoLogger, redact: Redactor): (child: object) => void {
+export function guardMessageValues(
+  logger: PinoLogger,
+  redact: MessageRedactor
+): (child: object) => void {
   const symbols = get(pino, 'symbols') as Record<string, unknown> | undefined
   const formatOptions = requiredSymbol(symbols?.['formatOptsSym'])
   const walked = walkedWith(redact)

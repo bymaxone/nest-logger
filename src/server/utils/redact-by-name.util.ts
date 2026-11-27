@@ -175,11 +175,21 @@ function rulesInside(
  *   `toJSON` method, because doing so would replace the entire record with that
  *   method's return value; nested values and serializer outputs do reach
  *   `JSON.stringify` and keep it.
- * @param inMessage - `true` when the value goes into the message of an entry: an `Error` in it is
- *   written without its `type`, `message`, stack and cause chain, and one that cannot be read as
- *   `{}`.
  */
-export type Redactor = (value: unknown, isRecordRoot?: boolean, inMessage?: boolean) => unknown
+export type Redactor = (value: unknown, isRecordRoot?: boolean) => unknown
+
+/**
+ * A {@link Redactor} that also takes the value of a message.
+ *
+ * @param inMessage - `true` when the value goes into the message of an entry: an `Error` in it is
+ *   written without the `type`, `message`, stack and cause chain the walk adds, and one that cannot
+ *   be read as `{}`.
+ */
+export type MessageRedactor = (
+  value: unknown,
+  isRecordRoot?: boolean,
+  inMessage?: boolean
+) => unknown
 
 /** What the `err` serializer returned: its `message` and stack header are already censored. */
 const errorOutputs = new WeakSet<object>()
@@ -723,7 +733,7 @@ export function createNameRedactor(
   errorOnlyNames?: Iterable<string>,
   headerNames?: Iterable<string>,
   errorTextToSerializer: boolean = false
-): Redactor {
+): MessageRedactor {
   // Matched case-INSENSITIVELY: header names are case-insensitive by spec and only INBOUND Node
   // headers arrive lower-cased, so a hand-built bag with `Authorization` or `Cookie` must be covered.
   // One `toLowerCase()` per key (~4 % of an entry, measured); it errs toward redacting `Password` too.
