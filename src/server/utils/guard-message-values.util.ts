@@ -3,9 +3,9 @@
  *
  * Layer: server/utils. An object reaches `msg` two ways: through a `%o`, `%O` or `%j` placeholder,
  * which Pino serializes with the `stringify` of the format options of the instance, and passed as
- * the message itself, which arrives at the instance's write method still an object. The walk by name
- * is composed into both, so the objects keep their structure and the redact paths of Pino still
- * apply to a placeholder. `%s` and `%d` call neither and print what they printed before.
+ * the message itself, which without a `msgPrefix` reaches the instance's write method as an object.
+ * The walk by name is composed into both, so the redact paths of Pino still apply to a placeholder.
+ * `%s` and `%d` print what they printed before.
  *
  * Both members are reached through `pino.symbols`. A Pino that does not have them in the shape this
  * module expects is refused when the logger is built.
