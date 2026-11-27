@@ -27,18 +27,13 @@
   "docs/guidelines/PINO-REDACTION-GUIDELINES.md::BymaxLoggerModule",
   "docs/nest-observability-spec.md::BymaxLoggerModuleOptions",
   "docs/observability_audit.md::LogEntry",
-  "docs/technical_specification.md::ASYNC_OPTIONS_TYPE",
   "docs/technical_specification.md::BymaxLoggerModule",
   "docs/technical_specification.md::BymaxLoggerModuleBase",
   "docs/technical_specification.md::BymaxLoggerModuleOptions",
-  "docs/technical_specification.md::DEFAULT_REDACT_PATHS",
-  "docs/technical_specification.md::DestinationRegistry",
   "docs/technical_specification.md::HttpLoggingInterceptor",
   "docs/technical_specification.md::ILogDestination",
   "docs/technical_specification.md::InjectLogger",
   "docs/technical_specification.md::LOG_KEYS_CONVENTION_REGEX",
-  "docs/technical_specification.md::LogContextService",
   "docs/technical_specification.md::LogLevel",
-  "docs/technical_specification.md::PinoLoggerService",
-  "docs/technical_specification.md::this.stripe"
+  "docs/technical_specification.md::PinoLoggerService"
 ]
