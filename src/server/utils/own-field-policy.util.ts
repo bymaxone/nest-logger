@@ -103,11 +103,19 @@ const TYPED_ARRAY_BYTE_LENGTH = Reflect.getOwnPropertyDescriptor(
 const DATA_VIEW_BYTE_LENGTH = Reflect.getOwnPropertyDescriptor(DataView.prototype, 'byteLength')
   ?.get as (this: ArrayBufferView) => number
 
+/** The size of a DataView, which is zero when none of its bytes can be read. */
+function dataViewSize(view: ArrayBufferView): number {
+  try {
+    return DATA_VIEW_BYTE_LENGTH.call(view)
+  } catch {
+    // The getter throws on a detached or out of bounds view, where that of a typed array gives 0.
+    return 0
+  }
+}
+
 /** The size marker written in place of a Buffer, a typed array or a DataView. */
 function binaryMarker(view: ArrayBufferView): string {
-  const size = types.isDataView(view)
-    ? DATA_VIEW_BYTE_LENGTH.call(view)
-    : TYPED_ARRAY_BYTE_LENGTH.call(view)
+  const size = types.isDataView(view) ? dataViewSize(view) : TYPED_ARRAY_BYTE_LENGTH.call(view)
   return `[Binary ${size} bytes]`
 }
 

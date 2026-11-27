@@ -33,6 +33,14 @@ type Emit = (raw: Raw) => void
 const bytes = (): Buffer => Buffer.from('ZZ-KEY')
 const MARKER = '[Binary 6 bytes]'
 
+/** A DataView whose buffer was transferred, so that none of its bytes can be read. */
+const transferred = (): DataView => {
+  const buffer = new ArrayBuffer(6)
+  const view = new DataView(buffer)
+  structuredClone(buffer, { transfer: [buffer] })
+  return view
+}
+
 /** The one line a real application writes while `emit` runs. */
 async function lineOf(emit: Emit, extra: Partial<BymaxLoggerModuleOptions>): Promise<Line> {
   const collector = new Collector()
@@ -124,6 +132,20 @@ const ROOTS: ReadonlyArray<readonly [string, Emit, Line]> = [
     'a Buffer from the bindings formatter of a child',
     (raw) => raw.child({ a: 1 }, { formatters: { bindings: () => bytes() } }).info('c'),
     { binary: MARKER, msg: 'c' }
+  ],
+  [
+    'a transferred DataView as the bindings of a child',
+    (raw) => raw.child(transferred()).info('c'),
+    { binary: '[Binary 0 bytes]', msg: 'c' }
+  ],
+  [
+    'a transferred DataView given to setBindings',
+    (raw) => {
+      const child = raw.child({})
+      child.setBindings(transferred())
+      child.info('c')
+    },
+    { binary: '[Binary 0 bytes]', msg: 'c' }
   ]
 ]
 

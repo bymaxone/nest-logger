@@ -67,6 +67,29 @@ describe('withBinaryAsSize', () => {
     expect(withBinaryAsSize(value)).toBe(marker)
   })
 
+  it.each<readonly [string, () => DataView]>([
+    [
+      'whose buffer was transferred',
+      () => {
+        const buffer = new ArrayBuffer(4)
+        const view = new DataView(buffer)
+        structuredClone(buffer, { transfer: [buffer] })
+        return view
+      }
+    ],
+    [
+      'left out of bounds by a buffer that shrank',
+      () => {
+        const buffer = Reflect.construct(ArrayBuffer, [4, { maxByteLength: 4 }]) as ArrayBuffer
+        const view = new DataView(buffer, 0, 4)
+        ;(buffer as unknown as { resize(size: number): void }).resize(0)
+        return view
+      }
+    ]
+  ])('writes a DataView %s as a size of zero', (_label, make) => {
+    expect(withBinaryAsSize(make())).toBe('[Binary 0 bytes]')
+  })
+
   it('replaces the binary members of an array and leaves the original array alone', () => {
     const original = [null, Buffer.from('ab'), 'text', 4, new Uint8Array(1)]
 
