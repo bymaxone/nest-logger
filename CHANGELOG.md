@@ -14,7 +14,7 @@ heading here.
 
 ## [1.4.34] - 2026-11-27
 
-No behaviour change: the published code differs from `1.4.33` in comments only.
+No behaviour change: the published JavaScript is byte-identical to `1.4.33`, and the type declarations differ in comments only.
 
 ### Documentation
 
