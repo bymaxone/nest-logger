@@ -6,7 +6,11 @@
 import pino from 'pino'
 import type { Logger as PinoLogger } from 'pino'
 
-import { guardMessageValues, messageSerializers } from './guard-message-values.util'
+import {
+  guardMessageValues,
+  messageSerializers,
+  redactMessageOutput
+} from './guard-message-values.util'
 import type { Redactor } from './redact-by-name.util'
 
 const mark: Redactor = (value) => ({ walked: value })
@@ -136,5 +140,27 @@ describe('guardMessageValues', () => {
     Reflect.set(logger, pino.symbols.formatOptsSym, {})
 
     expect(() => guardMessageValues(logger, mark)).toThrow('LOGGER_PINO_UNSUPPORTED')
+  })
+})
+
+describe('redactMessageOutput', () => {
+  it("tells the redactor under 'names' that the output goes into the message", () => {
+    const redact = jest.fn(() => 'walked')
+
+    expect(redactMessageOutput('names', redact)('text')).toBe('walked')
+    expect(redact).toHaveBeenCalledWith('text', false, true)
+  })
+
+  it("writes no msg under 'names' for an output the walk leaves nothing of", () => {
+    const written = redactMessageOutput('names', () => undefined)('text')
+
+    expect(typeof written).toBe('function')
+  })
+
+  it("redacts under 'paths' as any other serializer output", () => {
+    const redact = jest.fn(() => undefined)
+
+    expect(redactMessageOutput('paths', redact)('text')).toBeUndefined()
+    expect(redact).toHaveBeenCalledWith('text')
   })
 })

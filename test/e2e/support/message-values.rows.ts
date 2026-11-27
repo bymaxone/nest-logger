@@ -334,6 +334,46 @@ function errorAndFunctionRows(): void {
   })
 }
 
+/** A `msg` serializer that returns what it is given. */
+const same = (message: unknown): unknown => message
+
+/** The two places a `msg` serializer of the host is declared, and how a line is written there. */
+const PLACES: ReadonlyArray<
+  readonly [string, Partial<BymaxLoggerModuleOptions>, (raw: Raw) => Raw]
+> = [
+  ['the module options', { serializers: { msg: same } }, (raw) => raw],
+  ['child options', {}, (raw) => raw.child({}, { serializers: { msg: same } })]
+]
+
+/** The rows for what a `msg` serializer of the host returns. */
+function hostSerializerRows(): void {
+  it.each(PLACES)('writes no text of an Error returned in %s', async (_name, extra, from) => {
+    const message = await messageOf((raw) => from(raw).info({}, failure()), {
+      ...extra,
+      errorOwnFields: 'safe'
+    })
+
+    expect(message).toStrictEqual({ code: 'E1' })
+  })
+
+  it.each(PLACES)(
+    'writes a valid line for a function returned in %s',
+    async (_name, extra, from) => {
+      const lines = await linesOf((raw) => from(raw).info({}, function handler() {}), {
+        ...extra,
+        errorOwnFields: 'safe'
+      })
+
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).not.toHaveProperty('msg')
+    }
+  )
+
+  it.each(PLACES)('leaves a text returned in %s as it is', async (_name, extra, from) => {
+    expect(await messageOf((raw) => from(raw).info('plain'), extra)).toBe('plain')
+  })
+}
+
 /** Declare the rows under `label`. */
 export function describeMessageValues(label: string): void {
   describe(`Logger E2E — objects in the message (${label})`, () => {
@@ -342,5 +382,6 @@ export function describeMessageValues(label: string): void {
     boundaryRows()
     strategyRows()
     errorAndFunctionRows()
+    hostSerializerRows()
   })
 }

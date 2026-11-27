@@ -17,7 +17,7 @@ heading here.
 ### Breaking
 
 - **Behaviour change under `redactStrategy: 'names'`:** an object that Pino serializes into a raw logger message is redacted by name. By default a `Buffer` or a typed array is written as `[Binary N bytes]`, a value nested deeper than the walk reads is cut, a boxed `String` is written as a map of its indexes, a boxed `Number` or `Boolean` as `{}`, and an `Error` there keeps only the own fields a logged error keeps (`parameters`, for one, is dropped). Migration: format such a value before you pass it, for example `raw.info('digest %s', buffer.toString('hex'))`. `redactStrategy: 'paths'` writes the message as before.
-- Under `'names'` with `errorOwnFields: 'safe'`, an `Error` in the raw logger message now keeps only the own fields that setting allows, and its `toJSON` is not called. No message or stack is added to it there. In both `errorOwnFields` modes an `Error` that cannot be read is written there as `{}`.
+- Under `'names'` with `errorOwnFields: 'safe'`, an `Error` in the raw logger message now keeps only the own fields that setting allows, and its `toJSON` is not called. No message or stack is added to it there. Under `'names'`, what a `msg` serializer of yours returns, in the module or child options, is redacted the same way: to keep the text of an `Error`, return that text. In both `errorOwnFields` modes an `Error` that cannot be read is written there as `{}`.
 
 ### Security
 

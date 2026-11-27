@@ -42,7 +42,7 @@ import {
   ENTRY_TEXT_FINISHER
 } from './utils/entry-text-finisher.util'
 import { guardChildBindings } from './utils/guard-child-bindings.util'
-import { messageSerializers } from './utils/guard-message-values.util'
+import { messageSerializers, redactMessageOutput } from './utils/guard-message-values.util'
 import { mergeMixinSafely } from './utils/merge-mixin-safely.util'
 import {
   createOwnFieldPolicy,
@@ -50,7 +50,7 @@ import {
   ALL_OWN_FIELDS
 } from './utils/own-field-policy.util'
 import { createNameRedactor, markErrorOutput } from './utils/redact-by-name.util'
-import type { Redactor } from './utils/redact-by-name.util'
+import type { MessageRedactor, Redactor } from './utils/redact-by-name.util'
 import { safeMinLevel } from './utils/report-destination-failure.util'
 import {
   buildResourceBindings,
@@ -392,7 +392,7 @@ function buildNameRedactor(
   nestedErrorsAsData = false,
   coversNames = true,
   forcesWalk = false
-): Redactor {
+): MessageRedactor {
   const allNames = [
     ...(options.shouldDisableDefaultRedact ? [] : REDACT_COMMON_FIELDS),
     ...options.redactPaths.flatMap((path) => leafNameOf(path) ?? [])
@@ -471,7 +471,7 @@ type TruncationSink = (reason: TruncationReason) => void
  */
 function buildSerializers(
   options: ResolvedBymaxLoggerModuleOptions,
-  redactSerialized: Redactor,
+  redactSerialized: MessageRedactor,
   ownFields: OwnFieldPolicy,
   onTruncate: TruncationSink
 ): Record<string, (input: unknown) => unknown> {
@@ -496,9 +496,13 @@ function buildSerializers(
   //      `_preview` carries `[REDACTED]` rather than the head of a secret.
   // `Object.fromEntries` avoids a dynamic `obj[key] =` write (which would trip
   // the object-injection lint rule).
-  const bound = <T>(serializer: (input: T) => unknown): ((input: T) => unknown) =>
+  const asMessage = redactMessageOutput(options.redactStrategy, redactSerialized)
+  const bound = <T>(
+    serializer: (input: T) => unknown,
+    redact: (output: unknown) => unknown = redactSerialized
+  ): ((input: T) => unknown) =>
     createSizeBoundedSerializer(
-      (input: T) => redactSerialized(serializer(input)),
+      (input: T) => redact(serializer(input)),
       maxBytes,
       () => onTruncate('max_entry_size')
     )
@@ -507,7 +511,10 @@ function buildSerializers(
     err: bound((error) => markErrorOutput(serializeErrorValue(error, ownFields, censorMessage))),
     ...Object.fromEntries(
       Object.entries(options.serializers).map(
-        ([key, serializer]): [string, (input: unknown) => unknown] => [key, bound(serializer)]
+        ([key, serializer]): [string, (input: unknown) => unknown] => [
+          key,
+          bound(serializer, key === 'msg' ? asMessage : redactSerialized)
+        ]
       )
     )
   }

@@ -53,18 +53,34 @@ function walkedWith(redact: MessageRedactor): (value: unknown) => unknown {
 /** A message the walk leaves nothing of: Pino writes no `msg` for a function. */
 const NO_MESSAGE: unknown = Function.prototype
 
-/** {@link walkedWith} as a serializer, whose `undefined` Pino would write into the line as is. */
-function serializerOf(redact: MessageRedactor): (message: unknown) => unknown {
-  const walked = walkedWith(redact)
+/** `walk` as a serializer of `msg`: Pino would write an `undefined` from it into the line as is. */
+function writable(walk: (message: unknown) => unknown): (message: unknown) => unknown {
   return (message) => {
-    const written = walked(message)
+    const written = walk(message)
     return written === undefined ? NO_MESSAGE : written
   }
 }
 
 /**
+ * The redaction of what a `msg` serializer of the host or of a child returns.
+ *
+ * @param strategy - The redaction strategy of the module.
+ * @param redact - The redactor that walks by name.
+ * @returns What takes the output of the serializer to what Pino writes as the message. Under
+ *   `'paths'`, `redact` as it is.
+ */
+export function redactMessageOutput(
+  strategy: 'names' | 'paths',
+  redact: MessageRedactor
+): (output: unknown) => unknown {
+  if (strategy === 'paths') return (output) => redact(output)
+  return writable((output) => redact(output, false, true))
+}
+
+/**
  * The serializer of `msg` under `'names'`, none under `'paths'`. A serializer of the host or of a
- * child under the same key replaces it, and has what it returns redacted like any other.
+ * child under the same key replaces it, and has what it returns redacted by
+ * {@link redactMessageOutput}.
  *
  * @param strategy - The redaction strategy of the module.
  * @param redact - The redactor that walks by name.
@@ -74,7 +90,7 @@ export function messageSerializers(
   strategy: 'names' | 'paths',
   redact: MessageRedactor
 ): { msg?: (message: unknown) => unknown } {
-  return strategy === 'names' ? { msg: serializerOf(redact) } : {}
+  return strategy === 'names' ? { msg: writable(walkedWith(redact)) } : {}
 }
 
 /** Give `target` its own value under `key`, writable so that Pino can still replace it. */
