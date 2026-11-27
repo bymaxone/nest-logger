@@ -140,7 +140,7 @@ The community lib [`nestjs-pino`](https://github.com/iamolegga/nestjs-pino) (Iam
 | Component                | Activation                                | Responsibility                                                        |
 | ------------------------ | ----------------------------------------- | --------------------------------------------------------------------- |
 | `HttpLoggingInterceptor` | `http: { isEnabled: true }`               | Logs request/response with normalized URL and duration                |
-| `HttpExceptionFilter`    | `http: { shouldCaptureExceptions: true }` | Logs HTTP exceptions with the appropriate status code                 |
+| `HttpExceptionFilter`    | `forRoot` with `http.isEnabled`           | Logs HTTP exceptions; off when `shouldCaptureExceptions` is `false`   |
 | `RequestIdMiddleware`    | `http: { shouldGenerateRequestId: true }` | Reads/generates the `x-request-id` header and injects it into context |
 
 #### Decorators (always available)
@@ -267,7 +267,7 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
 4. ConfigurationFactory builds Pino options:
    - level
    - redact { paths, censor }
-   - serializers { err } (a library serializer built on `sanitizeError` — NOT `pino.stdSerializers.err`, which derived `type` from the value's constructor and reported `"Object"` for a normalized error; `req`/`res` opt-in only if the HTTP interceptor is active)
+   - serializers { err } (a library serializer built on `sanitizeError` — NOT `pino.stdSerializers.err`, which derived `type` from the value's constructor and reported `"Object"` for a normalized error; plus the consumer's `serializers`. A `req` field that holds a request is serialized by the record formatter, unless the consumer registers `serializers.req`)
    - mixin → `TraceContextMixin` injects `traceId`/`spanId` (from OTel active span) + `LogContextService` fields into **every** log
    - ISO 8601 timestamp
    - base { service: { name, version, namespace?, instance: { id }? }, deployment: { environment: { name } }? } — the resolved resource identity, or the flat dotted attribute names under `resourceFormat: 'flat'` →
@@ -277,7 +277,7 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
 6. Every destination in `destinations` becomes one stream of the multi-stream fan-out →
 7. PinoLoggerService is instantiated with a reference to the root Pino →
 8. LogContextService initializes AsyncLocalStorage<LogContext> →
-9. If http.isEnabled, HttpLoggingInterceptor + HttpExceptionFilter are registered as global →
+9. If http.isEnabled, HttpLoggingInterceptor is registered as global; forRoot also registers HttpExceptionFilter unless shouldCaptureExceptions is false →
 10. The lib emits its initial log: { logKey: 'LOGGER_BOOTSTRAP_OK', level, destinations: [...] } →
 11. On onApplicationShutdown(): the lib emits LOGGER_SHUTDOWN_OK with { destinations }
     FIRST — an entry written after the sinks closed would have nowhere to go — then
@@ -357,12 +357,14 @@ If `@opentelemetry/api` is not installed **or** `NodeSDK` has not been started, 
 
 By design, NestJS does not pass `Request` to services. To propagate `requestId`, `tenantId`, `userId` into every log without prop drilling, the lib uses Node's native `AsyncLocalStorage`:
 
+`RequestIdMiddleware` opens the scope; the interceptor does not.
+
 ```typescript
-// HttpLoggingInterceptor.intercept() in pseudo-code:
-LogContext.run(
-  { requestId, tenantId: req.headers['x-tenant-id'], userId: req.user?.id },
-  () => next.handle() // every log inside this callback automatically carries the context
-)
+// RequestIdMiddleware.use(), on the mount that opens the scope, in pseudo-code:
+const context = pick(logContext.getStore(), ['requestId', 'tenantId']) // a new object; nothing else
+if (requestId !== undefined) context.requestId = requestId // resolved from this request
+if (context.tenantId === undefined && tenantId !== undefined) context.tenantId = tenantId
+logContext.run(context, () => next()) // every log inside this callback carries the context
 ```
 
 The Pino mixin reads the context via `LogContextService.getStore()` and merges it into the log object.
@@ -569,7 +571,7 @@ export interface BymaxLoggerModuleOptions {
    * HTTP module configuration.
    */
   http?: {
-    /** Register HttpLoggingInterceptor and HttpExceptionFilter as global. @default false */
+    /** Register HttpLoggingInterceptor as global; forRoot also registers HttpExceptionFilter. @default false */
     isEnabled?: boolean
     /** Capture exceptions in filter (in addition to interceptor). @default true if enabled */
     shouldCaptureExceptions?: boolean
@@ -617,7 +619,7 @@ export interface BymaxLoggerModuleOptions {
   maxEntrySizeBytes?: number
 
   /**
-   * Custom Pino serializers (merged with defaults err/req/res).
+   * Custom Pino serializers (merged with the default `err`).
    * @see https://github.com/pinojs/pino/blob/main/docs/api.md#serializers-object
    */
   serializers?: Record<string, (input: unknown) => unknown>
@@ -653,7 +655,7 @@ export interface BymaxLoggerModuleOptions {
 | `otel.traceFlagsField`              | `string`                      | `'traceFlags'` (or `'trace_flags'`)                                      | Field name in the log                                                                                                |
 | `otel.fieldFormat`                  | `'camelCase' \| 'snake_case'` | `'camelCase'`                                                            | Shortcut to align with OTel Logs Data Model (`snake_case`) or Pino-native (`camelCase`)                              |
 | `maxEntrySizeBytes`                 | `number`                      | `65536` (64KB)                                                           | Ceiling per serialized field, not per entry (§17.7)                                                                  |
-| `serializers`                       | `Record<string, fn>`          | `{}` (merged with defaults)                                              | Defaults: `err`, `req`, `res`                                                                                        |
+| `serializers`                       | `Record<string, fn>`          | `{}` (merged with defaults)                                              | Default: `err`                                                                                                       |
 | `timestamp`                         | `() => string`                | `() => new Date().toISOString()`                                         | Custom override                                                                                                      |
 
 ### 4.3 `applyDefaults()` — how `otel.fieldFormat` becomes individual field names
@@ -1588,110 +1590,13 @@ await app.listen(3000)
 
 Logs the full HTTP request lifecycle. Normalizes URLs to avoid an explosion of distinct log keys (`/users/abc-123` and `/users/def-456` both become `/users/:id`).
 
-```typescript
-import {
-  CallHandler,
-  ExecutionContext,
-  HttpException,
-  HttpStatus,
-  Injectable,
-  NestInterceptor
-} from '@nestjs/common'
-import { Observable, catchError, tap, throwError } from 'rxjs'
-import { PinoLoggerService } from '../services/pino-logger.service'
-import { LogContextService } from '../services/log-context.service'
-import { normalizeUrl } from '../utils/normalize-url.util'
+The source is `src/server/interceptors/http-logging.interceptor.ts`.
 
-@Injectable()
-export class HttpLoggingInterceptor implements NestInterceptor {
-  constructor(
-    private readonly logger: PinoLoggerService,
-    private readonly logContext: LogContextService
-  ) {}
-
-  intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const httpCtx = ctx.switchToHttp()
-    const req = httpCtx.getRequest()
-    const res = httpCtx.getResponse()
-
-    const { method, url, ip } = req
-    const userAgent = req.headers['user-agent'] ?? 'unknown'
-    const userId = req.user?.id
-    const normalizedUrl = normalizeUrl(url)
-    const start = Date.now()
-
-    this.logger.info('HTTP_REQUEST_START', `${method} ${normalizedUrl}`, userId, {
-      method,
-      url: normalizedUrl,
-      fullUrl: url,
-      ip,
-      userAgent
-    })
-
-    return next.handle().pipe(
-      tap(() => {
-        const duration = Date.now() - start
-        const statusCode = res.statusCode
-        if (statusCode >= 200 && statusCode < 300) {
-          this.logger.info(
-            'HTTP_REQUEST_SUCCESS',
-            `${method} ${normalizedUrl} → ${statusCode} (${duration}ms)`,
-            userId,
-            { method, url: normalizedUrl, statusCode, duration }
-          )
-        } else if (statusCode >= 300 && statusCode < 400) {
-          this.logger.info(
-            'HTTP_REQUEST_REDIRECT',
-            `${method} ${normalizedUrl} → ${statusCode}`,
-            userId,
-            { method, url: normalizedUrl, statusCode, duration }
-          )
-        }
-      }),
-      catchError((err: unknown) => {
-        const duration = Date.now() - start
-        const statusCode =
-          err instanceof HttpException ? err.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR
-        const logKey = statusCode >= 500 ? 'HTTP_REQUEST_SERVER_ERROR' : 'HTTP_REQUEST_CLIENT_ERROR'
-
-        // Always emit the timing/completion log so latency observability is preserved
-        // even when the HttpExceptionFilter owns the error log (see §8.1 "Double-log avoidance").
-        this.logger.info(
-          'HTTP_REQUEST_COMPLETED',
-          `${method} ${normalizedUrl} → ${statusCode} (${duration}ms)`,
-          userId,
-          { method, url: normalizedUrl, statusCode, duration }
-        )
-
-        // Skip the redundant error log if the HttpExceptionFilter already logged it.
-        const alreadyHandled =
-          (req as { __bymax_logger_handled?: boolean }).__bymax_logger_handled === true
-        if (alreadyHandled) {
-          return throwError(() => err)
-        }
-
-        if (statusCode >= 500) {
-          this.logger.errorStructured(
-            logKey,
-            err instanceof Error ? err : new Error(String(err)),
-            userId,
-            { method, url: normalizedUrl, statusCode, duration }
-          )
-        } else {
-          this.logger.warnStructured(logKey, `${method} ${normalizedUrl} → ${statusCode}`, userId, {
-            method,
-            url: normalizedUrl,
-            statusCode,
-            duration,
-            errorMessage: (err as Error)?.message
-          })
-        }
-        return throwError(() => err)
-      })
-    )
-  }
-}
-```
+- A request that the access-log middleware already records is left to it: the interceptor only records a thrown error.
+- A path that matches `http.excludePaths` is not logged.
+- On entry it emits `HTTP_REQUEST_START` with `method`, the normalized `url`, `fullUrl` (query string removed, secret path segments scrubbed), `ip` and `userAgent`.
+- On completion it emits `HTTP_REQUEST_SUCCESS` (2xx) or `HTTP_REQUEST_REDIRECT` (3xx).
+- On a thrown value it emits `HTTP_REQUEST_CLIENT_ERROR` (warn: an `HttpException` below 500, or an `http-errors` error that exposes a 4xx) or `HTTP_REQUEST_SERVER_ERROR` (error: anything else), and re-throws it.
 
 ### 7.2 URL normalization algorithm
 
@@ -1732,62 +1637,20 @@ When `http.isEnabled: true`, the lib automatically registers via `APP_INTERCEPTO
 
 ### 8.1 `HttpExceptionFilter`
 
-Catches `HttpException`s that escape the interceptor (rare but possible) and responds with a standard payload. Always logs, with the level based on the status code.
+A catch-all filter: it logs any exception that escapes the request pipeline and writes the JSON response. The source is `src/server/filters/http-exception.filter.ts`.
 
-```typescript
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common'
-import { PinoLoggerService } from '../services/pino-logger.service'
-import { sanitizeError } from '../utils/sanitize-error.util'
+| Thrown value                           | Entry                              | Response                    |
+| -------------------------------------- | ---------------------------------- | --------------------------- |
+| `HttpException` below 500              | `HTTP_EXCEPTION_HANDLED` (warn)    | its own `getResponse()`     |
+| `HttpException` of 500 or more         | `HTTP_EXCEPTION_UNHANDLED` (error) | its own `getResponse()`     |
+| `http-errors` shape that exposes a 4xx | `HTTP_EXCEPTION_HANDLED` (warn)    | `{ statusCode, message }`   |
+| anything else                          | `HTTP_EXCEPTION_UNHANDLED` (error) | a fixed 500 body, no detail |
 
-@Catch()
-export class HttpExceptionFilter implements ExceptionFilter {
-  constructor(private readonly logger: PinoLoggerService) {}
+`BymaxLoggerModule.forRoot` registers it when `http.isEnabled` and `http.shouldCaptureExceptions` are both set; `forRootAsync` does not register it.
 
-  catch(exception: unknown, host: ArgumentsHost): void {
-    const ctx = host.switchToHttp()
-    const res = ctx.getResponse()
-    const req = ctx.getRequest()
+#### Two entries per failed request
 
-    const isHttpException = exception instanceof HttpException
-    const status = isHttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR
-    const body = isHttpException
-      ? exception.getResponse()
-      : { statusCode: status, message: 'Internal server error' }
-
-    const logKey = status >= 500 ? 'HTTP_EXCEPTION_UNHANDLED' : 'HTTP_EXCEPTION_HANDLED'
-    const userId = req.user?.id
-    const metadata = { method: req.method, url: req.url, status }
-
-    if (status >= 500) {
-      this.logger.errorStructured(
-        logKey,
-        exception instanceof Error ? sanitizeError(exception) : new Error(String(exception)),
-        userId,
-        metadata
-      )
-    } else {
-      this.logger.warnStructured(
-        logKey,
-        (exception as { message?: string }).message ?? 'HTTP exception',
-        userId,
-        metadata
-      )
-    }
-
-    // Mark the request so the HttpLoggingInterceptor's catchError can detect
-    // that the filter already logged this 5xx and skip its own error log.
-    ;(req as { __bymax_logger_handled?: boolean }).__bymax_logger_handled = true
-
-    res.status(status).json(body)
-  }
-}
-```
-
-#### Double-log avoidance
-
-The `HttpExceptionFilter` sets `req.__bymax_logger_handled = true` after logging an exception. The `HttpLoggingInterceptor`'s `catchError` checks this flag and **skips its own error log** when set — so a single failure produces exactly one `HTTP_EXCEPTION_*` log instead of duplicating it as `HTTP_REQUEST_*_ERROR`.
-
-The interceptor still emits `HTTP_REQUEST_COMPLETED` (with timing) so latency observability is preserved across the success and failure paths. In short: the filter owns the **what failed** log; the interceptor owns the **how long it took** log.
+The filter and the access log do not suppress each other. With both active, a handler that throws produces the filter's `HTTP_EXCEPTION_*` entry (what failed) and the request's terminal `HTTP_REQUEST_CLIENT_ERROR` or `HTTP_REQUEST_SERVER_ERROR` entry (how it ended, with `duration`). `HTTP_REQUEST_COMPLETED` is reserved and never emitted.
 
 ---
 

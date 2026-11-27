@@ -37,7 +37,6 @@
   "docs/technical_specification.md::ILogDestination",
   "docs/technical_specification.md::InjectLogger",
   "docs/technical_specification.md::LOG_KEYS_CONVENTION_REGEX",
-  "docs/technical_specification.md::LogContext",
   "docs/technical_specification.md::LogContextService",
   "docs/technical_specification.md::LogLevel",
   "docs/technical_specification.md::PinoLoggerService",
