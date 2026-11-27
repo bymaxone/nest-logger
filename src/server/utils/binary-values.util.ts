@@ -12,7 +12,7 @@ import { withBinaryAsSize } from './own-field-policy.util'
 import { REDACT_MAX_VISITS } from './redact-by-name.util'
 
 const keysOf = Object.keys
-const describe = Reflect.getOwnPropertyDescriptor
+const descriptorOf = Reflect.getOwnPropertyDescriptor
 const prototypeOf = Object.getPrototypeOf
 const hasOwn = Object.hasOwn
 const dateToJson = Date.prototype.toJSON
@@ -29,7 +29,7 @@ function answersByCode(value: object): boolean {
   let current: object | null = value
   for (let hops = 0; current !== null; hops++) {
     if (hops > MAX_PROTOTYPE_HOPS || types.isProxy(current)) return true
-    const found = describe(current, 'toJSON')
+    const found = descriptorOf(current, 'toJSON')
     if (found !== undefined) {
       // A descriptor with no value of its own is an accessor.
       if (!hasOwn(found, 'value')) return true
@@ -65,7 +65,7 @@ export function needsTheWalk(value: unknown): boolean {
       for (const key of keysOf(next)) {
         read += 1
         if (read > REDACT_MAX_VISITS) return true
-        const member = describe(next, key) as PropertyDescriptor
+        const member = descriptorOf(next, key) as PropertyDescriptor
         if (!hasOwn(member, 'value')) return true
         pending[pending.length] = member.value
       }
