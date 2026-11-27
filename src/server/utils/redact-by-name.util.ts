@@ -73,6 +73,7 @@ import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
 import { addErrorParts, defineOwn, type ErrorPartsHost } from './redact-error-parts.util'
+import type { PathHold } from './redact-path-state.util'
 import { resolveToJson, type ResolvedToJson } from './resolve-to-json.util'
 import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
@@ -237,6 +238,8 @@ export interface RedactRules {
    * whole walk.
    */
   readonly insideErrors?: RedactRules | undefined
+  /** Under `'paths'`, which values with a `toJSON` hold a field the paths name. */
+  readonly pathHold?: PathHold | undefined
   /** Containers one call may visit before it stops expanding. */
   readonly maxVisits: number
   /** Which own fields of an `Error` are written. */
@@ -515,11 +518,13 @@ function walkForm(
  * `Date.prototype.toJSON.call({ ...new Date() })` throws `toISOString is not a function`, and
  * `Decimal` / Luxon behave the same: that would trade a narrow leak for a crash on the COMMON case.
  *
- * `Object.keys` reads names only; no getter is invoked, so the source is not observed twice. The
- * check is shallow by design: a method that reaches into NESTED state (`this.inner.password`) to
- * rename it is not caught, and cannot be: that is the same limitation as a caller writing
- * `{ renamed: obj.inner.password }` by hand, which no name matcher sees. Documented in
- * PINO-REDACTION-GUIDELINES.md under the engine's limits.
+ * `Object.keys` reads names only; no getter is invoked, so the source is not observed twice. That
+ * check is shallow: under `'names'` a method that renames NESTED state (`this.inner.password`) is
+ * not caught, the same as `{ renamed: obj.inner.password }` written by hand.
+ *
+ * Under `'paths'` the paths run on what is written here, so a rename would carry a value past them.
+ * There `pathHold` searches the whole own state: a held value is the censor, and a held `Error` is
+ * walked as a stand-in that has no `toJSON`.
  *
  * The INSPECTED result is what gets returned, always, never the original object. Returning the
  * original when the probe came back clean left `JSON.stringify` to call `toJSON()` a SECOND time
@@ -550,6 +555,10 @@ function walkToJsonOutput(
 ): unknown {
   if (Object.keys(value).some((key) => matchesKey(rules.sensitive, key))) {
     return rules.censor
+  }
+  if (rules.pathHold?.holds(value) === true) {
+    if (!isError(value)) return rules.censor
+    return walk(rules.pathHold.standIn(value), rules, depth + 1, ancestors, true, inSerialized)
   }
   return walk(toJson.call(value), rules, depth + 1, ancestors, true, inSerialized)
 }
@@ -718,6 +727,8 @@ function errorPartsHost(
  * @param headerNames - The names a flat header array censors; `fieldNames` by default.
  * @param errorTextToSerializer - Leave the `message` of an object under `err` to the
  *   serializer of `err`. Off by default.
+ * @param pathHold - Under `'paths'`: a value with a `toJSON` it holds is written as the censor,
+ *   and an `Error` as its stand-in.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
  *   const redact = createNameRedactor(['password'], '[REDACTED]')
@@ -732,7 +743,8 @@ export function createNameRedactor(
   ownFields: OwnFieldPolicy = ALL_OWN_FIELDS,
   errorOnlyNames?: Iterable<string>,
   headerNames?: Iterable<string>,
-  errorTextToSerializer: boolean = false
+  errorTextToSerializer: boolean = false,
+  pathHold?: PathHold
 ): MessageRedactor {
   // Matched case-INSENSITIVELY: header names are case-insensitive by spec and only INBOUND Node
   // headers arrive lower-cased, so a hand-built bag with `Authorization` or `Cookie` must be covered.
@@ -745,7 +757,8 @@ export function createNameRedactor(
     errorsAsData: serializedKeys !== undefined,
     errorTextToSerializer,
     maxVisits,
-    ownFields
+    ownFields,
+    pathHold
   }
   const insideNames = errorOnlyNames === undefined ? undefined : foldedNames(errorOnlyNames)
   return (value: unknown, isRecordRoot = false, inMessage = false): unknown => {

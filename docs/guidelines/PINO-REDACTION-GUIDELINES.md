@@ -46,6 +46,10 @@ serializer. Inspection cannot close that window; reading once and pinning the re
   not trusted and the whole value is censored. Calling `toJSON` against a sanitized copy instead —
   the obvious fix — was rejected: it throws on every method that reads an internal slot rather than
   an own property (`Date.prototype.toJSON.call({ ...date })` is `toISOString is not a function`).
+  Under `redactStrategy: 'paths'` the sensitive set of the record walk is empty and the paths run on
+  its output, so `utils/redact-path-state.util.ts` searches the whole own state for the leaf names
+  of the paths: a held value is the censor, and a held `Error` is written from a copy that has no
+  `toJSON`. The README states the rule.
 - **`ArrayBuffer` views** (`Buffer`, typed arrays) are returned untouched, as a cost bound:
   `Buffer` has a `toJSON` that would materialise a `{ type, data: number[] }` copy per entry.
   This is the ONLY path that hands back a caller-controlled reference, so it is also the only one

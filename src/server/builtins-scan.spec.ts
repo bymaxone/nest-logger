@@ -20,6 +20,7 @@ const FILES = [
   'utils/matches-exclude-path.util.ts',
   'utils/sanitize-error.util.ts',
   'utils/redact-by-name.util.ts',
+  'utils/redact-path-state.util.ts',
   'utils/error-text-exemption.util.ts',
   'utils/redact-error-parts.util.ts',
   'utils/merge-mixin-safely.util.ts',
@@ -46,6 +47,9 @@ const STATIC_HOLDERS: Readonly<Record<string, object>> = {
  */
 const NOT_BUILT_INS: Readonly<Record<string, string>> = {
   walk: 'a callback the caller of the redaction passes',
+  holds: 'a function the factory builds from redactPaths',
+  standIn: 'a function the factory builds from redactPaths',
+  matches: 'a function of the matcher itself',
   censorName: 'a callback the caller of the redaction passes',
   hasToJson: 'a callback the caller of the redaction passes',
   registerStream: 'a method of the destination health the factory owns',

@@ -473,7 +473,7 @@ const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter({ url: process.env.OTLP_TRACE_ENDPOINT }),
   instrumentations: [
     getNodeAutoInstrumentations({
-      '@opentelemetry/instrumentation-fs': { isEnabled: false } // noisy
+      '@opentelemetry/instrumentation-fs': { enabled: false } // noisy
     })
   ]
 })
@@ -887,7 +887,14 @@ Redaction is one **recursive, snapshotting walk**: a value is censored when its 
 > A bare `sessionId`, `session_id` or `session-id` is **not** on the list: many applications carry one as a correlation key, and a name cannot be switched off one at a time. A session id that is itself a bearer credential in your system must be added to your own `redactPaths` (`redactPaths: ['sessionId']` censors it at any depth under the default strategy).
 
 > [!WARNING]
-> Redaction matches **key names**. A secret under a name you have not declared sensitive is emitted: `logger.info(key, msg, userId, { renamed: user.password })` writes it in clear, and so does a `toJSON` that renames nested state. No name matcher can follow a value through a rename. Declare the name, or keep the value out of the log.
+> Redaction matches **key names**. A secret under a name you have not declared sensitive is emitted: `logger.info(key, msg, userId, { renamed: user.password })` writes it in clear, and under `'names'` so does a `toJSON` that renames nested state. No name matcher can follow a value through a rename. Declare the name, or keep the value out of the log.
+
+**A `toJSON` under `redactStrategy: 'paths'`.** The paths run on what the logger writes, so where the logger calls a value's `toJSON` it first reads the value's own state, at any depth, without running its code. The value holds a named field when a key there equals the last segment of a configured path (the default ones too), when any path ends in `*` and there is any key, when there is a getter, or when the state cannot be read or is very large. The `message` and `stack` an `Error` is built with are not counted. A value that holds one is not written through its `toJSON`:
+
+- **Not an `Error`:** the whole value is written as the censor. A field of that name outside the path is enough, so this hides more than the path says.
+- **An `Error`:** its `toJSON` is not called. It is written with its type, `message` and `stack` (the paths and `maxStringLength` apply to them as usual) and the own fields of `errorOwnFields: 'safe'` (with your `errorOwnFieldNames`) that are not objects and that no path names. An `Error` in its `cause` or `errors` is written the same way; any other object there is the censor. One with an own key from the default set is the censor whole.
+
+A value that holds no named field is written as its `toJSON` returns it.
 
 **One entry, one line.** Every message argument passes through a normalization before it reaches Pino: line separators (`\r`, `\n`, U+2028, U+2029, U+0085) become the two-character sequence `\n`, and every other control character that can drive a terminal (ESC, vertical tab, form feed, backspace, the rest of C0 except TAB, DEL and the C1 range) becomes a readable `\uXXXX` escape. This keeps a message from forging an entry in `pino-pretty` and in any destination that re-renders it, and `JSON.stringify` alone would leave DEL, C1, U+2028 and U+2029 verbatim in a raw line read in a terminal. The scrubbed stack gets the same escaping (its newlines are kept). Structured fields are untouched, so `err.message` keeps the original text, and a control character in a **metadata value** still reaches a terminal: only `msg` and the stack carry this guarantee.
 

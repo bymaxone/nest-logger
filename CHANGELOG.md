@@ -12,6 +12,18 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.38] - 2026-11-27
+
+### Breaking
+
+- Under `redactStrategy: 'paths'`, a value with a `toJSON` whose own state, at any depth, holds a key equal to the last segment of a configured path (or any key, when a path ends in `*`), or a getter, is no longer written through that `toJSON`. A value that is not an `Error` is written as the censor, whole. Migration: log the fields you need as a plain object, for example `{ id: card.id }` instead of `card`.
+- Under the same strategy, such an `Error` (an HTTP client error that carries the request it made, for example) is written with its type, `message`, `stack` and the own fields of `errorOwnFields: 'safe'` that are not objects and that no path names. Migration: name any other field you read in `errorOwnFieldNames`, or log it beside the error.
+
+### Documentation
+
+- The README states the `toJSON` rule of `redactStrategy: 'paths'`.
+- The OpenTelemetry example configures the file-system instrumentation with `enabled`, the option it has.
+
 ## [1.4.37] - 2026-11-27
 
 ### Breaking
@@ -3652,7 +3664,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.37...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.38...HEAD
+[1.4.38]: https://github.com/bymaxone/nest-logger/compare/v1.4.37...v1.4.38
 [1.4.37]: https://github.com/bymaxone/nest-logger/compare/v1.4.36...v1.4.37
 [1.4.36]: https://github.com/bymaxone/nest-logger/compare/v1.4.35...v1.4.36
 [1.4.35]: https://github.com/bymaxone/nest-logger/compare/v1.4.34...v1.4.35
