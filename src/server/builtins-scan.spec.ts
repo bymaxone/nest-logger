@@ -21,6 +21,7 @@ const FILES = [
   'utils/sanitize-error.util.ts',
   'utils/redact-by-name.util.ts',
   'utils/redact-path-state.util.ts',
+  'utils/redact-held-error.util.ts',
   'utils/error-text-exemption.util.ts',
   'utils/redact-error-parts.util.ts',
   'utils/merge-mixin-safely.util.ts',
@@ -48,7 +49,7 @@ const STATIC_HOLDERS: Readonly<Record<string, object>> = {
 const NOT_BUILT_INS: Readonly<Record<string, string>> = {
   walk: 'a callback the caller of the redaction passes',
   holds: 'a function the factory builds from redactPaths',
-  standIn: 'a function the factory builds from redactPaths',
+  walkPart: 'a callback the walk passes to the writer of a held Error',
   matches: 'a function of the matcher itself',
   isNamed: 'a function of the matcher itself',
   censorName: 'a callback the caller of the redaction passes',

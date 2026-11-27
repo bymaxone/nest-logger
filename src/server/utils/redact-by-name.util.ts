@@ -74,6 +74,7 @@ import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
 import { addErrorParts, defineOwn, type ErrorPartsHost } from './redact-error-parts.util'
+import { keysToRead, writeHeldError } from './redact-held-error.util'
 import type { PathHold } from './redact-path-state.util'
 import { resolveToJson, type ResolvedToJson } from './resolve-to-json.util'
 import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
@@ -239,6 +240,8 @@ export interface RedactRules {
    * whole walk.
    */
   readonly insideErrors?: RedactRules | undefined
+  /** Whether an accessor is left out without being run. */
+  readonly dataOnly?: boolean
   /** Under `'paths'`, which values with a `toJSON` hold a field the paths name. */
   readonly pathHold?: PathHold | undefined
   /** Containers one call may visit before it stops expanding. */
@@ -525,7 +528,7 @@ function walkForm(
  *
  * Under `'paths'` the paths run on what is written here, so a rename would carry a value past them.
  * There `pathHold` searches the own properties: a held value is the censor, and a held `Error` is
- * walked as a stand-in that has no `toJSON`.
+ * written as {@link writeHeldError} decides.
  *
  * The INSPECTED result is what gets returned, always, never the original object. Returning the
  * original when the probe came back clean left `JSON.stringify` to call `toJSON()` a SECOND time
@@ -544,7 +547,7 @@ function walkForm(
  * @param rules - The names to censor and the root keys that have a serializer.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
  * @param ancestors - References on the current path (cycle guard).
- * @returns The censor, or the walked output or stand-in.
+ * @returns The censor, or what is written of the output.
  */
 function walkToJsonOutput(
   value: object,
@@ -557,10 +560,13 @@ function walkToJsonOutput(
   if (Object.keys(value).some((key) => matchesKey(rules.sensitive, key))) {
     return rules.censor
   }
-  if (rules.pathHold?.holds(value, rules.visits) === true) {
+  const { pathHold } = rules
+  if (pathHold?.holds(value, rules.visits) === true) {
     if (!isError(value)) return rules.censor
-    const standIn = rules.pathHold.standIn(value, toJson, rules.visits)
-    return walk(standIn, rules, depth + 1, ancestors, true, inSerialized)
+    const held = { ...rules, pathHold }
+    return writeHeldError(value, toJson, held, ancestors, (part, under, below) =>
+      walk(part, under, depth + below, ancestors, true, inSerialized)
+    )
   }
   return walk(toJson.call(value), rules, depth + 1, ancestors, true, inSerialized)
 }
@@ -610,7 +616,7 @@ function walkProperties(
   inSerialized: boolean
 ): unknown {
   const source = value as Record<string, unknown>
-  const keys = Object.keys(source)
+  const keys = keysToRead(source, rules.dataOnly)
   const asData = isError(value) && (rules.ownFields.safe || (rules.errorsAsData && !inSerialized))
   const copy = startCopy(value, asData)
   const scrubbed = isError(value) && (rules.ownFields.safe || !inSerialized)
@@ -730,7 +736,7 @@ function errorPartsHost(
  * @param errorTextToSerializer - Leave the `message` of an object under `err` to the
  *   serializer of `err`. Off by default.
  * @param pathHold - Under `'paths'`: a value with a `toJSON` it holds is written as the censor,
- *   and an `Error` as its stand-in.
+ *   and an `Error` as {@link writeHeldError} decides.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
  *   const redact = createNameRedactor(['password'], '[REDACTED]')

@@ -1,7 +1,7 @@
 /**
  * E2E: under `redactStrategy: 'paths'`, a value with a `toJSON` whose own state holds a field the
- * paths name is written as the censor, whole. An `Error` is written from what its `toJSON`
- * returns, cut to what `errorOwnFields: 'safe'` would write for it.
+ * paths name is written as the censor, whole. An `Error` is written as what both the walk
+ * of its `toJSON` output and the `errorOwnFields: 'safe'` form of it write.
  *
  * Layer: e2e, server (`BymaxLoggerModule`, the Pino factory, the redaction walk).
  */
@@ -414,5 +414,86 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
 
     expect(text).not.toContain(SECRET)
     expect(text.match(/\[REDACTED\]/g)?.length).toBe(3)
+  })
+})
+
+describe("a held Error under redactStrategy: 'paths' writes no more than either walk", () => {
+  /** The line for `{ u: error }` with `u.pan` redacted. */
+  const written = (error: unknown): Promise<string> =>
+    moduleText({ redactPaths: ['u.pan'] }, (service) =>
+      service.getRawLogger().info({ u: error }, 'held')
+    )
+
+  /** An `Error` that is held through `pan`, written as `output` says. */
+  const held = (output: (error: Error) => unknown, extra: object = {}): Error => {
+    const error = Object.assign(new Error('failed', extra), { inner: { pan: 'x' } })
+    return Object.assign(error, { toJSON: () => output(error) })
+  }
+
+  /* A linked value with a `toJSON` and an own default key is the censor, whole. */
+  it('censors a cause whose toJSON sits beside an own default key', async () => {
+    const cause = Object.assign(new Error(SECRET), {
+      password: 'x',
+      toJSON: () => ({ message: SECRET })
+    })
+
+    const text = await written(held(() => ({ message: 'failed', cause }), { cause }))
+
+    expect(text).not.toContain(SECRET)
+    expect(text).toContain('"cause":"[REDACTED]"')
+  })
+
+  /* A masking view the output puts on itself decides what is written. */
+  it("does not write past the output's own toJSON", async () => {
+    const view = { message: SECRET, toJSON: () => 'masked' }
+    const error = held(() => view)
+    error.message = SECRET
+
+    expect(await written(error)).not.toContain(SECRET)
+  })
+
+  /* The same view on the list of members. */
+  it('does not write past the toJSON of the list of members', async () => {
+    const members = [new Error(SECRET)]
+    const view = Object.assign([...members], { toJSON: () => 'masked' })
+    const error = Object.assign(
+      held(() => ({ errors: view })),
+      { errors: members }
+    )
+
+    expect(await written(error)).not.toContain(SECRET)
+  })
+
+  /* What `JSON.stringify` does not see on the output is not written. */
+  it('does not write a non-enumerable cause of the output', async () => {
+    const cause = new Error(SECRET)
+    const output = (): unknown =>
+      Object.defineProperty({ message: 'failed' }, 'cause', { value: cause })
+
+    expect(await written(held(output, { cause }))).not.toContain(SECRET)
+  })
+
+  /* What `'safe'` reads is read before `toJSON` can change it. */
+  it('does not write what toJSON puts on the Error before returning it', async () => {
+    const output = (error: Error): unknown => {
+      error.message = SECRET
+      return { message: SECRET }
+    }
+
+    expect(await written(held(output))).not.toContain(SECRET)
+  })
+
+  /* A renamed redacted value under an allow-listed or head key is the censor. */
+  it.each(['code', 'message'])('writes the censor for a password renamed to %s', async (key) => {
+    const error = Object.assign(new Error('failed'), {
+      password: SECRET,
+      toJSON: () => ({ [key]: SECRET })
+    })
+    const text = await moduleText({ redactPaths: ['u.password'] }, (service) =>
+      service.getRawLogger().info({ u: error }, 'held')
+    )
+
+    expect(text).not.toContain(SECRET)
+    expect(text).toContain('[REDACTED]')
   })
 })

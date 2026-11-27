@@ -277,7 +277,7 @@ function pathHoldOf(
 ): PathHold | undefined {
   if (options.redactStrategy !== 'paths' || redactOption === undefined) return undefined
   const safe = createOwnFieldPolicy('safe', options.errorOwnFieldNames)
-  return createPathHold(redactOption.paths, REDACT_MAX_VISITS, safe, options.redactCensor)
+  return createPathHold(redactOption.paths, REDACT_MAX_VISITS, safe)
 }
 
 /**
