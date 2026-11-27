@@ -20,8 +20,8 @@ heading here.
 
 ### Security
 
-- **Under the default `redactStrategy: 'names'`, an object that the raw logger formats into the message with `%o`, `%O` or `%j`, or takes as the message (with no `msgPrefix`), is now redacted by name.** Pino's redact paths apply to a placeholder as before. `%s` and `%d` print what they printed before, and a string is never read.
-- The walk composes with two members of Pino reached through `pino.symbols`. If they are missing under `'names'`, the logger refuses to start with `LOGGER_PINO_UNSUPPORTED`. Tested on `pino` 10.0.0 and 10.4.0.
+- **Under the default `redactStrategy: 'names'`, an object that the raw logger formats into the message with `%o`, `%O` or `%j`, or takes as the message (passed with no `msgPrefix`, or taken from `err.message`), is now redacted by name.** Pino's redact paths apply to a placeholder as before. `%s` and `%d` print what they printed before, and a string is never read.
+- For the placeholders the walk composes with a member of Pino reached through `pino.symbols`. If it is missing under `'names'`, the logger refuses to start with `LOGGER_PINO_UNSUPPORTED`. Tested on `pino` 10.0.0 and 10.4.0.
 
 ### Documentation
 

@@ -6,16 +6,16 @@
 import pino from 'pino'
 import type { Logger as PinoLogger } from 'pino'
 
-import { guardMessageValues } from './guard-message-values.util'
+import { guardMessageValues, messageSerializers } from './guard-message-values.util'
 import type { Redactor } from './redact-by-name.util'
 
 const mark: Redactor = (value) => ({ walked: value })
 
-/** A real Pino instance, and the messages it writes. */
-function build(): { logger: PinoLogger; messages: () => unknown[] } {
+/** A real Pino instance with the message serializer, and the messages it writes. */
+function build(redact: Redactor = mark): { logger: PinoLogger; messages: () => unknown[] } {
   const written: string[] = []
   const logger = pino(
-    { base: null, timestamp: false },
+    { base: null, timestamp: false, serializers: messageSerializers('names', redact) },
     { write: (line: string) => void written.push(line) }
   )
   return {
@@ -29,43 +29,57 @@ const log = (logger: PinoLogger, ...inputs: unknown[]): void => {
   Reflect.apply(logger.info, logger, inputs)
 }
 
-describe('guardMessageValues', () => {
-  it('walks the value of a placeholder and an object message', () => {
+describe('messageSerializers', () => {
+  it('walks an object message, and the message Pino takes from err.message', () => {
     const { logger, messages } = build()
-    guardMessageValues(logger, mark)
 
-    log(logger, '%o', { a: 1 })
     log(logger, {}, { a: 1 })
-    log(logger.child({}), '%o', { a: 1 })
+    log(logger, { err: { message: { b: 2 } } })
+    log(logger.child({}), {}, { c: 3 })
 
     expect(messages()).toStrictEqual([
-      '{"walked":{"a":1}}',
       { walked: { a: 1 } },
-      '{"walked":{"a":1}}'
+      { walked: { b: 2 } },
+      { walked: { c: 3 } }
     ])
   })
 
   it('walks a function, which can carry a toJSON', () => {
-    const { logger, messages } = build()
-    guardMessageValues(logger, () => 'walked')
+    const { logger, messages } = build(() => 'walked')
     const fn = Object.assign(() => 0, { toJSON: () => 'own' })
 
-    log(logger, fn as unknown, '%o')
+    log(logger, {}, fn)
 
-    expect(messages()).toHaveLength(1)
-    expect(JSON.stringify(messages())).not.toContain('own')
+    expect(messages()).toStrictEqual(['walked'])
   })
 
   it('leaves primitives as they are', () => {
-    const { logger, messages } = build()
     const redact = jest.fn(mark)
+    const { logger, messages } = build(redact)
     guardMessageValues(logger, redact)
 
     log(logger, '%o %o %s', 5, null, 'x')
     log(logger, {}, 'plain')
+    log(logger, {}, null)
 
-    expect(messages()).toStrictEqual(['5 null x', 'plain'])
+    expect(messages()).toStrictEqual(['5 null x', 'plain', null])
     expect(redact).not.toHaveBeenCalled()
+  })
+
+  it("gives no serializer under 'paths'", () => {
+    expect(messageSerializers('paths', mark)).toStrictEqual({})
+  })
+})
+
+describe('guardMessageValues', () => {
+  it('walks the value of a placeholder, of a child too', () => {
+    const { logger, messages } = build()
+    guardMessageValues(logger, mark)
+
+    log(logger, '%o', { a: 1 })
+    log(logger.child({}), '%o', { a: 1 })
+
+    expect(messages()).toStrictEqual(['{"walked":{"a":1}}', '{"walked":{"a":1}}'])
   })
 
   it('guards a child only when Pino gave it format options of its own', () => {
@@ -87,8 +101,6 @@ describe('guardMessageValues', () => {
   it.each([
     ['no symbols', undefined],
     ['no formatOptsSym', { writeSym: pino.symbols.writeSym }],
-    ['no writeSym', { formatOptsSym: pino.symbols.formatOptsSym }],
-    ['a writeSym the logger lacks', { ...pino.symbols, writeSym: Symbol('other') }],
     ['a formatOptsSym the logger lacks', { ...pino.symbols, formatOptsSym: Symbol('other') }]
   ])('refuses a Pino with %s', (_name, symbols) => {
     const { logger } = build()

@@ -1,8 +1,9 @@
 /**
  * E2E: objects that reach the message of an entry, on the oldest Pino the peer range admits.
  *
- * Layer: e2e, server. The redaction composes with two members Pino exposes through `symbols`, so
- * the floor runs the same rows too; `pino-floor` is an alias of `pino@10.0.0`.
+ * Layer: e2e, server. The redaction composes with a member Pino exposes through `symbols` and relies
+ * on Pino passing every `msg` to the serializer of that name, so the floor runs the same rows too;
+ * `pino-floor` is an alias of `pino@10.0.0`.
  */
 import pino from 'pino'
 

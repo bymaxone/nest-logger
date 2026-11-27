@@ -42,6 +42,7 @@ import {
   ENTRY_TEXT_FINISHER
 } from './utils/entry-text-finisher.util'
 import { guardChildBindings } from './utils/guard-child-bindings.util'
+import { messageSerializers } from './utils/guard-message-values.util'
 import { mergeMixinSafely } from './utils/merge-mixin-safely.util'
 import {
   createOwnFieldPolicy,
@@ -502,6 +503,7 @@ function buildSerializers(
       () => onTruncate('max_entry_size')
     )
   return {
+    ...messageSerializers(options.redactStrategy, redactSerialized),
     err: bound((error) => markErrorOutput(serializeErrorValue(error, ownFields, censorMessage))),
     ...Object.fromEntries(
       Object.entries(options.serializers).map(

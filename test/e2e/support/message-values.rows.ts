@@ -133,85 +133,139 @@ const AS_MESSAGE: ReadonlyArray<readonly [string, (raw: Raw) => void]> = [
   ['a child', (raw) => raw.child({ a: 1 }).info({}, bag())]
 ]
 
+/** An `err` whose message is not text, from which Pino takes the message of an entry given none. */
+const unworded = (): Record<string, unknown> => ({
+  message: { password: SECRET, token: SECRET, kept: 'visible' }
+})
+
+const FROM_ERR: ReadonlyArray<readonly [string, (raw: Raw) => void]> = [
+  ['a record with an err', (raw) => raw.info({ err: unworded() })],
+  ['an Error as the record', (raw) => raw.info(Object.assign(new Error('boom'), unworded()))],
+  ['a child', (raw) => raw.child({ a: 1 }).info({ err: unworded() })],
+  [
+    'a child with a msgPrefix',
+    (raw) => raw.child({}, { msgPrefix: '> ' }).info({ err: unworded() })
+  ],
+  [
+    'a child with serializers of its own',
+    (raw) => raw.child({}, { serializers: { other: String } }).info({ err: unworded() })
+  ]
+]
+
+/** The rows that compare a whole message. */
+function messageRows(): void {
+  it.each(PLACEHOLDERS)('redacts %s', async (_name, emit, expected) => {
+    expect(await messageOf(emit)).toBe(expected)
+  })
+
+  it.each(AS_MESSAGE)('redacts the object of %s', async (_name, emit) => {
+    expect(await messageOf(emit)).toStrictEqual(JSON.parse(CENSORED))
+  })
+
+  it.each(FROM_ERR)('redacts the message taken from %s', async (_name, emit) => {
+    expect(await messageOf(emit)).toStrictEqual({
+      password: '[REDACTED]',
+      token: '[REDACTED]',
+      kept: 'visible'
+    })
+  })
+
+  it('redacts what a msg serializer of the host returns', async () => {
+    const echo = (message: unknown): unknown => message
+    const lines = await linesOf(
+      (raw) => {
+        raw.info({}, bag())
+        raw.child({}, { serializers: { msg: echo } }).info({}, bag())
+      },
+      { serializers: { msg: echo } }
+    )
+
+    expect(lines.map((line) => line['msg'])).toStrictEqual([
+      JSON.parse(CENSORED),
+      JSON.parse(CENSORED)
+    ])
+  })
+
+  it.each(UNCHANGED)('writes %s as before', async (_name, emit, expected) => {
+    expect(await messageOf(emit)).toStrictEqual(expected)
+  })
+}
+
+/** The rows for the disabled level and the redact paths. */
+function boundaryRows(): void {
+  it('does not read an object of a disabled level', async () => {
+    let reads = 0
+    const probe = {
+      get password(): string {
+        reads += 1
+        return SECRET
+      }
+    }
+
+    const lines = await linesOf(
+      (raw) => {
+        raw.debug('P %o', probe)
+        raw.debug({}, probe)
+      },
+      { level: 'info' }
+    )
+
+    expect(lines).toHaveLength(0)
+    expect(reads).toBe(0)
+  })
+
+  it.each(['%o', '%O', '%j'])('keeps the redact paths of Pino on %s', async (placeholder) => {
+    const message = await messageOf(
+      (raw) => raw.info(`P ${placeholder}`, { zzz: { yyy: SECRET }, ...bag() }),
+      { redactPaths: ['zzz.yyy'] }
+    )
+
+    expect(message).toBe('P {"zzz":{"yyy":"[REDACTED]"},"password":"[REDACTED]","kept":"visible"}')
+  })
+
+  it('redacts the placeholders of a child with its own redact paths, and keeps them', async () => {
+    const message = await messageOf((raw) =>
+      raw
+        .child({}, { redact: ['kept'] })
+        .child({})
+        .info('P %o', bag())
+    )
+
+    expect(message).toBe('P {"password":"[REDACTED]","kept":"[Redacted]"}')
+  })
+}
+
+/** The rows for the refusal and for `'paths'`. */
+function strategyRows(): void {
+  it('refuses to start when Pino lacks a member the walk composes with', async () => {
+    jest.replaceProperty(pino, 'symbols', {
+      ...pino.symbols,
+      formatOptsSym: undefined
+    } as unknown as typeof pino.symbols)
+
+    await expect(linesOf(() => undefined)).rejects.toThrow('LOGGER_PINO_UNSUPPORTED')
+  })
+
+  it("does not walk the message under redactStrategy: 'paths'", async () => {
+    // Below the depth Pino's default paths reach, so only the walk by name would censor it.
+    const deep = { a: { b: { c: { d: { e: bag() } } } } }
+    const lines = await linesOf(
+      (raw) => {
+        raw.info('P %o', deep)
+        raw.info({}, deep)
+      },
+      { redactStrategy: 'paths' }
+    )
+
+    expect(lines.map((line) => line['msg'])).toStrictEqual([`P ${JSON.stringify(deep)}`, deep])
+  })
+}
+
 /** Declare the rows under `label`. */
 export function describeMessageValues(label: string): void {
   describe(`Logger E2E — objects in the message (${label})`, () => {
-    it.each(PLACEHOLDERS)('redacts %s', async (_name, emit, expected) => {
-      expect(await messageOf(emit)).toBe(expected)
-    })
-
-    it.each(AS_MESSAGE)('redacts the object of %s', async (_name, emit) => {
-      expect(await messageOf(emit)).toStrictEqual(JSON.parse(CENSORED))
-    })
-
-    it.each(UNCHANGED)('writes %s as before', async (_name, emit, expected) => {
-      expect(await messageOf(emit)).toStrictEqual(expected)
-    })
-
-    it('does not read an object of a disabled level', async () => {
-      let reads = 0
-      const probe = {
-        get password(): string {
-          reads += 1
-          return SECRET
-        }
-      }
-
-      const lines = await linesOf(
-        (raw) => {
-          raw.debug('P %o', probe)
-          raw.debug({}, probe)
-        },
-        { level: 'info' }
-      )
-
-      expect(lines).toHaveLength(0)
-      expect(reads).toBe(0)
-    })
-
-    it.each(['%o', '%O', '%j'])('keeps the redact paths of Pino on %s', async (placeholder) => {
-      const message = await messageOf(
-        (raw) => raw.info(`P ${placeholder}`, { zzz: { yyy: SECRET }, ...bag() }),
-        { redactPaths: ['zzz.yyy'] }
-      )
-
-      expect(message).toBe(
-        'P {"zzz":{"yyy":"[REDACTED]"},"password":"[REDACTED]","kept":"visible"}'
-      )
-    })
-
-    it('redacts the placeholders of a child with its own redact paths, and keeps them', async () => {
-      const message = await messageOf((raw) =>
-        raw
-          .child({}, { redact: ['kept'] })
-          .child({})
-          .info('P %o', bag())
-      )
-
-      expect(message).toBe('P {"password":"[REDACTED]","kept":"[Redacted]"}')
-    })
-
-    it('refuses to start when Pino lacks a member the walk composes with', async () => {
-      jest.replaceProperty(pino, 'symbols', {
-        ...pino.symbols,
-        writeSym: undefined
-      } as unknown as typeof pino.symbols)
-
-      await expect(linesOf(() => undefined)).rejects.toThrow('LOGGER_PINO_UNSUPPORTED')
-    })
-
-    it("does not walk the message under redactStrategy: 'paths'", async () => {
-      // Below the depth Pino's default paths reach, so only the walk by name would censor it.
-      const deep = { a: { b: { c: { d: { e: bag() } } } } }
-      const lines = await linesOf(
-        (raw) => {
-          raw.info('P %o', deep)
-          raw.info({}, deep)
-        },
-        { redactStrategy: 'paths' }
-      )
-
-      expect(lines.map((line) => line['msg'])).toStrictEqual([`P ${JSON.stringify(deep)}`, deep])
-    })
+    messageRows()
+    boundaryRows()
+    strategyRows()
   })
 }

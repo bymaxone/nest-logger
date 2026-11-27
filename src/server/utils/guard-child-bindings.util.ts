@@ -7,7 +7,7 @@
  * the record formatter and the serializers. Both methods are redefined on the instance the factory
  * builds, and every child inherits them through its prototype.
  *
- * Under the `'names'` strategy the objects that reach the message are walked too, by
+ * Under the `'names'` strategy the objects of the message placeholders are walked too, by
  * {@link guardMessageValues}, which a child with format options of its own needs again.
  */
 import type { ChildLoggerOptions, Logger as PinoLogger } from 'pino'
@@ -111,7 +111,7 @@ function guardOptions(options: unknown, guard: ChildGuard): unknown {
 /**
  * Redefine `child` and `setBindings` on a Pino instance so that bindings are redacted before Pino
  * writes them, and what the options of a child replace is redacted too. Under `'names'`, so are the
- * objects that reach the message.
+ * objects of the message placeholders.
  *
  * @param logger - The Pino instance the factory built.
  * @param redaction - The redaction of the module.
