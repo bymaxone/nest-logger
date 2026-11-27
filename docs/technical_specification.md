@@ -140,7 +140,7 @@ The community lib [`nestjs-pino`](https://github.com/iamolegga/nestjs-pino) (Iam
 | Component                | Activation                                | Responsibility                                                        |
 | ------------------------ | ----------------------------------------- | --------------------------------------------------------------------- |
 | `HttpLoggingInterceptor` | `http: { isEnabled: true }`               | Logs request/response with normalized URL and duration                |
-| `HttpExceptionFilter`    | `http: { shouldCaptureExceptions: true }` | Logs HTTP exceptions with the appropriate status code                 |
+| `HttpExceptionFilter`    | `forRoot` with `http.isEnabled`           | Logs HTTP exceptions; off when `shouldCaptureExceptions` is `false`   |
 | `RequestIdMiddleware`    | `http: { shouldGenerateRequestId: true }` | Reads/generates the `x-request-id` header and injects it into context |
 
 #### Decorators (always available)
@@ -277,7 +277,7 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
 6. Every destination in `destinations` becomes one stream of the multi-stream fan-out →
 7. PinoLoggerService is instantiated with a reference to the root Pino →
 8. LogContextService initializes AsyncLocalStorage<LogContext> →
-9. If http.isEnabled, HttpLoggingInterceptor + HttpExceptionFilter are registered as global →
+9. If http.isEnabled, HttpLoggingInterceptor is registered as global; forRoot also registers HttpExceptionFilter unless shouldCaptureExceptions is false →
 10. The lib emits its initial log: { logKey: 'LOGGER_BOOTSTRAP_OK', level, destinations: [...] } →
 11. On onApplicationShutdown(): the lib emits LOGGER_SHUTDOWN_OK with { destinations }
     FIRST — an entry written after the sinks closed would have nowhere to go — then
@@ -362,7 +362,9 @@ By design, NestJS does not pass `Request` to services. To propagate `requestId`,
 ```typescript
 // RequestIdMiddleware.use() in pseudo-code:
 logContext.run(
-  { ...inheritedFields, requestId, tenantId },
+  context, // the enclosing scope's fields, then:
+  // requestId: set when one is resolved
+  // tenantId:  read from the request only when the enclosing scope has none
   () => next() // every log inside this callback automatically carries the context
 )
 ```
@@ -571,7 +573,7 @@ export interface BymaxLoggerModuleOptions {
    * HTTP module configuration.
    */
   http?: {
-    /** Register HttpLoggingInterceptor and HttpExceptionFilter as global. @default false */
+    /** Register HttpLoggingInterceptor as global; forRoot also registers HttpExceptionFilter. @default false */
     isEnabled?: boolean
     /** Capture exceptions in filter (in addition to interceptor). @default true if enabled */
     shouldCaptureExceptions?: boolean
