@@ -261,6 +261,46 @@ describe('BymaxLoggerModule.forRoot', () => {
     })
   })
 
+  describe('child-binding redaction under paths', () => {
+    /*
+     * Under 'paths' the Pino instance passes bindings on as they are, so what `errorOwnFields:
+     * 'safe'` removes from them is removed only by the redactor the module wires into the service,
+     * which every child it returns has to keep.
+     */
+    it.each([
+      ['a child', (root: PinoLoggerService, bindings: object) => root.child({ ...bindings })],
+      [
+        'a child of a child',
+        (root: PinoLoggerService, bindings: object) => root.child({}).child({ ...bindings })
+      ]
+    ])('wires the configured redactor into the bindings of %s', async (_label, derive) => {
+      infoSpy.mockRestore()
+      const written: string[] = []
+      const sink: ILogDestination = {
+        name: 'capture',
+        write: (payload: string): void => {
+          written.push(payload)
+        }
+      }
+      const options = { service, destinations: [sink] }
+      const ref = await Test.createTestingModule({
+        imports: [
+          BymaxLoggerModule.forRoot({ ...options, redactStrategy: 'paths', errorOwnFields: 'safe' })
+        ]
+      }).compile()
+      await ref.init()
+
+      const failure = Object.assign(new Error('boom'), { detail: 'LEAKED' })
+      const root = ref.get(PinoLoggerService, { strict: false })
+      derive(root, { failure }).info('CHILD_PROBE', 'probe')
+
+      const line = written.find((candidate) => candidate.includes('CHILD_PROBE'))
+      expect(line).toContain('"failure"')
+      expect(line).not.toContain('LEAKED')
+      await ref.close()
+    })
+  })
+
   describe('augmentLoggerModule', () => {
     /*
      * When the base lacks providers, augment must default to an empty list and
