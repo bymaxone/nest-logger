@@ -45,7 +45,7 @@
 - An additional custom API `log(logKey, message, userId?, metadata?)` that follows the `MODULE_ACTION_RESULT` convention adopted across the Bymax ecosystem
 - An HTTP interceptor for automatic request/response logging with normalized URLs
 - An HTTP exception filter with sanitized stack trace capture
-- `@InjectLogger()`, `@LogContext()`, and `@LogPerformance()` decorators to reduce boilerplate
+- `@InjectLogger()` and `@LogPerformance()` decorators to reduce boilerplate
 - Automatic propagation of context (`requestId`, `tenantId`, `userId`, `traceId`, `spanId`) via `AsyncLocalStorage` — in the prop drilling, in the `(req: Request)` in service signatures
 - A declarative PII redaction system via `pino.redact` paths
 - Automatic detection of an active OpenTelemetry span — injects `traceId`/`spanId` into every log when OTel is configured; logs normally without those properties when it is not
@@ -67,7 +67,7 @@ In multi-service architectures, reliable trace-correlated logging is foundationa
 | Criterion        | Pino 10                                              | Winston                                                 |
 | ---------------- | ---------------------------------------------------- | ------------------------------------------------------- |
 | Performance      | **5-7× faster** in official benchmarks               | Baseline (slower by design)                             |
-| Footprint        | Async via worker threads, low allocation             | Higher allocation, synchronous transformations          |
+| Footprint        | Low allocation; this library uses no worker (§17.3)  | Higher allocation, synchronous transformations          |
 | Native structure | JSON-first                                           | JSON via format combinators (extra layer)               |
 | OTel ecosystem   | Official `@opentelemetry/instrumentation-pino`       | `@opentelemetry/instrumentation-winston` (less support) |
 | PII redact       | Declarative `redact` paths via builtin `fast-redact` | Custom (manual)                                         |
@@ -145,11 +145,11 @@ The community lib [`nestjs-pino`](https://github.com/iamolegga/nestjs-pino) (Iam
 
 #### Decorators (always available)
 
-| Decorator                     | Use                                                |
-| ----------------------------- | -------------------------------------------------- |
-| `@InjectLogger(context?)`     | Typed logger injection with pre-configured context |
-| `@LogContext(name)`           | Marks a class with a fixed log context             |
-| `@LogPerformance(threshold?)` | Logs method duration; warns above the threshold    |
+| Decorator                     | Use                                                  |
+| ----------------------------- | ---------------------------------------------------- |
+| `@InjectLogger(context?)`     | Typed logger injection with pre-configured context   |
+| `@LogContext(name)`           | Deprecated: stores a label that nothing reads (§9.2) |
+| `@LogPerformance(threshold?)` | Logs method duration; warns above the threshold      |
 
 #### Additional destinations (opt-in)
 
@@ -309,8 +309,8 @@ export class BymaxLoggerModule extends BymaxLoggerModuleBase {
      service: { name: 'my-app', version: '1.2.3' }
    } →
 6. pino.redact applies censorship on configured paths →
-7. Serialized JSON is written asynchronously (worker thread) to each destination →
-8. Stdout receives immediately; custom destinations (Loki, Postgres) batch buffers
+7. Serialized JSON goes through pino.multistream, in the application thread, to each destination →
+8. The default destination calls process.stdout.write; a custom one (Loki, Postgres) may batch
 ```
 
 ### 2.4 HTTP request flow (interceptor)
@@ -652,7 +652,7 @@ export interface BymaxLoggerModuleOptions {
 | `otel.spanIdField`                  | `string`                      | `'spanId'` (or `'span_id'`)                                              | Field name in the log                                                                                                |
 | `otel.traceFlagsField`              | `string`                      | `'traceFlags'` (or `'trace_flags'`)                                      | Field name in the log                                                                                                |
 | `otel.fieldFormat`                  | `'camelCase' \| 'snake_case'` | `'camelCase'`                                                            | Shortcut to align with OTel Logs Data Model (`snake_case`) or Pino-native (`camelCase`)                              |
-| `maxEntrySizeBytes`                 | `number`                      | `65536` (64KB)                                                           | Truncates oversized entries                                                                                          |
+| `maxEntrySizeBytes`                 | `number`                      | `65536` (64KB)                                                           | Ceiling per serialized field, not per entry (§17.7)                                                                  |
 | `serializers`                       | `Record<string, fn>`          | `{}` (merged with defaults)                                              | Defaults: `err`, `req`, `res`                                                                                        |
 | `timestamp`                         | `() => string`                | `() => new Date().toISOString()`                                         | Custom override                                                                                                      |
 
@@ -1226,8 +1226,7 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   private readonly pino: PinoLogger
 
   /**
-   * Context attached to every log emitted by this instance. Set via `setContext()` or
-   * `@LogContext()` decorator.
+   * Context attached to every log emitted by this instance. Set via `setContext()`.
    */
   private context?: string
 
@@ -1287,7 +1286,8 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
 
   /**
    * Set the `context` field that is added to every log emitted by this instance.
-   * Useful when injecting via @LogContext or in constructor.
+   * On the shared logger it overwrites the context for every holder; for a context per
+   * class use `@InjectLogger(name)`.
    */
   setContext(context: string): void { ... }
 
@@ -1898,25 +1898,9 @@ export class UsersService {
 }
 ```
 
-### 9.2 `@LogContext(name)`
+### 9.2 `@LogContext(name)` (deprecated)
 
-Class decorator — marks an entire class with a fixed context. All logs emitted by instances of that class carry `context: <name>`.
-
-```typescript
-import { SetMetadata } from '@nestjs/common'
-
-export const LOG_CONTEXT_METADATA_KEY = Symbol('BYMAX_LOGGER_CONTEXT')
-
-export const LogContext = (name: string) => SetMetadata(LOG_CONTEXT_METADATA_KEY, name)
-```
-
-Usage:
-
-```typescript
-@LogContext('PaymentsService')
-@Injectable()
-export class PaymentsService { ... }
-```
+A class decorator that stores `name` as metadata under `LOG_CONTEXT_METADATA_KEY` (`'bymax_logger:log_context'`). Nothing in this package reads that metadata, so no entry carries the label. For a context per class use `@InjectLogger(name)` (§9.1).
 
 ### 9.3 `@LogPerformance(thresholdMs?)`
 
@@ -2071,11 +2055,11 @@ See `docs/guidelines/PINO-REDACTION-GUIDELINES.md` and `bench/README.md`.
 ```typescript
 BymaxLoggerModule.forRoot({
   service: { name: 'my-app', version: '1.0.0' },
-  redactCensor: '***' // or function: (value) => '<' + typeof value + '>'
+  redactCensor: '***'
 })
 ```
 
-A custom function enables **typed** redaction (preserving the type: number becomes `0`, string becomes `''`) — useful when the type schema is validated downstream.
+`redactCensor` is a string. A function is refused at startup (§17.6).
 
 ### 10.5 Audit — checking paths at runtime
 
@@ -2382,16 +2366,16 @@ export const RESERVED_LOG_KEYS = {
 
 Errors the lib may throw (or record as a warning). The names of thrown errors are labels of this table, not strings to query; the OpenTelemetry case is written as `LOGGER_BOOTSTRAP_WARNING` with `reason: 'OTEL_API_UNAVAILABLE'`.
 
-| Code                              | Severity                    | When it occurs                                                                   | Recommended action                                                                                                            |
-| --------------------------------- | --------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `LOGGER_INVALID_OPTIONS`          | Throws at initialization    | `service.name` or `service.version` missing                                      | Add the required fields                                                                                                       |
-| `LOGGER_INVALID_LEVEL`            | Throws                      | `level` is not a valid Pino value                                                | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`                                                                      |
-| `LOGGER_PRETTY_UNAVAILABLE`       | **Never emitted**           | Not declared in the source                                                       | Do not query it — the real signal is `LOGGER_DESTINATION_INIT_FAILED` on stderr, `destination: "pretty-dev"`                  |
-| `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap           | `otel.shouldAutoInjectTraceContext: true` but `@opentelemetry/api` not installed | Install or disable `shouldAutoInjectTraceContext`                                                                             |
-| `LOGGER_DESTINATION_INIT_FAILED`  | Written to **stderr**       | `destination.onInit()` rejects                                                   | Destination is dropped from the write fan-out; others continue. If NONE initialize, entries fall back to raw NDJSON on stdout |
-| `LOGGER_DESTINATION_WRITE_FAILED` | Written to **stderr**       | `destination.write()` throws                                                     | Entry skipped for that destination; others continue                                                                           |
-| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Throws                      | `LogContextService.set()` called outside `run()`                                 | Wrap in `logContext.run({ ... }, () => ...)`                                                                                  |
-| `LOGGER_ENTRY_TRUNCATED`          | Warn (logged as a meta-log) | Entry exceeds `maxEntrySizeBytes`                                                | Reduce metadata or raise the limit                                                                                            |
+| Code                              | Severity                                                                   | When it occurs                                                                   | Recommended action                                                                                                            |
+| --------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `LOGGER_INVALID_OPTIONS`          | Throws at initialization                                                   | `service.name` or `service.version` missing                                      | Add the required fields                                                                                                       |
+| `LOGGER_INVALID_LEVEL`            | Throws                                                                     | `level` is not a valid Pino value                                                | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`                                                                      |
+| `LOGGER_PRETTY_UNAVAILABLE`       | **Never emitted**                                                          | Not declared in the source                                                       | Do not query it — the real signal is `LOGGER_DESTINATION_INIT_FAILED` on stderr, `destination: "pretty-dev"`                  |
+| `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap                                                          | `otel.shouldAutoInjectTraceContext: true` but `@opentelemetry/api` not installed | Install or disable `shouldAutoInjectTraceContext`                                                                             |
+| `LOGGER_DESTINATION_INIT_FAILED`  | Written to **stderr**                                                      | `destination.onInit()` rejects                                                   | Destination is dropped from the write fan-out; others continue. If NONE initialize, entries fall back to raw NDJSON on stdout |
+| `LOGGER_DESTINATION_WRITE_FAILED` | Written to **stderr**                                                      | `destination.write()` throws                                                     | Entry skipped for that destination; others continue                                                                           |
+| `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Throws                                                                     | `LogContextService.set()` called outside `run()`                                 | Wrap in `logContext.run({ ... }, () => ...)`                                                                                  |
+| `LOGGER_ENTRY_TRUNCATED`          | `_logKey` of the envelope that replaces a field; the entry keeps its level | A serialized field exceeds `maxEntrySizeBytes` or cannot be measured             | Reduce the payload or raise the limit                                                                                         |
 
 ---
 
@@ -2605,35 +2589,43 @@ Validation:
 
 The lib uses singleton (`Scope.DEFAULT`). Request-scoped context comes via `AsyncLocalStorage`, not via DI scope.
 
-**Reason**: official NestJS documentation estimates up to **~5%** additional latency for `Scope.REQUEST` ("a properly designed application that leverages request-scoped providers should not slow down by more than ~5% latency-wise" — [docs](https://docs.nestjs.com/fundamentals/injection-scopes#scope-hierarchy)). In a log path that runs thousands of times per request, that overhead compounds. `AsyncLocalStorage` is zero-cost once initialized.
+**Reason**: the NestJS documentation says that "a properly designed application that uses request-scoped providers should not see latency increase by more than ~5%" ([docs](https://docs.nestjs.com/fundamentals/injection-scopes#performance)). The library does not take on that cost for context it can carry in `AsyncLocalStorage`.
 
-For "distinct context per class" (each service has its own logger context), the `@LogContext()` decorator solves the problem without requiring transient scope (see §9.2).
+For a distinct context per class, see §17.2.
 
 ### 17.2 In the `Scope.TRANSIENT`
 
-For a similar reason. The `@InjectLogger(context)` decorator solves the "distinct context per class" problem without requiring transient scope.
+For a similar reason. The `@InjectLogger(context)` decorator solves the "distinct context per class" problem without requiring transient scope. A class that names a context must be imported before the `forRoot` / `forRootAsync` call is evaluated, which is when the contexts are collected.
 
-### 17.3 Synchronous logging not supported
+### 17.3 Entries still queued when the process ends are lost
 
-Pino is async by design (writes via worker threads). Logs emitted in a `process.on('exit')` handler may be lost. For critical scenarios (immutable audit), use `process.on('beforeExit')` + `await sdk.flush()`.
+The library starts no worker thread: Pino writes through `pino.multistream` in the application thread, and the default destination calls `process.stdout.write`. On POSIX, Node writes stdout synchronously to a file and asynchronously to a pipe ([process I/O](https://nodejs.org/api/process.html#a-note-on-process-io)), so `process.exit()` drops what a pipe has not taken, and what an asynchronous destination has not sent.
+
+Measured with node 24 on macOS, 5000 entries followed by `process.exit()` and one more entry logged from `process.on('exit')`: to a file all of them arrived; to a pipe whose reader started a second late, 187 arrived and the entry from the exit handler did not.
+
+There is no flush method. Call `await app.close()`, or `app.enableShutdownHooks()` for a signal: the registry then drains stdout and calls each destination's `onShutdown`, within the `shutdown` budget. An asynchronous destination delivers what it holds in `onShutdown`.
 
 ### 17.4 Auto-detection of the OTel API
 
-Detection via `require()` at runtime. Bundlers (esbuild, webpack) may omit the module if not statically detected. Solution: declare `@opentelemetry/api` as a peer dep even if optional — the bundler resolves it.
+`@opentelemetry/api` is resolved at runtime with `createRequire`, from the package's own location and then from `process.cwd()`. A bundler does not follow that call, so the module is not put in the bundle on its account (measured with esbuild 0.28.2, with the module installed: none of its files among the bundle inputs), and declaring it as a dependency does not change that. It has to be resolvable from `node_modules` where the bundle runs.
 
 ### 17.5 `pino-http` not embedded
 
-The lib does **not** depend on `pino-http` — we wrote our own `HttpLoggingInterceptor` instead (NestJS-native, observes lifecycle hooks, integrates with the lib's URL normalization and `LogContextService`). `pino-http` is **not** a peer dependency.
+The lib does **not** depend on `pino-http` — it has its own `HttpLoggingInterceptor` and, for requests that never reach an interceptor, `applyAccessLog` (both use the lib's URL normalization and `LogContextService`). `pino-http` is **not** a peer dependency.
 
-If a consumer still prefers `pino-http` (`pinoHttp({ ... })`), they install it independently and register it as Express/Fastify middleware — no wiring from this lib is required. The two can coexist but will produce duplicate HTTP logs, so pick one.
+If a consumer still prefers `pino-http` (`pinoHttp({ ... })`), they install it independently and register it as Express/Fastify middleware — no wiring from this lib is required. With `http.isEnabled` as well, each request is logged twice, so pick one.
 
-### 17.6 In the censor internationalization
+### 17.6 One censor for every path
 
-`redactCensor` is a global string. There is in the built-in mechanism for a different censor per path. Workaround: use a custom function as the censor (receives the value, returns the substitute).
+`redactCensor` is a single string. There is no censor per path and no computed censor: `forRoot` and `forRootAsync` refuse a function.
 
-### 17.7 Aggressive truncation of large entries
+### 17.7 No size limit on the whole entry
 
-`maxEntrySizeBytes: 64KB` by default. An oversized VALUE is replaced by the marker object `{"_truncated":true,"_logKey":"LOGGER_ENTRY_TRUNCATED","_originalSize":<n>,"_preview":"<first chars>"}`. The replacement happens in a serializer, while the entry is still being built — so the surrounding fields survive, which replacing the finished line would not allow. See §5.2 for the implementation. The reserved key `LOGGER_ENTRY_TRUNCATED` is part of `RESERVED_LOG_KEYS` (§12.3). For legitimate cases with large payloads, raise the limit explicitly.
+`maxEntrySizeBytes` (65536 by default) bounds each serialized field (`err` and any custom serializer) and each derived `exception.*` and `error.type` field. A serializer output over it is replaced by `{"_truncated":true,"_logKey":"LOGGER_ENTRY_TRUNCATED","_originalSize":<n>,"_preview":"<first chars>"}`; a derived field is cut. The entry's `msg`, and an error's `message` and `stack`, are cut at 16384 characters. `maxEntrySizeBytes` does not bound a value under a metadata key, or the entry: with the defaults, a 100000-character metadata string and an entry of 40 fields of 4000 characters are both written whole. `maxStringLength`, off until set, cuts each long string. The reserved key `LOGGER_ENTRY_TRUNCATED` is part of `RESERVED_LOG_KEYS` (§12.3).
+
+### 17.8 The destination registry trusts `options.level`
+
+`forRoot` and `forRootAsync` refuse a `level` outside the six, and Pino does not build with one. `DestinationRegistry` does not check it again: code that builds the registry itself, from options neither of them saw, gets that value as the effective level of every destination whose `minLevel` is not `'fatal'`.
 
 ---
 

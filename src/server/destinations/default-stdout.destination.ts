@@ -28,9 +28,9 @@ export class DefaultStdoutDestination implements ILogDestination {
   readonly minLevel?: LogLevel
 
   /**
-   * @param opts.minLevel — Optional minimum level filter. Entries below this
-   *   level are dropped by the destination registry before reaching `write`.
-   *   Omit (or pass `undefined`) to accept every level.
+   * @param opts.minLevel — Optional minimum level for this destination. Entries
+   *   below it, or below the module `level`, never reach `write`. Omit (or pass
+   *   `undefined`) to receive what the module `level` lets through.
    */
   constructor(opts: { minLevel?: LogLevel } = {}) {
     if (opts.minLevel !== undefined) {
