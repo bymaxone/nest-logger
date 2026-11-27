@@ -19,7 +19,7 @@ No behaviour change: the published JavaScript is byte-identical to `1.4.33`, and
 ### Documentation
 
 - **The redaction warning shows a call that writes the entry.** Its example used `log()`, which takes Nest's arguments and drops the message, the user id and the metadata of that call; it now uses `info()`.
-- **The redaction engine is named `@pinojs/redact`**, which is what Pino 10 depends on, in the README and the doc comments. Two comments that gave a behaviour of the engine it does not have are removed: that duplicate paths throw, and that wildcards stop at bracket-syntax keys.
+- **The redaction engine is named `@pinojs/redact`**, which is what Pino depends on from `10.1.0`, in the README and the doc comments. Two comments that gave a behaviour of the engine it does not have are removed: that duplicate paths throw, and that wildcards stop at bracket-syntax keys.
 
 ## [1.4.33] - 2026-11-27
 
