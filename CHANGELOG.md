@@ -12,6 +12,21 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.35] - 2026-11-27
+
+### Breaking
+
+- **Behaviour change under `redactStrategy: 'names'`:** the `bindings` formatter and the serializers receive a redacted copy of the bindings instead of your objects. In the copy a `Date` arrives as a string, a `Map` as `{}` and a class instance can arrive as a plain object, so a callback that calls a method of one of these can throw. A value in bindings of the raw logger is written as `service.child()` writes it. Migration: have the callback read the copy (a `Date` is an ISO string), or compute the value before you pass it, for example `raw.child({ at: at.getTime() })`. `redactStrategy: 'paths'` keeps your objects, but bindings are then not redacted by name.
+
+### Security
+
+- **Under the default `redactStrategy: 'names'`, bindings passed to `child()` and `setBindings()` on the raw logger are now redacted.** Under both strategies, so is what the `serializers`, `formatters.log` and `formatters.level` of child options return.
+- Under `redactStrategy: 'paths'`, bindings of the raw logger are handled as before: Pino's redact paths apply, and your own objects reach the formatters and serializers.
+
+### Documentation
+
+- **The message text is not redacted by name**: a value the raw logger formats into it is not walked. The `redact` and `msgPrefix` options of a child are applied as you set them.
+
 ## [1.4.34] - 2026-11-27
 
 No behaviour change: the published JavaScript is byte-identical to `1.4.33`, and the type declarations differ in comments only.
@@ -3606,7 +3621,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.34...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.35...HEAD
+[1.4.35]: https://github.com/bymaxone/nest-logger/compare/v1.4.34...v1.4.35
 [1.4.34]: https://github.com/bymaxone/nest-logger/compare/v1.4.33...v1.4.34
 [1.4.33]: https://github.com/bymaxone/nest-logger/compare/v1.4.32...v1.4.33
 [1.4.32]: https://github.com/bymaxone/nest-logger/compare/v1.4.31...v1.4.32

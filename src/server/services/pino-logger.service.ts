@@ -620,9 +620,9 @@ export class PinoLoggerService implements NestLoggerService, OnApplicationShutdo
   child(bindings: Record<string, unknown>): PinoLoggerService {
     // Bindings are redacted HERE, not by the factory's `formatters.log` hook:
     // Pino pre-serializes child bindings into the instance's `chindings`
-    // fragment at `child()` time, so that hook never sees them. Without this,
-    // `logger.child({ password })` wrote the value in clear on every entry the
-    // child emitted.
+    // fragment at `child()` time, so that hook never sees them. Under the `'names'`
+    // strategy the factory's instance redacts them in its own `child()` too; this
+    // also covers an instance the service was handed that the factory did not build.
     // `true`: bindings are a record root — Pino iterates them into `chindings`
     // rather than serializing them, so a `toJSON` on the bag must not replace it.
     const safeBindings = this.redact(bindings, true) as Record<string, unknown>
