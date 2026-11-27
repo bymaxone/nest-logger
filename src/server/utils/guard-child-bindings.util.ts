@@ -140,7 +140,8 @@ export function guardChildBindings(
   options: { readonly redactStrategy: 'names' | 'paths' }
 ): PinoLogger {
   const byName = options.redactStrategy === 'names'
-  const asFields: Redactor = (value) => redaction.redactBindings(binaryAsField(value), true)
+  const asFields: Redactor = (value, isRoot) =>
+    redaction.redactBindings(binaryAsField(value), isRoot)
   const guard = { ...redaction, redactBindings: byName ? asFields : asPassed }
   const guardChildMessages = byName
     ? guardMessageValues(logger, redaction.redactSerialized)
