@@ -218,17 +218,15 @@ export function withEventName(
 const PASS_THROUGH: Redactor = (value: unknown): unknown => value
 
 /**
- * Resolve the name-walk redactor for the active configuration, or a pass-through
- * when the walk is not in play (legacy `'paths'` strategy, or defaults disabled) and
- * `errorOwnFields` is not `'safe'`.
+ * Resolve the name-walk redactor for the active configuration, or a pass-through.
  *
  * @internal Exported only for unit testing — this is the switch that decides
  *   whether the DEFAULT PII protection is active at all, so its branches are
  *   asserted directly rather than inferred from a serialized line. NOT
  *   re-exported by the package barrel.
  * @param options - Fully-defaulted module options.
- * @returns A redaction function; the identity function when the walk is off and the policy is not
- *   `errorOwnFields: 'safe'`, which walks the record whatever the strategy or the names covered.
+ * @returns A redaction function; the identity function when no name is covered, no path is handed
+ *   to Pino and the policy is not `errorOwnFields: 'safe'`.
  */
 export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
   return buildNameRedactor(options, true, options.redactStrategy === 'names')
@@ -296,8 +294,8 @@ function namesInsideErrors(
 /**
  * Build the name-walk redactor from the configured coverage.
  *
- * This is what SERIALIZER output is redacted with, ungated — it ignores
- * `redactStrategy` on purpose.
+ * This is what SERIALIZER output is redacted with, ungated — the names it covers
+ * ignore `redactStrategy` on purpose.
  *
  * `redactStrategy: 'paths'` is an escape hatch for a consumer who depends on
  * `@pinojs/redact`'s exact path-matching over THEIR OWN payload. It was never a
@@ -333,8 +331,8 @@ function namesInsideErrors(
  *   `@pinojs/redact` covers.
  * @param forcesWalk - `true` for the record when `maxStringLength` is set: the cut that follows
  *   reads only what the walk wrote, so the walk runs even when it would redact nothing.
- * @returns A redaction function; the identity function when no name is covered and the policy is
- *   not `errorOwnFields: 'safe'`.
+ * @returns A redaction function; the identity function when no name is covered, no path is handed
+ *   to Pino and the policy is not `errorOwnFields: 'safe'`.
  */
 function buildNameRedactor(
   options: ResolvedBymaxLoggerModuleOptions,
@@ -433,7 +431,7 @@ function buildSerializers(
   const censorMessage = buildMessageCensor(options)
   // Every serializer (default `err` + any consumer-supplied) is composed as
   // size-bound(redact(serialize)). Two orderings matter here:
-  //   0. The redactor here is `buildNameRedactor`, applied ungated: it ignores
+  //   0. The redactor here is `buildNameRedactor`, applied ungated: its names ignore
   //      `redactStrategy`. That strategy is the consumer's choice about THEIR
   //      OWN payload; this output is what the library synthesizes, and
   //      the default path list stops at four wildcards, short of the depth a
@@ -714,7 +712,7 @@ export function buildPinoInstance(
   //   - `redactRecord` honours `redactStrategy`: the caller's record is the
   //     caller's payload, and `'paths'` is their documented escape hatch (an e2e
   //     case pins its four-level ceiling as expected behaviour).
-  //   - `redactSerialized` ignores it: serializer output is what THIS library
+  //   - the names of `redactSerialized` ignore it: serializer output is what THIS library
   //     synthesizes, and the ceiling cannot reach the depth a cause chain
   //     serializes to. Collapsing these two into one binding is what broke that
   //     e2e case, which is the check that caught it.

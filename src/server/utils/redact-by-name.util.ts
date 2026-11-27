@@ -29,7 +29,8 @@
  *     error under any key WITHOUT a serializer serializing its own enumerable
  *     properties in clear.
  *   - anything carrying `toJSON` (`Date`, `Decimal`, Luxon, Prisma types) — the
- *     method decides the serialized form, so the walk inspects its OUTPUT.
+ *     method decides the serialized form, so the walk inspects its OUTPUT unless it holds the
+ *     value back (see `walkToJsonOutput`).
  *     Skipping these let a `toJSON` SYNTHESIZE a secret straight past both hooks.
  *   - `ArrayBuffer` views (`Buffer`, typed arrays) — indexed byte containers,
  *     returned untouched.
@@ -464,8 +465,8 @@ function walkObject(
  *
  * Under `errorOwnFields: 'safe'` the output is plain data, so nothing in it can run after the
  * redaction. An `Error` is written from its own fields and its `toJSON` is not called: a library's
- * (an HTTP client's, say) would carry the request it made. Any other `toJSON` is called once and
- * its result is walked.
+ * (an HTTP client's, say) would carry the request it made. Any other `toJSON` is followed as
+ * `walkToJsonOutput` decides.
  *
  * A callable with no `toJSON` is handed back as it is: walking it would replace it with a plain
  * object, and `JSON.stringify` omits a bare function rather than emitting `{}`. A callable whose
@@ -523,7 +524,7 @@ function walkForm(
  * not caught, the same as `{ renamed: obj.inner.password }` written by hand.
  *
  * Under `'paths'` the paths run on what is written here, so a rename would carry a value past them.
- * There `pathHold` searches the whole own state: a held value is the censor, and a held `Error` is
+ * There `pathHold` searches the own properties: a held value is the censor, and a held `Error` is
  * walked as a stand-in that has no `toJSON`.
  *
  * The INSPECTED result is what gets returned, always, never the original object. Returning the
@@ -543,7 +544,7 @@ function walkForm(
  * @param rules - The names to censor and the root keys that have a serializer.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
  * @param ancestors - References on the current path (cycle guard).
- * @returns The censor when the source holds a sensitive key, else the walked output.
+ * @returns The censor, or the walked output or stand-in.
  */
 function walkToJsonOutput(
   value: object,

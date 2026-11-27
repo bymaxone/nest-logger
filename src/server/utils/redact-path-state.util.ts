@@ -32,12 +32,11 @@ const INDEX_SEGMENT = /^\d+$/
  * Consumer `redactPaths` are applied by Pino's stringifier, which runs AFTER the
  * serializer wrapper — so a field they cover was still raw when the size bound
  * built its 200-character `_preview`, and an oversized value leaked its secret
- * there. Feeding the leaf NAME to the walk closes that, and closes it for every
- * other surface the walk reaches (base and child bindings) rather than only for
- * the preview.
+ * there. Feeding the leaf NAME to the walk closes that, wherever the walk matches
+ * names.
  *
  * The trade is deliberate and broader than the path: a consumer who writes
- * `user.ssn` gets `ssn` censored wherever it appears, not only under `user`.
+ * `user.ssn` gets `ssn` censored wherever the walk matches names, not only under `user`.
  * That errs toward redacting a name the consumer has already declared secret.
  *
  * An UNQUOTED numeric segment is an array INDEX, not a field name, and is skipped
@@ -94,7 +93,7 @@ interface StandInRules {
   readonly censor: string
 }
 
-/** How many `cause` and `errors` links of a held `Error` are copied. */
+/** How many `cause` and `errors` links deep a held `Error` is copied. */
 const MAX_LINKS = 8
 
 /** Define a property of a copy as plain data, whatever its prototype has under that name. */
@@ -189,7 +188,7 @@ function isBuiltIn(holder: object, name: string, field: PropertyDescriptor | und
 }
 
 /**
- * Search the own state of a value for a field the paths name, without running any of its code.
+ * Search the string-keyed own properties of a value for a field the paths name, running no getter.
  * A getter cannot be read without running it, so it counts as a match, and so does a state that
  * cannot be inspected or holds more than `maxObjects` objects.
  */
@@ -224,7 +223,7 @@ function searchState(
  *
  * A held `Error` is written from a copy: its type, `message`, `stack`, the own fields of
  * `errorOwnFields: 'safe'` that are not objects and that no path names, and the errors under it,
- * copied the same way.
+ * copied the same way to a bounded depth.
  *
  * @param paths - The paths handed to `@pinojs/redact`.
  * @param maxObjects - Objects one search may read before it answers `true`.
