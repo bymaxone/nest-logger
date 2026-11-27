@@ -124,6 +124,17 @@ describe('guardMessageValues', () => {
     expect(Object.getOwnPropertySymbols(inherited)).not.toContain(pino.symbols.formatOptsSym)
   })
 
+  it('leaves the format options writable, so Pino can replace them on a child', () => {
+    const { logger } = build()
+
+    guardMessageValues(logger, mark)
+
+    expect(Object.getOwnPropertyDescriptor(logger, pino.symbols.formatOptsSym)).toMatchObject({
+      writable: true,
+      configurable: true
+    })
+  })
+
   it.each([
     ['no symbols', undefined],
     ['no formatOptsSym', { writeSym: pino.symbols.writeSym }],

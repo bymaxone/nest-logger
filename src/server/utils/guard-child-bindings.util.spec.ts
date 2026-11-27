@@ -294,3 +294,29 @@ describe('guardChildBindings', () => {
     expect(() => logger.child({}, { serializers: undefined } as never)).toThrow(TypeError)
   })
 })
+
+describe('guardChildBindings and the serializers of a child', () => {
+  it("replaces an inherited serializer under 'names' with an empty entry that is not msg", () => {
+    const { logger, lines } = build()
+    const parent = logger.child({}, { serializers: { account: () => 'parent' } })
+
+    parent.child({}, { serializers: { account: undefined as never } }).info({ account: 'a1' }, 'm')
+
+    expect(lines()[0]?.['account']).toBe('a1')
+  })
+
+  it("redacts under 'names' only what the msg serializer returns as a message", () => {
+    const redactSerialized = jest.fn((value: unknown) => value)
+    const logger = guardChildBindings(
+      pino({ base: null, timestamp: false }, { write: () => undefined }),
+      { redactBindings: (value) => value, redactSerialized, formatRecord: (record) => record },
+      { redactStrategy: 'names' }
+    )
+    const same = (value: unknown): unknown => value
+
+    logger.child({}, { serializers: { msg: same, account: same } }).info({ account: 'a1' }, 'hello')
+
+    expect(redactSerialized.mock.calls).toContainEqual(['hello', false, true])
+    expect(redactSerialized.mock.calls).toContainEqual(['a1'])
+  })
+})

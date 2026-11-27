@@ -204,3 +204,20 @@ describe('resolveRedactOption', () => {
     expect(option?.censor).toBe('***')
   })
 })
+
+/*
+ * A host `msg` serializer is redacted as a message: under `'names'` an `undefined` from it must
+ * leave the line without `msg`, because Pino would write it into the line as is.
+ */
+it('writes valid JSON with no msg when a host msg serializer returns nothing', () => {
+  const capture = createCapture()
+  const logger = buildPinoInstance(
+    applyDefaults({ ...baseOptions, serializers: { msg: (): unknown => undefined } }),
+    new LogContextService(),
+    [capture.destination]
+  )
+
+  logger.info('hello')
+
+  expect(capture.entries()[0]).not.toHaveProperty('msg')
+})
