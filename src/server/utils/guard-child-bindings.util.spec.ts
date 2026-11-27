@@ -111,6 +111,18 @@ describe('guardChildBindings', () => {
     expect(onlyBindings).not.toHaveProperty('recordMark')
   })
 
+  it('redacts what a level formatter of the child options returns, passing it both arguments', () => {
+    const line = childLine(
+      {},
+      {
+        customLevels: { audit: 35 },
+        formatters: { level: (label, value) => ({ level: label, value }) }
+      }
+    )
+
+    expect(line).toMatchObject({ level: 'info', value: 30, serializedMark: true })
+  })
+
   it('redacts what a serializer of the child options returns, keeping its this', () => {
     const serializers = {
       account: function (this: unknown, id: unknown): unknown {

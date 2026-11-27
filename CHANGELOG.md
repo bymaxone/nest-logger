@@ -20,7 +20,7 @@ heading here.
 
 ### Changed
 
-- The `formatters` and `serializers` of child options receive the redacted copy of the bindings, as a serializer already does for a record. A value in bindings of the raw logger is written as `service.child()` writes it.
+- The `bindings` formatter and the `serializers` of child options receive the redacted copy of the bindings, as a serializer already does for a record. A value in bindings of the raw logger is written as `service.child()` writes it.
 
 ### Documentation
 

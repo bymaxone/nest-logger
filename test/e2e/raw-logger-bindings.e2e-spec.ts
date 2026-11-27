@@ -115,6 +115,19 @@ const CASES: ReadonlyArray<readonly [string, (raw: Raw, service: PinoLoggerServi
       raw.child({}, { serializers: { account: () => bag() } }).info({ account: 'a1' }, 'PROBE')
   ],
   [
+    'a field a child formatters.level adds',
+    (raw) =>
+      raw
+        .child(
+          {},
+          {
+            customLevels: { audit: 35 },
+            formatters: { level: (label) => ({ level: label, ...bag() }) }
+          }
+        )
+        .info('PROBE')
+  ],
+  [
     'err bindings under a child err serializer',
     (raw) =>
       raw

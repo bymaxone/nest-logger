@@ -22,19 +22,20 @@ const hasOwn = Object.hasOwn
 export interface ChildGuard {
   /** The redactor of bindings. */
   readonly redactBindings: Redactor
-  /** The redactor of what a serializer returns. */
+  /** The redactor that walks by name under every strategy. */
   readonly redactSerialized: Redactor
   /** The record formatter of the module, which redacts the record. */
   readonly formatRecord: (record: Record<string, unknown>) => Record<string, unknown>
 }
 
 type Callable = (input: unknown) => unknown
+type AnyCallable = (...inputs: unknown[]) => unknown
 
 /** `run` with what the function it wraps returns passed through `then`, keeping `this`. */
 function followedBy(run: unknown, then: Callable): unknown {
   if (typeof run !== 'function') return run
-  return function (this: unknown, input: unknown): unknown {
-    return then(apply(run as Callable, this, [input]))
+  return function (this: unknown, ...inputs: unknown[]): unknown {
+    return then(apply(run as AnyCallable, this, inputs))
   }
 }
 
@@ -57,12 +58,17 @@ function replacing(source: object, replaced: Readonly<Record<string, unknown>>):
 
 /** The formatters of a child's options, with the module's redaction after each of the host's. */
 function guardFormatters(formatters: object, guard: ChildGuard): object {
-  const { bindings, log } = formatters as NonNullable<ChildLoggerOptions['formatters']>
+  const { bindings, level, log } = formatters as NonNullable<ChildLoggerOptions['formatters']>
   const replaced: Record<string, unknown> = {}
   // With none of its own, the child gets the `bindings` formatter of Pino, which returns its input,
   // and keeps the `log` formatter of its parent, which already redacts.
   if (bindings) {
     replaced['bindings'] = followedBy(bindings, (output) => guard.redactBindings(output, true))
+  }
+  // Pino's redact paths never reach what this one returns, so it is walked by name under every
+  // strategy.
+  if (level) {
+    replaced['level'] = followedBy(level, (output) => guard.redactSerialized(output))
   }
   if (log) {
     replaced['log'] = followedBy(log, (output) =>
