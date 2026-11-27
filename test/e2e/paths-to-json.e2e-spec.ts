@@ -312,7 +312,7 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
     expect(await lines({})).toEqual(await lines({ errorOwnFields: 'safe' }))
   })
 
-  /* A getter on the held `Error` is not run; its `toJSON` is, as for any other value. */
+  /* A getter among the fields of a held `Error` is not run; its `toJSON` is. */
   it('runs no getter of a held Error', async () => {
     let runs = 0
     const error = new Error('failed')
@@ -369,8 +369,8 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
     expect(text.length).toBeLessThan(10_000)
   }, 5000)
 
-  /* The searches of one call share a bound: past it a value is the censor, held or not. */
-  it('censors a value past the work one log call may do', async () => {
+  /* The searches of one walk share a bound: past it a value is the censor, held or not. */
+  it('censors a value past the work one walk may do', async () => {
     const wide = { list: new Array<number>(300_000).fill(0), toJSON: () => 'kept' }
     const text = await moduleText({}, (service) => {
       service.getRawLogger().info({ u: wide }, 'm')

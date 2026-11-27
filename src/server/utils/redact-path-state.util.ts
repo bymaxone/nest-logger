@@ -79,7 +79,7 @@ function endsInWildcard(path: string): boolean {
   return last === '*'
 }
 
-/** The work the searches of one log call have done, shared by them. */
+/** The work the searches of one walk have done, shared by them. */
 export interface SearchSpent {
   searched: number
 }
@@ -105,7 +105,7 @@ interface StandIn {
 /** How many `cause` and `errors` links deep a held `Error` is written. */
 const MAX_LINKS = 8
 
-/** The keys `errorOwnFields: 'safe'` reads from an `Error` without a list of the host. */
+/** The head of an `Error`, written whatever the list of field names. */
 const DERIVED_KEYS = capturedSet(['type', 'name', 'message', 'stack'])
 
 /** Define a property of a copy as plain data, whatever its prototype has under that name. */
@@ -215,7 +215,7 @@ function copyLinks(
   }
 }
 
-/** The safe form of an `Error` under a held one that has no `toJSON` of its own. */
+/** The safe form of an `Error` with no `toJSON`, under a held one. */
 function copyError(error: Error, rules: StandIn, depth: number): object {
   const copy = new Error()
   rules.seen.set(error, copy)
@@ -297,7 +297,7 @@ function searchState(root: object, search: Search, spent: SearchSpent): boolean 
     if (setHas(seen, next) || ArrayBuffer.isView(next)) continue
     if (++spent.searched > search.maxWork) return true
     setAdd(seen, next)
-    // A list longer than the work left is not listed at all, and spends none of it.
+    // A list longer than the work left is not listed, so its members spend none.
     if (Array.isArray(next) && next.length > search.maxWork - spent.searched) return true
     const names = Object.getOwnPropertyNames(next)
     spent.searched += names.length
@@ -326,7 +326,7 @@ function searchState(root: object, search: Search, spent: SearchSpent): boolean 
  * 'safe'` would write for it (see `fromToJson`), so never more than either would.
  *
  * @param paths - The paths handed to `@pinojs/redact`.
- * @param maxWork - Objects and properties the searches of one log call may read before they
+ * @param maxWork - Objects and properties the searches of one walk may read before they
  *   answer `true`.
  * @param safe - The policy of `errorOwnFields: 'safe'`, with the host's own field names.
  * @param censor - Written for what is not.

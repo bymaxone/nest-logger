@@ -100,8 +100,8 @@ describe('redactedStateMatcher', () => {
     expect(matcher({ list: new Array<number>(1_000_000) })).toBe(true)
   })
 
-  /* The searches of one log call share the bound; a list too long for it spends none. */
-  it('shares the bound between the searches of one call', () => {
+  /* The searches of one walk share the bound; an overlong list's members spend none. */
+  it('shares the bound between the searches of one walk', () => {
     const { holds: search } = hold(['password'], 5)
     const spent = { searched: 0 }
 
@@ -227,7 +227,7 @@ describe('the stand-in of a held Error', () => {
     ).toEqual({ message: 'failed' })
   })
 
-  /* A cause or a member the Error does not have itself is text the host made. */
+  /* A cause or a member the Error does not have itself is one the host made. */
   it('censors a cause and a member the Error does not have', () => {
     const error = new Error('failed', { cause: new Error('real') })
     const other = new Error('x')
@@ -271,7 +271,7 @@ describe('the stand-in of a held Error', () => {
     expect(Object.keys(copy)).toEqual(['status'])
   })
 
-  /* The copy under it has no `toJSON`, and none of its accessors is run. */
+  /* The copy under it has no `toJSON`; these accessors are not run. */
   it('runs no accessor of a linked Error', () => {
     const get = jest.fn(() => 'x')
     const cause = new Error('inner')
@@ -339,8 +339,8 @@ describe('the stand-in of a held Error', () => {
     expect(node).toBe('[X]')
   })
 
-  /* The keys and links count against the bound of the call. */
-  it('is the censor past the work the call may do', () => {
+  /* The keys and links count against the bound of the walk. */
+  it('is the censor past the work the walk may do', () => {
     const cause = new Error('inner')
     const error = new Error('failed', { cause })
 
@@ -348,7 +348,7 @@ describe('the stand-in of a held Error', () => {
     expect(standIn(error, () => ({ cause }), 1)).toEqual({ cause: '[X]' })
   })
 
-  /* Anything it cannot read leaves the censor. */
+  /* A revoked `Error` leaves the censor. */
   it('is the censor for an Error it cannot read', () => {
     const { proxy, revoke } = Proxy.revocable(new Error(), {})
     revoke()

@@ -17,8 +17,8 @@ heading here.
 ### Breaking
 
 - Under `redactStrategy: 'paths'`, a walked value with a `toJSON` whose own properties, at any depth, hold a key equal to the last field name of a configured path (or any key, when a path ends in `*`), or a getter, is no longer written through that `toJSON`. A value that is not an `Error` is written as the censor. Migration: log the fields you need as a plain object, for example `{ id: card.id }` instead of `card`.
-- Under the same strategy, of what the `toJSON` of such an `Error` returns, only `type`, `name`, `message`, `stack` and the own fields of `errorOwnFields: 'safe'` are written, where they are not objects, and a value that is not the one the `Error` has under that key is the censor. The `cause` and `errors` it has are followed by the same rule. Migration: log other fields you read beside the error, or name non-object ones in `errorOwnFieldNames`.
-- Under the same strategy, a path ending in `message` or `stack` counts the `message` or `stack` of every `Error` a value with a `toJSON` is or holds, and one log call reads at most 200,000 objects and fields to find a named field; past that the value is censored.
+- Under the same strategy, of what the `toJSON` of such an `Error` returns, only `type`, `name`, `message`, `stack` and the own fields of `errorOwnFields: 'safe'` are written, where they are not objects, and a value other than the `Error`'s (its `name`, for `type`) is the censor. The `cause` and `errors` it has are followed by the same rule. Migration: log other fields you read beside the error, or name non-object ones in `errorOwnFieldNames`.
+- Under the same strategy, a path ending in `message` or `stack` counts the `message` or `stack` of every `Error` a value with a `toJSON` is or holds, and one walk reads at most 200,000 objects and fields to find a named field; past that it counts as holding one.
 
 ### Documentation
 

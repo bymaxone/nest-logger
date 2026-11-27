@@ -247,7 +247,7 @@ export interface RedactRules {
   readonly ownFields: OwnFieldPolicy
   /** Whether the text of an `Error` is left out: the walk is of a message. */
   readonly inMessage?: boolean
-  /** Containers this call has visited, counted against {@link RedactRules.maxVisits}. */
+  /** Containers this call has visited, counted against {@link RedactRules.maxVisits}; `searched` is what the path searches read. */
   readonly visits: { count: number; searched: number }
 }
 
