@@ -41,8 +41,11 @@ const transferred = (): DataView => {
   return view
 }
 
-/** The one line a real application writes while `emit` runs. */
-async function lineOf(emit: Emit, extra: Partial<BymaxLoggerModuleOptions>): Promise<Line> {
+/** The lines a real application writes while each of `emits` runs. */
+async function linesOf(
+  emits: readonly Emit[],
+  extra: Partial<BymaxLoggerModuleOptions>
+): Promise<string[]> {
   const collector = new Collector()
   const app = await Test.createTestingModule({
     imports: [
@@ -55,9 +58,16 @@ async function lineOf(emit: Emit, extra: Partial<BymaxLoggerModuleOptions>): Pro
   }).compile()
   await app.init()
   collector.payloads.length = 0
-  emit(app.get(PinoLoggerService).getRawLogger() as unknown as Raw)
+  const raw = app.get(PinoLoggerService).getRawLogger() as unknown as Raw
+  for (const emit of emits) emit(raw)
   const written = collector.payloads.slice()
   await app.close()
+  return written
+}
+
+/** The one line a real application writes while `emit` runs. */
+async function lineOf(emit: Emit, extra: Partial<BymaxLoggerModuleOptions>): Promise<Line> {
+  const written = await linesOf([emit], extra)
   expect(written).toHaveLength(1)
   return JSON.parse(written[0] as string) as Line
 }
@@ -171,6 +181,105 @@ const ENDLESS: ReadonlyArray<readonly [string, Emit]> = [
   ]
 ]
 
+/** Eight bytes that were then transferred away, with the view made over them. */
+function transferredUnder(make: (buffer: ArrayBuffer) => unknown): () => unknown {
+  return () => {
+    const buffer = new ArrayBuffer(8)
+    const view = make(buffer)
+    structuredClone(buffer, { transfer: [buffer] })
+    return view
+  }
+}
+
+/** Eight bytes that then shrank to none, with the view made over them. */
+function shrunkUnder(make: (buffer: ArrayBuffer) => unknown): () => unknown {
+  return () => {
+    const buffer = Reflect.construct(ArrayBuffer, [8, { maxByteLength: 8 }]) as ArrayBuffer
+    const view = make(buffer)
+    ;(buffer as unknown as { resize(size: number): void }).resize(0)
+    return view
+  }
+}
+
+type ViewClass = new (buffer: ArrayBuffer, offset?: number, length?: number) => ArrayBufferView
+
+const VIEW_CLASSES: readonly ViewClass[] = [
+  DataView,
+  Int8Array,
+  Uint8Array,
+  Uint8ClampedArray,
+  Int16Array,
+  Uint16Array,
+  Int32Array,
+  Uint32Array,
+  Float32Array,
+  Float64Array,
+  BigInt64Array,
+  BigUint64Array
+] as unknown as readonly ViewClass[]
+
+/** Binary shapes, each with whether a line gives its size. */
+const SHAPES: ReadonlyArray<readonly [string, () => unknown, string | undefined]> = [
+  ...VIEW_CLASSES.flatMap((View) => {
+    const whole = (buffer: ArrayBuffer): unknown =>
+      new View(buffer, 0, 8 / ((View as { BYTES_PER_ELEMENT?: number }).BYTES_PER_ELEMENT ?? 1))
+    return [
+      [`a transferred ${View.name}`, transferredUnder(whole), '[Binary 0 bytes]'],
+      [`a shrunk ${View.name}`, shrunkUnder(whole), '[Binary 0 bytes]']
+    ] as const
+  }),
+  ['a transferred Buffer', transferredUnder((b) => Buffer.from(b)), '[Binary 0 bytes]'],
+  ['a shrunk Buffer', shrunkUnder((b) => Buffer.from(b, 0, 8)), '[Binary 0 bytes]'],
+  ['a transferred ArrayBuffer', transferredUnder((b) => b), undefined],
+  ['a SharedArrayBuffer', () => new SharedArrayBuffer(8), undefined],
+  ['a DataView on shared memory', () => new DataView(new SharedArrayBuffer(8)), '[Binary 8 bytes]']
+]
+
+/** Every way in. `%s` and `%d` are Pino's own formatting, which the module does not reach. */
+const ENTRIES: ReadonlyArray<(raw: Raw, value: unknown) => void> = [
+  (raw, value) => raw.info(value),
+  (raw, value) => raw.info(value, 'm'),
+  (raw, value) => raw.info({ b: value }),
+  (raw, value) => raw.info({}, value),
+  (raw, value) => raw.info('%o', value),
+  (raw, value) => raw.info('%O', value),
+  (raw, value) => raw.info('%j', { b: value }),
+  (raw, value) => raw.info({ err: Object.assign(new Error('e'), { stdout: value }) }, 'm'),
+  (raw, value) => raw.child(value).info('c'),
+  (raw, value) => raw.child({ b: value }).info('c'),
+  (raw, value) => {
+    const child = raw.child({})
+    child.setBindings(value)
+    child.info('c')
+  },
+  (raw, value) => {
+    const child = raw.child({})
+    child.setBindings({ b: value })
+    child.info('c')
+  }
+]
+
+/** Declares one row for each binary shape. */
+function describeShapes(pinoName: string): void {
+  describe.each(['names', 'paths'] as const)(
+    `a binary shape through every way in under '%s' (${pinoName})`,
+    (redactStrategy) => {
+      it.each(SHAPES)('writes a line for %s', async (_name, make, size) => {
+        const lines = await linesOf(
+          ENTRIES.map((entry) => (raw: Raw) => entry(raw, make())),
+          { redactStrategy }
+        )
+
+        expect(lines).toHaveLength(ENTRIES.length)
+        for (const line of lines) {
+          expect(line).not.toContain('LOGGER_REDACTION_FAILED')
+          if (size !== undefined) expect(line).toContain(size)
+        }
+      })
+    }
+  )
+}
+
 /**
  * Declares the rows for the Pino that is loaded.
  *
@@ -185,6 +294,8 @@ export function describeBinaryValues(pinoName: string): void {
       })
     }
   )
+
+  describeShapes(pinoName)
 
   describe.each(['names', 'paths'] as const)(
     `an object that never ends under '%s' (${pinoName})`,
