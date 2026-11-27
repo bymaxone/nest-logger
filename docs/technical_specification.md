@@ -1590,7 +1590,7 @@ await app.listen(3000)
 
 Logs the full HTTP request lifecycle. Normalizes URLs to avoid an explosion of distinct log keys (`/users/abc-123` and `/users/def-456` both become `/users/:id`).
 
-The source is `src/server/interceptors/http-logging.interceptor.ts`. It takes `PinoLoggerService` and the resolved options.
+The source is `src/server/interceptors/http-logging.interceptor.ts`.
 
 - A request that the access-log middleware already records is left to it: the interceptor only records a thrown error.
 - A path that matches `http.excludePaths` is not logged.
