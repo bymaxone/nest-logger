@@ -14,13 +14,13 @@ heading here.
 
 ## [1.4.35] - 2026-11-27
 
+### Breaking
+
+- **Behaviour change under `redactStrategy: 'names'`:** the `bindings` formatter and the `serializers` of child options receive a redacted copy of the bindings instead of your objects. In the copy a `Date` arrives as a string, a `Map` as `{}` and a class instance other than an `Error` as a plain object, so a serializer that calls a method of one of these throws. A value in bindings of the raw logger is written as `service.child()` writes it. Migration: have the callback read the copy (a `Date` is an ISO string), or compute the value before you pass it, for example `raw.child({ at: at.getTime() })`. `redactStrategy: 'paths'` keeps your objects, but bindings are then not redacted by name.
+
 ### Security
 
 - **Under the default `redactStrategy: 'names'`, bindings passed to `child()` and `setBindings()` on the raw logger are now redacted.** Under both strategies, so is what the `serializers`, `formatters.log` and `formatters.level` of child options return.
-
-### Changed
-
-- **Behaviour change under `redactStrategy: 'names'`:** the `bindings` formatter and the `serializers` of child options receive a redacted copy of the bindings instead of your objects. In the copy a `Date` arrives as a string, a `Map` as `{}` and a class instance other than an `Error` as a plain object, so a serializer that calls a method of one of these throws. A value in bindings of the raw logger is written as `service.child()` writes it.
 - Under `redactStrategy: 'paths'`, bindings of the raw logger are handled as before: Pino's redact paths apply, and your own objects reach the formatters and serializers.
 
 ### Documentation
