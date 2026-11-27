@@ -154,6 +154,69 @@ describe('Logger E2E — bindings of the raw logger', () => {
     expect(lines).not.toContain(SECRET)
   })
 
+  const cyclic = (): Record<string, unknown> => {
+    const value = bag()
+    value['self'] = value
+    return value
+  }
+  const deep = (): Record<string, unknown> => {
+    let value = bag()
+    for (let level = 0; level < 150; level++) value = { value }
+    return value
+  }
+
+  it.each<[string, (raw: Raw) => void]>([
+    [
+      'the record of a child with its own redact',
+      (raw) => raw.child(bag(), { redact: ['other'] }).info('PROBE')
+    ],
+    [
+      'bindings of a child with a msgPrefix',
+      (raw) => raw.child(bag(), { msgPrefix: '> ' }).info('PROBE')
+    ],
+    ['a cyclic binding', (raw) => raw.child({ held: cyclic() }).info('PROBE')],
+    ['a deep binding', (raw) => raw.child({ held: deep() }).info('PROBE')],
+    ['a binding with a toJSON', (raw) => raw.child({ held: { toJSON: bag } }).info('PROBE')],
+    [
+      'a binding behind a getter',
+      (raw) =>
+        raw
+          .child({
+            get held() {
+              return bag()
+            }
+          })
+          .info('PROBE')
+    ],
+    [
+      'a cyclic and a deep binding of setBindings',
+      (raw) => {
+        const child = raw.child({})
+        child.setBindings({ held: cyclic(), far: deep() })
+        child.info('PROBE')
+      }
+    ],
+    [
+      'bindings() passed back to child()',
+      (raw) => raw.child(raw.child(bag()).bindings()).info('PROBE')
+    ],
+    [
+      'a child made inside the formatters.log of a child',
+      (raw) => {
+        const log = (record: object): object => {
+          raw.child(bag()).info('PROBE')
+          return record
+        }
+        raw.child({}, { formatters: { log } }).info('PROBE')
+      }
+    ]
+  ])('redacts %s', async (_name, emit) => {
+    const lines = await linesOf(emit)
+
+    expect(lines).toContain('PROBE')
+    expect(lines).not.toContain(SECRET)
+  })
+
   it('censors a configured name in bindings and keeps the other fields', async () => {
     const lines = await linesOf(
       (raw) => raw.child({ ssn: SECRET, kept: 'visible' }).info('PROBE'),

@@ -6,11 +6,15 @@
  * `setBindings()` runs whatever formatter the instance holds. The options of a child can also replace
  * the record formatter and the serializers. Both methods are redefined on the instance the factory
  * builds, and every child inherits them through its prototype.
+ *
+ * Under the `'names'` strategy the objects of the message placeholders are walked too, by
+ * {@link guardMessageValues}, which a child with format options of its own needs again.
  */
 import type { ChildLoggerOptions, Logger as PinoLogger } from 'pino'
 
 import { bareDescriptor } from './bare-descriptor.util'
-import type { Redactor } from './redact-by-name.util'
+import { guardMessageValues, redactMessageOutput } from './guard-message-values.util'
+import type { MessageRedactor, Redactor } from './redact-by-name.util'
 
 const apply = Reflect.apply
 const create = Object.create
@@ -25,7 +29,7 @@ export interface ChildGuard {
   /** The redactor of bindings. */
   readonly redactBindings: Redactor
   /** The redactor that walks by name under every strategy. */
-  readonly redactSerialized: Redactor
+  readonly redactSerialized: MessageRedactor
   /** The record formatter of the module, which redacts the record. */
   readonly formatRecord: (record: Record<string, unknown>) => Record<string, unknown>
 }
@@ -78,19 +82,30 @@ function guardFormatters(formatters: object, guard: ChildGuard): object {
 /**
  * The serializers of a child's options, each with its output redacted like a module serializer's.
  * Only string keys are copied: Pino 10 runs no serializer under a symbol.
+ *
+ * When `keepsMessageWalk`, what a `msg` serializer returns is redacted as a message, and a `msg`
+ * entry that holds no serializer is left out, because Pino would put it in the place of the walk of
+ * the message that the child inherits.
  */
-function guardSerializers(serializers: object, redact: Redactor): object {
+function guardSerializers(
+  serializers: object,
+  redact: MessageRedactor,
+  keepsMessageWalk: boolean
+): object {
   const source = serializers as Record<PropertyKey, unknown>
   const guarded: Record<PropertyKey, unknown> = {}
+  const plain: Callable = (output) => redact(output)
+  const asMessage = redactMessageOutput(keepsMessageWalk ? 'names' : 'paths', redact)
   for (const key in source) {
-    const value = followedBy(source[key], (output) => redact(output))
+    if (keepsMessageWalk && key === 'msg' && !source[key]) continue
+    const value = followedBy(source[key], key === 'msg' ? asMessage : plain)
     defineProperty(guarded, key, bareDescriptor({ value, enumerable: true }))
   }
   return guarded
 }
 
 /** The options of a child with the module's redaction composed into what they replace. */
-function guardOptions(options: unknown, guard: ChildGuard): unknown {
+function guardOptions(options: unknown, guard: ChildGuard, keepsMessageWalk: boolean): unknown {
   if (typeof options !== 'object' || options === null) return options
   const { formatters, serializers } = options as ChildLoggerOptions
   const replaced: Record<string, unknown> = {}
@@ -99,28 +114,35 @@ function guardOptions(options: unknown, guard: ChildGuard): unknown {
     replaced['formatters'] = guardFormatters(formatters, guard)
   }
   if (hasOwn(options, 'serializers') && serializers) {
-    replaced['serializers'] = guardSerializers(serializers, guard.redactSerialized)
+    const redact = guard.redactSerialized
+    replaced['serializers'] = guardSerializers(serializers, redact, keepsMessageWalk)
   }
   return replacing(options, replaced)
 }
 
 /**
  * Redefine `child` and `setBindings` on a Pino instance so that bindings are redacted before Pino
- * writes them, and what the options of a child replace is redacted too.
+ * writes them, and what the options of a child replace is redacted too. Under `'names'`, so are the
+ * objects of the message placeholders.
  *
  * @param logger - The Pino instance the factory built.
  * @param redaction - The redaction of the module.
  * @param options - The strategy. Under `'paths'`, bindings are passed on as they are, so the
- *   formatters and serializers of the child options receive the objects the caller passed.
+ *   formatters and serializers of the child options receive the objects the caller passed, and the
+ *   message is written as Pino writes it.
  * @returns `logger`.
+ * @throws Error `LOGGER_PINO_UNSUPPORTED` under `'names'`, from {@link guardMessageValues}.
  */
 export function guardChildBindings(
   logger: PinoLogger,
   redaction: ChildGuard,
   options: { readonly redactStrategy: 'names' | 'paths' }
 ): PinoLogger {
-  const guard =
-    options.redactStrategy === 'names' ? redaction : { ...redaction, redactBindings: asPassed }
+  const byName = options.redactStrategy === 'names'
+  const guard = byName ? redaction : { ...redaction, redactBindings: asPassed }
+  const guardChildMessages = byName
+    ? guardMessageValues(logger, redaction.redactSerialized)
+    : undefined
   const nativeChild: unknown = logger.child
   const nativeSetBindings: unknown = logger.setBindings
   // Missing bindings are passed on as they are, so Pino answers for them.
@@ -128,10 +150,12 @@ export function guardChildBindings(
     bindings ? guard.redactBindings(bindings, true) : bindings
 
   const child = function (this: PinoLogger, bindings: unknown, options?: unknown): unknown {
-    return apply(nativeChild as AnyCallable, this, [
+    const built = apply(nativeChild as AnyCallable, this, [
       redacted(bindings),
-      guardOptions(options, guard)
+      guardOptions(options, guard, byName)
     ])
+    guardChildMessages?.(built as object)
+    return built
   }
   const setBindings = function (this: PinoLogger, bindings: unknown): void {
     apply(nativeSetBindings as Callable, this, [redacted(bindings)])

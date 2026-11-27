@@ -12,6 +12,23 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.36] - 2026-11-27
+
+### Breaking
+
+- **Behaviour change under `redactStrategy: 'names'`:** an object that Pino serializes into a raw logger message is redacted by name. By default a `Buffer` or a typed array is written as `[Binary N bytes]`, a value nested deeper than the walk reads is cut, a boxed `String` is written as a map of its indexes, a boxed `Number` or `Boolean` as `{}`, and an `Error` there with no `toJSON` keeps only the own fields a logged error keeps (`parameters`, for one, is dropped). Migration: format such a value before you pass it, for example `raw.info('digest %s', buffer.toString('hex'))`. `redactStrategy: 'paths'` writes the message as before.
+- Under `'names'` with `errorOwnFields: 'safe'`, an `Error` in the raw logger message now keeps only the own fields that setting allows, and its `toJSON` is not called. No message or stack is added to it there. Under `'names'`, what a `msg` serializer of yours returns, in the module or child options, is redacted the same way: to keep the text of an `Error`, return that text. In both `errorOwnFields` modes an `Error` that cannot be read is written there as `{}`.
+
+### Security
+
+- **Under the default `redactStrategy: 'names'`, an object that the raw logger formats into the message with `%o`, `%O` or `%j`, or takes as the message (passed with no `msgPrefix`, or taken from `err.message`), is now redacted by name.** Pino's redact paths apply to a placeholder as before. `%s` and `%d` print what they printed before, and a string is never read.
+- For the placeholders the walk composes with a member of Pino reached through `pino.symbols`. If it is missing under `'names'`, the logger refuses to start with `LOGGER_PINO_UNSUPPORTED`. Tested on `pino` 10.0.0 and 10.4.0.
+
+### Documentation
+
+- Under `redactStrategy: 'paths'`, what the `formatters.level` of child options returns is walked by name, and what its `formatters.log` returns goes through the record formatter of the module.
+- Redacting a very large object, in bindings or in the message, takes time in proportion to what the walk reads: about 200 ms was measured for a flat object of 200,000 keys.
+
 ## [1.4.35] - 2026-11-27
 
 ### Breaking
@@ -3621,7 +3638,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.35...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.36...HEAD
+[1.4.36]: https://github.com/bymaxone/nest-logger/compare/v1.4.35...v1.4.36
 [1.4.35]: https://github.com/bymaxone/nest-logger/compare/v1.4.34...v1.4.35
 [1.4.34]: https://github.com/bymaxone/nest-logger/compare/v1.4.33...v1.4.34
 [1.4.33]: https://github.com/bymaxone/nest-logger/compare/v1.4.32...v1.4.33

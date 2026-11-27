@@ -52,6 +52,9 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: reflect-metadata
         update-types: [version-update:semver-major]
+      # An alias of the oldest `pino` the peer range admits, which the e2e rows run against. It moves
+      # only when the floor of the peer range moves.
+      - dependency-name: pino-floor
       - dependency-name: rxjs
         update-types: [version-update:semver-major]
       - dependency-name: pino-pretty

@@ -221,6 +221,25 @@ describe('guardChildBindings', () => {
     expect(line['account']).toBe('a1')
   })
 
+  it.each([
+    ['names', 'serializedMark:parent:m'],
+    ['paths', 'm']
+  ] as const)(
+    "under '%s', a child with an undefined msg serializer writes '%s'",
+    (strategy, expected) => {
+      const { logger, lines } = build(strategy)
+      const parent = logger.child(
+        {},
+        { serializers: { msg: (m: unknown) => `parent:${String(m)}` } }
+      )
+      const msg = undefined as never
+
+      parent.child({}, { serializers: { msg } }).info('m')
+
+      expect(lines()[0]?.['msg']).toBe(expected)
+    }
+  )
+
   it('reads members the options inherit, and copies a frozen object', () => {
     class Options {
       get level(): string {
@@ -273,5 +292,31 @@ describe('guardChildBindings', () => {
 
     expect(() => logger.child({}, { formatters: undefined } as never)).toThrow(TypeError)
     expect(() => logger.child({}, { serializers: undefined } as never)).toThrow(TypeError)
+  })
+})
+
+describe('guardChildBindings and the serializers of a child', () => {
+  it("replaces an inherited serializer under 'names' with an empty entry that is not msg", () => {
+    const { logger, lines } = build()
+    const parent = logger.child({}, { serializers: { account: () => 'parent' } })
+
+    parent.child({}, { serializers: { account: undefined as never } }).info({ account: 'a1' }, 'm')
+
+    expect(lines()[0]?.['account']).toBe('a1')
+  })
+
+  it("redacts under 'names' only what the msg serializer returns as a message", () => {
+    const redactSerialized = jest.fn((value: unknown) => value)
+    const logger = guardChildBindings(
+      pino({ base: null, timestamp: false }, { write: () => undefined }),
+      { redactBindings: (value) => value, redactSerialized, formatRecord: (record) => record },
+      { redactStrategy: 'names' }
+    )
+    const same = (value: unknown): unknown => value
+
+    logger.child({}, { serializers: { msg: same, account: same } }).info({ account: 'a1' }, 'hello')
+
+    expect(redactSerialized.mock.calls).toContainEqual(['hello', false, true])
+    expect(redactSerialized.mock.calls).toContainEqual(['a1'])
   })
 })
