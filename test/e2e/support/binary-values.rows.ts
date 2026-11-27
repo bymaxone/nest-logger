@@ -127,6 +127,28 @@ const ROOTS: ReadonlyArray<readonly [string, Emit, Line]> = [
   ]
 ]
 
+/** An object whose one getter makes another like it on every read. */
+const endless = (): object => ({
+  get next(): object {
+    return endless()
+  }
+})
+
+/** Calls that give the logger an object that never ends. */
+const ENDLESS: ReadonlyArray<readonly [string, Emit]> = [
+  ['%o', (raw) => raw.info('%o', endless())],
+  ['an object message', (raw) => raw.info({}, endless())],
+  ['a child binding', (raw) => raw.child({ x: endless() }).info('c')],
+  [
+    'setBindings',
+    (raw) => {
+      const child = raw.child({})
+      child.setBindings({ x: endless() })
+      child.info('c')
+    }
+  ]
+]
+
 /**
  * Declares the rows for the Pino that is loaded.
  *
@@ -138,6 +160,15 @@ export function describeBinaryValues(pinoName: string): void {
     (redactStrategy) => {
       it.each([...NESTED, ...ROOTS])('writes %s as its size', async (_name, emit, expected) => {
         expect(decided(await lineOf(emit, { redactStrategy }))).toStrictEqual(expected)
+      })
+    }
+  )
+
+  describe.each(['names', 'paths'] as const)(
+    `an object that never ends under '%s' (${pinoName})`,
+    (redactStrategy) => {
+      it.each(ENDLESS)('writes one line through %s', async (_name, emit) => {
+        expect(await lineOf(emit, { redactStrategy })).toHaveProperty('level')
       })
     }
   )

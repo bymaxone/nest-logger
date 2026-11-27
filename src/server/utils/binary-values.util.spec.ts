@@ -3,6 +3,7 @@
  * @layer server/utils
  */
 import { binaryAsField, holdsBinary } from './binary-values.util'
+import { REDACT_MAX_VISITS } from './redact-by-name.util'
 
 describe('holdsBinary', () => {
   it.each<readonly [string, unknown]>([
@@ -46,6 +47,27 @@ describe('holdsBinary', () => {
     }
 
     expect(holdsBinary(hostile)).toBe(true)
+  })
+
+  it.each([
+    ['stops at the limit of members, which it reads whole', REDACT_MAX_VISITS, false],
+    ['leaves what has more members than the limit to the walk', REDACT_MAX_VISITS + 1, true]
+  ])('%s', (_name, members, expected) => {
+    expect(holdsBinary(Array.from({ length: members }, () => 0))).toBe(expected)
+  })
+
+  it('ends a chain of getters that makes a new object on every read', () => {
+    let reads = 0
+    const link = (): object => ({
+      get next(): unknown {
+        reads += 1
+        // Ends on its own well past the limit, so that a scan without one fails and does not hang.
+        return reads > REDACT_MAX_VISITS * 2 ? null : link()
+      }
+    })
+
+    expect(holdsBinary(link())).toBe(true)
+    expect(reads).toBe(REDACT_MAX_VISITS)
   })
 })
 

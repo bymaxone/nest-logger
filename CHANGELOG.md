@@ -17,12 +17,12 @@ heading here.
 ### Breaking
 
 - A binary value (a `Buffer`, a typed array or a `DataView`) passed to the raw logger as the merge object, or to `child()` or `setBindings()` as the bindings, is written as one field, `binary`, with its size. Migration: pass it under a key of your own in the form you want to read, for example `raw.info({ digest: buffer.toString('hex') })`.
-- Under `redactStrategy: 'paths'`, a message, a placeholder object or bindings of the raw logger that hold a binary value are walked before Pino writes them. The other values in them are then written as the walk writes them (a `Map` as `{}`, for one), and `formatters.bindings` and the serializers of the bindings receive that copy. Values that hold no binary are written as before.
+- Under `redactStrategy: 'paths'`, a message, a placeholder object or bindings of the raw logger that hold a binary value are walked before Pino writes them. The other values in them are then written as the walk writes them (a `Map` as `{}`, for one), and `formatters.bindings` and the serializers of the bindings receive that copy. Values that hold no binary are written as before, except one with more than 200,000 members to look through, which is walked too.
 - Under `redactStrategy: 'paths'` too, the logger now refuses to start with `LOGGER_PINO_UNSUPPORTED` when `pino.symbols.formatOptsSym` is missing. Tested on `pino` 10.0.0 and 10.4.0.
 
 ### Fixed
 
-- Under `redactStrategy: 'paths'`, a `Buffer` in a message, a placeholder or bindings of the raw logger could make Pino throw a `TypeError` into the caller, with the default redact paths or with a wildcard path of your own. It is now written as its size.
+- Under `redactStrategy: 'paths'`, a `Buffer` in a message, a placeholder or bindings of the raw logger could make Pino throw a `TypeError` into the caller, with the default redact paths or with a wildcard path in `redactPaths`. It is now written as its size.
 
 ### Documentation
 

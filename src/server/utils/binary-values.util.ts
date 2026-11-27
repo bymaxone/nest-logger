@@ -7,6 +7,7 @@
  */
 import { setAdd, setHas } from './captured-builtins.util'
 import { withBinaryAsSize } from './own-field-policy.util'
+import { REDACT_MAX_VISITS } from './redact-by-name.util'
 
 const keysOf = Object.keys
 const get = Reflect.get
@@ -17,18 +18,26 @@ const isView = ArrayBuffer.isView
  * which is what the copy of Pino's redaction reaches.
  *
  * @param value - Anything a caller passed.
- * @returns `true` too when `value` cannot be read, so that the walk is the one to answer for it.
+ * @returns `true` too when `value` cannot be read, or has more members than
+ *   {@link REDACT_MAX_VISITS} to look through, so that the walk, which is bounded, answers for it.
  */
 export function holdsBinary(value: unknown): boolean {
   const seen = new Set<unknown>()
   const pending: unknown[] = [value]
+  // Counted as members are read: a getter can make a new object on every read, which no set of the
+  // objects already seen ends.
+  let read = 0
   try {
     while (pending.length > 0) {
       const next = pending.pop()
       if (typeof next !== 'object' || next === null || setHas(seen, next)) continue
       if (isView(next)) return true
       setAdd(seen, next)
-      for (const key of keysOf(next)) pending[pending.length] = get(next, key)
+      for (const key of keysOf(next)) {
+        read += 1
+        if (read > REDACT_MAX_VISITS) return true
+        pending[pending.length] = get(next, key)
+      }
     }
     return false
   } catch {
