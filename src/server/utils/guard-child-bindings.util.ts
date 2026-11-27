@@ -9,6 +9,7 @@
  */
 import type { ChildLoggerOptions, Logger as PinoLogger } from 'pino'
 
+import { bareDescriptor } from './bare-descriptor.util'
 import type { Redactor } from './redact-by-name.util'
 
 const apply = Reflect.apply
@@ -17,6 +18,7 @@ const defineProperty = Object.defineProperty
 const getOwnPropertyDescriptors = Object.getOwnPropertyDescriptors
 const getPrototypeOf = Object.getPrototypeOf
 const hasOwn = Object.hasOwn
+const ownKeys = Reflect.ownKeys
 
 /** What the logger of the module redacts and formats with. */
 export interface ChildGuard {
@@ -44,14 +46,11 @@ function followedBy(run: unknown, then: Callable): unknown {
  * are, because Pino reads them from the object it is given, and a frozen source can be copied.
  */
 function replacing(source: object, replaced: Readonly<Record<string, unknown>>): object {
-  const descriptors: PropertyDescriptorMap = getOwnPropertyDescriptors(source)
-  for (const key in replaced) {
-    descriptors[key] = {
-      value: replaced[key],
-      enumerable: true,
-      writable: true,
-      configurable: true
-    }
+  const descriptors = getOwnPropertyDescriptors(source) as Record<PropertyKey, PropertyDescriptor>
+  for (const key in replaced) descriptors[key] = { value: replaced[key] }
+  // Bare, so that a `get` or a `set` planted on the root is not read as part of a descriptor.
+  for (const name of ownKeys(descriptors)) {
+    descriptors[name] = bareDescriptor(descriptors[name] as PropertyDescriptor)
   }
   return create(getPrototypeOf(source) as object | null, descriptors) as object
 }
@@ -59,23 +58,15 @@ function replacing(source: object, replaced: Readonly<Record<string, unknown>>):
 /** The formatters of a child's options, with the module's redaction after each of the host's. */
 function guardFormatters(formatters: object, guard: ChildGuard): object {
   const { bindings, level, log } = formatters as NonNullable<ChildLoggerOptions['formatters']>
-  const replaced: Record<string, unknown> = {}
-  // With none of its own, the child gets the `bindings` formatter of Pino, which returns its input,
-  // and keeps the `log` formatter of its parent, which already redacts.
-  if (bindings) {
-    replaced['bindings'] = followedBy(bindings, (output) => guard.redactBindings(output, true))
-  }
-  // Pino's redact paths never reach what this one returns, so it is walked by name under every
+  // With none of its own, which stays so here, the child gets the `bindings` formatter of Pino,
+  // which returns its input, and keeps the `log` formatter of its parent, which already redacts.
+  // Pino's redact paths never reach what `level` returns, so that is walked by name under every
   // strategy.
-  if (level) {
-    replaced['level'] = followedBy(level, (output) => guard.redactSerialized(output))
-  }
-  if (log) {
-    replaced['log'] = followedBy(log, (output) =>
-      guard.formatRecord(output as Record<string, unknown>)
-    )
-  }
-  return replacing(formatters, replaced)
+  return replacing(formatters, {
+    bindings: followedBy(bindings, (output) => guard.redactBindings(output, true)),
+    level: followedBy(level, (output) => guard.redactSerialized(output)),
+    log: followedBy(log, (output) => guard.formatRecord(output as Record<string, unknown>))
+  })
 }
 
 /**
@@ -86,10 +77,8 @@ function guardSerializers(serializers: object, redact: Redactor): object {
   const source = serializers as Record<PropertyKey, unknown>
   const guarded: Record<PropertyKey, unknown> = {}
   for (const key in source) {
-    defineProperty(guarded, key, {
-      value: followedBy(source[key], (output) => redact(output)),
-      enumerable: true
-    })
+    const value = followedBy(source[key], (output) => redact(output))
+    defineProperty(guarded, key, bareDescriptor({ value, enumerable: true }))
   }
   return guarded
 }
@@ -124,22 +113,17 @@ export function guardChildBindings(logger: PinoLogger, guard: ChildGuard): PinoL
   const redacted = (bindings: unknown): unknown =>
     bindings ? guard.redactBindings(bindings, true) : bindings
 
-  defineProperty(logger, 'child', {
-    value: function (this: PinoLogger, bindings: unknown, options?: unknown): unknown {
-      return apply(nativeChild as Callable, this, [
-        redacted(bindings),
-        guardOptions(options, guard)
-      ])
-    },
-    writable: true,
-    configurable: true
-  })
-  defineProperty(logger, 'setBindings', {
-    value: function (this: PinoLogger, bindings: unknown): void {
-      apply(nativeSetBindings as Callable, this, [redacted(bindings)])
-    },
-    writable: true,
-    configurable: true
-  })
+  const child = function (this: PinoLogger, bindings: unknown, options?: unknown): unknown {
+    return apply(nativeChild as AnyCallable, this, [
+      redacted(bindings),
+      guardOptions(options, guard)
+    ])
+  }
+  const setBindings = function (this: PinoLogger, bindings: unknown): void {
+    apply(nativeSetBindings as Callable, this, [redacted(bindings)])
+  }
+  const open = { writable: true, configurable: true }
+  defineProperty(logger, 'child', bareDescriptor({ ...open, value: child }))
+  defineProperty(logger, 'setBindings', bareDescriptor({ ...open, value: setBindings }))
   return logger
 }

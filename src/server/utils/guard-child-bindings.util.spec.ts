@@ -24,7 +24,8 @@ function build(): { logger: PinoLogger; lines: () => Array<Record<string, unknow
   const logger = guardChildBindings(
     pino({ base: null, timestamp: false }, { write: (line: string) => void written.push(line) }),
     {
-      redactBindings: mark('boundMark'),
+      // `boundMark` is true only when the bag was walked as the root of a record.
+      redactBindings: (value, asRoot) => ({ ...(value as object), boundMark: asRoot === true }),
       redactSerialized: mark('serializedMark'),
       formatRecord: (record) => ({ ...record, recordMark: true })
     }
@@ -76,6 +77,35 @@ describe('guardChildBindings', () => {
     ])
   })
 
+  it('leaves child and setBindings open to a later replacement', () => {
+    const { logger } = build()
+
+    for (const name of ['child', 'setBindings']) {
+      expect(Object.getOwnPropertyDescriptor(logger, name)).toMatchObject({
+        writable: true,
+        configurable: true
+      })
+    }
+  })
+
+  it('works with a get planted on Object.prototype after the instance was built', () => {
+    // Pino itself cannot build an instance under the planted key, so it is planted afterwards.
+    const { logger, lines } = build()
+    Object.defineProperty(Object.prototype, 'get', { value: () => undefined, configurable: true })
+    try {
+      logger
+        .child(
+          { a: 1 },
+          { formatters: { log: (o) => o }, serializers: { account: (id: string) => id } }
+        )
+        .info({ account: 'a1' }, 'm')
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'get')
+    }
+
+    expect(lines()[0]).toMatchObject({ a: 1, boundMark: true, account: 'serializedMark:a1' })
+  })
+
   it('leaves missing bindings to Pino', () => {
     const { logger } = build()
 
@@ -100,6 +130,12 @@ describe('guardChildBindings', () => {
       hostLogged: true,
       recordMark: true
     })
+  })
+
+  it('redacts a field a bindings formatter of the child options brings in', () => {
+    const line = childLine({ a: 1 }, { formatters: { bindings: () => ({ fresh: true }) } })
+
+    expect(line).toMatchObject({ fresh: true, boundMark: true })
   })
 
   it('keeps the formatters the child options do not bring', () => {
