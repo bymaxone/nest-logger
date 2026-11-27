@@ -50,6 +50,7 @@ const NOT_BUILT_INS: Readonly<Record<string, string>> = {
   holds: 'a function the factory builds from redactPaths',
   standIn: 'a function the factory builds from redactPaths',
   matches: 'a function of the matcher itself',
+  isNamed: 'a function of the matcher itself',
   censorName: 'a callback the caller of the redaction passes',
   hasToJson: 'a callback the caller of the redaction passes',
   registerStream: 'a method of the destination health the factory owns',

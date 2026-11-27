@@ -10,6 +10,7 @@ import { bareDescriptor } from './bare-descriptor.util'
 import { allMatches, capturedSet, matchesPattern, setAdd, setHas } from './captured-builtins.util'
 import { isError } from './is-error.util'
 import { DERIVED_ERROR_FIELDS, type OwnFieldPolicy } from './own-field-policy.util'
+import { MAX_AGGREGATE_ERRORS, OMIT_OWN_FIELD, ownFieldForLog } from './sanitize-error.util'
 
 /**
  * One path segment: either a `["quoted"]` / `['quoted']` bracket segment, whose
@@ -78,23 +79,34 @@ function endsInWildcard(path: string): boolean {
   return last === '*'
 }
 
+/** The work the searches of one log call have done, shared by them. */
+export interface SearchSpent {
+  searched: number
+}
+
 /** What the configured paths decide about a value that has a `toJSON`. */
 export interface PathHold {
   /** Whether the value holds, at any depth, a field the paths name. Never throws. */
-  readonly holds: (value: object) => boolean
-  /** What is written for a held `Error`: a copy with no `toJSON`. Never throws. */
-  readonly standIn: (error: Error) => unknown
+  readonly holds: (value: object, spent: SearchSpent) => boolean
+  /** What is written for a held `Error`. Never throws. */
+  readonly standIn: (error: Error, toJson: () => unknown, spent: SearchSpent) => unknown
 }
 
-/** What every copy of one held `Error` and of the errors under it shares. */
-interface StandInRules {
-  readonly matches: (name: string) => boolean
-  readonly safeFields: ReadonlySet<string>
+/** What every part of one held `Error` shares. */
+interface StandIn {
+  readonly policy: OwnFieldPolicy
   readonly censor: string
+  readonly maxWork: number
+  readonly spent: SearchSpent
+  /** What each `Error` already met is written as, so a cycle stays a cycle. */
+  readonly seen: Map<Error, unknown>
 }
 
-/** How many `cause` and `errors` links deep a held `Error` is copied. */
+/** How many `cause` and `errors` links deep a held `Error` is written. */
 const MAX_LINKS = 8
+
+/** The keys `errorOwnFields: 'safe'` reads from an `Error` without a list of the host. */
+const DERIVED_KEYS = capturedSet(['type', 'name', 'message', 'stack'])
 
 /** Define a property of a copy as plain data, whatever its prototype has under that name. */
 function define(copy: object, name: string, value: unknown, enumerable: boolean): void {
@@ -121,97 +133,185 @@ function ownValue(source: object, key: string): unknown {
   return field !== undefined && Object.hasOwn(field, 'value') ? field.value : undefined
 }
 
-/** What a `cause` or a member of `errors` is written as: an object that is no `Error` is not. */
-function linked(
-  value: unknown,
-  rules: StandInRules,
-  depth: number,
-  seen: Map<Error, object>
-): unknown {
-  if (isError(value)) {
-    return depth > MAX_LINKS ? rules.censor : copyError(value, rules, depth, seen)
-  }
-  return typeof value === 'object' && value !== null ? rules.censor : value
+/** What `errorOwnFields: 'safe'` reads from an `Error` under one key. */
+function safeReading(error: Error, key: string): unknown {
+  if (key === 'message' || key === 'stack') return readText(error, key)
+  // The `err` serializer writes the name as the type.
+  if (key === 'name' || key === 'type') return error.name
+  return Object.prototype.propertyIsEnumerable.call(error, key) ? ownValue(error, key) : undefined
 }
 
-/** Copy the `name`, and the own fields `errorOwnFields: 'safe'` writes that no path names. */
-function copyOwnFields(copy: object, error: Error, rules: StandInRules): void {
+/** Whether `errorOwnFields: 'safe'` writes a field of this name for this `Error`. */
+function isSafeKey(error: Error, key: string, value: unknown, policy: OwnFieldPolicy): boolean {
+  if (setHas(DERIVED_KEYS, key)) return true
+  if (setHas(DERIVED_ERROR_FIELDS, key) || !setHas(policy.names, key)) return false
+  return ownFieldForLog(error, key, value, policy) !== OMIT_OWN_FIELD
+}
+
+/** What a `cause` or a member of `errors` that is an `Error` is written as, under the same rules. */
+function linked(error: Error, rules: StandIn, depth: number): unknown {
+  if (rules.seen.has(error)) return rules.seen.get(error)
+  if (depth > MAX_LINKS || ++rules.spent.searched > rules.maxWork) return rules.censor
+  const toJson: unknown = (error as { toJSON?: unknown }).toJSON
+  return typeof toJson === 'function'
+    ? fromToJson(error, toJson as () => unknown, rules, depth)
+    : copyError(error, rules, depth)
+}
+
+/** Copy the `name` and the own fields `errorOwnFields: 'safe'` writes that are not objects. */
+function copyOwnFields(copy: object, error: Error, policy: OwnFieldPolicy): void {
   const name = ownValue(error, 'name')
   if (typeof name === 'string') define(copy, 'name', name, false)
   for (const key of Object.keys(error)) {
-    if (setHas(DERIVED_ERROR_FIELDS, key) || !setHas(rules.safeFields, key)) continue
-    if (rules.matches(key)) continue
     const value = ownValue(error, key)
-    if (typeof value !== 'object' && typeof value !== 'function') define(copy, key, value, true)
+    if (typeof value === 'object' || typeof value === 'function') continue
+    if (!setHas(DERIVED_KEYS, key) && isSafeKey(error, key, value, policy)) {
+      define(copy, key, value, true)
+    }
   }
 }
 
-/** Copy one `Error` of a held chain; `seen` keeps a cycle a cycle. */
-function copyError(
-  error: Error,
-  rules: StandInRules,
+/**
+ * The `errors` of a held chain: the first members, each followed when it is an `Error` that is one
+ * of the original's own and censored otherwise, and one censor for all past those.
+ */
+function linkedMembers(
+  members: unknown[],
+  originals: unknown,
+  rules: StandIn,
+  depth: number
+): unknown[] {
+  const written = members
+    .slice(0, MAX_AGGREGATE_ERRORS)
+    .map((member: unknown) =>
+      isError(member) && Array.isArray(originals) && originals.includes(member)
+        ? linked(member, rules, depth)
+        : rules.censor
+    )
+  return members.length > MAX_AGGREGATE_ERRORS ? [...written, rules.censor] : written
+}
+
+/**
+ * Write the `cause` and `errors` that `source` holds as `Error`s onto `copy`. One that `original`
+ * does not have itself is the censor.
+ */
+function copyLinks(
+  copy: object,
+  source: object,
+  original: Error,
+  rules: StandIn,
   depth: number,
-  seen: Map<Error, object>
-): object {
-  const known = seen.get(error)
-  if (known !== undefined) return known
+  enumerable: boolean
+): void {
+  const cause = ownValue(source, 'cause')
+  if (isError(cause)) {
+    const own = cause === ownValue(original, 'cause')
+    define(copy, 'cause', own ? linked(cause, rules, depth + 1) : rules.censor, enumerable)
+  }
+  const members = ownValue(source, 'errors')
+  if (Array.isArray(members) && members.some(isError)) {
+    const originals = ownValue(original, 'errors')
+    define(copy, 'errors', linkedMembers(members, originals, rules, depth + 1), enumerable)
+  }
+}
+
+/** The safe form of an `Error` under a held one that has no `toJSON` of its own. */
+function copyError(error: Error, rules: StandIn, depth: number): object {
   const copy = new Error()
-  seen.set(error, copy)
+  rules.seen.set(error, copy)
   Object.setPrototypeOf(copy, Object.getPrototypeOf(error) as object)
-  copyOwnFields(copy, error, rules)
+  copyOwnFields(copy, error, rules.policy)
   define(copy, 'message', readText(error, 'message'), false)
   define(copy, 'stack', readText(error, 'stack'), false)
   // Own and not enumerable, so one the prototype has is neither found nor called.
   define(copy, 'toJSON', undefined, false)
-  const cause = ownValue(error, 'cause')
-  if (cause !== undefined) define(copy, 'cause', linked(cause, rules, depth + 1, seen), false)
-  const members = ownValue(error, 'errors')
-  if (Array.isArray(members)) {
-    const copies = members.map((member: unknown) => linked(member, rules, depth + 1, seen))
-    define(copy, 'errors', copies, false)
+  copyLinks(copy, error, error, rules, depth, false)
+  return copy
+}
+
+/**
+ * Of what an `Error`'s own `toJSON` returns, what `errorOwnFields: 'safe'` would write. A safe
+ * key is written when its value is the one the `Error` itself has, and as the censor when it is
+ * another, so a renamed or derived value is not written. An object under such a key and every
+ * other key are left out; `cause` and `errors` are followed where they are the `Error`s this one
+ * has.
+ */
+function fromToJson(error: Error, toJson: () => unknown, rules: StandIn, depth: number): unknown {
+  // Until the output is read, an `Error` that returns itself or leads back is the censor.
+  rules.seen.set(error, rules.censor)
+  const output = toJson.call(error)
+  // An `Error` it returns is not read: nothing says its fields are those of this one.
+  if (typeof output !== 'object' || output === null) return rules.censor
+  if (isError(output) || Array.isArray(output)) return rules.censor
+  const copy = {}
+  rules.seen.set(error, copy)
+  for (const key of Object.keys(output)) {
+    if (++rules.spent.searched > rules.maxWork) return rules.censor
+    const value = ownValue(output, key)
+    if (typeof value === 'object' && value !== null) continue
+    if (typeof value === 'function' || !isSafeKey(error, key, value, rules.policy)) continue
+    define(copy, key, value === safeReading(error, key) ? value : rules.censor, true)
   }
+  copyLinks(copy, output, error, rules, depth, true)
   return copy
 }
 
 /** What the constructor of an `Error` writes, neither of them enumerable. */
 const BUILT_ERROR_FIELDS = capturedSet(['message', 'stack'])
 
+/** What the language puts on a function. */
+const BUILT_FUNCTION_FIELDS = capturedSet(['length', 'name', 'prototype'])
+
 /**
  * Whether a property is one the language puts on every value of its kind, so no field of the
- * host: the length of a list, and the `message` and `stack` an `Error` is built with. The same
- * names set as enumerable fields are fields.
+ * host: the length of a list, what every function has, and the `message` and `stack` an `Error`
+ * is built with. The same names set as enumerable fields are fields.
  */
 function isBuiltIn(holder: object, name: string, field: PropertyDescriptor | undefined): boolean {
   if (field?.enumerable === true) return false
   if (Array.isArray(holder)) return name === 'length'
+  if (typeof holder === 'function') return setHas(BUILT_FUNCTION_FIELDS, name)
   return isError(holder) && setHas(BUILT_ERROR_FIELDS, name)
+}
+
+/** What a search looks for, and how much it may do. */
+interface Search {
+  readonly matches: (name: string) => boolean
+  /** The names the paths end in, without the wildcard. */
+  readonly isNamed: (name: string) => boolean
+  readonly maxWork: number
 }
 
 /**
  * Search the string-keyed own properties of a value for a field the paths name, running no getter.
  * A getter cannot be read without running it, so it counts as a match, and so does a state that
- * cannot be inspected or holds more than `maxObjects` objects.
+ * cannot be inspected or that takes more work than the call has left. Each object and each
+ * property read is one unit of work.
  */
-function searchState(
-  root: object,
-  matches: (name: string) => boolean,
-  maxObjects: number
-): boolean {
+function searchState(root: object, search: Search, spent: SearchSpent): boolean {
   const pending: object[] = [root]
   const seen = new Set<object>()
-  let visited = 0
   for (let at = 0; at < pending.length; at++) {
     const next = pending[at] as object
     // The bytes of a binary view are not fields.
     if (setHas(seen, next) || ArrayBuffer.isView(next)) continue
-    if (++visited > maxObjects) return true
+    if (++spent.searched > search.maxWork) return true
     setAdd(seen, next)
-    for (const name of Object.getOwnPropertyNames(next)) {
+    // A list longer than the work left is not listed at all, and spends none of it.
+    if (Array.isArray(next) && next.length > search.maxWork - spent.searched) return true
+    const names = Object.getOwnPropertyNames(next)
+    spent.searched += names.length
+    if (spent.searched > search.maxWork) return true
+    for (const name of names) {
       const field = Object.getOwnPropertyDescriptor(next, name)
-      if (isBuiltIn(next, name, field)) continue
-      if (matches(name) || field?.get !== undefined) return true
+      if (isBuiltIn(next, name, field)) {
+        if (isError(next) && search.isNamed(name)) return true
+        continue
+      }
+      if (search.matches(name) || field?.get !== undefined) return true
       const held: unknown = field?.value
-      if (typeof held === 'object' && held !== null) pending.push(held)
+      const kind = typeof held
+      if (kind === 'function' || (kind === 'object' && held !== null)) pending.push(held as object)
     }
   }
   return false
@@ -219,39 +319,41 @@ function searchState(
 
 /**
  * Build what a set of `redactPaths` decides: a field matches when its name is the last segment of
- * a path, and every field matches when a path ends in `*`.
+ * a path, and every field matches when a path ends in `*`. The `message` and `stack` an `Error` is
+ * built with match by name only.
  *
- * A held `Error` is written from a copy: its type, `message`, `stack`, the own fields of
- * `errorOwnFields: 'safe'` that are not objects and that no path names, and the errors under it,
- * copied the same way to a bounded depth.
+ * A held `Error` is written from what its own `toJSON` returns, cut to what `errorOwnFields:
+ * 'safe'` would write for it (see `fromToJson`), so never more than either would.
  *
  * @param paths - The paths handed to `@pinojs/redact`.
- * @param maxObjects - Objects one search may read before it answers `true`.
+ * @param maxWork - Objects and properties the searches of one log call may read before they
+ *   answer `true`.
  * @param safe - The policy of `errorOwnFields: 'safe'`, with the host's own field names.
- * @param censor - Written for what is not copied.
+ * @param censor - Written for what is not.
  * @returns The two decisions. Neither throws.
  */
 export function createPathHold(
   paths: readonly string[],
-  maxObjects: number,
+  maxWork: number,
   safe: OwnFieldPolicy,
   censor: string
 ): PathHold {
   const anyName = paths.some(endsInWildcard)
   const names = capturedSet(paths.flatMap((path) => leafNameOf(path) ?? []))
-  const matches = (name: string): boolean => anyName || setHas(names, name)
-  const rules: StandInRules = { matches, safeFields: safe.names, censor }
+  const isNamed = (name: string): boolean => setHas(names, name)
+  const search: Search = { matches: (name) => anyName || isNamed(name), isNamed, maxWork }
   return {
-    holds: (value: object): boolean => {
+    holds: (value, spent): boolean => {
       try {
-        return searchState(value, matches, maxObjects)
+        return searchState(value, search, spent)
       } catch {
         return true
       }
     },
-    standIn: (error: Error): unknown => {
+    standIn: (error, toJson, spent): unknown => {
       try {
-        return copyError(error, rules, 0, new Map())
+        const rules = { policy: safe, censor, maxWork, spent, seen: new Map<Error, unknown>() }
+        return fromToJson(error, toJson, rules, 0)
       } catch {
         return censor
       }

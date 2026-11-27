@@ -12,7 +12,10 @@ const hold = (paths: readonly string[], max = 100) =>
   createPathHold(paths, max, createOwnFieldPolicy('safe', ['tenant']), '[X]')
 
 /** The search alone. */
-const redactedStateMatcher = (paths: readonly string[], max: number) => hold(paths, max).holds
+const redactedStateMatcher = (paths: readonly string[], max: number) => {
+  const { holds: search } = hold(paths, max)
+  return (value: object): boolean => search(value, { searched: 0 })
+}
 
 /** The matcher of `*.password`, with room for every case here. */
 const holds = redactedStateMatcher(['*.password'], 100)
@@ -39,14 +42,28 @@ describe('redactedStateMatcher', () => {
     expect(holds(value)).toBe(false)
   })
 
-  /* Every `Error` has them, so they are not what a host set. */
-  it('does not count the message and stack an Error is built with, but counts those set', () => {
-    const matcher = redactedStateMatcher(['message', 'stack'], 100)
+  /* A path that names `message` or `stack` names those of an `Error` too. */
+  it.each(['message', 'stack'])('counts the built %s of an Error a path names', (name) => {
+    const matcher = redactedStateMatcher([`u.${name}`], 100)
 
-    expect(matcher(new Error('failed'))).toBe(false)
-    expect(matcher({ e: new Error('failed') })).toBe(false)
-    expect(matcher(Object.defineProperty(new Error(), 'message', { enumerable: true }))).toBe(true)
-    expect(matcher({ message: 'x' })).toBe(true)
+    expect(matcher(new Error('failed'))).toBe(true)
+    expect(matcher({ e: new Error('failed') })).toBe(true)
+  })
+
+  /* A wildcard censors the siblings itself, so the built fields are not counted for it. */
+  it('does not count the built message and stack for a wildcard', () => {
+    expect(redactedStateMatcher(['u.*'], 100)(new Error('failed'))).toBe(false)
+  })
+
+  /* A function-valued field has state too; what every function has is not a field. */
+  it('searches the own properties of a function in the state', () => {
+    const client = Object.assign(() => 'x', { password: 'x' })
+
+    expect(holds({ client })).toBe(true)
+    expect(holds({ make: class {} })).toBe(false)
+    expect(redactedStateMatcher(['a.name', 'a.length', 'a.prototype'], 100)({ f: class {} })).toBe(
+      false
+    )
   })
 
   /* A getter cannot be read without running it. */
@@ -71,14 +88,26 @@ describe('redactedStateMatcher', () => {
     const shared: Record<string, unknown> = { n: 1 }
     shared['self'] = shared
 
-    expect(redactedStateMatcher(['password'], 2)({ a: shared, b: shared })).toBe(false)
+    expect(redactedStateMatcher(['password'], 7)({ a: shared, b: shared })).toBe(false)
   })
 
-  it('answers true past the number of objects it may read', () => {
-    const matcher = redactedStateMatcher(['password'], 2)
+  /* Objects and their properties count against one bound. */
+  it('answers true past the work it may do', () => {
+    const matcher = redactedStateMatcher(['password'], 4)
 
     expect(matcher({ a: { b: 1 } })).toBe(false)
-    expect(matcher({ a: { b: {} } })).toBe(true)
+    expect(matcher({ a: { b: 1, c: 2 } })).toBe(true)
+    expect(matcher({ list: new Array<number>(1_000_000) })).toBe(true)
+  })
+
+  /* The searches of one log call share the bound; a list too long for it spends none. */
+  it('shares the bound between the searches of one call', () => {
+    const { holds: search } = hold(['password'], 5)
+    const spent = { searched: 0 }
+
+    expect(search({ list: new Array<number>(10) }, spent)).toBe(true)
+    expect(search({ n: 1 }, spent)).toBe(false)
+    expect(search({ n: 1 }, spent)).toBe(true)
   })
 
   it('answers true for a state that cannot be inspected', () => {
@@ -107,65 +136,157 @@ describe('redactedStateMatcher', () => {
 })
 
 describe('the stand-in of a held Error', () => {
-  /** The stand-in as the walk reads it. */
-  const standIn = (error: Error, paths = ['*.password']): Record<string, unknown> =>
-    hold(paths).standIn(error) as Record<string, unknown>
+  /** What is written for an `Error` whose `toJSON` returns what `output` builds. */
+  const standIn = (error: Error, output: () => unknown, max = 100): Record<string, unknown> =>
+    hold(['*.password'], max).standIn(error, output, { searched: 0 }) as Record<string, unknown>
 
-  /* Type, message, stack and the safe fields that are no object: nothing else of the host. */
-  it('carries the type, message, stack, name and safe fields only', () => {
-    class HttpError extends Error {
-      code = 'E1'
-      tenant = 't1'
-      status = { password: 'x' }
-      config = { password: 'x' }
-    }
-    const error = new HttpError('failed')
-    const copy = standIn(error)
+  /** An `Error` with a `toJSON` of its own, as a library defines it. */
+  const withToJson = (error: Error, output: () => unknown): Error =>
+    Object.defineProperty(error, 'toJSON', { value: output })
 
-    expect(copy).toBeInstanceOf(HttpError)
-    expect(copy['message']).toBe('failed')
-    expect(copy['stack']).toBe(error.stack)
-    expect(Object.keys(copy)).toEqual(['code', 'tenant'])
+  const failed = (): Error =>
+    Object.assign(new Error('failed'), {
+      code: 'E1',
+      tenant: 't1',
+      config: { password: 'x' }
+    })
+
+  /* What `toJSON` returns, cut to the names 'safe' writes, with the values the `Error` has. */
+  it('keeps the safe keys of the output that match the Error', () => {
+    const error = failed()
+    const { message, stack, name } = error
+
+    expect(
+      standIn(error, () => ({ type: name, name, message, stack, code: 'E1', tenant: 't1' }))
+    ).toEqual({ type: name, name, message, stack, code: 'E1', tenant: 't1' })
+    expect(standIn(error, () => ({ code: 'E1' }))).toEqual({ code: 'E1' })
   })
 
-  /* A path that names a safe field takes it out. */
-  it('drops a safe field a path names, and every one under a wildcard', () => {
-    const error = Object.assign(new Error('failed'), { code: 'E1', tenant: 't1' })
+  it('drops the keys outside the list and the objects under one', () => {
+    const error = failed()
 
-    expect(Object.keys(standIn(error, ['a.code']))).toEqual(['tenant'])
-    expect(Object.keys(standIn(error, ['a.*']))).toEqual([])
+    expect(
+      standIn(error, () => ({ config: 'x', password: 'x', code: {}, tenant: () => 'x' }))
+    ).toEqual({})
   })
 
-  /* The copy has no `toJSON`, whatever the prototype has, and no accessor of the host is run. */
-  it('has no toJSON and runs no accessor of the held fields', () => {
-    let runs = 0
-    const read = (): string => {
-      runs++
-      return 'x'
+  /* A value that is not the Error's own under that key may be another field, renamed. */
+  it.each(['type', 'name', 'message', 'stack', 'code', 'tenant', 'status'])(
+    'censors a %s that is not the value the Error has',
+    (key) => {
+      expect(standIn(failed(), () => ({ [key]: 'x' }))).toEqual({ [key]: '[X]' })
     }
-    class Hostile extends Error {
-      toJSON(): unknown {
-        runs++
-        return 'x'
+  )
+
+  it('compares with no getter of the Error', () => {
+    const get = jest.fn(() => 'x')
+    const error = Object.defineProperty(new Error(), 'code', { get, enumerable: true })
+
+    expect(standIn(error, () => ({ code: 'x' }))).toEqual({ code: '[X]' })
+    expect(get).not.toHaveBeenCalled()
+  })
+
+  /* What 'safe' drops stays dropped: the detail of a database error. */
+  it('drops the detail of a database error, whatever the host lists', () => {
+    const error = Object.assign(new Error(), { code: '23505', detail: 'Key (a)=(b)' })
+    const held = createPathHold(['u.code'], 100, createOwnFieldPolicy('safe', ['detail']), '[X]')
+
+    expect(held.standIn(error, () => ({ detail: 'Key (a)=(b)' }), { searched: 0 })).toEqual({})
+  })
+
+  /* The output cannot be read: nothing of it is written. */
+  it.each<readonly [string, () => unknown]>([
+    ['text', () => 'x'],
+    ['null', () => null],
+    ['nothing', () => undefined],
+    ['a list', () => ['x']],
+    ['another Error', () => new Error('x')],
+    [
+      'a throw',
+      () => {
+        throw new Error('no')
       }
-    }
-    const error = new Hostile('failed')
-    // The engine writes the stack at its first read, from the name it finds then.
-    expect(error.stack).toContain('failed')
-    for (const key of ['code', 'name', 'cause', 'errors']) {
-      Object.defineProperty(error, key, { get: read, enumerable: true })
-    }
-    const copy = standIn(error)
+    ]
+  ])('is the censor for %s', (_label, output) => {
+    expect(standIn(new Error('failed'), output)).toBe('[X]')
+  })
 
-    expect(copy['toJSON']).toBeUndefined()
-    expect(JSON.parse(JSON.stringify(copy))).toEqual({})
-    expect(Object.hasOwn(copy, 'cause')).toBe(false)
-    expect(runs).toBe(0)
+  it('is the censor for an Error that returns itself', () => {
+    const error = new Error('failed')
+
+    expect(standIn(error, () => error)).toBe('[X]')
+  })
+
+  it('calls toJSON on the Error', () => {
+    const error = failed()
+
+    expect(
+      standIn(error, function (this: Error) {
+        return { message: this.message }
+      })
+    ).toEqual({ message: 'failed' })
+  })
+
+  /* A cause or a member the Error does not have itself is text the host made. */
+  it('censors a cause and a member the Error does not have', () => {
+    const error = new Error('failed', { cause: new Error('real') })
+    const other = new Error('x')
+
+    expect(standIn(error, () => ({ cause: other, errors: [other] }))).toEqual({
+      cause: '[X]',
+      errors: ['[X]']
+    })
+    expect(standIn(new Error(), () => ({ cause: 'x', errors: ['x'] }))).toEqual({})
+  })
+
+  /* Its own cause and members are followed: by their `toJSON` if they have one. */
+  it('follows the cause and members the Error has', () => {
+    const plain = Object.assign(new Error('plain', { cause: { password: 'x' } }), { code: 'E2' })
+    const custom = withToJson(new Error('custom'), () => ({ message: 'custom', config: 'x' }))
+    const error = Object.assign(new Error('failed', { cause: plain }), { errors: [custom] })
+    const written = standIn(error, () => ({ cause: plain, errors: [custom, 'x'] }))
+    const cause = written['cause'] as Record<string, unknown>
+
+    expect(cause['message']).toBe('plain')
+    expect(cause['code']).toBe('E2')
+    expect(cause['toJSON']).toBeUndefined()
+    expect(written['errors']).toEqual([{ message: 'custom' }, '[X]'])
+  })
+
+  /* Of a linked `Error`'s own fields, the name and the listed values that are no object. */
+  it('copies the name and the listed fields of a linked Error', () => {
+    const cause = Object.assign(new Error('inner'), {
+      name: 'Inner',
+      code: { password: 'x' },
+      tenant: () => 'x',
+      status: 503,
+      config: 'x'
+    })
+    const written = standIn(new Error('failed', { cause }), () => ({ cause }))
+    const copy = written['cause'] as Record<string, unknown>
+
+    expect(copy['name']).toBe('Inner')
+    expect(Object.keys(copy)).toEqual(['status'])
+  })
+
+  /* The copy under it has no `toJSON`, and none of its accessors is run. */
+  it('runs no accessor of a linked Error', () => {
+    const get = jest.fn(() => 'x')
+    const cause = new Error('inner')
+    expect(cause.stack).toContain('inner')
+    for (const key of ['code', 'name', 'cause', 'errors']) {
+      Object.defineProperty(cause, key, { get, enumerable: true })
+    }
+    const error = new Error('failed', { cause })
+    const written = standIn(error, () => ({ cause }))
+
+    expect(JSON.parse(JSON.stringify(written['cause'] ?? null))).toEqual({})
+    expect(get).not.toHaveBeenCalled()
   })
 
   /* A message or stack that cannot be read, or is not text, is written empty. */
   it('writes an empty message and stack it cannot read', () => {
-    const error = Object.defineProperties(new Error(), {
+    const cause = Object.defineProperties(new Error(), {
       message: { value: { password: 'x' } },
       stack: {
         get: () => {
@@ -173,33 +294,39 @@ describe('the stand-in of a held Error', () => {
         }
       }
     })
-    const copy = standIn(error)
+    const written = standIn(new Error('failed', { cause }), () => ({ cause }))
+    const copy = written['cause'] as Record<string, unknown>
 
     expect(copy['message']).toBe('')
     expect(copy['stack']).toBe('')
   })
 
-  /* The errors under it are copied the same way; an object that is no `Error` is not written. */
-  it('copies the errors under it and censors the objects', () => {
-    const root = new Error('failed')
-    const inner = Object.assign(new Error('inner', { cause: { password: 'x' } }), { config: 1 })
-    Object.defineProperty(root, 'cause', { value: inner })
-    Object.assign(root, { errors: [inner, 'text', { password: 'x' }, root] })
-    const copy = standIn(root)
-    const members = copy['errors'] as unknown[]
-    const cause = copy['cause'] as Record<string, unknown>
+  /* A cycle stays a cycle. */
+  it('writes a cause that leads back as the same object', () => {
+    const error = new Error('failed')
+    const cause = new Error('inner', { cause: error })
+    Object.defineProperty(error, 'cause', { value: cause })
+    withToJson(error, () => ({ cause }))
+    const written = standIn(error, () => ({ cause }))
 
-    expect(cause['message']).toBe('inner')
-    expect(cause['cause']).toBe('[X]')
-    expect(Object.keys(cause)).toEqual([])
-    expect(members).toEqual([cause, 'text', '[X]', copy])
+    expect((written['cause'] as Record<string, unknown>)['cause']).toBe(written)
+  })
+
+  it('writes the first ten members and one censor for the rest', () => {
+    const errors = Array.from({ length: 12 }, (_, at) => new Error(String(at)))
+    const error = Object.assign(new Error(), { errors })
+    const written = standIn(error, () => ({ errors }))['errors'] as unknown[]
+
+    expect(written).toHaveLength(11)
+    expect(written[10]).toBe('[X]')
   })
 
   /* A chain of causes is bounded. */
   it('censors a cause past the eighth link', () => {
     let error = new Error('0')
     for (let at = 1; at <= 12; at++) error = new Error(String(at), { cause: error })
-    let node: unknown = standIn(error)
+    const top = error
+    let node: unknown = standIn(top, () => ({ cause: top.cause }))
     let links = 0
     while (typeof node === 'object') {
       node = (node as { cause?: unknown }).cause
@@ -210,11 +337,20 @@ describe('the stand-in of a held Error', () => {
     expect(node).toBe('[X]')
   })
 
-  /* Anything the copy cannot read leaves the censor. */
-  it('answers the censor for an Error it cannot copy', () => {
+  /* The keys and links count against the bound of the call. */
+  it('is the censor past the work the call may do', () => {
+    const cause = new Error('inner')
+    const error = new Error('failed', { cause })
+
+    expect(standIn(error, () => ({ a: 1, b: 1 }), 1)).toBe('[X]')
+    expect(standIn(error, () => ({ cause }), 1)).toEqual({ cause: '[X]' })
+  })
+
+  /* Anything it cannot read leaves the censor. */
+  it('is the censor for an Error it cannot read', () => {
     const { proxy, revoke } = Proxy.revocable(new Error(), {})
     revoke()
 
-    expect(hold(['password']).standIn(proxy)).toBe('[X]')
+    expect(standIn(proxy, () => ({ code: 'x' }))).toBe('[X]')
   })
 })

@@ -1,6 +1,7 @@
 /**
  * E2E: under `redactStrategy: 'paths'`, a value with a `toJSON` whose own state holds a field the
- * paths name is written as the censor, whole.
+ * paths name is written as the censor, whole. An `Error` is written from what its `toJSON`
+ * returns, cut to what `errorOwnFields: 'safe'` would write for it.
  *
  * Layer: e2e, server (`BymaxLoggerModule`, the Pino factory, the redaction walk).
  */
@@ -184,7 +185,7 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
     }
   })
 
-  /* A held `Error` keeps its type, message and stack, and nothing its `toJSON` renames. */
+  /* A held `Error` keeps the keys 'safe' writes, and nothing its `toJSON` renames. */
   it.each<readonly [string, Partial<BymaxLoggerModuleOptions>, object]>([
     ['a custom path', { redactPaths: ['u.pan'] }, { pan: SECRET }],
     [
@@ -194,21 +195,30 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
     ],
     ['a nested field of the default set', {}, { inner: { password: SECRET } }],
     ['a custom path in its cause', { redactPaths: ['u.pan'] }, { pan: 1, cause: { pan: SECRET } }]
-  ])('writes an Error holding %s from its safe fields', async (_label, extra, state) => {
-    const error = Object.assign(new TypeError('failed'), { code: 'E_KEPT' }, state)
-    Object.defineProperty(error, 'toJSON', {
-      value: () => ({ credential: SECRET })
-    })
-    const text = await moduleText(extra, (service) => {
-      service.getRawLogger().info({ u: error }, 'm')
-    })
-    const written = (JSON.parse(text) as { u: Record<string, unknown> }).u
+  ])(
+    'writes an Error holding %s from the safe keys of its toJSON',
+    async (_label, extra, state) => {
+      const error = Object.assign(new TypeError('failed'), { code: 'E_KEPT' }, state)
+      Object.defineProperty(error, 'toJSON', {
+        value: () => ({
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+          code: error.code,
+          credential: SECRET
+        })
+      })
+      const text = await moduleText(extra, (service) => {
+        service.getRawLogger().info({ u: error }, 'm')
+      })
+      const written = (JSON.parse(text) as { u: Record<string, unknown> }).u
 
-    expect(text).not.toContain(SECRET)
-    expect(written).toMatchObject({ type: 'TypeError', message: 'failed', code: 'E_KEPT' })
-    expect(written['stack']).toContain('TypeError: failed')
-    expect(written).not.toHaveProperty('inner')
-  })
+      expect(text).not.toContain(SECRET)
+      expect(written).toMatchObject({ name: 'TypeError', message: 'failed', code: 'E_KEPT' })
+      expect(written['stack']).toContain('TypeError: failed')
+      expect(Object.keys(written)).toEqual(['name', 'message', 'stack', 'code'])
+    }
+  )
 
   /* The shape an HTTP client throws: the request it made is not written, the failure is. */
   it('writes an HTTP client Error without the request it carries', async () => {
@@ -217,7 +227,8 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
       code = 'ERR_BAD'
       config = { headers: { authorization: SECRET } }
       toJSON(): unknown {
-        return { message: this.message, config: this.config }
+        const { name, message, stack, code, config } = this
+        return { name, message, stack, code, config }
       }
     }
     const text = await moduleText({}, (service) => {
@@ -229,9 +240,42 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
     expect(text).not.toContain('authorization')
     for (const line of text.trim().split('\n')) {
       const { err } = JSON.parse(line) as { err: Record<string, unknown> }
-      expect(err).toMatchObject({ type: 'ClientError', message: 'status 500', code: 'ERR_BAD' })
+      expect(err).toMatchObject({ message: 'status 500', code: 'ERR_BAD' })
+      expect(err).not.toHaveProperty('config')
       expect(err['stack']).toContain('status 500')
     }
+  })
+
+  /* Never more than the `toJSON` returned, and never a value 'safe' would not write. */
+  it.each<readonly [string, (error: Error & { password: string }) => unknown, unknown]>([
+    ['a code alone', () => ({ code: 'E_KEPT' }), { code: 'E_KEPT' }],
+    ['a field renamed to code', (e) => ({ code: e.password }), { code: '[REDACTED]' }],
+    ['a field renamed to message', (e) => ({ message: e.password }), { message: '[REDACTED]' }],
+    ['a rewritten message', () => ({ message: 'scrubbed' }), { message: '[REDACTED]' }],
+    ['text', (e) => e.password, '[REDACTED]'],
+    ['another Error', (e) => new Error(e.password), '[REDACTED]'],
+    ['itself', (e) => e, '[REDACTED]'],
+    ['a made cause', (e) => ({ cause: new Error(e.password) }), { cause: '[REDACTED]' }],
+    [
+      'a throw',
+      (e) => {
+        throw new Error(e.password)
+      },
+      '[REDACTED]'
+    ]
+  ])('writes a held Error whose toJSON returns %s', async (_label, output, expected) => {
+    const error = Object.assign(new Error('failed'), { password: SECRET, code: 'E_KEPT' })
+    const target = Object.assign(new Error('failed'), {
+      code: 'E_KEPT',
+      inner: { password: SECRET }
+    })
+    Object.defineProperty(target, 'toJSON', { value: () => output(error) })
+    const text = await moduleText({}, (service) => {
+      expect(() => service.getRawLogger().info({ u: target }, 'm')).not.toThrow()
+    })
+
+    expect(text).not.toContain(SECRET)
+    expect((JSON.parse(text) as { u: unknown }).u).toEqual(expected)
   })
 
   /* `message` and `stack` are what 'safe' writes: the paths and the cut apply to them. */
@@ -243,7 +287,7 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
   ])("writes message and stack under %s as under 'safe'", async (_label, extra) => {
     class Held extends Error {
       toJSON(): unknown {
-        return {}
+        return { name: this.name, message: this.message, stack: this.stack }
       }
     }
     const make = (): Error =>
@@ -268,23 +312,25 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
     expect(await lines({})).toEqual(await lines({ errorOwnFields: 'safe' }))
   })
 
-  /* A getter or a throwing `toJSON` on the held `Error` never runs. */
-  it('runs no getter or toJSON of a held Error', async () => {
+  /* A getter on the held `Error` is not run; its `toJSON` is, as for any other value. */
+  it('runs no getter of a held Error', async () => {
     let runs = 0
-    const run = (): never => {
-      runs++
-      throw new Error('run')
-    }
     const error = new Error('failed')
-    Object.defineProperty(error, 'inner', { get: run, enumerable: true })
-    Object.defineProperty(error, 'toJSON', { value: run })
+    Object.defineProperty(error, 'inner', {
+      get: () => {
+        runs++
+        return 'x'
+      },
+      enumerable: true
+    })
+    Object.defineProperty(error, 'toJSON', { value: () => ({ name: 'Error', message: 'failed' }) })
     const text = await moduleText({}, (service) => {
       service.getRawLogger().info({ u: error }, 'm')
       service.getRawLogger().info({ err: error }, 'm')
     })
 
     expect(runs).toBe(0)
-    expect(text.match(/"message":"failed"/g)?.length).toBeGreaterThanOrEqual(2)
+    expect(text.match(/"message":"failed"/g)?.length).toBe(2)
   })
 
   /* A `message` or `stack` accessor that throws does not throw out of the log call. */
@@ -295,6 +341,7 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
     }
     Object.defineProperty(error, 'message', { get: fail })
     Object.defineProperty(error, 'stack', { get: fail })
+    Object.defineProperty(error, 'toJSON', { value: () => ({ message: SECRET }) })
     const text = await moduleText({}, (service) => {
       expect(() => service.getRawLogger().info({ u: error }, 'one')).not.toThrow()
       expect(() => service.getRawLogger().info({ err: error }, 'two')).not.toThrow()
@@ -310,6 +357,7 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
     const first = Object.assign(new Error('first'), { inner: { password: SECRET } })
     const second = new Error('second', { cause: first })
     Object.defineProperty(first, 'cause', { value: second })
+    Object.defineProperty(first, 'toJSON', { value: () => ({ cause: second }) })
     const text = await moduleText({}, (service) => {
       service.getRawLogger().info({ u: first }, 'm')
       service.getRawLogger().info({ err: first }, 'm')
@@ -320,6 +368,41 @@ describe("a toJSON under redactStrategy: 'paths'", () => {
     expect(text).toContain('second')
     expect(text.length).toBeLessThan(10_000)
   }, 5000)
+
+  /* The searches of one call share a bound: past it a value is the censor, held or not. */
+  it('censors a value past the work one log call may do', async () => {
+    const wide = { list: new Array<number>(300_000).fill(0), toJSON: () => 'kept' }
+    const text = await moduleText({}, (service) => {
+      service.getRawLogger().info({ u: wide }, 'm')
+    })
+
+    expect(text).toContain('"u":"[REDACTED]"')
+  })
+
+  /* A path naming `message` or `stack` names the built ones, so a rename of one is not written. */
+  it.each(['message', 'stack'])('censors a value renaming the %s a path names', async (key) => {
+    const inner = new Error(SECRET)
+    inner.stack = SECRET
+    const value = { inner, toJSON: () => ({ renamed: SECRET }) }
+    const text = await moduleText({ redactPaths: [`u.${key}`] }, (service) => {
+      service.getRawLogger().info({ u: value }, 'm')
+    })
+
+    expect(text).toContain('"u":"[REDACTED]"')
+    expect(text).not.toContain(SECRET)
+  })
+
+  /* A function-valued field is part of the state. */
+  it('censors a value holding the named field on a function', async () => {
+    const client = Object.assign(() => 'x', { password: SECRET })
+    const value = { client, toJSON: () => ({ renamed: SECRET }) }
+    const text = await moduleText({}, (service) => {
+      service.getRawLogger().info({ u: value }, 'm')
+    })
+
+    expect(text).toContain('"u":"[REDACTED]"')
+    expect(text).not.toContain(SECRET)
+  })
 
   /* The child bindings and a value formatted into the message follow the same rule. */
   it('censors the value in child bindings and in a message', async () => {

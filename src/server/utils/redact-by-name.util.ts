@@ -248,7 +248,7 @@ export interface RedactRules {
   /** Whether the text of an `Error` is left out: the walk is of a message. */
   readonly inMessage?: boolean
   /** Containers this call has visited, counted against {@link RedactRules.maxVisits}. */
-  readonly visits: { count: number }
+  readonly visits: { count: number; searched: number }
 }
 
 /**
@@ -557,9 +557,10 @@ function walkToJsonOutput(
   if (Object.keys(value).some((key) => matchesKey(rules.sensitive, key))) {
     return rules.censor
   }
-  if (rules.pathHold?.holds(value) === true) {
+  if (rules.pathHold?.holds(value, rules.visits) === true) {
     if (!isError(value)) return rules.censor
-    return walk(rules.pathHold.standIn(value), rules, depth + 1, ancestors, true, inSerialized)
+    const standIn = rules.pathHold.standIn(value, toJson, rules.visits)
+    return walk(standIn, rules, depth + 1, ancestors, true, inSerialized)
   }
   return walk(toJson.call(value), rules, depth + 1, ancestors, true, inSerialized)
 }
@@ -764,7 +765,7 @@ export function createNameRedactor(
   const insideNames = errorOnlyNames === undefined ? undefined : foldedNames(errorOnlyNames)
   return (value: unknown, isRecordRoot = false, inMessage = false): unknown => {
     try {
-      const visits = { count: 0 }
+      const visits = { count: 0, searched: 0 }
       const call: RedactRules = {
         ...rules,
         inMessage,
