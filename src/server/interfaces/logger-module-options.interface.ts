@@ -131,10 +131,10 @@ export interface DestinationQueueOptions {
 /**
  * The time application shutdown has to flush the destinations.
  *
- * Shutdown first drains the queue each destination holds, then calls each destination's
- * `onShutdown` in reverse registration order. The whole sequence is bounded by `timeoutMs`, whatever
- * the number of destinations: a destination reached after the budget is spent is reported as skipped
- * and its `onShutdown` is not called.
+ * Shutdown first drains the queue each destination holds, then calls, in reverse registration
+ * order, the `onShutdown` of each destination that did not fail to initialize. The whole sequence is
+ * bounded by `timeoutMs`, whatever the number of destinations: a destination reached after the
+ * budget is spent is reported as skipped and its `onShutdown` is not called.
  */
 export interface ShutdownOptions {
   /**
@@ -195,18 +195,19 @@ export interface BymaxLoggerModuleOptions {
    */
   shouldUseAsNestLogger?: boolean
   /**
-   * Additional `fast-redact` paths, applied on top of the default coverage
-   * whatever `redactStrategy` is in force.
+   * Additional `@pinojs/redact` paths, applied on top of the default coverage
+   * whatever `redactStrategy` is in force. Pino ships `@pinojs/redact` from
+   * `10.1.0`; `10.0.0` ships `slow-redact` in its place.
    */
   redactPaths?: readonly string[]
   /**
    * Engine backing the DEFAULT redaction set (never the consumer's own
-   * `redactPaths`, which are always `fast-redact` paths).
+   * `redactPaths`, which are always `@pinojs/redact` paths).
    *
    *   - `'names'` (default) — one recursive walk censoring any value whose KEY
    *     NAME is in `REDACT_COMMON_FIELDS`, at ANY depth. ~943 k logs/s.
    *   - `'paths'` — the pre-1.2 engine: `DEFAULT_REDACT_PATHS` handed to
-   *     `fast-redact`. Matches only wildcard depths 1–4 and measures ~9.3 k
+   *     `@pinojs/redact`. Matches only wildcard depths 1–4 and measures ~9.3 k
    *     logs/s. Provided as an escape hatch for a consumer depending on exact
    *     path-matching semantics; expect it to be removed in a future major.
    */
@@ -288,14 +289,15 @@ export interface BymaxLoggerModuleOptions {
    */
   maxEntrySizeBytes?: number
   /**
-   * The most characters a string of a log record is written with. A longer string is cut to this
-   * many characters, without splitting a surrogate pair, and ends with `…[truncated]`, so what is
-   * written is up to 12 characters longer than the limit. An integer from 64 to 2147483647.
-   * Default: not set, and a string is written whole.
+   * The most characters a string value of a log record is written with, with the exceptions below.
+   * A longer string is cut to this many characters, without splitting a surrogate pair, and ends
+   * with `…[truncated]`, so what is written is up to 12 characters longer than the limit. An integer
+   * from 64 to 2147483647. Default: not set, and a string is written whole.
    *
    * Applies to every string value of the record at any depth, but not to a key, a value that is
-   * not text, the log message (already capped at 16384 characters), the `logKey`, the bindings of a
-   * logger (the service identity and a `context`), a value a redaction rule censors, or anything
+   * not text, the log message (capped at 16384 characters; the one exception is the text of an
+   * object that is written as the fields of the entry, which is cut), the `logKey`, the bindings of
+   * a logger (the service identity and a `context`), a value a redaction rule censors, or anything
    * under a key that has a serializer (`err` and the keys of `serializers`; see
    * `maxEntrySizeBytes`), so the stack of an error logged under `err` is never cut by it. The event
    * name and the `exception.*` and `error.type` fields the library writes are added after the cut,

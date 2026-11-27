@@ -3,8 +3,7 @@
  *
  * Layer: server/utils — a pure helper that merges consumer-supplied redact
  * paths with the library defaults before passing the combined list to the Pino
- * factory. Deduplication is mandatory because `fast-redact` throws on duplicate
- * paths.
+ * factory, each path once.
  */
 import { capturedSet } from './captured-builtins.util'
 import { DEFAULT_REDACT_PATHS } from '../constants/default-redact-paths.constants'
@@ -17,9 +16,7 @@ import { DEFAULT_REDACT_PATHS } from '../constants/default-redact-paths.constant
  *     `extraPaths` only. Consumers opting out of the canonical PII
  *     protection take full responsibility for their own redact config.
  *   - Otherwise → returns the union of `DEFAULT_REDACT_PATHS` and
- *     `extraPaths`, deduplicated. Deduplication is critical because
- *     `fast-redact` (the engine under `pino.redact`) throws on duplicate
- *     paths.
+ *     `extraPaths`, deduplicated.
  *
  * @param extraPaths — Consumer-supplied additional redact paths.
  * @param shouldSkipDefaults — Skip the library defaults when true. Mirrors

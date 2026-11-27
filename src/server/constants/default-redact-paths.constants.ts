@@ -7,17 +7,17 @@
  * any position (see `redact-by-name.util.ts`).
  *
  * {@link DEFAULT_REDACT_PATHS} is the LEGACY form: the same names expanded into
- * `fast-redact` paths at wildcard depths 1–4. It is still exported (public API,
+ * `@pinojs/redact` paths at wildcard depths 1–4. It is still exported (public API,
  * append-only by contract) and is still what feeds Pino under the opt-in
  * `redactStrategy: 'paths'`, but it is no longer the default engine — it costs
  * ~107 µs per log entry and stops at four levels of nesting.
  *
  * Consumers can:
- *   - Add more via the `redactPaths` option (always `fast-redact` path syntax,
+ *   - Add more via the `redactPaths` option (always `@pinojs/redact` path syntax,
  *     applied on top of whichever strategy is active).
  *   - Disable all via `shouldDisableDefaultRedact: true` (NOT recommended).
  *
- * Path syntax follows `fast-redact` conventions (engine behind `pino.redact`):
+ * Path syntax follows `@pinojs/redact` conventions (engine behind `pino.redact`):
  *   - Wildcard `*` matches **one level only** (NOT recursive).
  *   - `'*.password'`             → matches `body.password`, `meta.password`, …
  *   - `'*.*.password'`           → matches `body.user.password`, …
@@ -27,12 +27,11 @@
  * For defense-in-depth coverage of nested payloads, depths 1-4 are listed
  * explicitly for every sensitive field via the {@link depth} helper.
  *
- * @see {@link https://github.com/davidmarkclements/fast-redact#wildcards}
  * @see {@link https://github.com/pinojs/pino/blob/main/docs/redaction.md}
  */
 
 /**
- * Maximum wildcard depth covered by {@link depth} — `fast-redact` wildcards
+ * Maximum wildcard depth covered by {@link depth} — `@pinojs/redact` wildcards
  * are non-recursive, so the library lists each level explicitly. Four
  * levels match the deepest realistic nesting (`req.body.user.profile.x`)
  * without bloating the path list.
@@ -170,8 +169,7 @@ export const REDACT_COMMON_FIELDS: readonly string[] = [
 ] as const
 
 /**
- * HTTP headers that commonly carry secrets. Listed as absolute paths because
- * `fast-redact` wildcards do not traverse bracket-syntax keys.
+ * HTTP headers that commonly carry secrets, listed as absolute paths.
  */
 export const REDACT_ABSOLUTE_PATHS: readonly string[] = [
   'req.headers.authorization',
@@ -182,7 +180,7 @@ export const REDACT_ABSOLUTE_PATHS: readonly string[] = [
 ] as const
 
 /**
- * The legacy `fast-redact` path expansion of {@link REDACT_COMMON_FIELDS}:
+ * The legacy `@pinojs/redact` path expansion of {@link REDACT_COMMON_FIELDS}:
  * every name at the record root plus wildcard depths 1–4, followed by the
  * absolute header paths. Length is derived, not fixed — `fields × 5 + absolute`.
  *
@@ -192,7 +190,7 @@ export const REDACT_ABSOLUTE_PATHS: readonly string[] = [
  * The bare field names come first, at depth 0 — the log record's own root.
  * `emitStructured` spreads caller metadata there (`{ ...metadata, logKey, ... }`),
  * so a field named `password` passed as metadata lands at the root, which the
- * depth-1-and-deeper wildcards below never reach (`fast-redact`'s `*` matches a
+ * depth-1-and-deeper wildcards below never reach (`@pinojs/redact`'s `*` matches a
  * level, not the root). Without the bare name the library's own documented call
  * `logger.info(key, msg, userId, { password })` would write the password in clear.
  * Listing it makes the default set cover a sensitive field wherever it appears.
