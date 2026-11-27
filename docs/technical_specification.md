@@ -2371,7 +2371,7 @@ Errors the lib may throw (or record as a warning). The names of thrown errors ar
 | `LOGGER_INVALID_OPTIONS`          | Throws at initialization                                                   | `service.name` or `service.version` missing                                      | Add the required fields                                                                                                       |
 | `LOGGER_INVALID_LEVEL`            | Throws                                                                     | `level` is not a valid Pino value                                                | Use `'fatal'\|'error'\|'warn'\|'info'\|'debug'\|'trace'`                                                                      |
 | `LOGGER_PRETTY_UNAVAILABLE`       | **Never emitted**                                                          | Not declared in the source                                                       | Do not query it — the real signal is `LOGGER_DESTINATION_INIT_FAILED` on stderr, `destination: "pretty-dev"`                  |
-| `LOGGER_OTEL_API_UNAVAILABLE`     | Info on bootstrap                                                          | `otel.shouldAutoInjectTraceContext: true` but `@opentelemetry/api` not installed | Install or disable `shouldAutoInjectTraceContext`                                                                             |
+| `LOGGER_OTEL_API_UNAVAILABLE`     | Warn on bootstrap                                                          | `otel.shouldAutoInjectTraceContext: true` but `@opentelemetry/api` not installed | Install or disable `shouldAutoInjectTraceContext`                                                                             |
 | `LOGGER_DESTINATION_INIT_FAILED`  | Written to **stderr**                                                      | `destination.onInit()` rejects                                                   | Destination is dropped from the write fan-out; others continue. If NONE initialize, entries fall back to raw NDJSON on stdout |
 | `LOGGER_DESTINATION_WRITE_FAILED` | Written to **stderr**                                                      | `destination.write()` throws                                                     | Entry skipped for that destination; others continue                                                                           |
 | `LOGGER_CONTEXT_OUT_OF_SCOPE`     | Throws                                                                     | `LogContextService.set()` called outside `run()`                                 | Wrap in `logContext.run({ ... }, () => ...)`                                                                                  |
@@ -2601,7 +2601,7 @@ For a similar reason. The `@InjectLogger(context)` decorator solves the "distinc
 
 The library starts no worker thread: Pino writes through `pino.multistream` in the application thread, and the default destination calls `process.stdout.write`. On POSIX, Node writes stdout synchronously to a file and asynchronously to a pipe ([process I/O](https://nodejs.org/api/process.html#a-note-on-process-io)), so `process.exit()` drops what a pipe has not taken, and what an asynchronous destination has not sent.
 
-Measured with node 24 on macOS, 5000 entries followed by `process.exit()` and one more entry logged from `process.on('exit')`: to a file all of them arrived; to a pipe whose reader started a second late, 187 arrived and the entry from the exit handler did not.
+Measured with node 24 on macOS, 5000 entries followed by `process.exit()` and one more entry logged from `process.on('exit')`: to a file all of them arrived; to a pipe whose reader started a second late, only part of them arrived and the entry from the exit handler did not.
 
 There is no flush method. Call `await app.close()`, or `app.enableShutdownHooks()` for a signal: the registry then drains stdout and calls each destination's `onShutdown`, within the `shutdown` budget. An asynchronous destination delivers what it holds in `onShutdown`.
 
@@ -2621,11 +2621,11 @@ If a consumer still prefers `pino-http` (`pinoHttp({ ... })`), they install it i
 
 ### 17.7 No size limit on the whole entry
 
-`maxEntrySizeBytes` (65536 by default) bounds each serialized field (`err` and any custom serializer) and each derived `exception.*` and `error.type` field. A serializer output over it is replaced by `{"_truncated":true,"_logKey":"LOGGER_ENTRY_TRUNCATED","_originalSize":<n>,"_preview":"<first chars>"}`; a derived field is cut. The entry's `msg`, and an error's `message` and `stack`, are cut at 16384 characters. `maxEntrySizeBytes` does not bound a value under a metadata key, or the entry: with the defaults, a 100000-character metadata string and an entry of 40 fields of 4000 characters are both written whole. `maxStringLength`, off until set, cuts each long string. The reserved key `LOGGER_ENTRY_TRUNCATED` is part of `RESERVED_LOG_KEYS` (§12.3).
+`maxEntrySizeBytes` (65536 by default) bounds each serialized field (`err` and any custom serializer) and each derived `exception.*` and `error.type` field. A serializer output over it is replaced by `{"_truncated":true,"_logKey":"LOGGER_ENTRY_TRUNCATED","_originalSize":<n>,"_preview":"<first chars>"}`; a derived field is cut. The entry's `msg`, and an error's `message` and `stack`, are cut at 16384 characters. `maxEntrySizeBytes` does not bound a value under a metadata key, or the entry: with the defaults, a 100000-character metadata string and an entry of 40 fields of 4000 characters are both written whole. `maxStringLength`, off until set, cuts long string values. The reserved key `LOGGER_ENTRY_TRUNCATED` is part of `RESERVED_LOG_KEYS` (§12.3).
 
 ### 17.8 The destination registry trusts `options.level`
 
-`forRoot` and `forRootAsync` refuse a `level` outside the six, and Pino does not build with one. `DestinationRegistry` does not check it again: code that builds the registry itself, from options neither of them saw, gets that value as the effective level of every destination whose `minLevel` is not `'fatal'`.
+`forRoot` and `forRootAsync` refuse a `level` outside the six. `DestinationRegistry` does not check it again: code that builds the registry itself, from options neither of them saw, gets that value as the effective level of every destination whose `minLevel` is not `'fatal'`.
 
 ---
 
