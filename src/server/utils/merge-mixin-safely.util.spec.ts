@@ -6,7 +6,7 @@
  *
  * Layer: server/utils, tests. Pure.
  */
-import { mergeMixinSafely } from './merge-mixin-safely.util'
+import { mergeMixinSafely, mixinMergeFor } from './merge-mixin-safely.util'
 
 const merge = (payload: object, mixin: object): Record<string, unknown> =>
   mergeMixinSafely(payload, mixin) as Record<string, unknown>
@@ -113,5 +113,17 @@ describe('mergeMixinSafely', () => {
 
     expect(out).toMatchObject({ requestId: 'r', _redactionFailed: true })
     expect(out).not.toHaveProperty('a')
+  })
+})
+
+describe('mixinMergeFor', () => {
+  it("makes a view given as the merge object one field under 'names'", () => {
+    const merged = mixinMergeFor('names')(Buffer.from('abc'), { trace: 't' })
+
+    expect(merged).toStrictEqual({ binary: '[Binary 3 bytes]', trace: 't' })
+  })
+
+  it("is mergeMixinSafely itself under 'paths'", () => {
+    expect(mixinMergeFor('paths')).toBe(mergeMixinSafely)
   })
 })

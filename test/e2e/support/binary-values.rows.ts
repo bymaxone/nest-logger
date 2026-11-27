@@ -317,7 +317,7 @@ const READ_ONCE: ReadonlyArray<readonly [string, (raw: Raw, value: object) => vo
 
 /** Declares the rows for what a `toJSON` returns. */
 function describeReturned(pinoName: string): void {
-  describe.each(['names', 'paths'] as const)(
+  describe.each(['names'] as const)(
     `what the host's own code answers under '%s' (${pinoName})`,
     (redactStrategy) => {
       it.each(RETURNED)(
@@ -358,7 +358,7 @@ function describeReturned(pinoName: string): void {
 
 /** Declares the rows for how often the host's code runs. */
 function describeReads(pinoName: string): void {
-  describe.each(['names', 'paths'] as const)(
+  describe.each(['names'] as const)(
     `the host's own code under '%s' (${pinoName})`,
     (redactStrategy) => {
       it.each(READ_ONCE)('reads a getter and a toJSON once through %s', async (_name, entry) => {
@@ -390,7 +390,7 @@ function describeReads(pinoName: string): void {
 
 /** Declares one row for each binary shape. */
 function describeShapes(pinoName: string): void {
-  describe.each(['names', 'paths'] as const)(
+  describe.each(['names'] as const)(
     `a binary shape through every way in under '%s' (${pinoName})`,
     (redactStrategy) => {
       it.each(SHAPES)('writes a line for %s', async (_name, make, size) => {
@@ -409,20 +409,105 @@ function describeShapes(pinoName: string): void {
   )
 }
 
+/** What must not reach a line. */
+const SECRET = 'ZZ-CLEAR'
+
+/** An object whose `toJSON` writes its password under another name. */
+const renaming = (extra: object): object => ({
+  password: SECRET,
+  ...extra,
+  toJSON(this: { password: string }): object {
+    return { credential: this.password }
+  }
+})
+
+/** Every way in that Pino's redact paths read before the `toJSON` runs. */
+const RENAMED_ENTRIES: ReadonlyArray<readonly [string, (raw: Raw, value: object) => void]> = [
+  ['%j', (raw, value) => raw.info('%j', value)],
+  ['a member of %o', (raw, value) => raw.info('%o', { t: value })],
+  ['the msg argument', (raw, value) => raw.info({}, value)],
+  ['a child binding', (raw, value) => raw.child({ t: value }).info('c')],
+  [
+    'setBindings',
+    (raw, value) => {
+      const child = raw.child({})
+      child.setBindings({ t: value })
+      child.info('c')
+    }
+  ]
+]
+
+/** Declares the rows for a redacted field that a `toJSON` renames. */
+function describeRenamed(pinoName: string): void {
+  describe.each([
+    ['alone', {}],
+    ['beside a Buffer', { held: bytes() }]
+  ])(`a renamed password %s under 'paths' (${pinoName})`, (_variant, extra) => {
+    it.each(RENAMED_ENTRIES)('is never written clear through %s', async (_name, entry) => {
+      const thrown: unknown[] = []
+      const lines = await linesOf(
+        [
+          (raw) => {
+            try {
+              entry(raw, renaming(extra))
+            } catch (error) {
+              thrown.push(error)
+            }
+          }
+        ],
+        { redactStrategy: 'paths' }
+      )
+      const written = lines.join('')
+
+      expect(written).not.toContain(SECRET)
+      // A throw into the caller writes nothing; a line that is written holds the censor.
+      expect(thrown.length === 1 || written.includes('[REDACTED]')).toBe(true)
+    })
+  })
+}
+
+/** Calls under `'paths'` where Pino's redaction cannot copy the object that holds a Buffer. */
+const REFUSED: ReadonlyArray<readonly [string, Emit]> = [
+  ['the msg argument', (raw) => raw.info({}, bytes())],
+  ['%o', (raw) => raw.info('%o', { b: bytes() })],
+  ['a child binding', (raw) => raw.child({ b: bytes() }).info('c')]
+]
+
+/** Declares the rows for the limit under `'paths'`: a throw into the caller, and no line. */
+function describeLimit(pinoName: string): void {
+  describe(`a Buffer field under 'paths' (${pinoName})`, () => {
+    it.each(REFUSED)('throws through %s and writes nothing', async (_name, emit) => {
+      const thrown: unknown[] = []
+      const lines = await linesOf(
+        [
+          (raw) => {
+            try {
+              emit(raw)
+            } catch (error) {
+              thrown.push((error as Error).name)
+            }
+          }
+        ],
+        { redactStrategy: 'paths' }
+      )
+
+      expect(thrown).toStrictEqual(['TypeError'])
+      expect(lines).toStrictEqual([])
+    })
+  })
+}
+
 /**
  * Declares the rows for the Pino that is loaded.
  *
  * @param pinoName - How the title names that Pino.
  */
 export function describeBinaryValues(pinoName: string): void {
-  describe.each(['names', 'paths'] as const)(
-    `binary values under '%s' (${pinoName})`,
-    (redactStrategy) => {
-      it.each([...NESTED, ...ROOTS])('writes %s as its size', async (_name, emit, expected) => {
-        expect(decided(await lineOf(emit, { redactStrategy }))).toStrictEqual(expected)
-      })
-    }
-  )
+  describe.each(['names'] as const)(`binary values under '%s' (${pinoName})`, (redactStrategy) => {
+    it.each([...NESTED, ...ROOTS])('writes %s as its size', async (_name, emit, expected) => {
+      expect(decided(await lineOf(emit, { redactStrategy }))).toStrictEqual(expected)
+    })
+  })
 
   describeShapes(pinoName)
 
@@ -430,7 +515,9 @@ export function describeBinaryValues(pinoName: string): void {
 
   describeReads(pinoName)
 
-  describe.each(['names', 'paths'] as const)(
+  describeRenamed(pinoName)
+
+  describe.each(['names'] as const)(
     `an object that never ends under '%s' (${pinoName})`,
     (redactStrategy) => {
       it.each(ENDLESS)('writes one line through %s', async (_name, emit) => {
@@ -439,18 +526,5 @@ export function describeBinaryValues(pinoName: string): void {
     }
   )
 
-  describe(`binary values and a wildcard path of the host (${pinoName})`, () => {
-    const hostPaths: Partial<BymaxLoggerModuleOptions> = {
-      redactStrategy: 'paths',
-      shouldDisableDefaultRedact: true,
-      redactPaths: ['data.*']
-    }
-
-    it.each<readonly [string, Emit, Line]>([
-      ['%o', (raw) => raw.info('%o', { data: bytes() }), { msg: `{"data":"${MARKER}"}` }],
-      ['a child', (raw) => raw.child({ data: bytes() }).info('c'), { data: MARKER, msg: 'c' }]
-    ])('writes the size through %s', async (_name, emit, expected) => {
-      expect(decided(await lineOf(emit, hostPaths))).toStrictEqual(expected)
-    })
-  })
+  describeLimit(pinoName)
 }

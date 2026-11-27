@@ -19,7 +19,7 @@ const mark: Redactor = (value) => ({ walked: value })
 function build(redact: Redactor = mark): { logger: PinoLogger; messages: () => unknown[] } {
   const written: string[] = []
   const logger = pino(
-    { base: null, timestamp: false, serializers: messageSerializers('names', redact, redact) },
+    { base: null, timestamp: false, serializers: messageSerializers('names', redact) },
     { write: (line: string) => void written.push(line) }
   )
   return {
@@ -60,7 +60,7 @@ describe('messageSerializers', () => {
   it('tells the redactor that the value goes into the message', () => {
     const redact = jest.fn(mark)
     const { logger } = build(redact)
-    guardMessageValues(logger, redact, 'names')
+    guardMessageValues(logger, redact)
 
     log(logger, '%o', { a: 1 })
     log(logger, {}, { b: 2 })
@@ -82,7 +82,7 @@ describe('messageSerializers', () => {
   it('leaves primitives as they are', () => {
     const redact = jest.fn(mark)
     const { logger, messages } = build(redact)
-    guardMessageValues(logger, redact, 'names')
+    guardMessageValues(logger, redact)
 
     log(logger, '%o %o %s', 5, null, 'x')
     log(logger, {}, 'plain')
@@ -92,22 +92,15 @@ describe('messageSerializers', () => {
     expect(redact).not.toHaveBeenCalled()
   })
 
-  it("walks under 'paths' only what holds a binary value, with the redactor of the record", () => {
-    const record = jest.fn((value: unknown) => ({ walked: value }))
-    const { msg } = messageSerializers('paths', mark, record)
-    const plain = { a: 1 }
-    const binary = { a: Buffer.from('x') }
-
-    expect(msg(plain)).toBe(plain)
-    expect(msg(binary)).toStrictEqual({ walked: binary })
-    expect(record.mock.calls).toStrictEqual([[binary, false, true]])
+  it("gives no serializer under 'paths'", () => {
+    expect(messageSerializers('paths', mark)).toStrictEqual({})
   })
 })
 
 describe('guardMessageValues', () => {
   it('walks the value of a placeholder, of a child too', () => {
     const { logger, messages } = build()
-    guardMessageValues(logger, mark, 'names')
+    guardMessageValues(logger, mark)
 
     log(logger, '%o', { a: 1 })
     log(logger.child({}), '%o', { a: 1 })
@@ -117,7 +110,7 @@ describe('guardMessageValues', () => {
 
   it('guards a child only when Pino gave it format options of its own', () => {
     const { logger, messages } = build()
-    const guardChild = guardMessageValues(logger, mark, 'names')
+    const guardChild = guardMessageValues(logger, mark)
     const own = logger.child({}, { redact: ['nothing'] })
     const inherited = logger.child({})
 
@@ -134,7 +127,7 @@ describe('guardMessageValues', () => {
   it('leaves the format options writable, so Pino can replace them on a child', () => {
     const { logger } = build()
 
-    guardMessageValues(logger, mark, 'names')
+    guardMessageValues(logger, mark)
 
     expect(Object.getOwnPropertyDescriptor(logger, pino.symbols.formatOptsSym)).toMatchObject({
       writable: true,
@@ -150,14 +143,14 @@ describe('guardMessageValues', () => {
     const { logger } = build()
     jest.replaceProperty(pino, 'symbols', symbols as typeof pino.symbols)
 
-    expect(() => guardMessageValues(logger, mark, 'names')).toThrow('LOGGER_PINO_UNSUPPORTED')
+    expect(() => guardMessageValues(logger, mark)).toThrow('LOGGER_PINO_UNSUPPORTED')
   })
 
   it('refuses format options without a stringify function', () => {
     const { logger } = build()
     Reflect.set(logger, pino.symbols.formatOptsSym, {})
 
-    expect(() => guardMessageValues(logger, mark, 'names')).toThrow('LOGGER_PINO_UNSUPPORTED')
+    expect(() => guardMessageValues(logger, mark)).toThrow('LOGGER_PINO_UNSUPPORTED')
   })
 })
 

@@ -16,19 +16,6 @@ const PROTOTYPE_KEY = '__proto__'
 const EXPLICIT_USER_KEY = 'userId'
 
 /**
- * The keys the mixin writes, folded: a payload key that only spells one of them (`trace_id` for
- * `traceId`, `request.id` for `requestId`) is read as the same field by a backend that normalises
- * names, so it is dropped like the key itself.
- */
-function writtenKeys(mixinObject: object): Set<string> {
-  const written = new Set<string>()
-  for (const [key, value] of Object.entries(mixinObject)) {
-    if (value !== undefined) setAdd(written, foldKey(key))
-  }
-  return written
-}
-
-/**
  * Pino's `mixinMergeStrategy`: merge the caller's object with the mixin result without letting a
  * throwing getter crash the log call, and without letting the caller's object replace a key the
  * mixin writes.
@@ -51,15 +38,20 @@ export function mergeMixinSafely(mergeObject: object, mixinObject: object): obje
     // under. A disposable target keeps the partial writes in the value that
     // is about to be discarded.
     const merged: Record<string, unknown> = {}
-    const written = writtenKeys(mixinObject)
+    // The keys the mixin writes, folded: a payload key that only spells one of them (`trace_id` for
+    // `traceId`, `request.id` for `requestId`) is read as the same field by a backend that
+    // normalises names, so it is dropped like the key itself.
+    const written = new Set<string>()
+    for (const [key, value] of Object.entries(mixinObject)) {
+      if (value !== undefined) setAdd(written, foldKey(key))
+    }
     // Copied key by key and never through `Object.assign`: an own `__proto__` key of the payload
     // (a parsed object has one) would swap the prototype of `merged`, and the writes below would
     // then run a setter the payload carries or be dropped by a non-writable property it carries.
-    const fields = binaryAsField(mergeObject)
-    for (const key of Object.keys(fields)) {
+    for (const key of Object.keys(mergeObject)) {
       if (key === PROTOTYPE_KEY) continue
       if (key !== EXPLICIT_USER_KEY && setHas(written, foldKey(key))) continue
-      Reflect.set(merged, key, Reflect.get(fields, key))
+      Reflect.set(merged, key, Reflect.get(mergeObject, key))
     }
     // The mixin's keys are the correlation of the entry (the request, the tenant, the trace), so a
     // payload that carries the same key does not replace them. A key the mixin leaves undefined is
@@ -81,4 +73,18 @@ export function mergeMixinSafely(mergeObject: object, mixinObject: object): obje
       _logKey: RESERVED_LOG_KEYS.LOGGER_REDACTION_FAILED
     }
   }
+}
+
+/**
+ * The `mixinMergeStrategy` of the logger. Under `'names'`, a binary view given as the merge object
+ * is first made one field with its size; under `'paths'` it reaches {@link mergeMixinSafely} as it is.
+ *
+ * @param strategy - The redaction strategy of the module.
+ * @returns The strategy to give to Pino.
+ */
+export function mixinMergeFor(
+  strategy: 'names' | 'paths'
+): (mergeObject: object, mixinObject: object) => object {
+  if (strategy === 'paths') return mergeMixinSafely
+  return (mergeObject, mixinObject) => mergeMixinSafely(binaryAsField(mergeObject), mixinObject)
 }
