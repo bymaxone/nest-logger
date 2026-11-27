@@ -219,3 +219,59 @@ describe('what is written for a held Error under a serialized key', () => {
     expect(err.cause.message.length).toBeLessThan(20_000)
   })
 })
+
+/** What is written under `err` for a held `Error` with these fields, which its `toJSON` keeps. */
+function fieldsUnderErr(fields: Record<string, unknown>, keys: readonly string[]): string {
+  const error = Object.assign(new Error('failed'), fields)
+  Object.defineProperty(error, 'inner', { value: { pan: 'x' } })
+  Object.defineProperty(error, 'toJSON', {
+    value: () =>
+      Object.fromEntries(keys.map((key) => [key, (error as unknown as typeof fields)[key]]))
+  })
+  const hold = createPathHold(['err.pan'], 1000, createOwnFieldPolicy('safe', []))
+  const redact = createNameRedactor(
+    ['password'],
+    '[X]',
+    ['err'],
+    1000,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    hold
+  )
+  return JSON.stringify(redact({ err: error }, true))
+}
+
+describe('an Error a held Error holds outside its causes and members', () => {
+  const inner = (): Error => new Error('INNER')
+
+  /* Only a cause or a member is a link: elsewhere an instance stays one, and writes no head. */
+  it.each<readonly [string, string, unknown]>([
+    ['a field', 'table', { x: inner() }],
+    ['a field that is the Error', 'code', inner()],
+    ['a field of a list', 'table', [inner()]],
+    ['an object as the cause', 'cause', { name: 'n', message: 'm', extra: inner() }],
+    ['a cause of an object as the cause', 'cause', { name: 'n', message: 'm', cause: inner() }],
+    ['an object as a member', 'errors', [{ name: 'n', message: 'm', extra: inner() }]]
+  ])('does not write the message of one under %s', (_label, key, value) => {
+    expect(fieldsUnderErr({ [key]: value }, [key])).not.toContain('INNER')
+  })
+
+  /* A member of the output's list is a link, and so is its cause. */
+  it('writes the message of a member and of the cause of a member', () => {
+    const member = new Error('member', { cause: inner() })
+    const written = fieldsUnderErr({ errors: [member] }, ['errors'])
+
+    expect(written).toContain('"message":"member"')
+    expect(written).toContain('"message":"INNER"')
+  })
+
+  /* An assigned cause is an own enumerable key of the linked Error. */
+  it('writes the message of an assigned cause of a member', () => {
+    const member = new Error('member')
+    member.cause = inner()
+
+    expect(fieldsUnderErr({ errors: [member] }, ['errors'])).toContain('"message":"INNER"')
+  })
+})

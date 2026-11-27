@@ -9,6 +9,7 @@ import { cutIfText, MAX_TEXT_LENGTH } from './bounded-text.util'
 import { capturedSet } from './captured-builtins.util'
 import { foldKey, matchesFolded, matchesKey } from './fold-key.util'
 import { hideMessagesInStack } from './hide-message-in-stack.util'
+import { isError } from './is-error.util'
 import type { RedactRules } from './redact-by-name.util'
 import { ERROR_TEXT_FIELDS } from './redact-error-parts.util'
 import { censorName, MAX_STACK_SCAN, scrubStack } from './sanitize-error.util'
@@ -41,18 +42,22 @@ function leavesErrorText(
  * @param key - The key the value is under.
  * @param value - The value.
  * @param honorToJson - `false` only for the root of a log record.
+ * @param holder - The object holding the key.
  * @returns The rules the value is walked with.
  */
 export function rulesBelow(
   rules: RedactRules,
   key: string,
   value: unknown,
-  honorToJson: boolean
+  honorToJson: boolean,
+  holder: object
 ): RedactRules {
+  const linked = rules.link === 'output' || (rules.link === 'link' && isError(holder))
+  const link = linked && (key === 'cause' || key === 'errors') ? 'link' : undefined
   if (leavesErrorText(rules, key, value, honorToJson)) {
-    return { ...rules, exemptKeys: ERROR_TEXT_KEYS }
+    return { ...rules, link, exemptKeys: ERROR_TEXT_KEYS }
   }
-  return { ...rules, exemptKeys: undefined, headerKept: undefined }
+  return { ...rules, link, exemptKeys: undefined, headerKept: undefined }
 }
 
 /**
