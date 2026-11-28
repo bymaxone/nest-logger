@@ -3,6 +3,7 @@
  *
  * Layer: server, utils, tests.
  */
+import { constants } from 'node:buffer'
 import {
   ALL_OWN_FIELDS,
   allowsOwnField,
@@ -11,6 +12,37 @@ import {
   withBinaryAsSize,
   withBinaryAsSizeForText
 } from './own-field-policy.util'
+
+describe('the module as loaded', () => {
+  // Loaded inside the test, so that what the module evaluates is evaluated while the test runs.
+  it('holds the default list, the fields the logger writes itself, and the policy of every field', () => {
+    jest.isolateModules(() => {
+      const loaded =
+        jest.requireActual<typeof import('./own-field-policy.util')>('./own-field-policy.util')
+
+      expect(loaded.DEFAULT_SAFE_ERROR_FIELDS).toEqual([
+        'code',
+        'errno',
+        'syscall',
+        'signal',
+        'status',
+        'statusCode',
+        'address',
+        'port',
+        'hostname',
+        'constraint',
+        'table',
+        'column',
+        'schema',
+        'routine'
+      ])
+      for (const name of ['name', 'message', 'stack', 'cause', 'errors']) {
+        expect(loaded.DERIVED_ERROR_FIELDS.has(name)).toBe(true)
+      }
+      expect(loaded.ALL_OWN_FIELDS.safe).toBe(false)
+    })
+  })
+})
 
 describe('createOwnFieldPolicy', () => {
   it("returns the one shared policy of every field for 'all', whatever names are given", () => {
@@ -205,6 +237,57 @@ describe('withBinaryAsSizeForText', () => {
     for (let level = 0; level < 100_000; level += 1) deep = [deep]
 
     expect(withBinaryAsSizeForText(deep)).toBe(deep)
+  })
+
+  /*
+   * The bounds stand for `String`, which cannot build such a text either. At the bound the walk
+   * reads the first member, so a getter there shows that the length itself was accepted.
+   */
+  it('reads an array as long as a string can be, and refuses a longer one', () => {
+    const reached = (length: number): unknown[] => {
+      const list: unknown[] = []
+      Object.defineProperty(list, 0, {
+        get: () => {
+          throw new Error('reached')
+        }
+      })
+      list.length = length
+      return list
+    }
+
+    expect(() => withBinaryAsSizeForText(reached(constants.MAX_STRING_LENGTH))).toThrow('reached')
+    expect(() => withBinaryAsSizeForText(reached(constants.MAX_STRING_LENGTH + 1))).toThrow(
+      'Text too long'
+    )
+    expect(() => withBinaryAsSizeForText([reached(constants.MAX_STRING_LENGTH)])).toThrow(
+      'Text too long'
+    )
+  })
+
+  it('follows 200,000 levels of nesting and refuses one more', () => {
+    const nested = (levels: number): unknown[] => {
+      let deep: unknown[] = []
+      for (let level = 0; level < levels; level += 1) deep = [deep]
+      return deep
+    }
+    const within = nested(200_000)
+
+    expect(withBinaryAsSizeForText(within)).toBe(within)
+    expect(() => withBinaryAsSizeForText(nested(200_001))).toThrow(RangeError)
+  })
+
+  it('follows 1,000 errors held one in the message of another and refuses one more', () => {
+    const chain = (errors: number): Error => {
+      let held: unknown = 'end'
+      for (let level = 0; level < errors; level += 1) {
+        held = Object.assign(new Error(), { message: held })
+      }
+      return held as Error
+    }
+    const within = chain(1_001)
+
+    expect(withBinaryAsSizeForText(within)).toBe(within)
+    expect(() => withBinaryAsSizeForText(chain(1_002))).toThrow('Text too long')
   })
 
   /*

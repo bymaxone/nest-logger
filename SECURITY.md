@@ -8,8 +8,8 @@ Only the most recent minor receives security fixes; upgrade to it.
 
 | Version | Status                              |
 | ------- | ----------------------------------- |
-| `1.4.x` | ✅ Active — receives security fixes |
-| `< 1.4` | ❌ End-of-life                      |
+| `1.5.x` | ✅ Active — receives security fixes |
+| `< 1.5` | ❌ End-of-life                      |
 
 ## Reporting a vulnerability
 
@@ -62,6 +62,16 @@ Code that runs inside the host process is trusted, as in Node's own threat model
 ## Known limits
 
 Under `redactStrategy: 'paths'`, a binary value that a `toJSON` returns into the message argument or a `%o`, `%O` or `%j` placeholder of the raw logger, or a child bindings field, is written byte by byte. Record fields and service calls write its size. Return a plain value from `toJSON` instead.
+
+Stacks and binary values:
+
+- A `stack` that your code defines as an enumerable own property is a field of yours and is written as defined, whatever text it holds.
+- An error outside `err` whose `message` getter throws keeps a `stack` that your code defined on it, unchanged.
+- With every redaction off (`shouldDisableDefaultRedact: true`, no `redactPaths`, `errorOwnFields` not `'safe'`), a Buffer held in an object inside `err`, or in a thrown plain object, is written as bytes.
+- A structured call such as `info(logKey, message)` given a Buffer as the message throws. What the raw logger under `redactStrategy: 'paths'` does with a Buffer is in the Binary values section of the README.
+- Under `redactStrategy: 'names'`, a plain object under `err` whose `message` is an array with a `length` near 2^31 exhausts memory.
+
+Convert such values to text before you log them.
 
 ## Out of scope
 

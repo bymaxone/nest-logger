@@ -19,6 +19,7 @@ import { bareDescriptor } from './bare-descriptor.util'
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
 import { capturedSet, lowerCase, matchesPattern } from './captured-builtins.util'
 import { splitCensoredHeader } from './censor-stack-header.util'
+import { readStackText } from './error-stack-text.util'
 import { escapeControlCharacters } from './escape-log-text.util'
 import { hideMessagesInStack } from './hide-message-in-stack.util'
 import { isError } from './is-error.util'
@@ -218,7 +219,7 @@ interface ErrorWalk {
  * @param value - The error.
  * @param name - The name as it was read, once, for the node.
  * @param message - The message as it was read, once, for the node.
- * @param textName - Whether the name, as it was read, is text.
+ * @param rawName - The name as it was read, before it was turned into text.
  * @param result - The node, marked incomplete when the stack cannot be read.
  * @param walk - What every node shares, with the censor of messages.
  * @returns The scrubbed stack, or `undefined` when there is none or it cannot be read.
@@ -227,16 +228,21 @@ function readScrubbedStack(
   value: Error,
   name: string,
   message: string,
-  textName: boolean,
+  rawName: unknown,
   result: SanitizedError,
   walk: ErrorWalk
 ): string | undefined {
-  const stack = readOptional(() => value.stack, result)
+  // A replaced first line is a size, with no message to look for in the stack.
+  let isSized = false
+  const onSized = (): void => {
+    isSized = true
+  }
+  const stack = readOptional(() => readStackText(value, onSized) as string | undefined, result)
   if (stack === undefined) return undefined
   const header = headerCensor(name, message, walk.censorMessage)
-  return textName
-    ? scrubStack(stack, header)
-    : scrubStack(withNamedHeader(stack, message), header, stack.length > MAX_STACK_SCAN)
+  if (typeof rawName === 'string') return scrubStack(stack, header)
+  const named = withNamedHeader(stack, message, isSized)
+  return scrubStack(named, header, stack.length > MAX_STACK_SCAN)
 }
 
 /** The start of the first frame: a line that begins, after white space, with `at `. */
@@ -250,11 +256,12 @@ const FRAME_LINE = /\n[ \t]+at /
  *
  * @param stack - The stack as the engine wrote it.
  * @param message - The message of the error.
+ * @param isSized - Whether the first line is the size of a binary value.
  * @returns The stack with the name that is not text replaced by `Error`.
  */
-function withNamedHeader(stack: string, message: string): string {
+function withNamedHeader(stack: string, message: string, isSized: boolean): string {
   const head = stack.slice(0, MAX_STACK_SCAN)
-  const found = message === '' ? -1 : head.indexOf(message)
+  const found = isSized || message === '' ? -1 : head.indexOf(message)
   if (found !== -1) return `Error: ${head.slice(found)}`
   const end = head.search(FRAME_LINE)
   const frames = end === -1 ? '' : head.slice(end)
@@ -295,7 +302,7 @@ function toSanitizedError(
     // costs the node that property and marks it incomplete, instead of costing the node its
     // name and message. The name and message identify the error; if THEY cannot be read the
     // outer catch still degrades the node to the visible `SanitizeFailed` shape.
-    const stack = readScrubbedStack(value, name, message, typeof rawName === 'string', result, walk)
+    const stack = readScrubbedStack(value, name, message, rawName, result, walk)
     if (stack !== undefined) result.stack = stack
 
     const isAtDepthLimit = depth >= walk.maxDepth

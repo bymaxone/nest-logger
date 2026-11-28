@@ -12,6 +12,14 @@ heading here.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-28
+
+### Breaking
+
+- A binary value given as the message of a NestJS method such as `log`, alone, in a list or as the message of an error, is written as its size (`[Binary 42 bytes]`). Migration: convert before you log, for example `logger.log(buffer.toString('utf-8'))`.
+- The failure report of a destination and the startup error of `PrettyDevDestination` write the size of a binary value thrown or rejected, or held in a text they take from the thrown error. Migration: throw an `Error` with a text message.
+- When the name or message of an error holds a binary value, its first stack line can be the size, and the frames are then kept only if the stack starts with the line the engine writes; where `name` and `message` can be read but that line cannot be built, no stack is written (see the known limits in SECURITY.md). Migration: assign text to `name` and `message`.
+
 ## [1.4.40] - 2026-11-28
 
 ### Fixed
@@ -3690,7 +3698,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.40...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/bymaxone/nest-logger/compare/v1.4.40...v1.5.0
 [1.4.40]: https://github.com/bymaxone/nest-logger/compare/v1.4.39...v1.4.40
 [1.4.39]: https://github.com/bymaxone/nest-logger/compare/v1.4.38...v1.4.39
 [1.4.38]: https://github.com/bymaxone/nest-logger/compare/v1.4.37...v1.4.38

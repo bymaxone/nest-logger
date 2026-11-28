@@ -4,6 +4,7 @@
  * Layer: server, utils. Shared by the error sanitizer and the redaction walk, so the serializer
  * and the walk answer the same question the same way.
  */
+import { constants } from 'node:buffer'
 import { types } from 'node:util'
 
 import { capturedSet } from './captured-builtins.util'
@@ -154,30 +155,46 @@ function isTextContainer(value: unknown): boolean {
   return Array.isArray(value) || isError(value)
 }
 
+/** Longer arrays are refused: `String` of one would be about as long as a string can be. */
+const MAX_TEXT_PARTS = constants.MAX_STRING_LENGTH
+
+/** A getter that answers anew each time it is read makes a chain with no end. */
+const MAX_TEXT_DEPTH = 200_000
+
+/** What one error adds to the depth: it costs far more to hold than an array does. */
+const ERROR_DEPTH = 200
+
 /**
  * Whether the text of a value would read a binary one. It keeps its own list of what is left to
- * look at, so that no depth of nesting ends the call stack, and it copies nothing.
+ * look at, so that nesting does not end the call stack, and it copies nothing. A value whose text
+ * would not end raises a `RangeError`, as `String` does.
  */
 function holdsBinary(root: unknown): boolean {
   if (ArrayBuffer.isView(root)) return true
   // Only what `isTextContainer` accepts is queued, so what is taken from the list is not tested again.
   // Stryker disable next-line ArrayDeclaration: equivalent, a planted string is taken last and nothing in it is binary or queued.
-  const pending: unknown[] = []
-  const queue = (value: unknown): void => {
-    if (isTextContainer(value)) pending.push(value)
+  const pending: [value: unknown, depth: number][] = []
+  const queue = (value: unknown, depth: number): void => {
+    if (isTextContainer(value)) pending.push([value, depth])
   }
-  queue(root)
+  queue(root, 0)
   const seen = capturedSet<unknown>()
+  let read = 0
   while (pending.length > 0) {
-    const value = pending.pop()
+    const [value, depth] = pending.pop() as [unknown, number]
     if (seen.has(value)) continue
     seen.add(value)
-    const parts = isError(value) ? [value.name, value.message] : (value as unknown[])
+    const isNodeError = isError(value)
+    const parts = isNodeError ? [value.name, value.message] : (value as unknown[])
+    const below = depth + (isNodeError ? ERROR_DEPTH : 1)
     // By index and a length read once, as `join` reads an array, so no iterator of the host's runs.
-    for (let index = 0, length = parts.length; index < length; index += 1) {
+    const length = parts.length
+    read += length
+    if (read > MAX_TEXT_PARTS || depth > MAX_TEXT_DEPTH) throw new RangeError('Text too long')
+    for (let index = 0; index < length; index += 1) {
       const part: unknown = parts[index]
       if (ArrayBuffer.isView(part)) return true
-      queue(part)
+      queue(part, below)
     }
   }
   return false

@@ -7,6 +7,7 @@
  */
 
 import { bareDescriptor } from './bare-descriptor.util'
+import { readStackText } from './error-stack-text.util'
 
 /**
  * Give an object a `toJSON` of `undefined`, which the stringifier does not run. It is defined and
@@ -61,6 +62,36 @@ function relaxedDescriptors(descriptors: PropertyDescriptorMap): PropertyDescrip
 }
 
 /**
+ * Pin on `clone` the stack that one read of `error` answered.
+ *
+ * V8 exposes `stack` as an own ACCESSOR bound to the original error's internal state, so copying the
+ * descriptor hands the clone a getter that resolves to a near-empty string. Pin the already-resolved
+ * trace as a plain data property — without this the redacted error reaches the sink with its stack
+ * erased, which is worse than the leak the clone exists to close.
+ *
+ * The text that one read answered, or nothing, takes the place of the copied descriptor, so no later
+ * read of the original's getter is written. A value that is not text would cost the record where the
+ * serializer reads it as text.
+ *
+ * @param clone - The copy, holding the original's descriptors.
+ * @param error - The error copied.
+ */
+function pinStack(clone: Error, error: Error): void {
+  const read = readStackText(error)
+  if (!('stack' in error)) return
+  // `enumerable: false` matches how a real Error carries its stack — making it enumerable would push
+  // the whole trace into `JSON.stringify` output for every redacted error. `writable` is stated so that an
+  // assignment into the clone lands; `configurable` is left at its `false` default: nothing
+  // downstream deletes a stack.
+  const value = typeof read === 'string' ? read : undefined
+  Reflect.defineProperty(
+    clone,
+    'stack',
+    bareDescriptor({ value, enumerable: false, writable: true })
+  )
+}
+
+/**
  * Clone an `Error` preserving what makes it an Error.
  *
  * The walk cannot flatten an error into a plain object: Pino's `err` serializer
@@ -96,23 +127,7 @@ export function cloneError(error: Error): Error {
     Object.getPrototypeOf(error) as object,
     relaxedDescriptors(Object.getOwnPropertyDescriptors(error))
   ) as Error
-  // V8 exposes `stack` as an own ACCESSOR bound to the original error's internal
-  // state, so copying the descriptor hands the clone a getter that resolves to a
-  // near-empty string. Pin the already-resolved trace as a plain data property —
-  // without this the redacted error reaches the sink with its stack erased,
-  // which is worse than the leak the clone exists to close.
-  const { stack } = error
-  if (typeof stack === 'string') {
-    // `enumerable: false` matches how a real Error carries its stack — making it
-    // enumerable would push the whole trace into `JSON.stringify` output for every
-    // redacted error. `writable` is stated for the reason given above; `configurable` is left at
-    // its `false` default: nothing downstream deletes a stack.
-    Reflect.defineProperty(
-      clone,
-      'stack',
-      bareDescriptor({ value: stack, enumerable: false, writable: true })
-    )
-  }
+  pinStack(clone, error)
   // The clone carries every descriptor of the original, read after the walk's own read, so it can
   // hold an enumerable value the walk never saw and a `toJSON` that answers a hook later.
   withoutEnumerableKeys(clone)

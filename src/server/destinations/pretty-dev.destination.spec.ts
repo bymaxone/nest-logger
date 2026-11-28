@@ -148,6 +148,26 @@ describe('PrettyDevDestination', () => {
       expect(process.stdout.listenerCount('error')).toBeGreaterThan(before)
     })
 
+    /* A binary value thrown while the transform starts is described by its size. */
+    it.each([
+      ['thrown', (): unknown => Buffer.from('AB-CDE')],
+      [
+        'held as a message',
+        (): unknown => Object.assign(new Error('x'), { message: Buffer.from('AB-CDE') })
+      ]
+    ])('describes a binary value %s by its size', async (_label, value) => {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('pino-pretty', () => {
+          throw value()
+        })
+        const { PrettyDevDestination: Fresh } = await import('./pretty-dev.destination')
+
+        await expect(new Fresh().onInit()).rejects.toThrow(
+          '[PrettyDevDestination] pino-pretty failed to start: [Binary 6 bytes]'
+        )
+      })
+    })
+
     /*
      * When pino-pretty is not installed, onInit must throw an actionable error
      * (not a cryptic module-resolution failure) so the consumer knows to either
