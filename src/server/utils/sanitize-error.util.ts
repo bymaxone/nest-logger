@@ -27,6 +27,7 @@ import {
   allowsOwnField,
   DERIVED_ERROR_FIELDS,
   withBinaryAsSize,
+  withBinaryAsSizeForText,
   type OwnFieldPolicy
 } from './own-field-policy.util'
 
@@ -116,7 +117,8 @@ export interface SanitizeErrorOptions {
  * Normalize any thrown value into a JSON-safe {@link SanitizedError}.
  *
  * Behavior:
- *   - Non-error input → `{ name: 'UnknownError', message: String(input) }`.
+ *   - Non-error input → `{ name: 'UnknownError', message: String(input) }`, where a binary value
+ *     is its size.
  *   - `Error` (and native subclasses: `TypeError`, `RangeError`, `SyntaxError`,
  *     …) → `{ name, message, stack }` with `node_modules/` stack frames removed.
  *   - `cause` chains are walked recursively up to `maxCauseDepth`; deeper links
@@ -278,7 +280,7 @@ function toSanitizedError(
 ): SanitizedError {
   try {
     if (!readsAsError(value)) {
-      return { name: 'UnknownError', message: cutText(String(value)) }
+      return { name: 'UnknownError', message: cutText(String(withBinaryAsSizeForText(value))) }
     }
 
     seen.add(value)

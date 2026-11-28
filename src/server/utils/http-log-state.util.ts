@@ -16,6 +16,7 @@
 
 import type { ExposedClientError } from './exposed-client-error.util'
 import { isError } from './is-error.util'
+import { withBinaryAsSizeForText } from './own-field-policy.util'
 
 /** Lower bound of the HTTP redirect (3xx) range. */
 export const HTTP_REDIRECT_MIN = 300
@@ -189,7 +190,7 @@ export function readRecordedParserError(req: object): ExposedClientError | undef
  * @returns `thrown` itself when it is an `Error`, or one wrapping its text.
  */
 export function toError(thrown: unknown): Error {
-  return isError(thrown) ? thrown : new Error(String(thrown))
+  return isError(thrown) ? thrown : new Error(String(withBinaryAsSizeForText(thrown)))
 }
 
 /**

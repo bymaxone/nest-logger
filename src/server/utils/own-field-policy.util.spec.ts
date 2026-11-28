@@ -8,7 +8,8 @@ import {
   allowsOwnField,
   createOwnFieldPolicy,
   DEFAULT_SAFE_ERROR_FIELDS,
-  withBinaryAsSize
+  withBinaryAsSize,
+  withBinaryAsSizeForText
 } from './own-field-policy.util'
 
 describe('createOwnFieldPolicy', () => {
@@ -114,5 +115,165 @@ describe('withBinaryAsSize', () => {
     ['a plain ArrayBuffer', new ArrayBuffer(3)]
   ])('returns %s as the very same value', (_label, value) => {
     expect(withBinaryAsSize(value)).toBe(value)
+  })
+})
+
+describe('withBinaryAsSizeForText', () => {
+  const two = (): Buffer => Buffer.from('ab')
+  const MARKER = '[Binary 2 bytes]'
+
+  /*
+   * `String` reads every one of these through the bytes, so each must be sized first.
+   */
+  it.each([
+    ['a binary value', two(), MARKER],
+    ['a member', [two(), 'x'], `${MARKER},x`],
+    ['a member of a member', [[[two()]], 'x'], `${MARKER},x`],
+    ['the message of an error', Object.assign(new Error(), { message: two() }), MARKER],
+    ['the name of an error', Object.assign(new Error('m'), { name: two() }), MARKER],
+    ['an error in an array', [Object.assign(new Error(), { message: [two()] })], MARKER]
+  ])('sizes %s', (_label, value, text) => {
+    expect(String(withBinaryAsSizeForText(value))).toBe(text)
+  })
+
+  /*
+   * A value with nothing to size keeps its identity, so its own text is what is written.
+   */
+  it.each([
+    ['text', 'text'],
+    ['a number', 7],
+    ['null', null],
+    ['an object', { data: Buffer.from('x') }],
+    ['a plain ArrayBuffer', new ArrayBuffer(3)],
+    ['an array', ['a', [1], null]],
+    ['an error', new Error('m')]
+  ])('returns %s as the very same value', (_label, value) => {
+    expect(withBinaryAsSizeForText(value)).toBe(value)
+  })
+
+  it('reads an array by its length and index, never through its iterator', () => {
+    const list = [two()]
+    Object.defineProperty(list, Symbol.iterator, {
+      value: () => {
+        throw new Error('iterated')
+      }
+    })
+
+    expect(String(withBinaryAsSizeForText(list))).toBe(MARKER)
+  })
+
+  /*
+   * `join` writes an array that is already being joined as nothing; so does the copy.
+   */
+  it('ends an array that holds itself where join ends it', () => {
+    const list: unknown[] = ['a', two()]
+    list.push(list)
+
+    expect(String(withBinaryAsSizeForText(list))).toBe(`a,${MARKER},`)
+  })
+
+  it('ends an error whose message holds the error', () => {
+    const error = new Error()
+    Object.assign(error, { message: [two(), error] })
+
+    expect(String(withBinaryAsSizeForText(error))).toBe(`${MARKER},`)
+  })
+
+  /*
+   * No array is in this cycle, so only the error itself can end it.
+   */
+  it('ends an error that is its own message', () => {
+    const error = new Error()
+    Object.assign(error, { message: error })
+
+    expect(String(withBinaryAsSizeForText([two(), error]))).toBe(`${MARKER},`)
+  })
+
+  /*
+   * Nothing is sized here, so the text is the one `String` gives the value, cycle and all.
+   */
+  it('returns an error that holds itself and nothing binary as the very same value', () => {
+    const error = new Error()
+    Object.assign(error, { message: ['a', error] })
+    const list = [error]
+
+    expect(withBinaryAsSizeForText(list)).toBe(list)
+  })
+
+  it('returns arrays nested far deeper than the call stack allows a walk to recurse', () => {
+    let deep: unknown[] = []
+    for (let level = 0; level < 100_000; level += 1) deep = [deep]
+
+    expect(withBinaryAsSizeForText(deep)).toBe(deep)
+  })
+
+  /*
+   * A sparse array can have a length far beyond what it holds, so no pass may allocate by it.
+   */
+  it('keeps the holes of a sparse array that it has to copy', () => {
+    const list: unknown[] = []
+    list[3] = two()
+    list.length = 1_000
+
+    const read = withBinaryAsSizeForText(list) as unknown[]
+
+    expect(Object.keys(read)).toStrictEqual(['3'])
+    expect(read).toHaveLength(1_000)
+  })
+
+  /*
+   * `String` reads the value itself afterwards, so every further read here is one more that it can
+   * answer differently; and `join` never asks an array whether it has an index.
+   */
+  it.each([
+    ['that holds nothing binary', ['a', 'b'], ['length', '0', '1']],
+    ['that it has to copy', [two(), 'b'], ['length', '0', 'length', '0', '1']]
+  ])('reads an array %s no more than once in each pass', (_label, held, expected) => {
+    const asked: Array<string | symbol> = []
+    const list = new Proxy(held, {
+      get(target, key, receiver): unknown {
+        asked.push(key)
+        return Reflect.get(target, key, receiver) as unknown
+      },
+      has(target, key): boolean {
+        asked.push(`has ${String(key)}`)
+        return Reflect.has(target, key)
+      }
+    })
+
+    withBinaryAsSizeForText(list)
+
+    expect(asked).toStrictEqual(expected)
+  })
+
+  it('reads the name and the message of an error it only searches once', () => {
+    const asked: string[] = []
+    const error = new Error()
+    for (const part of ['name', 'message']) {
+      Object.defineProperty(error, part, { get: () => (asked.push(part), 'x') })
+    }
+
+    withBinaryAsSizeForText(error)
+
+    expect(asked).toStrictEqual(['name', 'message'])
+  })
+
+  it('keeps a binary-free array and error that sit beside a binary value', () => {
+    const list = ['b']
+    const error = new Error('x')
+
+    const read = withBinaryAsSizeForText([two(), list, error]) as unknown[]
+
+    expect(read[1]).toBe(list)
+    expect(read[2]).toBe(error)
+  })
+
+  it('sizes the same array and the same error each time they appear', () => {
+    const list = [two()]
+    const error = Object.assign(new Error(), { message: two() })
+
+    expect(String(withBinaryAsSizeForText([list, list, error, error]))).toBe(
+      `${MARKER},${MARKER},${MARKER},${MARKER}`
+    )
   })
 })
