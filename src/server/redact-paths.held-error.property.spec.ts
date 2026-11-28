@@ -2,7 +2,7 @@
  * Pins what is written under `err` for a held `Error` under `redactStrategy: 'paths'`, over chains
  * drawn from a fixed seed, so a failure names a case that can be run again. A chain mixes `Error`s,
  * `AggregateError`s and plain error-like objects, and some of its `Error`s write themselves with a
- * `toJSON` that returns a name, none, or a message of its own.
+ * `toJSON` that returns a name, none, or a message of its own, and some hold a named field.
  *
  * Layer: server, tests.
  */
@@ -32,6 +32,8 @@ type Output = 'none' | 'named' | 'nameless' | 'rewritten'
 interface Link {
   readonly holder: Holder
   readonly output: Output
+  /** The link has a field of its own that the configured path names. */
+  readonly holds: boolean
 }
 
 /** A plain object has no `toJSON` here; an `AggregateError` holds the next link in `errors`. */
@@ -41,7 +43,7 @@ function drawChain(pick: () => number): Link[] {
     const holder = one<Holder>(['error', 'error', 'aggregate', 'plain'])
     const output =
       holder === 'plain' ? 'none' : one<Output>(['none', 'named', 'nameless', 'rewritten'])
-    return { holder, output }
+    return { holder, output, holds: holder !== 'plain' && pick() < 0.4 }
   })
 }
 
@@ -55,6 +57,7 @@ function build(chain: readonly Link[], at: number): object | undefined {
     link.holder === 'aggregate'
       ? new AggregateError(below ? [below] : [], message)
       : new Error(message, below ? { cause: below } : undefined)
+  if (link.holds) Object.defineProperty(error, 'inner', { value: { pan: 'x' } })
   if (link.output === 'none') return error
   Object.defineProperty(error, 'toJSON', {
     value: () => ({

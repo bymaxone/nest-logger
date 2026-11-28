@@ -339,6 +339,41 @@ describe.each(ENTRIES)("a held Error under redactStrategy: 'paths', as %s", (_en
     }
   )
 
+  /* A nested `Error` that holds a named field, itself or below it, is held in its own right. */
+  it.each<readonly [string, (inner: Error) => void]>([
+    ['itself', (inner) => void Object.defineProperty(inner, 'inner', { value: { pan: SECRET } })],
+    [
+      'in its cause',
+      (inner) => {
+        const cause = new Error('deeper')
+        Object.defineProperty(cause, 'inner', { value: { pan: SECRET } })
+        Object.defineProperty(inner, 'cause', { value: cause })
+      }
+    ]
+  ])(
+    'writes a nested Error that holds a named field %s and returns no name',
+    async (_label, hold) => {
+      const inner = new TypeError('refused')
+      hold(inner)
+      Object.defineProperty(inner, 'toJSON', { value: () => ({ message: inner.message }) })
+      for (const between of [
+        new Error('between', { cause: inner }),
+        new AggregateError([inner], 'between')
+      ]) {
+        const error = Object.assign(new Error('failed'), { cause: between })
+        const { text, written } = await logged(
+          held((e) => ({ name: e.name, message: e.message, cause: e.cause }), error)
+        )
+        const below = (written.cause?.cause ?? written.cause?.errors?.[0]) as Written
+
+        expect(below).toEqual(
+          key === 'err' ? { name: 'TypeError', message: 'refused' } : { message: 'refused' }
+        )
+        expect(text).not.toContain(SECRET)
+      }
+    }
+  )
+
   /* Where the nested toJSON ran before this walk too, nothing is added to what it returned. */
   it.each<readonly [string, (inner: Error) => unknown]>([
     ['a plain object', (inner) => ({ name: 'N', message: 'between', cause: inner })],

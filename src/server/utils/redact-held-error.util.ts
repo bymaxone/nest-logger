@@ -1,7 +1,8 @@
 /**
  * What is written for an `Error` the configured `redactPaths` hold and that has its own `toJSON`.
  *
- * Two walks are made and only what both write is kept: the one of the `Error` as
+ * Two walks are made and only what both write is kept, but for a name {@link noteUnread} lets the
+ * comparison add: the one of the `Error` as
  * `errorOwnFields: 'safe'` writes it, and the one of what its `toJSON` returns. Nothing about
  * either walk is repeated here, so a rule of theirs cannot be missed.
  *
@@ -56,7 +57,7 @@ export function unreadBelow(rules: RedactRules): RedactRules {
 }
 
 /**
- * Note what was written of the `toJSON` of an unread `Error`.
+ * Note what was written of an unread `Error` that has a `toJSON`.
  *
  * @param walked - What is written.
  * @param rules - The rules the object with the `toJSON` was reached under.
@@ -167,7 +168,7 @@ export function writeHeldError(
     if (Array.isArray(output) || isError(output)) return rules.censor
     const written = walkPart(output, { ...rules, link: 'output' }, 1)
     const how = { hold: rules.pathHold, censor: rules.censor, serialized }
-    return commonForm(safe, written, how)
+    return noteUnread(commonForm(safe, written, how), rules, error)
   } catch {
     return rules.censor
   }
