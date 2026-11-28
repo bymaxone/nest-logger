@@ -159,20 +159,24 @@ function isTextContainer(value: unknown): boolean {
  * look at, so that no depth of nesting ends the call stack, and it copies nothing.
  */
 function holdsBinary(root: unknown): boolean {
-  const pending: unknown[] = [root]
+  if (ArrayBuffer.isView(root)) return true
+  // Only what `isTextContainer` accepts is queued, so what is taken from the list is not tested again.
+  const pending: unknown[] = []
+  const queue = (value: unknown): void => {
+    if (isTextContainer(value)) pending.push(value)
+  }
+  queue(root)
   const seen = capturedSet<unknown>()
   while (pending.length > 0) {
     const value = pending.pop()
-    if (ArrayBuffer.isView(value)) return true
-    if (!isTextContainer(value) || seen.has(value)) continue
+    if (seen.has(value)) continue
     seen.add(value)
     const parts = isError(value) ? [value.name, value.message] : (value as unknown[])
     // By index and a length read once, as `join` reads an array, so no iterator of the host's runs.
     for (let index = 0, length = parts.length; index < length; index += 1) {
       const part: unknown = parts[index]
       if (ArrayBuffer.isView(part)) return true
-      // Stryker disable next-line ConditionalExpression: equivalent, a queued scalar is popped and skipped by the container test above.
-      if (isTextContainer(part)) pending.push(part)
+      queue(part)
     }
   }
   return false
