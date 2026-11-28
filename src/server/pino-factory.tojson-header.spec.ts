@@ -38,11 +38,15 @@ describe('the stack header of an error-shaped toJSON result', () => {
       ['an Error', () => Object.assign(new Error('own'), { toJSON: result })],
       ['an object', () => ({ toJSON: result })],
       ['a function', () => Object.assign(() => 1, { toJSON: result })]
-    ])('is censored in err.stack and exception.stacktrace, for %s', (_label, make) => {
+    ])('is censored in err.stack and exception.stacktrace, for %s', (label, make) => {
+      /* Under 'paths' a path naming `message` holds an `Error`, and what its `toJSON` returns
+       * that is not the value the `Error` has is the censor whole, the stack included. */
+      const held = redactStrategy === 'paths' && label === 'an Error'
+      const stack = held ? /^\[REDACTED\]$/ : /^TJ: \[REDACTED\]\n/
       const line = lineOf(make(), { redactPaths: ['message'], redactStrategy, errorFormat: 'both' })
 
-      expect((line['err'] as { stack: string }).stack).toMatch(/^TJ: \[REDACTED\]\n/)
-      expect(line['exception.stacktrace']).toMatch(/^TJ: \[REDACTED\]\n/)
+      expect((line['err'] as { stack: string }).stack).toMatch(stack)
+      expect(line['exception.stacktrace']).toMatch(stack)
       expect((line['err'] as { message: string }).message).toBe('[REDACTED]')
       expect(line['exception.message']).toBe('[REDACTED]')
       expect(JSON.stringify(line)).not.toContain(SECRET)

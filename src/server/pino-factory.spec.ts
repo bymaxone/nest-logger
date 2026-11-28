@@ -5,7 +5,7 @@
  */
 import { applyDefaults } from './config/default-options'
 import { DEFAULT_REDACT_PATHS } from './constants/default-redact-paths.constants'
-import { leafNameOf } from './pino-factory'
+import { leafNameOf } from './utils/redact-path-state.util'
 import { LogContextService } from './services/log-context.service'
 import { PinoLoggerService } from './services/pino-logger.service'
 import { buildPinoInstance, createCapture, baseOptions } from './__tests__/pino-factory.fixtures'

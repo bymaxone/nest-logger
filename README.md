@@ -473,7 +473,7 @@ const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter({ url: process.env.OTLP_TRACE_ENDPOINT }),
   instrumentations: [
     getNodeAutoInstrumentations({
-      '@opentelemetry/instrumentation-fs': { isEnabled: false } // noisy
+      '@opentelemetry/instrumentation-fs': { enabled: false } // noisy
     })
   ]
 })
@@ -887,7 +887,16 @@ Redaction is one **recursive, snapshotting walk**: a value is censored when its 
 > A bare `sessionId`, `session_id` or `session-id` is **not** on the list: many applications carry one as a correlation key, and a name cannot be switched off one at a time. A session id that is itself a bearer credential in your system must be added to your own `redactPaths` (`redactPaths: ['sessionId']` censors it at any depth under the default strategy).
 
 > [!WARNING]
-> Redaction matches **key names**. A secret under a name you have not declared sensitive is emitted: `logger.info(key, msg, userId, { renamed: user.password })` writes it in clear, and so does a `toJSON` that renames nested state. No name matcher can follow a value through a rename. Declare the name, or keep the value out of the log.
+> Redaction matches **key names**. A secret under a name you have not declared sensitive is emitted: `logger.info(key, msg, userId, { renamed: user.password })` writes it in clear, and so can a `toJSON` that renames nested state. No name matcher can follow a value through a rename. Declare the name, or keep the value out of the log.
+
+**A `toJSON` under `redactStrategy: 'paths'`.** The paths run on what the logger writes, so where the logger walks a value with a `toJSON` it first reads its string-keyed own properties, and those of the objects and functions they hold, at any depth, without running getters. The value holds a named field when a key there equals the last field name of a configured path (the default ones too), when any path ends in `*` and there is any key, when there is a getter, or when the state cannot be read. One walk reads at most 200,000 objects and fields this way; past that the value counts as holding one. The `message` and `stack` an `Error` is built with count when a path ends in that name, not for `*`. A value that holds a named field is not written as its `toJSON` returns it:
+
+- **Not an `Error`:** the whole value is written as the censor. A field of that name outside the path is enough, so this hides more than the path says.
+- **An `Error`:** only what two forms of it both write is written: the walk of what its `toJSON` returns, and the form `errorOwnFields: 'safe'` writes (with your `errorOwnFieldNames`), read before `toJSON` is called and without the other own fields that are accessors. They are compared field by field and member by member. A value both write the same is written, and one they write differently is the censor, so a `message` or `stack` that only one of the two forms scrubs is censored. Of the keys only the `toJSON` form has, `type`, `name`, `message`, `stack`, `cause`, `errors` and the `'safe'` field names are the censor, and the others are omitted, as is a key only the `'safe'` form has. If `toJSON` throws, or returns an `Error`, a list or no object, the whole is the censor. The paths apply to what is written. As for any object, under the `err` key a result with no text `name` and `message` is written as an unknown error.
+
+Under `errorOwnFields: 'safe'` an `Error`'s `toJSON` is not called, so none of this applies to it. Unless `shouldDisableDefaultRedact` is on, an `Error` with a `toJSON` and an own key of the default set is the censor whole before all this.
+
+A value that holds no named field is written through its `toJSON`.
 
 **One entry, one line.** Every message argument passes through a normalization before it reaches Pino: line separators (`\r`, `\n`, U+2028, U+2029, U+0085) become the two-character sequence `\n`, and every other control character that can drive a terminal (ESC, vertical tab, form feed, backspace, the rest of C0 except TAB, DEL and the C1 range) becomes a readable `\uXXXX` escape. This keeps a message from forging an entry in `pino-pretty` and in any destination that re-renders it, and `JSON.stringify` alone would leave DEL, C1, U+2028 and U+2029 verbatim in a raw line read in a terminal. The scrubbed stack gets the same escaping (its newlines are kept). Structured fields are untouched, so `err.message` keeps the original text, and a control character in a **metadata value** still reaches a terminal: only `msg` and the stack carry this guarantee.
 

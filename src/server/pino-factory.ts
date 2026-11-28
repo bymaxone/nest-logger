@@ -28,8 +28,6 @@ import type { LogContextService } from './services/log-context.service'
 import {
   capturedSet,
   lowerCase,
-  allMatches,
-  matchesPattern,
   pinoBuiltinsIntact,
   replaceAllText
 } from './utils/captured-builtins.util'
@@ -49,8 +47,9 @@ import {
   type OwnFieldPolicy,
   ALL_OWN_FIELDS
 } from './utils/own-field-policy.util'
-import { createNameRedactor, markErrorOutput } from './utils/redact-by-name.util'
+import { createNameRedactor, REDACT_MAX_VISITS, markErrorOutput } from './utils/redact-by-name.util'
 import type { MessageRedactor, Redactor } from './utils/redact-by-name.util'
+import { leafNameOf, createPathHold, type PathHold } from './utils/redact-path-state.util'
 import { safeMinLevel } from './utils/report-destination-failure.util'
 import {
   buildResourceBindings,
@@ -61,69 +60,6 @@ import { assignOwnErrorFields, sanitizeError } from './utils/sanitize-error.util
 import { withSemconvException } from './utils/semconv-exception.util'
 import { withSerializedRequest } from './utils/serialize-request.util'
 import { createSizeBoundedSerializer } from './utils/truncate-large-entries'
-
-/**
- * One path segment: either a `["quoted"]` / `['quoted']` bracket segment, whose
- * contents are ONE name however many dots it holds, or a run of bare characters
- * between the separators.
- *
- * Tokenizing rather than rewriting brackets into dotted text is load-bearing: a
- * key may legitimately contain a dot, and `blob["social.security"]` rewritten as
- * `blob.social.security` yields the leaf `security` — a name that does not exist
- * in the payload, while the one that does goes uncovered.
- */
-const PATH_SEGMENT = /\[\s*['"]([^'"]+)['"]\s*\]|([^.[\]]+)/g
-
-/** An unquoted path segment that is an array index rather than a field name. */
-const INDEX_SEGMENT = /^\d+$/
-
-/**
- * The leaf field name of a `@pinojs/redact` path.
- *
- * Consumer `redactPaths` are applied by Pino's stringifier, which runs AFTER the
- * serializer wrapper — so a field they cover was still raw when the size bound
- * built its 200-character `_preview`, and an oversized value leaked its secret
- * there. Feeding the leaf NAME to the walk closes that, and closes it for every
- * other surface the walk reaches (base and child bindings) rather than only for
- * the preview.
- *
- * The trade is deliberate and broader than the path: a consumer who writes
- * `user.ssn` gets `ssn` censored wherever it appears, not only under `user`.
- * That errs toward redacting a name the consumer has already declared secret.
- *
- * An UNQUOTED numeric segment is an array INDEX, not a field name, and is skipped
- * like a wildcard. `tokens[0]` yields `tokens`, not `0`: the walk matches names,
- * and it never compares array positions — feeding it `0` covered nothing while
- * censoring any object key that happened to be named `0`. Falling back to the
- * nearest name censors the whole `tokens` array, which is broader than the path
- * and in the safe direction. The QUOTED form is left alone: `["0"]` is explicit
- * key syntax, and an object key named `0` IS matched by the walk.
- *
- * @internal Exported only for unit testing — its edge cases (a wildcard-only
- *   path, a trailing separator, bracket syntax) are invisible in a serialized
- *   line, so they are asserted directly. NOT re-exported by the package barrel.
- * @param path - A `@pinojs/redact` path, dotted and/or bracketed.
- * @returns The last segment that names a field, or `undefined` for a path with
- *   none (a wildcard- or index-only path).
- * @example
- *   leafNameOf('req.headers["x-api-key"]')  // 'x-api-key'
- *   leafNameOf('*.*.password')              // 'password'
- *   leafNameOf('tokens[0]')                 // 'tokens' — the index is not a name
- *   leafNameOf('blob["social.security"]')   // 'social.security' — one name, dots included
- */
-export function leafNameOf(path: string): string | undefined {
-  let leaf: string | undefined
-  for (const match of allMatches(PATH_SEGMENT, path)) {
-    const quoted = match[1]
-    const name =
-      quoted ??
-      (match[2] !== undefined && matchesPattern(INDEX_SEGMENT, match[2]) ? undefined : match[2])
-    if (name !== undefined && name !== '*') {
-      leaf = name
-    }
-  }
-  return leaf
-}
 
 /**
  * The `err` serializer, replacing `pino.stdSerializers.err`.
@@ -282,17 +218,15 @@ export function withEventName(
 const PASS_THROUGH: Redactor = (value: unknown): unknown => value
 
 /**
- * Resolve the name-walk redactor for the active configuration, or a pass-through
- * when the walk is not in play (legacy `'paths'` strategy, or defaults disabled) and
- * `errorOwnFields` is not `'safe'`.
+ * Resolve the name-walk redactor for the active configuration, or a pass-through.
  *
  * @internal Exported only for unit testing — this is the switch that decides
  *   whether the DEFAULT PII protection is active at all, so its branches are
  *   asserted directly rather than inferred from a serialized line. NOT
  *   re-exported by the package barrel.
  * @param options - Fully-defaulted module options.
- * @returns A redaction function; the identity function when the walk is off and the policy is not
- *   `errorOwnFields: 'safe'`, which walks the record whatever the strategy or the names covered.
+ * @returns A redaction function; the identity function when no name is covered, no path is handed
+ *   to Pino and the policy is not `errorOwnFields: 'safe'`.
  */
 export function resolveNameRedactor(options: ResolvedBymaxLoggerModuleOptions): Redactor {
   return buildNameRedactor(options, true, options.redactStrategy === 'names')
@@ -334,6 +268,19 @@ function ownFieldPolicyOf(options: ResolvedBymaxLoggerModuleOptions): OwnFieldPo
 }
 
 /**
+ * Under `'paths'` a `toJSON` could rename what the paths name before Pino reads it: what is written
+ * for a value with one that holds such a field. Nothing under `'names'` or with no path.
+ */
+function pathHoldOf(
+  options: ResolvedBymaxLoggerModuleOptions,
+  redactOption: ReturnType<typeof resolveRedactOption>
+): PathHold | undefined {
+  if (options.redactStrategy !== 'paths' || redactOption === undefined) return undefined
+  const safe = createOwnFieldPolicy('safe', options.errorOwnFieldNames)
+  return createPathHold(redactOption.paths, REDACT_MAX_VISITS, safe)
+}
+
+/**
  * The names censored inside an `Error` under `redactStrategy: 'paths'`: the record's names belong to
  * `@pinojs/redact` there, but an `Error` is converted by the walk, so the default names are censored
  * in its own fields and its causes at any depth, beyond what the default path list reaches.
@@ -347,8 +294,8 @@ function namesInsideErrors(
 /**
  * Build the name-walk redactor from the configured coverage.
  *
- * This is what SERIALIZER output is redacted with, ungated — it ignores
- * `redactStrategy` on purpose.
+ * This is what SERIALIZER output is redacted with, ungated — the names it covers
+ * ignore `redactStrategy` on purpose.
  *
  * `redactStrategy: 'paths'` is an escape hatch for a consumer who depends on
  * `@pinojs/redact`'s exact path-matching over THEIR OWN payload. It was never a
@@ -384,8 +331,8 @@ function namesInsideErrors(
  *   `@pinojs/redact` covers.
  * @param forcesWalk - `true` for the record when `maxStringLength` is set: the cut that follows
  *   reads only what the walk wrote, so the walk runs even when it would redact nothing.
- * @returns A redaction function; the identity function when no name is covered and the policy is
- *   not `errorOwnFields: 'safe'`.
+ * @returns A redaction function; the identity function when no name is covered, no path is handed
+ *   to Pino and the policy is not `errorOwnFields: 'safe'`.
  */
 function buildNameRedactor(
   options: ResolvedBymaxLoggerModuleOptions,
@@ -403,9 +350,11 @@ function buildNameRedactor(
   // walk can produce: an `Error` nested in the record, and what a serializer returns. It is also
   // walked whenever Pino's own path redaction is configured, because that cannot read a `Buffer`.
   const walks = names.length > 0 || ownFields.safe || forcesWalk
-  if (!walks && resolveRedactOption(options) === undefined) {
+  const redactOption = resolveRedactOption(options)
+  if (!walks && redactOption === undefined) {
     return PASS_THROUGH
   }
+  const pathHold = pathHoldOf(options, redactOption)
   return nestedErrorsAsData && (walks || !coversNames)
     ? createNameRedactor(
         names,
@@ -415,7 +364,8 @@ function buildNameRedactor(
         ownFields,
         coversNames ? undefined : namesInsideErrors(options),
         allNames,
-        !Object.hasOwn(options.serializers, 'err')
+        !Object.hasOwn(options.serializers, 'err'),
+        pathHold
       )
     : createNameRedactor(
         names,
@@ -424,7 +374,10 @@ function buildNameRedactor(
         undefined,
         ownFields,
         undefined,
-        allNames
+        allNames,
+        // Stryker disable next-line BooleanLiteral: it only acts on a root call with an object under err and a name to censor, and none has both
+        false,
+        pathHold
       )
 }
 
@@ -479,7 +432,7 @@ function buildSerializers(
   const censorMessage = buildMessageCensor(options)
   // Every serializer (default `err` + any consumer-supplied) is composed as
   // size-bound(redact(serialize)). Two orderings matter here:
-  //   0. The redactor here is `buildNameRedactor`, applied ungated: it ignores
+  //   0. The redactor here is `buildNameRedactor`, applied ungated: its names ignore
   //      `redactStrategy`. That strategy is the consumer's choice about THEIR
   //      OWN payload; this output is what the library synthesizes, and
   //      the default path list stops at four wildcards, short of the depth a
@@ -760,7 +713,7 @@ export function buildPinoInstance(
   //   - `redactRecord` honours `redactStrategy`: the caller's record is the
   //     caller's payload, and `'paths'` is their documented escape hatch (an e2e
   //     case pins its four-level ceiling as expected behaviour).
-  //   - `redactSerialized` ignores it: serializer output is what THIS library
+  //   - the names of `redactSerialized` ignore it: serializer output is what THIS library
   //     synthesizes, and the ceiling cannot reach the depth a cause chain
   //     serializes to. Collapsing these two into one binding is what broke that
   //     e2e case, which is the check that caught it.

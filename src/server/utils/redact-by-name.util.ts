@@ -29,7 +29,8 @@
  *     error under any key WITHOUT a serializer serializing its own enumerable
  *     properties in clear.
  *   - anything carrying `toJSON` (`Date`, `Decimal`, Luxon, Prisma types) — the
- *     method decides the serialized form, so the walk inspects its OUTPUT.
+ *     method decides the serialized form, so the walk inspects its OUTPUT unless it holds the
+ *     value back (see `walkToJsonOutput`).
  *     Skipping these let a `toJSON` SYNTHESIZE a secret straight past both hooks.
  *   - `ArrayBuffer` views (`Buffer`, typed arrays) — indexed byte containers,
  *     returned untouched.
@@ -66,13 +67,16 @@ import {
   isCensored,
   messageCensor,
   readField,
-  rulesBelow
+  rulesBelow,
+  rulesForOutput
 } from './error-text-exemption.util'
 import { foldedNames, foldName, matchesKey } from './fold-key.util'
 import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
 import { addErrorParts, defineOwn, type ErrorPartsHost } from './redact-error-parts.util'
+import { keysToRead, writeHeldError } from './redact-held-error.util'
+import type { PathHold } from './redact-path-state.util'
 import { resolveToJson, type ResolvedToJson } from './resolve-to-json.util'
 import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
 import { RESERVED_LOG_KEYS } from '../../shared/constants/reserved-log-keys.constants'
@@ -237,14 +241,20 @@ export interface RedactRules {
    * whole walk.
    */
   readonly insideErrors?: RedactRules | undefined
+  /** The output of a held `Error`'s `toJSON`, or a cause or member of it: written as data. */
+  readonly link?: 'output' | 'link' | undefined
+  /** Whether an accessor is left out without being run. */
+  readonly dataOnly?: boolean
+  /** Under `'paths'`, which values with a `toJSON` hold a field the paths name. */
+  readonly pathHold?: PathHold | undefined
   /** Containers one call may visit before it stops expanding. */
   readonly maxVisits: number
   /** Which own fields of an `Error` are written. */
   readonly ownFields: OwnFieldPolicy
   /** Whether the text of an `Error` is left out: the walk is of a message. */
   readonly inMessage?: boolean
-  /** Containers this call has visited, counted against {@link RedactRules.maxVisits}. */
-  readonly visits: { count: number }
+  /** Containers this call has visited, counted against {@link RedactRules.maxVisits}; `searched` is what the path searches read. */
+  readonly visits: { count: number; searched: number }
 }
 
 /**
@@ -461,8 +471,8 @@ function walkObject(
  *
  * Under `errorOwnFields: 'safe'` the output is plain data, so nothing in it can run after the
  * redaction. An `Error` is written from its own fields and its `toJSON` is not called: a library's
- * (an HTTP client's, say) would carry the request it made. Any other `toJSON` is called once and
- * its result is walked.
+ * (an HTTP client's, say) would carry the request it made. Any other `toJSON` is followed as
+ * `walkToJsonOutput` decides.
  *
  * A callable with no `toJSON` is handed back as it is: walking it would replace it with a plain
  * object, and `JSON.stringify` omits a bare function rather than emitting `{}`. A callable whose
@@ -515,11 +525,13 @@ function walkForm(
  * `Date.prototype.toJSON.call({ ...new Date() })` throws `toISOString is not a function`, and
  * `Decimal` / Luxon behave the same: that would trade a narrow leak for a crash on the COMMON case.
  *
- * `Object.keys` reads names only; no getter is invoked, so the source is not observed twice. The
- * check is shallow by design: a method that reaches into NESTED state (`this.inner.password`) to
- * rename it is not caught, and cannot be: that is the same limitation as a caller writing
- * `{ renamed: obj.inner.password }` by hand, which no name matcher sees. Documented in
- * PINO-REDACTION-GUIDELINES.md under the engine's limits.
+ * `Object.keys` reads names only; no getter is invoked, so the source is not observed twice. That
+ * check is shallow: under `'names'` a method that renames NESTED state (`this.inner.password`) is
+ * not caught, the same as `{ renamed: obj.inner.password }` written by hand.
+ *
+ * Under `'paths'` the paths run on what is written here, so a rename would carry a value past them.
+ * There `pathHold` searches the own properties: a held value is the censor, and a held `Error` is
+ * written as {@link writeHeldError} decides.
  *
  * The INSPECTED result is what gets returned, always, never the original object. Returning the
  * original when the probe came back clean left `JSON.stringify` to call `toJSON()` a SECOND time
@@ -538,7 +550,7 @@ function walkForm(
  * @param rules - The names to censor and the root keys that have a serializer.
  * @param depth - Current depth, against {@link REDACT_MAX_TRAVERSAL_DEPTH}.
  * @param ancestors - References on the current path (cycle guard).
- * @returns The censor when the source holds a sensitive key, else the walked output.
+ * @returns The censor, or what is written of the output.
  */
 function walkToJsonOutput(
   value: object,
@@ -551,7 +563,16 @@ function walkToJsonOutput(
   if (Object.keys(value).some((key) => matchesKey(rules.sensitive, key))) {
     return rules.censor
   }
-  return walk(toJson.call(value), rules, depth + 1, ancestors, true, inSerialized)
+  const { pathHold } = rules
+  if (pathHold?.holds(value, rules.visits) === true) {
+    if (!isError(value)) return rules.censor
+    const held = { ...rules, pathHold }
+    return writeHeldError(value, toJson, held, ancestors, (part, under, below) =>
+      walk(part, under, depth + below, ancestors, true, inSerialized)
+    )
+  }
+  const output = toJson.call(value)
+  return walk(output, rulesForOutput(rules, output), depth + 1, ancestors, true, inSerialized)
 }
 
 /**
@@ -599,10 +620,10 @@ function walkProperties(
   inSerialized: boolean
 ): unknown {
   const source = value as Record<string, unknown>
-  const keys = Object.keys(source)
-  const asData = isError(value) && (rules.ownFields.safe || (rules.errorsAsData && !inSerialized))
+  const keys = keysToRead(source, rules.dataOnly)
+  const scrubbed = isError(value) && (rules.ownFields.safe || !!rules.link || !inSerialized)
+  const asData = scrubbed && (rules.ownFields.safe || rules.errorsAsData)
   const copy = startCopy(value, asData)
-  const scrubbed = isError(value) && (rules.ownFields.safe || !inSerialized)
   const omitted = new Set<string>()
   const header = headerMessage(rules, source, keys, isError(value))
   for (const key of keys) {
@@ -628,7 +649,7 @@ function walkProperties(
             key,
             walk(
               errorTextField(rules, key, current, scrubbed, header),
-              rulesBelow(rules, key, current, honorToJson),
+              rulesBelow(rules, key, current, honorToJson, value),
               depth + 1,
               ancestors,
               true,
@@ -718,6 +739,8 @@ function errorPartsHost(
  * @param headerNames - The names a flat header array censors; `fieldNames` by default.
  * @param errorTextToSerializer - Leave the `message` of an object under `err` to the
  *   serializer of `err`. Off by default.
+ * @param pathHold - Under `'paths'`: a value with a `toJSON` it holds is written as the censor,
+ *   and an `Error` as {@link writeHeldError} decides.
  * @returns A pure function mapping a value to its redacted equivalent.
  * @example
  *   const redact = createNameRedactor(['password'], '[REDACTED]')
@@ -732,7 +755,8 @@ export function createNameRedactor(
   ownFields: OwnFieldPolicy = ALL_OWN_FIELDS,
   errorOnlyNames?: Iterable<string>,
   headerNames?: Iterable<string>,
-  errorTextToSerializer: boolean = false
+  errorTextToSerializer: boolean = false,
+  pathHold?: PathHold
 ): MessageRedactor {
   // Matched case-INSENSITIVELY: header names are case-insensitive by spec and only INBOUND Node
   // headers arrive lower-cased, so a hand-built bag with `Authorization` or `Cookie` must be covered.
@@ -745,12 +769,13 @@ export function createNameRedactor(
     errorsAsData: serializedKeys !== undefined,
     errorTextToSerializer,
     maxVisits,
-    ownFields
+    ownFields,
+    pathHold
   }
   const insideNames = errorOnlyNames === undefined ? undefined : foldedNames(errorOnlyNames)
   return (value: unknown, isRecordRoot = false, inMessage = false): unknown => {
     try {
-      const visits = { count: 0 }
+      const visits = { count: 0, searched: 0 }
       const call: RedactRules = {
         ...rules,
         inMessage,

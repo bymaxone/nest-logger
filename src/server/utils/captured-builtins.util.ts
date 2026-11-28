@@ -183,7 +183,10 @@ export const GUARDED_BUILTINS: ReadonlyArray<readonly [object, ReadonlyArray<Mem
     ['assign', 'create', 'defineProperty', 'entries', 'fromEntries', 'getOwnPropertyDescriptor']
   ],
   [Function.prototype, ['call']],
-  [Object, ['getOwnPropertyDescriptors', 'getPrototypeOf', 'hasOwn', 'keys']],
+  [
+    Object,
+    ['getOwnPropertyDescriptors', 'getOwnPropertyNames', 'getPrototypeOf', 'hasOwn', 'keys']
+  ],
   [
     Reflect,
     ['defineProperty', 'deleteProperty', 'get', 'getOwnPropertyDescriptor', 'ownKeys', 'set']

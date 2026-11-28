@@ -12,6 +12,25 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.38] - 2026-11-27
+
+### Breaking
+
+- Under `redactStrategy: 'paths'`, a walked value with a `toJSON` whose own properties, at any depth, hold a key equal to the last field name of a configured path (or any key, when a path ends in `*`), or a getter, is no longer written through that `toJSON`. A value that is not an `Error` is written as the censor. Migration: log the fields you need as a plain object, for example `{ id: card.id }` instead of `card`.
+- Under the same strategy, such an `Error` is written as only what both the walk of its `toJSON` output and the `errorOwnFields: 'safe'` form of it write. A value the two write differently is the censor; a key only one of them has is the censor or is omitted, as the README states. Migration: log other fields you read beside the error, or name them in `errorOwnFieldNames`.
+- Under the same strategy, a path ending in `message` or `stack` counts the `message` or `stack` of every `Error` a value with a `toJSON` is or holds, and one walk reads at most 200,000 objects and fields to find a named field; past that it counts as holding one.
+- Under the same strategy, a value with a `toJSON` is searched before `toJSON` runs, so a large structure behind a `toJSON` costs more per call.
+
+### Changed
+
+- Some errors logged under `err` now include the name and message of nested causes, matching the output under other keys (1.4.37 wrote `UnknownError`).
+- Known limit: under `err`, some nested errors may be written as `UnknownError` where 1.4.37 wrote their name and message, for example an error below a plain object that is a cause or an aggregate member, or a nested error whose own `toJSON` returns no `name`.
+
+### Documentation
+
+- The README states the `toJSON` rule of `redactStrategy: 'paths'`.
+- The OpenTelemetry example configures the file-system instrumentation with `enabled`, the option it has.
+
 ## [1.4.37] - 2026-11-27
 
 ### Breaking
@@ -3652,7 +3671,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.37...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.38...HEAD
+[1.4.38]: https://github.com/bymaxone/nest-logger/compare/v1.4.37...v1.4.38
 [1.4.37]: https://github.com/bymaxone/nest-logger/compare/v1.4.36...v1.4.37
 [1.4.36]: https://github.com/bymaxone/nest-logger/compare/v1.4.35...v1.4.36
 [1.4.35]: https://github.com/bymaxone/nest-logger/compare/v1.4.34...v1.4.35
