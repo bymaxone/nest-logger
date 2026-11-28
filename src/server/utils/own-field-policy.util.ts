@@ -161,6 +161,7 @@ function isTextContainer(value: unknown): boolean {
 function holdsBinary(root: unknown): boolean {
   if (ArrayBuffer.isView(root)) return true
   // Only what `isTextContainer` accepts is queued, so what is taken from the list is not tested again.
+  // Stryker disable next-line ArrayDeclaration: equivalent, a planted string is taken last and nothing in it is binary or queued.
   const pending: unknown[] = []
   const queue = (value: unknown): void => {
     if (isTextContainer(value)) pending.push(value)
