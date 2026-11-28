@@ -66,7 +66,7 @@ Under `redactStrategy: 'paths'`, a binary value that a `toJSON` returns into the
 Binary values written as text:
 
 - A `stack` that your code defines as an enumerable own property is a field of yours and is written as defined, whatever text it holds.
-- An error whose `message` getter throws keeps a `stack` that your code defined on it, unchanged.
+- An error outside `err` whose `message` getter throws keeps a `stack` that your code defined on it, unchanged.
 - With every redaction off (`shouldDisableDefaultRedact: true`, no `redactPaths`, `errorOwnFields` not `'safe'`), a Buffer held in an object inside `err`, or in a thrown plain object, is written as bytes.
 - A structured call such as `info(logKey, message)` given a Buffer as the message throws. So does the raw logger under `redactStrategy: 'paths'` when `err.message` is a Buffer.
 - Under `redactStrategy: 'names'`, a plain object under `err` whose `message` is an array with a `length` near 2^31 exhausts memory.
