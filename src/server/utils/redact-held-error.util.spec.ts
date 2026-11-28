@@ -336,3 +336,20 @@ describe('the copy written for a held Error', () => {
     expect(walkedAt(REDACT_MAX_TRAVERSAL_DEPTH)).toBe('[X]')
   })
 })
+
+describe('the name added to what an unread Error wrote', () => {
+  const holdsPan = (error: Error): Error =>
+    Object.defineProperty(error, 'inner', { value: { pan: 'x' } })
+  const returns = (error: Error, output: () => unknown): Error =>
+    Object.defineProperty(error, 'toJSON', { value: output })
+
+  /* The comparison censored that name; the safe one must not be written over the censor. */
+  it('is not written over a name its toJSON rewrote', () => {
+    const leaf = returns(new TypeError('leaf'), () => ({ name: 'Scrubbed', message: 'leaf' }))
+    const cause = new Error('mid', { cause: leaf })
+    const written = fieldsUnderErr({ cause }, ['cause'])
+
+    expect(written).toContain('"name":"[X]","message":"leaf"')
+    expect(written).not.toContain('TypeError')
+  })
+})

@@ -46,14 +46,16 @@ function asSafe(rules: RedactRules, hold: PathHold): RedactRules {
 const unreadOutputs = new WeakSet<object>()
 
 /**
- * The rules below a part added to an `Error`. Under the output of a held one, what is there is
- * unread: had that `Error` stayed an instance, no `toJSON` below the part would have run.
+ * The rules below a part added to an `Error`: what is there is unread, since had that `Error`
+ * stayed an instance, no `toJSON` below the part would have run. The mark has an effect only under
+ * the output of a held `Error`: a part is added elsewhere only under `'safe'`, which calls no
+ * `toJSON` of an `Error`, or outside a serialized key, where no name is added.
  *
  * @param rules - The rules of the `Error`.
  * @returns The rules the part is walked with.
  */
 export function unreadBelow(rules: RedactRules): RedactRules {
-  return rules.link === undefined ? rules : { ...rules, unread: true }
+  return { ...rules, unread: true }
 }
 
 /**
