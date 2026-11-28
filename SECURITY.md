@@ -59,6 +59,10 @@ The following classes are explicitly in scope:
 
 Code that runs inside the host process is trusted, as in Node's own threat model: it can replace builtins, prototypes, `Promise` and the logger's own modules, and nothing in a library can stop it. The in-process guards of this package (the promise baseline, the captured built-ins, the options read past `Object.prototype`, the own-field reads of descriptors) are best-effort hardening against prototype pollution and accidental replacement. They are not a security boundary, and a report that needs hostile code already running in the process is out of scope. Known limits, in one line: a frozen or sealed native promise under a replaced `Promise.prototype.constructor`, a species getter that makes a temporary slot non-configurable, a `then` planted and erased between a check and the wait, and built-ins the capture table does not list.
 
+## Known limits
+
+Under `redactStrategy: 'paths'`, a binary value that a `toJSON` returns into the message argument or a `%o` or `%j` placeholder of the raw logger, or into a field of child bindings, is written byte by byte. Record fields and service calls write its size. Return a plain value from `toJSON` instead.
+
 ## Out of scope
 
 These are not vulnerabilities in `@bymax-one/nest-logger` itself:

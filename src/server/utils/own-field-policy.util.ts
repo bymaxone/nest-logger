@@ -7,6 +7,7 @@
 import { types } from 'node:util'
 
 import { capturedSet } from './captured-builtins.util'
+import { isError } from './is-error.util'
 import type { ErrorOwnFieldsMode } from '../interfaces/logger-module-options.interface'
 
 /**
@@ -134,4 +135,48 @@ export function withBinaryAsSize(value: unknown): unknown {
   return value.map((member: unknown) =>
     ArrayBuffer.isView(member) ? binaryMarker(member) : member
   )
+}
+
+/**
+ * A value that is about to be turned into text, with each binary value it is or its arrays hold
+ * replaced by its size: `String` joins an array through the text of every member, however deep, and
+ * the text of a Buffer is its bytes.
+ *
+ * @param value - The value to be turned into text.
+ * @param open - The arrays being read, so that one that holds itself ends where `join` ends it.
+ * @returns The value itself when it holds no binary value, else the copy to turn into text.
+ */
+export function withBinaryAsSizeForText(
+  value: unknown,
+  open: Set<unknown> = capturedSet<unknown>()
+): unknown {
+  if (ArrayBuffer.isView(value)) return binaryMarker(value)
+  if (isError(value)) return errorTextSource(value, open)
+  if (!Array.isArray(value)) return value
+  if (open.has(value)) return ''
+  open.add(value)
+  let changed = false
+  // By index and length, as `join` reads an array, so no iterator of the host's runs.
+  const members = Array.from({ length: value.length }, (_, index) => {
+    const member: unknown = value[index]
+    const read = withBinaryAsSizeForText(member, open)
+    if (read !== member) changed = true
+    return read
+  })
+  open.delete(value)
+  return changed ? members : value
+}
+
+/**
+ * An error is turned into text from its name and its message, which code without types can fill with
+ * a binary value: its size then stands for the whole error.
+ */
+function errorTextSource(error: Error, open: Set<unknown>): unknown {
+  if (open.has(error)) return ''
+  open.add(error)
+  const parts: unknown[] = [error.name, error.message]
+  const sized = parts.map((part) => withBinaryAsSizeForText(part, open))
+  open.delete(error)
+  const changed = sized.findIndex((part, index) => part !== parts[index])
+  return changed === -1 ? error : sized[changed]
 }

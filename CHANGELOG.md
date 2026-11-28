@@ -12,6 +12,18 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.40] - 2026-11-28
+
+### Fixed
+
+- Binary values inside error causes and aggregate members, and inside a thrown value that is not an `Error`, are now written as their size, as documented.
+
+### Documentation
+
+- The README states how a Buffer given as the message is written with a `msgPrefix`, and what `maxStringLength` does to binary values when every redaction is off.
+- `SECURITY.md` states a known limit of `redactStrategy: 'paths'` for a binary value that a `toJSON` returns.
+- The entry that said a Buffer is written as Pino writes it with every redaction off now says that this does not apply inside `err`.
+
 ## [1.4.39] - 2026-11-28
 
 ### Fixed
@@ -1206,7 +1218,7 @@ instead.
   and under both redaction strategies. Under `redactStrategy: 'paths'` the record is now walked once
   for this, so the walk's depth ceiling (100) and visit budget apply there. With every redaction
   turned off (`shouldDisableDefaultRedact`, no `redactPaths`, and `errorOwnFields` not `'safe'`)
-  nothing walks the record and a Buffer is written as Pino writes it.
+  nothing walks the record and a Buffer outside `err` is written as Pino writes it.
 - **A message is written at most 16384 characters long.** The `msg` of every call, the `message` of
   a serialized error and of each `cause` or `errors` link, the `message` of a nested `Error` in the
   metadata, the semconv `exception.message`, the `errorMessage` of a 4xx access-log entry, and the

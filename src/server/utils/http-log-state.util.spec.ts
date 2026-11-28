@@ -99,6 +99,10 @@ describe('http-log-state', () => {
     ])('wraps %p as %p', (thrown, expected) => {
       expect(toError(thrown).message).toBe(expected)
     })
+
+    it('wraps a thrown binary value into its size, never its bytes', () => {
+      expect(toError([Buffer.from('ab')]).message).toBe('[Binary 2 bytes]')
+    })
   })
 
   describe('readUserId', () => {

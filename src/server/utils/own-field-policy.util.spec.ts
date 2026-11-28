@@ -8,7 +8,8 @@ import {
   allowsOwnField,
   createOwnFieldPolicy,
   DEFAULT_SAFE_ERROR_FIELDS,
-  withBinaryAsSize
+  withBinaryAsSize,
+  withBinaryAsSizeForText
 } from './own-field-policy.util'
 
 describe('createOwnFieldPolicy', () => {
@@ -114,5 +115,76 @@ describe('withBinaryAsSize', () => {
     ['a plain ArrayBuffer', new ArrayBuffer(3)]
   ])('returns %s as the very same value', (_label, value) => {
     expect(withBinaryAsSize(value)).toBe(value)
+  })
+})
+
+describe('withBinaryAsSizeForText', () => {
+  const two = (): Buffer => Buffer.from('ab')
+  const MARKER = '[Binary 2 bytes]'
+
+  /*
+   * `String` reads every one of these through the bytes, so each must be sized first.
+   */
+  it.each([
+    ['a binary value', two(), MARKER],
+    ['a member', [two(), 'x'], `${MARKER},x`],
+    ['a member of a member', [[[two()]], 'x'], `${MARKER},x`],
+    ['the message of an error', Object.assign(new Error(), { message: two() }), MARKER],
+    ['the name of an error', Object.assign(new Error('m'), { name: two() }), MARKER],
+    ['an error in an array', [Object.assign(new Error(), { message: [two()] })], MARKER]
+  ])('sizes %s', (_label, value, text) => {
+    expect(String(withBinaryAsSizeForText(value))).toBe(text)
+  })
+
+  /*
+   * A value without a binary one keeps its identity, so its own text is what is written.
+   */
+  it.each([
+    ['text', 'text'],
+    ['a number', 7],
+    ['null', null],
+    ['an object', { data: Buffer.from('x') }],
+    ['a plain ArrayBuffer', new ArrayBuffer(3)],
+    ['an array', ['a', [1], null]],
+    ['an error', new Error('m')]
+  ])('returns %s as the very same value', (_label, value) => {
+    expect(withBinaryAsSizeForText(value)).toBe(value)
+  })
+
+  it('reads an array by its length and index, never through its iterator', () => {
+    const list = [two()]
+    Object.defineProperty(list, Symbol.iterator, {
+      value: () => {
+        throw new Error('iterated')
+      }
+    })
+
+    expect(String(withBinaryAsSizeForText(list))).toBe(MARKER)
+  })
+
+  /*
+   * `join` writes an array that is already being joined as nothing; so does the copy.
+   */
+  it('ends an array that holds itself where join ends it', () => {
+    const list: unknown[] = ['a', two()]
+    list.push(list)
+
+    expect(String(withBinaryAsSizeForText(list))).toBe(`a,${MARKER},`)
+  })
+
+  it('ends an error whose message holds the error', () => {
+    const error = new Error()
+    Object.assign(error, { message: [two(), error] })
+
+    expect(String(withBinaryAsSizeForText(error))).toBe(`${MARKER},`)
+  })
+
+  it('sizes the same array and the same error each time they appear', () => {
+    const list = [two()]
+    const error = Object.assign(new Error(), { message: two() })
+
+    expect(String(withBinaryAsSizeForText([list, list, error, error]))).toBe(
+      `${MARKER},${MARKER},${MARKER},${MARKER}`
+    )
   })
 })
