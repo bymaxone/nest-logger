@@ -180,6 +180,16 @@ describe('withBinaryAsSizeForText', () => {
   })
 
   /*
+   * No array is in this cycle, so only the error itself can end it.
+   */
+  it('ends an error that is its own message', () => {
+    const error = new Error()
+    Object.assign(error, { message: error })
+
+    expect(String(withBinaryAsSizeForText([two(), error]))).toBe(`${MARKER},`)
+  })
+
+  /*
    * Nothing is sized here, so the text is the one `String` gives the value, cycle and all.
    */
   it('returns an error that holds itself and nothing binary as the very same value', () => {

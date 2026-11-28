@@ -171,6 +171,7 @@ function holdsBinary(root: unknown): boolean {
     for (let index = 0, length = parts.length; index < length; index += 1) {
       const part: unknown = parts[index]
       if (ArrayBuffer.isView(part)) return true
+      // Stryker disable next-line ConditionalExpression: equivalent, a queued scalar is popped and skipped by the container test above.
       if (isTextContainer(part)) pending.push(part)
     }
   }
