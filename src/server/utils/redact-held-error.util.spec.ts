@@ -265,10 +265,16 @@ describe('an Error a held Error holds outside its causes and members', () => {
     ['a field that is the Error', 'code', inner()],
     ['a field of a list', 'table', [inner()]],
     ['an object as the cause', 'cause', { name: 'n', message: 'm', extra: inner() }],
-    ['a cause of an object as the cause', 'cause', { name: 'n', message: 'm', cause: inner() }],
     ['an object as a member', 'errors', [{ name: 'n', message: 'm', extra: inner() }]]
   ])('does not write the message of one under %s', (_label, key, value) => {
     expect(fieldsUnderErr({ [key]: value }, [key])).not.toContain('INNER')
+  })
+
+  /* An object that is no Error does not end the chain, as under 'safe'. */
+  it('writes the message of one under a cause of an object as the cause', () => {
+    const cause = { name: 'n', message: 'm', cause: inner() }
+
+    expect(fieldsUnderErr({ cause }, ['cause'])).toContain('"message":"INNER"')
   })
 
   /* A member of the output's list is a link, and so is its cause. */

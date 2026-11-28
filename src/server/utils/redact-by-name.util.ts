@@ -75,7 +75,7 @@ import { isError } from './is-error.util'
 import { ALL_OWN_FIELDS, withBinaryAsSize, type OwnFieldPolicy } from './own-field-policy.util'
 import { cloneError } from './redact-error-clone.util'
 import { addErrorParts, defineOwn, type ErrorPartsHost } from './redact-error-parts.util'
-import { keysToRead, writeHeldError } from './redact-held-error.util'
+import { keysToRead, noteUnread, unreadBelow, writeHeldError } from './redact-held-error.util'
 import type { PathHold } from './redact-path-state.util'
 import { resolveToJson, type ResolvedToJson } from './resolve-to-json.util'
 import { OMIT_OWN_FIELD, ownFieldForLog, sanitizeError } from './sanitize-error.util'
@@ -243,6 +243,8 @@ export interface RedactRules {
   readonly insideErrors?: RedactRules | undefined
   /** The output of a held `Error`'s `toJSON`, or a cause or member of it: written as data. */
   readonly link?: 'output' | 'link' | undefined
+  /** Below a part added to such a cause or member: {@link unreadBelow}. */
+  readonly unread?: boolean | undefined
   /** Whether an accessor is left out without being run. */
   readonly dataOnly?: boolean
   /** Under `'paths'`, which values with a `toJSON` hold a field the paths name. */
@@ -566,13 +568,14 @@ function walkToJsonOutput(
   const { pathHold } = rules
   if (pathHold?.holds(value, rules.visits) === true) {
     if (!isError(value)) return rules.censor
-    const held = { ...rules, pathHold }
-    return writeHeldError(value, toJson, held, ancestors, (part, under, below) =>
+    const walkPart = (part: unknown, under: RedactRules, below: number): unknown =>
       walk(part, under, depth + below, ancestors, true, inSerialized)
-    )
+    return writeHeldError(value, toJson, { ...rules, pathHold }, ancestors, walkPart, inSerialized)
   }
   const output = toJson.call(value)
-  return walk(output, rulesForOutput(rules, output), depth + 1, ancestors, true, inSerialized)
+  const under = rulesForOutput(rules, output)
+  const walked = walk(output, under, depth + 1, ancestors, true, inSerialized)
+  return noteUnread(walked, rules, value)
 }
 
 /**
@@ -649,7 +652,7 @@ function walkProperties(
             key,
             walk(
               errorTextField(rules, key, current, scrubbed, header),
-              rulesBelow(rules, key, current, honorToJson, value),
+              rulesBelow(rules, key, current, honorToJson),
               depth + 1,
               ancestors,
               true,
@@ -705,7 +708,7 @@ function errorPartsHost(
     // everything else keeps the `type` the written entries use.
     nameKey: inSerialized ? 'name' : 'type',
     censorName: (name) => censorAnyName(rules, name),
-    walk: (value, depth) => walk(value, rules, depth, ancestors, true, inSerialized),
+    walk: (value, depth) => walk(value, unreadBelow(rules), depth, ancestors, true, inSerialized),
     // Under 'safe' the cap does not read a list's `toJSON`: a list over the cap becomes a fresh array
     // and is never read for it, and a list within the cap is read once, by the walk.
     hasToJson: (value) => !rules.ownFields.safe && resolveToJson(value).method !== undefined

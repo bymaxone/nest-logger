@@ -268,6 +268,138 @@ describe.each(ENTRIES)("a held Error under redactStrategy: 'paths', as %s", (_en
     })
   })
 
+  /* An object that is no `Error` does not end the chain: what is below it is still linked. */
+  it.each<readonly [string, () => unknown, (link: Written) => Written | undefined]>([
+    [
+      'the cause',
+      () => ({ name: 'N', message: 'between', cause: new Error('refused') }),
+      (link) => link.cause
+    ],
+    [
+      'a member',
+      () => ({ name: 'N', message: 'between', errors: [new Error('refused')] }),
+      (link) => link.errors?.[0]
+    ],
+    [
+      'the cause of the cause',
+      () => ({
+        name: 'N',
+        message: 'between',
+        cause: { name: 'M', message: 'lower', cause: new Error('refused') }
+      }),
+      (link) => link.cause?.cause
+    ]
+  ])('writes an Error that is %s of a plain object', async (_label, make, pick) => {
+    for (const link of ['cause', 'errors'] as const) {
+      const error = Object.assign(new Error('failed'), {
+        [link]: link === 'cause' ? make() : [make()]
+      })
+      const { written } = await logged(
+        held((e: Error & { errors?: unknown }) => {
+          return { name: e.name, message: e.message, cause: e.cause, errors: e.errors }
+        }, error)
+      )
+      const between = (link === 'cause' ? written.cause : written.errors?.[0]) as Written
+      const below = pick(between)
+
+      expect(below).toMatchObject({ message: 'refused' })
+      expect(below?.['name'] ?? below?.['type']).toBe('Error')
+    }
+  })
+
+  /* A nested `Error` whose `toJSON` returns no name: under a serialized key it keeps the name
+     'safe' writes, and its message only as `toJSON` returned it. */
+  it.each<readonly [string, (error: Error) => unknown, string]>([
+    ['its message', (e) => ({ message: e.message }), 'refused'],
+    ['a rewritten message', () => ({ message: 'scrubbed' }), '[REDACTED]'],
+    [
+      'its message through a second toJSON',
+      (e) => ({ toJSON: () => ({ message: e.message }) }),
+      'refused'
+    ]
+  ])(
+    'writes a nested Error whose toJSON returns %s and no name',
+    async (_label, output, message) => {
+      const inner = new TypeError('refused')
+      Object.defineProperty(inner, 'toJSON', { value: () => output(inner) })
+      for (const between of [
+        new Error('between', { cause: inner }),
+        new AggregateError([inner], 'between'),
+        new Error('between', { cause: new Error('lower', { cause: inner }) })
+      ]) {
+        const error = Object.assign(new Error('failed'), { cause: between })
+        const { written } = await logged(
+          held((e) => ({ name: e.name, message: e.message, cause: e.cause }), error)
+        )
+        const first = (written.cause?.cause ?? written.cause?.errors?.[0]) as Written
+        const below = first.cause ?? first
+
+        expect(below).toEqual(key === 'err' ? { name: 'TypeError', message } : { message })
+      }
+    }
+  )
+
+  /* Where the nested toJSON ran before this walk too, nothing is added to what it returned. */
+  it.each<readonly [string, (inner: Error) => unknown]>([
+    ['a plain object', (inner) => ({ name: 'N', message: 'between', cause: inner })],
+    ['an assigned field', (inner) => Object.assign(new Error('between'), { cause: inner })]
+  ])('writes no name for a nameless toJSON below %s', async (_label, between) => {
+    const inner = new TypeError('refused', { cause: { name: 'P', message: 'p', extra: 'MORE' } })
+    Object.defineProperty(inner, 'toJSON', {
+      value: () => ({ message: inner.message, cause: inner.cause })
+    })
+    const error = Object.assign(new Error('failed'), { cause: between(inner) })
+    const { text } = await logged(
+      held((e) => ({ name: e.name, message: e.message, cause: e.cause }), error)
+    )
+
+    expect(text.includes('MORE')).toBe(key !== 'err')
+  })
+
+  /* A direct cause is not nested: it is written from what `toJSON` returned alone. */
+  it('writes no name for a direct cause whose toJSON returns none', async () => {
+    const inner = new TypeError('refused')
+    Object.defineProperty(inner, 'toJSON', { value: () => ({ message: inner.message }) })
+    const error = Object.assign(new Error('failed'), { cause: inner })
+    const { written } = await logged(
+      held((e) => ({ name: e.name, message: e.message, cause: e.cause }), error)
+    )
+
+    expect(written.cause).toEqual(
+      key === 'err' ? { name: 'UnknownError', message: '[object Object]' } : { message: 'refused' }
+    )
+  })
+
+  /* Outside a serialized key nothing reads the name, so an own one `toJSON` left out stays out. */
+  it('keeps out a name of its own that the toJSON of a nested Error left out', async () => {
+    const inner = Object.assign(new Error('refused'), { name: 'OwnError' })
+    Object.defineProperty(inner, 'toJSON', { value: () => ({ message: inner.message }) })
+    const error = Object.assign(new Error('failed'), {
+      cause: new Error('between', { cause: inner })
+    })
+    const { written } = await logged(
+      held((e) => ({ name: e.name, message: e.message, cause: e.cause }), error)
+    )
+
+    expect(written.cause?.cause).toEqual(
+      key === 'err' ? { name: 'OwnError', message: 'refused' } : { message: 'refused' }
+    )
+  })
+
+  /* The name is added only where `toJSON` left a message: one that returned none stays as it was. */
+  it('does not write the message of a nested Error whose toJSON returns none', async () => {
+    const inner = new TypeError(SECRET)
+    Object.defineProperty(inner, 'toJSON', { value: () => ({ code: 'E_KEPT' }) })
+    const error = Object.assign(new Error('failed'), {
+      cause: new Error('between', { cause: inner })
+    })
+    const { text } = await logged(
+      held((e) => ({ name: e.name, message: e.message, cause: e.cause }), error)
+    )
+
+    expect(text).not.toContain(SECRET)
+  })
+
   /* A linked `Error` loses what `'safe'` drops and what the default names censor. */
   it.each<readonly [string, object]>([
     ['a field of its own', { detail: SECRET }],

@@ -12,6 +12,13 @@ heading here.
 
 ## [Unreleased]
 
+## [1.4.39] - 2026-11-28
+
+### Fixed
+
+- Under `redactStrategy: 'paths'` and `err`, an error below a plain object that is a cause or an aggregate member is written with its name and message, where 1.4.38 wrote `UnknownError` for an error 1.4.37 wrote.
+- In the same strategy and key, a cause or aggregate member of a cause or member, whose own `toJSON` returns a message and no `name`, is written with its name, where 1.4.38 wrote `UnknownError`. A direct cause or member with such a `toJSON`, one below a plain object, and one held in a field you assigned stay `UnknownError`, as in 1.4.37.
+
 ## [1.4.38] - 2026-11-27
 
 ### Breaking
@@ -3671,7 +3678,8 @@ published `dist/` is identical — no runtime behaviour changes for consumers.
 - Professional CI suite: `ci.yml`, `bench.yml`, `codeql.yml`, `scorecard.yml`,
   `release.yml`, Dependabot, and issue templates
 
-[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.38...HEAD
+[Unreleased]: https://github.com/bymaxone/nest-logger/compare/v1.4.39...HEAD
+[1.4.39]: https://github.com/bymaxone/nest-logger/compare/v1.4.38...v1.4.39
 [1.4.38]: https://github.com/bymaxone/nest-logger/compare/v1.4.37...v1.4.38
 [1.4.37]: https://github.com/bymaxone/nest-logger/compare/v1.4.36...v1.4.37
 [1.4.36]: https://github.com/bymaxone/nest-logger/compare/v1.4.35...v1.4.36
