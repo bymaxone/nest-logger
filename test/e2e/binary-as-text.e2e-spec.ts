@@ -19,11 +19,37 @@ const holding = (part: 'name' | 'message'): Error =>
 
 const settle = (): Promise<unknown> => new Promise((resolve) => setTimeout(resolve, 20))
 
+/** What a destination throws or rejects with, and which of the two. */
+interface Failure {
+  value: () => unknown
+  isAsync: boolean
+}
+
+/** A destination that fails while `armed` gives it something to fail with. */
+function failingDestination(armed: () => Failure | undefined): ILogDestination {
+  return {
+    name: 'failing',
+    write: (): void | Promise<void> => {
+      const failure = armed()
+      if (failure === undefined) return
+      if (failure.isAsync) return Promise.reject(failure.value())
+      throw failure.value()
+    }
+  }
+}
+
+/** The JSON lines among `text`. */
+const parse = (text: string): Record<string, unknown>[] =>
+  text
+    .split('\n')
+    .filter((line) => line.startsWith('{'))
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+
 /** The lines and the `stderr` text a real application writes while `emit` runs. */
 async function written(
   emit: (logger: PinoLoggerService) => void,
   extra: Partial<BymaxLoggerModuleOptions>,
-  failure?: { value: () => unknown; isAsync: boolean }
+  failure?: Failure
 ): Promise<{ lines: Record<string, unknown>[]; all: string; reports: Record<string, unknown>[] }> {
   const payloads: string[] = []
   let armed = false
@@ -33,14 +59,7 @@ async function written(
       payloads.push(payload)
     }
   }
-  const failing: ILogDestination = {
-    name: 'failing',
-    write: (): void | Promise<void> => {
-      if (!armed || failure === undefined) return
-      if (failure.isAsync) return Promise.reject(failure.value())
-      throw failure.value()
-    }
-  }
+  const failing = failingDestination(() => (armed ? failure : undefined))
   const app = await Test.createTestingModule({
     imports: [
       BymaxLoggerModule.forRoot({
@@ -61,11 +80,6 @@ async function written(
   stderr.mockRestore()
   const lines = payloads.slice()
   await app.close()
-  const parse = (text: string): Record<string, unknown>[] =>
-    text
-      .split('\n')
-      .filter((line) => line.startsWith('{'))
-      .map((line) => JSON.parse(line) as Record<string, unknown>)
   return {
     lines: parse(lines.join('')),
     all: lines.join('') + reported,

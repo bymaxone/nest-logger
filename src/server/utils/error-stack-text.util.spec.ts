@@ -1,5 +1,7 @@
 /**
  * Unit: the stack of an error whose name or message holds a binary value.
+ *
+ * Layer: unit, server/utils.
  */
 import { readStackText } from './error-stack-text.util'
 
