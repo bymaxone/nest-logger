@@ -143,26 +143,57 @@ export function withBinaryAsSize(value: unknown): unknown {
  * the text of a Buffer is its bytes.
  *
  * @param value - The value to be turned into text.
- * @param open - What is being read, so that one that holds itself ends where `join` ends it.
- * @returns The value itself when nothing in it is replaced, else what to turn into text.
+ * @returns The value itself when it holds nothing binary, else what to turn into text.
  */
-export function withBinaryAsSizeForText(
-  value: unknown,
-  open: Set<unknown> = capturedSet<unknown>()
-): unknown {
+export function withBinaryAsSizeForText(value: unknown): unknown {
+  return holdsBinary(value) ? sizedForText(value, capturedSet<unknown>()) : value
+}
+
+/** What the text of `value` is made from, when that is more than the value itself. */
+function isTextContainer(value: unknown): boolean {
+  return Array.isArray(value) || isError(value)
+}
+
+/**
+ * Whether the text of a value would read a binary one. It keeps its own list of what is left to
+ * look at, so that no depth of nesting ends the call stack, and it copies nothing.
+ */
+function holdsBinary(root: unknown): boolean {
+  const pending: unknown[] = [root]
+  const seen = capturedSet<unknown>()
+  while (pending.length > 0) {
+    const value = pending.pop()
+    if (ArrayBuffer.isView(value)) return true
+    if (!isTextContainer(value) || seen.has(value)) continue
+    seen.add(value)
+    const parts = isError(value) ? [value.name, value.message] : (value as unknown[])
+    // By index and length, as `join` reads an array, so no iterator of the host's runs.
+    for (let index = 0; index < parts.length; index += 1) {
+      const part: unknown = parts[index]
+      if (ArrayBuffer.isView(part)) return true
+      if (isTextContainer(part)) pending.push(part)
+    }
+  }
+  return false
+}
+
+/** The copy of a value that holds something binary; `open` ends a cycle where `join` ends it. */
+function sizedForText(value: unknown, open: Set<unknown>): unknown {
   if (ArrayBuffer.isView(value)) return binaryMarker(value)
   if (isError(value)) return errorTextSource(value, open)
   if (!Array.isArray(value)) return value
   if (open.has(value)) return ''
   open.add(value)
   let changed = false
-  // By index and length, as `join` reads an array, so no iterator of the host's runs.
-  const members = Array.from({ length: value.length }, (_, index) => {
+  // The length is set rather than filled, and a hole stays one: it can far exceed what is held.
+  const members: unknown[] = []
+  members.length = value.length
+  for (let index = 0; index < value.length; index += 1) {
+    if (!(index in value)) continue
     const member: unknown = value[index]
-    const read = withBinaryAsSizeForText(member, open)
-    if (read !== member) changed = true
-    return read
-  })
+    members[index] = sizedForText(member, open)
+    if (members[index] !== member) changed = true
+  }
   open.delete(value)
   return changed ? members : value
 }
@@ -175,7 +206,7 @@ function errorTextSource(error: Error, open: Set<unknown>): unknown {
   if (open.has(error)) return ''
   open.add(error)
   const parts: unknown[] = [error.name, error.message]
-  const sized = parts.map((part) => withBinaryAsSizeForText(part, open))
+  const sized = parts.map((part) => sizedForText(part, open))
   open.delete(error)
   const changed = sized.findIndex((part, index) => part !== parts[index])
   return changed === -1 ? error : sized[changed]

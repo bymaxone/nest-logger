@@ -179,6 +179,49 @@ describe('withBinaryAsSizeForText', () => {
     expect(String(withBinaryAsSizeForText(error))).toBe(`${MARKER},`)
   })
 
+  /*
+   * Nothing is sized here, so the text is the one `String` gives the value, cycle and all.
+   */
+  it('returns an error that holds itself and nothing binary as the very same value', () => {
+    const error = new Error()
+    Object.assign(error, { message: ['a', error] })
+    const list = [error]
+
+    expect(withBinaryAsSizeForText(list)).toBe(list)
+  })
+
+  it('returns arrays nested far deeper than the call stack allows a walk to recurse', () => {
+    let deep: unknown[] = []
+    for (let level = 0; level < 100_000; level += 1) deep = [deep]
+
+    expect(withBinaryAsSizeForText(deep)).toBe(deep)
+  })
+
+  /*
+   * A sparse array can have a length far beyond what it holds, so no pass may allocate by it.
+   */
+  it('keeps the holes of a sparse array that it has to copy', () => {
+    const list: unknown[] = []
+    list[3] = two()
+    list.length = 1_000
+
+    const read = withBinaryAsSizeForText(list) as unknown[]
+
+    expect(Object.keys(read)).toStrictEqual(['3'])
+    expect(read).toHaveLength(1_000)
+  })
+
+  it('makes no array for one that holds nothing binary', () => {
+    const list: unknown[] = ['a', [1]]
+    const from = jest.spyOn(Array, 'from')
+
+    withBinaryAsSizeForText(list)
+    const calls = from.mock.calls.length
+    from.mockRestore()
+
+    expect(calls).toBe(0)
+  })
+
   it('sizes the same array and the same error each time they appear', () => {
     const list = [two()]
     const error = Object.assign(new Error(), { message: two() })
