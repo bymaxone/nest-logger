@@ -17,7 +17,7 @@ heading here.
 ### Fixed
 
 - Under `redactStrategy: 'paths'` and `err`, inside an `Error` that has a `toJSON` and holds a named field, an error with no `toJSON` below a plain object that is a cause or an aggregate member is written with its name and message, where 1.4.38 wrote `UnknownError` for an error 1.4.37 wrote.
-- In the same case, a cause or aggregate member whose own `toJSON` returns a message and no `name` is written with its name when it is below the `cause` or `errors` of a nested `Error` that has no `toJSON`, where 1.4.38 wrote `UnknownError`. Any other such cause or member stays `UnknownError`, as in 1.4.37.
+- In the same case, a cause or aggregate member whose own `toJSON` returns a message and no `name` is written with its name when it is below a non-enumerable `cause` or `errors` of a nested `Error` that has no `toJSON`, where 1.4.38 wrote `UnknownError`. Any other such cause or member stays `UnknownError`, as in 1.4.37.
 
 ## [1.4.38] - 2026-11-27
 
