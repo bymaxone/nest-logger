@@ -246,3 +246,46 @@ describe('a value whose text never ends', () => {
     expect(reports).toHaveLength(1)
   })
 })
+
+describe.each(['names', 'paths'] as const)(
+  'a pinned stack whose first line cannot be replaced, %s',
+  (redactStrategy) => {
+    /** The stack is a property of its own, holding the text of the name. */
+    const pinned = (shape: 'value' | 'getter'): Error => {
+      const name = bytes()
+      name.toString = (): string => {
+        throw new Error('no text')
+      }
+      const stack = `${CONTENT}: boom\n    at x (/a.js:1:1)`
+      const error = Object.assign(new Error('boom'), { name: name as unknown as string })
+      return Object.defineProperty(
+        error,
+        'stack',
+        shape === 'value' ? { value: stack } : { get: () => stack }
+      )
+    }
+
+    it.each([
+      ['a value, as the error', 'value', (l: PinoLoggerService, e: Error): void => l.error(e)],
+      ['a getter, as the error', 'getter', (l: PinoLoggerService, e: Error): void => l.error(e)],
+      [
+        'a value, under a metadata key',
+        'value',
+        (l: PinoLoggerService, e: Error): void => l.info('A_B_OK', 'x', undefined, { held: e })
+      ],
+      [
+        'a value, as a raw err',
+        'value',
+        (l: PinoLoggerService, e: Error): void => l.getRawLogger().error({ err: e })
+      ]
+    ] as const)('holds no content when it is %s', async (_label, shape, emit) => {
+      const { lines, all } = await written((logger) => emit(logger, pinned(shape)), {
+        redactStrategy
+      })
+
+      clean(all)
+      expect(lines).toHaveLength(1)
+      expect(all).toContain('boom')
+    })
+  }
+)

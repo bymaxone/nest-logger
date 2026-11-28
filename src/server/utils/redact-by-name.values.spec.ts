@@ -96,6 +96,21 @@ describe('createNameRedactor', () => {
     expect(Object.hasOwn(redacted as object, 'stack')).toBe(false)
   })
 
+  // A binary name whose line cannot be built leaves no stack to write, so the copy keeps none.
+  it('should drop a pinned stack whose first line cannot be replaced', () => {
+    const name = Buffer.from('AB-CDE')
+    name.toString = () => {
+      throw new Error('no text')
+    }
+    const err = Object.assign(new Error('boom'), { name: name as unknown as string })
+    Object.defineProperty(err, 'stack', { value: 'AB-CDE: boom' })
+
+    const redacted = (redact({ err }) as Record<string, Error>)['err']
+
+    expect(redacted?.stack).toBeUndefined()
+    expect(redacted?.message).toBe('boom')
+  })
+
   /*
    * A real Error keeps its stack NON-enumerable, so `JSON.stringify` omits it.
    * The clone must match: an enumerable stack would push the whole trace into

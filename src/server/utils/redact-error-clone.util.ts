@@ -102,8 +102,9 @@ export function cloneError(error: Error): Error {
   // near-empty string. Pin the already-resolved trace as a plain data property —
   // without this the redacted error reaches the sink with its stack erased,
   // which is worse than the leak the clone exists to close.
+  // Where the error has a stack and none is to be written, the copied descriptor is replaced too.
   const stack = readStackText(error)
-  if (typeof stack === 'string') {
+  if (typeof stack === 'string' || (stack === undefined && 'stack' in error)) {
     // `enumerable: false` matches how a real Error carries its stack — making it
     // enumerable would push the whole trace into `JSON.stringify` output for every
     // redacted error. `writable` is stated for the reason given above; `configurable` is left at
