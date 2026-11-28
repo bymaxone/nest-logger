@@ -338,8 +338,6 @@ describe('the copy written for a held Error', () => {
 })
 
 describe('the name added to what an unread Error wrote', () => {
-  const holdsPan = (error: Error): Error =>
-    Object.defineProperty(error, 'inner', { value: { pan: 'x' } })
   const returns = (error: Error, output: () => unknown): Error =>
     Object.defineProperty(error, 'toJSON', { value: output })
 
