@@ -222,6 +222,16 @@ describe('withBinaryAsSizeForText', () => {
     expect(calls).toBe(0)
   })
 
+  it('keeps a binary-free array and error that sit beside a binary value', () => {
+    const list = ['b']
+    const error = new Error('x')
+
+    const read = withBinaryAsSizeForText([two(), list, error]) as unknown[]
+
+    expect(read[1]).toBe(list)
+    expect(read[2]).toBe(error)
+  })
+
   it('sizes the same array and the same error each time they appear', () => {
     const list = [two()]
     const error = Object.assign(new Error(), { message: two() })
