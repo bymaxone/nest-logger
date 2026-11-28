@@ -167,8 +167,8 @@ function holdsBinary(root: unknown): boolean {
     if (!isTextContainer(value) || seen.has(value)) continue
     seen.add(value)
     const parts = isError(value) ? [value.name, value.message] : (value as unknown[])
-    // By index and length, as `join` reads an array, so no iterator of the host's runs.
-    for (let index = 0; index < parts.length; index += 1) {
+    // By index and a length read once, as `join` reads an array, so no iterator of the host's runs.
+    for (let index = 0, length = parts.length; index < length; index += 1) {
       const part: unknown = parts[index]
       if (ArrayBuffer.isView(part)) return true
       if (isTextContainer(part)) pending.push(part)
@@ -187,10 +187,12 @@ function sizedForText(value: unknown, open: Set<unknown>): unknown {
   let changed = false
   // The length is set rather than filled, and a hole stays one: it can far exceed what is held.
   const members: unknown[] = []
-  members.length = value.length
-  for (let index = 0; index < value.length; index += 1) {
-    if (!(index in value)) continue
+  const length = value.length
+  members.length = length
+  for (let index = 0; index < length; index += 1) {
     const member: unknown = value[index]
+    // A hole reads as `undefined`, which `join` writes the same way: it stays a hole.
+    if (member === undefined) continue
     members[index] = sizedForText(member, open)
     if (members[index] !== member) changed = true
   }

@@ -211,15 +211,41 @@ describe('withBinaryAsSizeForText', () => {
     expect(read).toHaveLength(1_000)
   })
 
-  it('makes no array for one that holds nothing binary', () => {
-    const list: unknown[] = ['a', [1]]
-    const from = jest.spyOn(Array, 'from')
+  /*
+   * `String` reads the value itself afterwards, so every further read here is one more that it can
+   * answer differently; and `join` never asks an array whether it has an index.
+   */
+  it.each([
+    ['that holds nothing binary', ['a', 'b'], ['length', '0', '1']],
+    ['that it has to copy', [two(), 'b'], ['length', '0', 'length', '0', '1']]
+  ])('reads an array %s no more than once in each pass', (_label, held, expected) => {
+    const asked: Array<string | symbol> = []
+    const list = new Proxy(held, {
+      get(target, key, receiver): unknown {
+        asked.push(key)
+        return Reflect.get(target, key, receiver) as unknown
+      },
+      has(target, key): boolean {
+        asked.push(`has ${String(key)}`)
+        return Reflect.has(target, key)
+      }
+    })
 
     withBinaryAsSizeForText(list)
-    const calls = from.mock.calls.length
-    from.mockRestore()
 
-    expect(calls).toBe(0)
+    expect(asked).toStrictEqual(expected)
+  })
+
+  it('reads the name and the message of an error it only searches once', () => {
+    const asked: string[] = []
+    const error = new Error()
+    for (const part of ['name', 'message']) {
+      Object.defineProperty(error, part, { get: () => (asked.push(part), 'x') })
+    }
+
+    withBinaryAsSizeForText(error)
+
+    expect(asked).toStrictEqual(['name', 'message'])
   })
 
   it('keeps a binary-free array and error that sit beside a binary value', () => {
