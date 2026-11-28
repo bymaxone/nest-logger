@@ -155,10 +155,10 @@ function isTextContainer(value: unknown): boolean {
   return Array.isArray(value) || isError(value)
 }
 
-/** `String` of an array this long or longer cannot be built: its commas alone pass the bound. */
+/** Longer arrays are refused: `String` of one would be about as long as a string can be. */
 const MAX_TEXT_PARTS = constants.MAX_STRING_LENGTH
 
-/** A chain this deep is one that answers anew each time it is read. */
+/** A getter that answers anew each time it is read makes a chain with no end. */
 const MAX_TEXT_DEPTH = 200_000
 
 /** What one error adds to the depth: it costs far more to hold than an array does. */
