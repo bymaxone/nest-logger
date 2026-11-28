@@ -13,6 +13,37 @@ import {
   withBinaryAsSizeForText
 } from './own-field-policy.util'
 
+describe('the module as loaded', () => {
+  // Loaded inside the test, so that what the module evaluates is evaluated while the test runs.
+  it('holds the default list, the fields the logger writes itself, and the policy of every field', () => {
+    jest.isolateModules(() => {
+      const loaded =
+        jest.requireActual<typeof import('./own-field-policy.util')>('./own-field-policy.util')
+
+      expect(loaded.DEFAULT_SAFE_ERROR_FIELDS).toEqual([
+        'code',
+        'errno',
+        'syscall',
+        'signal',
+        'status',
+        'statusCode',
+        'address',
+        'port',
+        'hostname',
+        'constraint',
+        'table',
+        'column',
+        'schema',
+        'routine'
+      ])
+      for (const name of ['name', 'message', 'stack', 'cause', 'errors']) {
+        expect(loaded.DERIVED_ERROR_FIELDS.has(name)).toBe(true)
+      }
+      expect(loaded.ALL_OWN_FIELDS.safe).toBe(false)
+    })
+  })
+})
+
 describe('createOwnFieldPolicy', () => {
   it("returns the one shared policy of every field for 'all', whatever names are given", () => {
     expect(createOwnFieldPolicy('all', ['orderId'])).toBe(ALL_OWN_FIELDS)

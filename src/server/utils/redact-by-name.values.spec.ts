@@ -111,6 +111,20 @@ describe('createNameRedactor', () => {
     expect(redacted?.message).toBe('boom')
   })
 
+  // The copy holds what was read, so a later read of the original cannot change what is written.
+  it('should keep what the one read of a stack that is not text answered', () => {
+    let reads = 0
+    const err = new Error('boom')
+    Object.defineProperty(err, 'stack', {
+      get: () => (++reads === 1 ? 1 : 'a later answer'),
+      configurable: true
+    })
+
+    const redacted = (redact({ err }) as Record<string, Error>)['err']
+
+    expect(redacted?.stack).toBe(1)
+  })
+
   /*
    * A real Error keeps its stack NON-enumerable, so `JSON.stringify` omits it.
    * The clone must match: an enumerable stack would push the whole trace into
