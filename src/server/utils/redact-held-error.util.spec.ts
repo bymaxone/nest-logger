@@ -5,7 +5,7 @@
  * Layer: server, utils.
  */
 import { createOwnFieldPolicy } from './own-field-policy.util'
-import { createNameRedactor } from './redact-by-name.util'
+import { createNameRedactor, REDACT_MAX_TRAVERSAL_DEPTH } from './redact-by-name.util'
 import { createPathHold } from './redact-path-state.util'
 
 /** What is written for `{ u: error }`, held through `pan`, under a walk of `max` containers. */
@@ -106,6 +106,13 @@ describe('what is written for a held Error', () => {
     })
   })
 
+  it('censors a member the safe form has no place for, even an empty one', () => {
+    const error = Object.assign(new Error('failed'), { errors: [new Error('inner')] })
+    const output = (): unknown => ({ errors: [{ message: 'inner' }, undefined] })
+
+    expect(written(error, output)).toEqual({ errors: [{ message: 'inner' }, '[X]'] })
+  })
+
   it.each<readonly [string, unknown]>([
     ['an object', { a: 1 }],
     ['null', null]
@@ -143,6 +150,12 @@ describe('what is written for a held Error', () => {
     }
 
     expect(written(failed(), output)).toEqual({ message: 'failed' })
+  })
+
+  it('follows the toJSON of what a toJSON returns', () => {
+    const output = (): unknown => ({ code: 'other', toJSON: () => ({ code: 'E1' }) })
+
+    expect(written(failed(), output)).toEqual({ code: 'E1' })
   })
 
   /* The 'safe' form leaves an accessor out without running it. */
@@ -273,5 +286,47 @@ describe('an Error a held Error holds outside its causes and members', () => {
     member.cause = inner()
 
     expect(fieldsUnderErr({ errors: [member] }, ['errors'])).toContain('"message":"INNER"')
+  })
+})
+
+/** What the redactor itself returns for a held `Error` at this depth of the record. */
+function walkedAt(depth: number): unknown {
+  const error = failed()
+  Object.defineProperty(error, 'inner', { value: { pan: 'x' } })
+  Object.defineProperty(error, 'toJSON', { value: () => ({ code: 'E1' }) })
+  const hold = createPathHold(['u.pan'], 1000, createOwnFieldPolicy('safe', []))
+  const redact = createNameRedactor(
+    ['password'],
+    '[X]',
+    undefined,
+    1000,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    hold
+  )
+  let record: unknown = error
+  for (let level = 0; level < depth; level++) record = { u: record }
+  let written = redact(record, true)
+  for (let level = 0; level < depth; level++) written = (written as { u: unknown }).u
+  return written
+}
+
+describe('the copy written for a held Error', () => {
+  /* A later redaction rewrites and removes what the walk wrote. */
+  it('holds ordinary data properties', () => {
+    expect(Object.getOwnPropertyDescriptor(walkedAt(1), 'code')).toEqual({
+      value: 'E1',
+      enumerable: true,
+      writable: true,
+      configurable: true
+    })
+  })
+
+  /* What `toJSON` returns is one level below the Error, and counts against the same ceiling. */
+  it('writes no value of an output past the depth ceiling', () => {
+    expect(walkedAt(REDACT_MAX_TRAVERSAL_DEPTH - 1)).toEqual({ code: 'E1' })
+    expect(walkedAt(REDACT_MAX_TRAVERSAL_DEPTH)).toBe('[X]')
   })
 })

@@ -375,6 +375,7 @@ function buildNameRedactor(
         ownFields,
         undefined,
         allNames,
+        // Stryker disable next-line BooleanLiteral: it only acts on a root call with an object under err and a name to censor, and none has both
         false,
         pathHold
       )

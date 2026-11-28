@@ -168,7 +168,8 @@ export function createPathHold(
   safeFields: OwnFieldPolicy
 ): PathHold {
   const anyName = paths.some(endsInWildcard)
-  const names = capturedSet(paths.flatMap((path) => leafNameOf(path) ?? []))
+  // A path with no name of its own adds `undefined`, which no field is called.
+  const names = capturedSet(paths.map(leafNameOf))
   const isNamed = (name: string): boolean => setHas(names, name)
   const search: Search = { matches: (name) => anyName || isNamed(name), isNamed, maxWork }
   return {

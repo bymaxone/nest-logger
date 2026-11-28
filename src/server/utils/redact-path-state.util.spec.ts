@@ -25,7 +25,8 @@ describe('redactedStateMatcher', () => {
     ['nested state', { a: { b: { password: 'x' } } }],
     ['a member of a list', { list: [1, { password: 'x' }] }],
     ['a non-enumerable field', Object.defineProperty({}, 'password', { value: 'x' })],
-    ['the own field of an Error in the state', { e: Object.assign(new Error(), { password: 1 }) }]
+    ['the own field of an Error in the state', { e: Object.assign(new Error(), { password: 1 }) }],
+    ['a non-enumerable field of a list', Object.defineProperty([], 'password', { value: 'x' })]
   ])('answers true for %s', (_label, value) => {
     expect(holds(value)).toBe(true)
   })
@@ -97,6 +98,29 @@ describe('redactedStateMatcher', () => {
     expect(matcher({ a: { b: 1 } })).toBe(false)
     expect(matcher({ a: { b: 1, c: 2 } })).toBe(true)
     expect(matcher({ list: new Array<number>(1_000_000) })).toBe(true)
+  })
+
+  it('ends a search that takes exactly the work it may do', () => {
+    expect(redactedStateMatcher(['password'], 1)({})).toBe(false)
+  })
+
+  /* A list is not listed when its length alone is over the work left. */
+  it('lists a list as long as the work left, and not a longer one', () => {
+    const matcher = redactedStateMatcher(['password'], 10)
+
+    expect(matcher(new Array<number>(9))).toBe(false)
+    expect(matcher(new Array<number>(10))).toBe(true)
+  })
+
+  /* An enumerable property is a field, whatever it is called. */
+  it('counts an enumerable field of a function that has a built name', () => {
+    const named = Object.defineProperty(() => 'x', 'name', { value: 'x', enumerable: true })
+
+    expect(redactedStateMatcher(['a.name'], 100)({ named })).toBe(true)
+  })
+
+  it('counts every field when one of several paths ends in *', () => {
+    expect(redactedStateMatcher(['u.*', 'a.b'], 100)({ n: 1 })).toBe(true)
   })
 
   /* The searches of one walk share the bound; an overlong list's members spend none. */

@@ -35,6 +35,7 @@ function asSafe(rules: RedactRules, hold: PathHold): RedactRules {
     ...rules,
     ownFields: hold.safeFields,
     pathHold: undefined,
+    // Stryker disable next-line BooleanLiteral: these ownFields are safe, which writes an Error as data whatever this is
     errorsAsData: true,
     dataOnly: true
   }
