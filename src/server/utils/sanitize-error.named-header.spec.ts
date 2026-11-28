@@ -107,4 +107,14 @@ describe('sanitizeError — the stack header of an error whose name is not text'
     expect(result.stack).toMatch(/^Error: spec\n\s+at /)
     expect(result.stack).not.toContain('AB-CDE')
   })
+  it('writes nothing of a first line that could not be replaced', () => {
+    const name = Buffer.from('X\n    at AB-CDE')
+    const error = Object.assign(new Error('boom'), { name: name as unknown as string })
+    void error.stack
+    name.toString = () => {
+      throw new Error('no text')
+    }
+
+    expect(sanitizeError(error).stack).not.toContain('AB-CDE')
+  })
 })

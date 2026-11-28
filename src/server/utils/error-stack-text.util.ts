@@ -16,9 +16,10 @@ const ERROR_TO_STRING = Error.prototype.toString
  * where the line ends is not known. Where the text would not end, no stack is answered.
  *
  * @param error - The error.
+ * @param onSized - Called when the first line was replaced.
  * @returns The stack, whatever `stack` holds when it is not a string, or `undefined`.
  */
-export function readStackText(error: Error): unknown {
+export function readStackText(error: Error, onSized?: () => void): unknown {
   const stack: unknown = error.stack
   if (typeof stack !== 'string') return stack
   let sized: unknown
@@ -33,5 +34,7 @@ export function readStackText(error: Error): unknown {
     return failure instanceof RangeError ? undefined : stack
   }
   const frames = stack.startsWith(header) ? stack.slice(header.length) : ''
-  return `${String(sized)}${frames}`
+  const text = `${String(sized)}${frames}`
+  onSized?.()
+  return text
 }

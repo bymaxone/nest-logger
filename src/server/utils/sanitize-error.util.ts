@@ -29,8 +29,7 @@ import {
   DERIVED_ERROR_FIELDS,
   withBinaryAsSize,
   withBinaryAsSizeForText,
-  type OwnFieldPolicy,
-  holdsBinary
+  type OwnFieldPolicy
 } from './own-field-policy.util'
 
 /** Default number of `cause` / `AggregateError` links walked before truncating. */
@@ -233,13 +232,16 @@ function readScrubbedStack(
   result: SanitizedError,
   walk: ErrorWalk
 ): string | undefined {
-  const stack = readOptional(() => readStackText(value) as string | undefined, result)
+  // A replaced first line is a size, with no message to look for in the stack.
+  let isSized = false
+  const onSized = (): void => {
+    isSized = true
+  }
+  const stack = readOptional(() => readStackText(value, onSized) as string | undefined, result)
   if (stack === undefined) return undefined
   const header = headerCensor(name, message, walk.censorMessage)
   if (typeof rawName === 'string') return scrubStack(stack, header)
-  // The first line of a name that holds a binary value is its size, with no message to look for.
-  const isSized = readOptional(() => holdsBinary(rawName), result)
-  const named = withNamedHeader(stack, message, isSized === true)
+  const named = withNamedHeader(stack, message, isSized)
   return scrubStack(named, header, stack.length > MAX_STACK_SCAN)
 }
 
