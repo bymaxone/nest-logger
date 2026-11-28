@@ -99,4 +99,12 @@ describe('sanitizeError — the stack header of an error whose name is not text'
     expect(result.stack).toMatch(/^Error: boom\n\s+at /)
     expect(result.stack).not.toContain('AB-CDE')
   })
+  it('keeps the frames where the name is binary and a frame holds the message', () => {
+    const error = Object.assign(new Error('spec'), { name: Buffer.from('AB-CDE') })
+
+    const result = sanitizeError(error)
+
+    expect(result.stack).toMatch(/^Error: spec\n\s+at /)
+    expect(result.stack).not.toContain('AB-CDE')
+  })
 })

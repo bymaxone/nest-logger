@@ -169,7 +169,7 @@ const ERROR_DEPTH = 200
  * look at, so that nesting does not end the call stack, and it copies nothing. A value whose text
  * would not end raises a `RangeError`, as `String` does.
  */
-function holdsBinary(root: unknown): boolean {
+export function holdsBinary(root: unknown): boolean {
   if (ArrayBuffer.isView(root)) return true
   // Only what `isTextContainer` accepts is queued, so what is taken from the list is not tested again.
   // Stryker disable next-line ArrayDeclaration: equivalent, a planted string is taken last and nothing in it is binary or queued.
