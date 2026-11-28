@@ -91,4 +91,12 @@ describe('sanitizeError — the stack header of an error whose name is not text'
     expect(stack.length).toBe(MAX_STACK_SCAN + over)
     expect(sanitizeError(named(stack, 'boom')).stack).toBe(expected)
   })
+  it('keeps nothing of a binary name whose bytes repeat the message', () => {
+    const error = Object.assign(new Error('boom'), { name: Buffer.from('boom-AB-CDE') })
+
+    const result = sanitizeError(error)
+
+    expect(result.stack).toMatch(/^Error: boom\n\s+at /)
+    expect(result.stack).not.toContain('AB-CDE')
+  })
 })
