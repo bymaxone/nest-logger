@@ -81,7 +81,7 @@ interface Comparison {
 const isWritten = (form: object, key: string): boolean =>
   Object.prototype.propertyIsEnumerable.call(form, key)
 
-function write(copy: object, key: string, value: unknown): void {
+function writeOwn(copy: object, key: string, value: unknown): void {
   Object.defineProperty(
     copy,
     key,
@@ -124,11 +124,11 @@ function commonForm(safe: unknown, written: unknown, how: Comparison): unknown {
     const value = shared
       ? commonForm(Reflect.get(safe, from), Reflect.get(written, key), how)
       : censor
-    write(copy, key, value)
+    writeOwn(copy, key, value)
   }
   const unnamed = how.serialized && unreadOutputs.has(written) && !isWritten(written, 'name')
   if (unnamed && isWritten(written, 'message') && isWritten(safe, 'name')) {
-    write(copy, 'name', Reflect.get(safe, 'name'))
+    writeOwn(copy, 'name', Reflect.get(safe, 'name'))
   }
   return copy
 }
