@@ -53,4 +53,14 @@ describe('readStackText', () => {
 
     expect(readStackText(error)).toBe('Error: boom')
   })
+
+  it('answers no stack where the text of the message would not end', () => {
+    const error = new Error('boom')
+    const long: unknown[] = []
+    long.length = 2 ** 31
+    void error.stack
+    Object.assign(error, { message: long })
+
+    expect(readStackText(error)).toBeUndefined()
+  })
 })

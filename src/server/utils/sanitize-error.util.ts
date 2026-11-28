@@ -19,6 +19,7 @@ import { bareDescriptor } from './bare-descriptor.util'
 import { cutText, MAX_TEXT_LENGTH } from './bounded-text.util'
 import { capturedSet, lowerCase, matchesPattern } from './captured-builtins.util'
 import { splitCensoredHeader } from './censor-stack-header.util'
+import { readStackText } from './error-stack-text.util'
 import { escapeControlCharacters } from './escape-log-text.util'
 import { hideMessagesInStack } from './hide-message-in-stack.util'
 import { isError } from './is-error.util'
@@ -231,7 +232,7 @@ function readScrubbedStack(
   result: SanitizedError,
   walk: ErrorWalk
 ): string | undefined {
-  const stack = readOptional(() => value.stack, result)
+  const stack = readOptional(() => readStackText(value) as string | undefined, result)
   if (stack === undefined) return undefined
   const header = headerCensor(name, message, walk.censorMessage)
   return textName

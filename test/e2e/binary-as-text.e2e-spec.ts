@@ -191,3 +191,58 @@ describe('with every redaction off', () => {
     expect((lines[0]?.['err'] as { stack: string }).stack.split('\n')[0]).toBe('Error: boom')
   })
 })
+
+describe.each([
+  ['names', {}],
+  ['paths', { redactStrategy: 'paths' }],
+  [
+    'all redaction off',
+    { redactStrategy: 'paths', redactPaths: [], shouldDisableDefaultRedact: true }
+  ]
+] as const)('a binary name that holds the text of the message, %s', (_label, extra) => {
+  /** The bytes of the name repeat the message, in front of the content. */
+  const nameRepeatsMessage = (): Error =>
+    Object.assign(new Error('boom'), { name: Buffer.from(`boom-${CONTENT}`) }) as unknown as Error
+
+  it.each([
+    ['the error itself', nameRepeatsMessage],
+    ['a cause', (): Error => new Error('outer', { cause: nameRepeatsMessage() })],
+    ['an aggregate member', (): Error => new AggregateError([nameRepeatsMessage()], 'outer')]
+  ] as const)('holds no content under %s', async (_position, error) => {
+    const { lines, all } = await written((logger) => logger.error(error()), extra)
+
+    clean(all)
+    expect(lines).toHaveLength(1)
+  })
+})
+
+describe('a value whose text never ends', () => {
+  /** Each read of the message answers another error that does the same. */
+  const endless = (): Error =>
+    Object.defineProperty(new Error('x'), 'message', { get: endless }) as Error
+
+  it.each([
+    ['thrown by a destination', endless],
+    [
+      'a destination throws an error whose name and message both never end',
+      (): Error => {
+        const both = (): Error =>
+          Object.defineProperties(new Error('x'), {
+            name: { get: both },
+            message: { get: both }
+          }) as Error
+        return both()
+      }
+    ],
+    ['an array longer than any string', (): unknown => Object.assign([], { length: 2 ** 31 })]
+  ] as const)('leaves the application running when %s', async (_label, value) => {
+    const { lines, reports } = await written(
+      (logger) => logger.log('ping'),
+      {},
+      { value, isAsync: false }
+    )
+
+    expect(lines.map((line) => line['msg'])).toEqual(['ping'])
+    expect(reports).toHaveLength(1)
+  })
+})
