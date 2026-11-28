@@ -34,6 +34,7 @@ import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { foldKey } from '../utils/fold-key.util'
 import { hideMessagesInStack } from '../utils/hide-message-in-stack.util'
 import { isPlainRecord } from '../utils/is-plain-record.util'
+import { withBinaryAsSizeForText } from '../utils/own-field-policy.util'
 import type { Redactor } from '../utils/redact-by-name.util'
 import { isErrorLike } from '../utils/sanitize-error.util'
 
@@ -167,7 +168,7 @@ function withoutOwnedKeys(
  */
 function safeErrorMessage(error: Error): string {
   try {
-    return toBoundedMessage(String(error.message))
+    return toBoundedMessage(String(withBinaryAsSizeForText(error.message)))
   } catch {
     return 'Unreadable error message'
   }
@@ -280,7 +281,8 @@ function readObjectMessage(message: unknown): ObjectMessage {
  */
 function safeLogMessage(message: unknown): string {
   try {
-    return toBoundedMessage(typeof message === 'string' ? message : String(message))
+    const text = withBinaryAsSizeForText(message)
+    return toBoundedMessage(typeof text === 'string' ? text : String(text))
   } catch {
     return 'Unreadable log message'
   }

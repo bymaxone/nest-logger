@@ -9,6 +9,7 @@
 import { bareDescriptor } from './bare-descriptor.util'
 import { cutText } from './bounded-text.util'
 import { capturedSet } from './captured-builtins.util'
+import { readStackText } from './error-stack-text.util'
 import {
   createDepthMarker,
   createWidthMarker,
@@ -189,7 +190,7 @@ export function addErrorParts(
   add(
     'stack',
     ['stack', 'name', 'message'],
-    (): unknown => error.stack,
+    (): unknown => readStackText(error),
     (stack) => (typeof stack === 'string' ? scrubStack(stack) : undefined)
   )
   add('cause', ['cause'], (): unknown => error.cause)

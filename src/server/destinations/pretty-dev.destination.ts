@@ -20,6 +20,7 @@ import type { ILogDestination } from '../interfaces/log-destination.interface'
 import { toBoundedMessage } from '../utils/escape-log-text.util'
 import { isError } from '../utils/is-error.util'
 import { tag } from '../utils/native-promise.util'
+import { withBinaryAsSizeForText } from '../utils/own-field-policy.util'
 import { writeStdoutSafely } from '../utils/safe-stdio.util'
 
 /**
@@ -207,7 +208,7 @@ function isPinoPrettyMissing(cause: unknown): boolean {
  */
 function describeFailure(cause: unknown): string {
   try {
-    return toBoundedMessage(isError(cause) ? cause.message : String(cause))
+    return toBoundedMessage(String(withBinaryAsSizeForText(isError(cause) ? cause.message : cause)))
   } catch {
     return 'unreadable value'
   }

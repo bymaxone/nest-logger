@@ -8,8 +8,8 @@ Only the most recent minor receives security fixes; upgrade to it.
 
 | Version | Status                              |
 | ------- | ----------------------------------- |
-| `1.4.x` | ✅ Active — receives security fixes |
-| `< 1.4` | ❌ End-of-life                      |
+| `1.5.x` | ✅ Active — receives security fixes |
+| `< 1.5` | ❌ End-of-life                      |
 
 ## Reporting a vulnerability
 

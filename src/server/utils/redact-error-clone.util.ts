@@ -7,6 +7,7 @@
  */
 
 import { bareDescriptor } from './bare-descriptor.util'
+import { readStackText } from './error-stack-text.util'
 
 /**
  * Give an object a `toJSON` of `undefined`, which the stringifier does not run. It is defined and
@@ -101,7 +102,7 @@ export function cloneError(error: Error): Error {
   // near-empty string. Pin the already-resolved trace as a plain data property —
   // without this the redacted error reaches the sink with its stack erased,
   // which is worse than the leak the clone exists to close.
-  const { stack } = error
+  const stack = readStackText(error)
   if (typeof stack === 'string') {
     // `enumerable: false` matches how a real Error carries its stack — making it
     // enumerable would push the whole trace into `JSON.stringify` output for every

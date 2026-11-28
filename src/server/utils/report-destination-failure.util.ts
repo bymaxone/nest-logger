@@ -17,6 +17,7 @@
  */
 import { toBoundedMessage, toSingleLineMessage } from './escape-log-text.util'
 import { isError } from './is-error.util'
+import { withBinaryAsSizeForText } from './own-field-policy.util'
 import { writeStderrSafely } from './safe-stdio.util'
 import { censorName } from './sanitize-error.util'
 import type { ReservedLogKey } from '../../shared/constants/reserved-log-keys.constants'
@@ -72,6 +73,11 @@ export function reportDestinationFailure(
 /** What the report says about a cause it cannot read: the stage and the sink still print. */
 const UNREADABLE_CAUSE = { type: 'UnknownError', message: 'unreadable value' } as const
 
+/** The text of a part of a cause: a binary value in it is written as its size. */
+function asText(value: unknown): string {
+  return String(withBinaryAsSizeForText(value))
+}
+
 /**
  * The cause as a `{ type, message }` pair, or {@link UNREADABLE_CAUSE} when reading it throws.
  *
@@ -103,10 +109,10 @@ export function describeCause(
   try {
     return isError(cause)
       ? {
-          type: toBoundedMessage(censorName(String(cause.name), censorMessage)),
-          message: toBoundedMessage(censor(String(cause.message)))
+          type: toBoundedMessage(censorName(asText(cause.name), censorMessage)),
+          message: toBoundedMessage(censor(asText(cause.message)))
         }
-      : { type: 'UnknownError', message: toBoundedMessage(censor(String(cause))) }
+      : { type: 'UnknownError', message: toBoundedMessage(censor(asText(cause))) }
   } catch {
     return UNREADABLE_CAUSE
   }
