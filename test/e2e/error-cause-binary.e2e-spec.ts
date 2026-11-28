@@ -10,8 +10,8 @@ import { applyAccessLog, BymaxLoggerModule, PinoLoggerService } from '@bymax-one
 import type { BymaxLoggerModuleOptions, ILogDestination } from '@bymax-one/nest-logger'
 
 /** Six bytes. */
-const SECRET = 'ZZ-KEY'
-const bytes = (): Buffer => Buffer.from(SECRET)
+const CONTENT = 'AB-CDE'
+const bytes = (): Buffer => Buffer.from(CONTENT)
 const MARKER = '[Binary 6 bytes]'
 
 /** The node written for a value that is not an error. */
@@ -53,8 +53,8 @@ async function errorOf(
   const written = payloads.slice()
   await app.close()
   expect(written).toHaveLength(1)
-  expect(written[0]).not.toContain(SECRET)
-  expect(written[0]).not.toContain('90,90,45')
+  expect(written[0]).not.toContain(CONTENT)
+  expect(written[0]).not.toContain('65,66,45')
   return (JSON.parse(written[0] as string) as { err: Record<string, unknown> }).err
 }
 
@@ -218,8 +218,8 @@ describe.each([
 
     expect(lines.length).toBeGreaterThanOrEqual(3)
     for (const line of lines) {
-      expect(line).not.toContain(SECRET)
-      expect(line).not.toContain('90,90,45')
+      expect(line).not.toContain(CONTENT)
+      expect(line).not.toContain('65,66,45')
     }
     expect(lines.filter((line) => line.includes(MARKER))).toHaveLength(2)
   })
