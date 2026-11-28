@@ -22,7 +22,7 @@ heading here.
 
 - The README states how a Buffer given as the message is written with a `msgPrefix`, and what `maxStringLength` does to binary values when every redaction is off.
 - `SECURITY.md` states a known limit of `redactStrategy: 'paths'` for a binary value that a `toJSON` returns.
-- The entry that said a Buffer is written as Pino writes it with every redaction off now says that this does not apply inside `err`.
+- The entry that said a Buffer is written as Pino writes it with every redaction off now limits this to a Buffer outside `err`.
 
 ## [1.4.39] - 2026-11-28
 

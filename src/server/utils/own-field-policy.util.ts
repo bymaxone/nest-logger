@@ -143,8 +143,8 @@ export function withBinaryAsSize(value: unknown): unknown {
  * the text of a Buffer is its bytes.
  *
  * @param value - The value to be turned into text.
- * @param open - The arrays being read, so that one that holds itself ends where `join` ends it.
- * @returns The value itself when it holds no binary value, else the copy to turn into text.
+ * @param open - What is being read, so that one that holds itself ends where `join` ends it.
+ * @returns The value itself when nothing in it is replaced, else what to turn into text.
  */
 export function withBinaryAsSizeForText(
   value: unknown,

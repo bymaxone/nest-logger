@@ -61,7 +61,7 @@ Code that runs inside the host process is trusted, as in Node's own threat model
 
 ## Known limits
 
-Under `redactStrategy: 'paths'`, a binary value that a `toJSON` returns into the message argument or a `%o` or `%j` placeholder of the raw logger, or into a field of child bindings, is written byte by byte. Record fields and service calls write its size. Return a plain value from `toJSON` instead.
+Under `redactStrategy: 'paths'`, a binary value that a `toJSON` returns into the message argument or a `%o`, `%O` or `%j` placeholder of the raw logger, or a child bindings field, is written byte by byte. Record fields and service calls write its size. Return a plain value from `toJSON` instead.
 
 ## Out of scope
 

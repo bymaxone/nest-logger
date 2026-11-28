@@ -137,7 +137,7 @@ describe('withBinaryAsSizeForText', () => {
   })
 
   /*
-   * A value without a binary one keeps its identity, so its own text is what is written.
+   * A value with nothing to size keeps its identity, so its own text is what is written.
    */
   it.each([
     ['text', 'text'],

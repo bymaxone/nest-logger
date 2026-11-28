@@ -1,5 +1,5 @@
 /**
- * E2E: binary values given as the cause of an error or as a member of an `AggregateError`.
+ * E2E: binary values that the logger turns into the text of an error.
  *
  * Layer: e2e, server (`BymaxLoggerModule`, the Pino factory, the error sanitizer).
  */
@@ -120,7 +120,7 @@ const ROWS: ReadonlyArray<readonly [string, () => Error, object]> = [
   ]
 ]
 
-/** Every way an application hands the logger an error. */
+/** The entry points under test. */
 const ENTRIES: ReadonlyArray<readonly [string, (logger: PinoLoggerService, e: Error) => void]> = [
   ['the raw logger', (logger, e) => logger.getRawLogger().info({ err: e }, 'm')],
   ['service.error', (logger, e) => logger.error('A_B_FAILED', e)]
