@@ -1,7 +1,7 @@
 /**
  * The text of an `Error`'s stack, as the logger may write it.
  *
- * Layer: server/utils — read by the redaction walk where it takes a stack off an `Error`.
+ * Layer: server/utils.
  */
 
 import { withBinaryAsSizeForText } from './own-field-policy.util'
@@ -11,7 +11,7 @@ const ERROR_TO_STRING = Error.prototype.toString
 
 /**
  * Read the stack of an error. The engine writes the name and the message into its first line as
- * text, so where either holds a binary value that line is replaced by the size. The frames are
+ * text, so where either holds a binary value that text is replaced by the size. The frames are
  * kept only when the stack starts with that line; otherwise nothing of the stack is kept, since
  * where the line ends is not known.
  *
