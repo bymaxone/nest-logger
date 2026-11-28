@@ -308,7 +308,7 @@ describe.each(ENTRIES)("a held Error under redactStrategy: 'paths', as %s", (_en
   })
 
   /* A nested `Error` whose `toJSON` returns no name: under a serialized key it keeps the name
-     'safe' writes, and its message only as `toJSON` returned it. */
+     'safe' writes, and its message where `toJSON` returned it unchanged. */
   it.each<readonly [string, (error: Error) => unknown, string]>([
     ['its message', (e) => ({ message: e.message }), 'refused'],
     ['a rewritten message', () => ({ message: 'scrubbed' }), '[REDACTED]'],

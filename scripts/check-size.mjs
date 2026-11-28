@@ -34,7 +34,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //
 // Calibration history (newest first):
 //   - 2026-11-28 — server: 51,551 B real -> 51,581 B budget (50.37 KiB), measured + 30 by the same
-//     rule. What the bytes bought: under 'paths' and `err`, the name of a nested error whose
+//     rule. What the bytes bought: under 'paths' and `err`, the name of some nested errors whose
 //     `toJSON` returns none, and what is below a plain object that is a cause or a member.
 //   - 2026-11-27 — server: 51,347 B real -> 51,377 B budget (50.17 KiB), measured + 30 by the same
 //     rule. What the bytes bought: under 'paths', the search of a value's state before its
