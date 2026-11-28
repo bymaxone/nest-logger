@@ -42,22 +42,22 @@ function leavesErrorText(
  * @param key - The key the value is under.
  * @param value - The value.
  * @param honorToJson - `false` only for the root of a log record.
- * @param holder - The object holding the key.
  * @returns The rules the value is walked with.
  */
 export function rulesBelow(
   rules: RedactRules,
   key: string,
   value: unknown,
-  honorToJson: boolean,
-  holder: object
+  honorToJson: boolean
 ): RedactRules {
-  const linked = rules.link === 'output' || (rules.link === 'link' && isError(holder))
+  const linked = rules.link !== undefined
   const link = linked && (key === 'cause' || key === 'errors') ? 'link' : undefined
+  // A field that is no link is serialized as data, which runs the toJSON of what it holds.
+  const unread = link && rules.unread
   if (leavesErrorText(rules, key, value, honorToJson)) {
-    return { ...rules, link, exemptKeys: ERROR_TEXT_KEYS }
+    return { ...rules, link, unread, exemptKeys: ERROR_TEXT_KEYS }
   }
-  return { ...rules, link, exemptKeys: undefined, headerKept: undefined }
+  return { ...rules, link, unread, exemptKeys: undefined, headerKept: undefined }
 }
 
 /**

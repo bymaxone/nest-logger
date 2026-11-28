@@ -33,6 +33,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //      tighten it. Avoid >2x headroom: it silently lets bloat through.
 //
 // Calibration history (newest first):
+//   - 2026-11-28 — server: 51,551 B real -> 51,581 B budget (50.37 KiB), measured + 30 by the same
+//     rule. What the bytes bought: under 'paths' and `err`, the name of some nested errors whose
+//     `toJSON` returns none, and what is below a plain object that is a cause or a member.
 //   - 2026-11-27 — server: 51,347 B real -> 51,377 B budget (50.17 KiB), measured + 30 by the same
 //     rule. What the bytes bought: under 'paths', the search of a value's state before its
 //     `toJSON` is called, and what a held `Error` is written from.
@@ -426,7 +429,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 //     headroom defeats bloat detection; 1.0 KiB still absorbs years of
 //     constant/type growth while catching a real regression).
 const BUDGETS = [
-  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 51_377 },
+  { name: 'server (NestJS module)', path: 'dist/server/index.mjs', brotli: 51_581 },
   { name: 'shared (types + constants)', path: 'dist/shared/index.mjs', brotli: 1.0 * 1024 },
   {
     name: 'observability (metrics + health)',

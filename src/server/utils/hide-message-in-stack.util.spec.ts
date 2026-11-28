@@ -112,26 +112,61 @@ describe('hideMessageInStack', () => {
     expect(hideMessageInStack(stack, message, '[R]')).toBe(stack)
   })
 
-  it('is linear in a message made of a frame-shaped line that repeats many times', () => {
-    const message = '\n  at SEC'
-    const stack = `Error:${message.repeat(100_000)}\n  at f (g:1)`
-    const started = Date.now()
+  /*
+   * Linear work, counted rather than timed: the characters read from the stack and from the message
+   * stay within a fixed number for each character of the two. A search that goes back over the stack
+   * reads a number that grows with their product.
+   */
+  it.each([
+    ['a frame-shaped line that repeats', '\n  at SEC', '\n  at SEC'.repeat(5_000), 5_000],
+    [
+      'a long run of one character, which overlaps itself',
+      'a'.repeat(5_000),
+      'a'.repeat(10_000),
+      1
+    ],
+    [
+      'a run that the last character of the message never ends',
+      `${'a'.repeat(5_000)}b`,
+      'a'.repeat(10_000),
+      0
+    ]
+  ])('reads a number of characters linear in %s', (_label, message, stack, spans) => {
+    let reads = 0
+    /* A string seen through its length, its characters and `slice`, each character counted. */
+    const counted = (text: string): string =>
+      new Proxy(
+        {},
+        {
+          get: (_target, key) => {
+            if (key === 'length') return text.length
+            if (key === 'slice') return (from: number, to: number) => counted(text.slice(from, to))
+            reads += 1
+            return text[Number(key)]
+          }
+        }
+      ) as unknown as string
 
-    const hidden = hideMessageInStack(stack, message, '[R]')
-
-    expect(hidden).toBe(`Error:${'[R]'.repeat(100_000)}\n  at f (g:1)`)
-    expect(Date.now() - started).toBeLessThan(2_000)
+    expect(occurrences(counted(stack), counted(message))).toHaveLength(spans)
+    expect(reads).toBeGreaterThanOrEqual(stack.length)
+    expect(reads).toBeLessThanOrEqual(6 * (stack.length + message.length))
   })
 
-  it('is linear in a message that overlaps itself, a long run of one character', () => {
-    const message = 'a'.repeat(250_000)
-    const stack = `Error: ${'a'.repeat(500_000)}\n  at f (g:1)`
-    const started = Date.now()
-
-    const hidden = hideMessageInStack(stack, message, '[R]')
-
-    expect(hidden).toBe('Error: [R]\n  at f (g:1)')
-    expect(Date.now() - started).toBeLessThan(2_000)
+  it.each([
+    [
+      'a frame-shaped line that repeats',
+      '\n  at SEC',
+      `Error:${'\n  at SEC'.repeat(5_000)}\n  at f (g:1)`,
+      `Error:${'[R]'.repeat(5_000)}\n  at f (g:1)`
+    ],
+    [
+      'a long run of one character',
+      'a'.repeat(5_000),
+      `Error: ${'a'.repeat(10_000)}\n  at f (g:1)`,
+      'Error: [R]\n  at f (g:1)'
+    ]
+  ])('hides the whole of %s', (_label, message, stack, expected) => {
+    expect(hideMessageInStack(stack, message, '[R]')).toBe(expected)
   })
 
   it.each([
