@@ -18,7 +18,7 @@ heading here.
 
 - A binary value given as the message of a NestJS method such as `log`, alone, in a list or as the message of an error, is written as its size (`[Binary 42 bytes]`). Migration: convert before you log, for example `logger.log(buffer.toString('utf-8'))`.
 - The failure report of a destination and the startup error of `PrettyDevDestination` write the size of a binary value thrown or rejected, or held in a text they take from the thrown error. Migration: throw an `Error` with a text message.
-- When the name or message of an error holds a binary value, its first stack line can be the size, and the frames are then kept only if the stack starts with the line the engine writes. Migration: assign text to `name` and `message`.
+- When the name or message of an error holds a binary value, its first stack line can be the size, and the frames are then kept only if the stack starts with the line the engine writes; where that line cannot be built, no stack is written. Migration: assign text to `name` and `message`.
 
 ## [1.4.40] - 2026-11-28
 

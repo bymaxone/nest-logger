@@ -107,14 +107,28 @@ describe('sanitizeError — the stack header of an error whose name is not text'
     expect(result.stack).toMatch(/^Error: spec\n\s+at /)
     expect(result.stack).not.toContain('AB-CDE')
   })
-  it('writes nothing of a first line that could not be replaced', () => {
-    const name = Buffer.from('X\n    at AB-CDE')
-    const error = Object.assign(new Error('boom'), { name: name as unknown as string })
-    void error.stack
+  const refuse = (name: Buffer): void => {
     name.toString = () => {
       throw new Error('no text')
     }
+  }
+  const detach = (name: Uint8Array): void => {
+    structuredClone(name.buffer, { transfer: [name.buffer as ArrayBuffer] })
+  }
 
-    expect(sanitizeError(error).stack).not.toContain('AB-CDE')
+  it.each([
+    ['a frame-shaped line in the name', Buffer.from('X\n    at AB-CDE'), 'boom', refuse],
+    ['no message', Buffer.from('X\n    at AB-CDE'), '', refuse],
+    ['the message in the name', Buffer.from('boom-AB-CDE'), 'boom', refuse],
+    ['a name whose memory was transferred', new Uint8Array([112, 119, 100]), '11', detach]
+  ])('writes no stack whose first line cannot be replaced: %s', (_label, name, message, spoil) => {
+    const error = Object.assign(new Error(message), { name: name as unknown as string })
+    void error.stack
+    spoil(name as Buffer)
+
+    const result = sanitizeError(error)
+
+    expect(result.stack).toBeUndefined()
+    expect(result.message).toBe(message)
   })
 })
