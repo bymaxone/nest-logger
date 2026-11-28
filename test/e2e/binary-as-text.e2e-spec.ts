@@ -289,3 +289,38 @@ describe.each(['names', 'paths'] as const)(
     })
   }
 )
+
+describe.each(['names', 'paths'] as const)('a stack that is not text, %s', (redactStrategy) => {
+  /** The `stack` is assigned, as code without types can do. */
+  const assigned = (stack: unknown): Error =>
+    Object.assign(new Error('boom'), { code: 'E1', stack: stack as string })
+
+  /** The `stack` answers a number once and a text afterwards. */
+  const changing = (): Error => {
+    let reads = 0
+    return Object.defineProperty(Object.assign(new Error('boom'), { code: 'E1' }), 'stack', {
+      get: () => (++reads === 1 ? 1 : CONTENT),
+      configurable: true
+    })
+  }
+
+  it.each([
+    ['a number', (): Error => assigned(123)],
+    ['null', (): Error => assigned(null)],
+    ['an object', (): Error => assigned({ at: 'x' })],
+    ['a list', (): Error => assigned(['a', 'b'])],
+    ['a getter that answers a text later', changing]
+  ] as const)('keeps the record of an error whose stack is %s', async (_label, error) => {
+    const { lines, all } = await written(
+      (logger) => logger.getRawLogger().error({ err: error() }),
+      {
+        redactStrategy
+      }
+    )
+    const err = lines[0]?.['err'] as Record<string, unknown>
+
+    expect(err).toMatchObject({ type: 'Error', message: 'boom', code: 'E1' })
+    expect(err).not.toHaveProperty('stack')
+    clean(all)
+  })
+})

@@ -112,7 +112,7 @@ describe('createNameRedactor', () => {
   })
 
   // The copy holds what was read, so a later read of the original cannot change what is written.
-  it('should keep what the one read of a stack that is not text answered', () => {
+  it('should copy no stack where the one read of it answered no text', () => {
     let reads = 0
     const err = new Error('boom')
     Object.defineProperty(err, 'stack', {
@@ -122,7 +122,7 @@ describe('createNameRedactor', () => {
 
     const redacted = (redact({ err }) as Record<string, Error>)['err']
 
-    expect(redacted?.stack).toBe(1)
+    expect(redacted?.stack).toBeUndefined()
   })
 
   /*
